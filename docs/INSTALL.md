@@ -67,16 +67,17 @@ sudo cloudbot update
 ```
 
 This pulls the latest code with `git pull --ff-only` and rebuilds the containers.
-Three volumes keep your data across updates:
+Four volumes keep your data across updates:
 
 | Volume | Holds |
 |---|---|
 | `cloudbot-data` | The database and the vault |
 | `cloudbot-home` | The bot home: the Claude login, sessions and the Claude Code CLI |
 | `cloudbot-workspaces` | Each bot's workspace, with its memory in `CLAUDE.md` |
+| `cloudbot-uploads` | Files attached in chat. The bot can read them but cannot change them |
 
 The CLI in `cloudbot-home` updates itself, so a new image does not replace it.
-`docker compose down -v` deletes all three volumes, including the Claude login.
+`docker compose down -v` deletes all four volumes, including the Claude login.
 
 ## Commands
 

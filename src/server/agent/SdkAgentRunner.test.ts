@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import * as fileSystem from 'node:fs/promises';
 import type { Options, SDKAssistantMessage, SDKMessage, SDKResultMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
@@ -417,7 +418,7 @@ describe('SdkAgentRunner.runTurn', () => {
     });
 
     it('sends the resume id and the workspace to the SDK query', async () => {
-        const receivedParameters: { prompt: string; options: Options }[] = [];
+        const receivedParameters: { prompt: unknown; options: Options }[] = [];
         const runner = new SdkAgentRunner({
             queryFunction: (parameters) => {
                 receivedParameters.push(parameters);
@@ -473,5 +474,64 @@ describe('SdkAgentRunner.runTurn', () => {
 
         expect(received)
             .toEqual([{ type: 'session', sessionId: SESSION_ID }]);
+    });
+
+    it('passes the bot upload folder to the SDK as an additional directory', () => {
+        const request = { ...buildRunTurnRequest(new AbortController()), additionalDirectories: ['/var/lib/cloudbot-uploads/bot-1'] };
+        const options = buildQueryOptions(request, {}, new AbortController());
+
+        expect(options.additionalDirectories)
+            .toEqual(['/var/lib/cloudbot-uploads/bot-1']);
+    });
+});
+
+describe('SdkAgentRunner image input', () => {
+    it('sends the prompt as one user message with a text block and image blocks', async () => {
+        const captured: unknown[] = [];
+
+        async function* captureFirstPrompt(parameters: { prompt: unknown; options: Options }): AsyncGenerator<SDKMessage> {
+            const prompts = parameters.prompt as AsyncIterable<SDKUserMessage>;
+            const iterator = prompts[Symbol.asyncIterator]();
+            const first = await iterator.next();
+
+            captured.push(first.value);
+            yield buildSuccessResult();
+        }
+        const runner = new SdkAgentRunner({ queryFunction: captureFirstPrompt });
+        const request: TurnRequest = {
+            ...buildRunTurnRequest(new AbortController()),
+            images: [{ mediaType: 'image/png', data: 'iVBORw0KGgo=' }],
+        };
+
+        await collectRunTurnEvents(runner, request);
+
+        expect(captured)
+            .toMatchObject([{
+                type: 'user',
+                parent_tool_use_id: null,
+                message: {
+                    role: 'user',
+                    content: [
+                        { type: 'text' },
+                        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } },
+                    ],
+                },
+            }]);
+    });
+
+    it('sends a plain string prompt when the turn has no images', async () => {
+        const captured: unknown[] = [];
+
+        function captureQuery(parameters: { prompt: unknown; options: Options }): AsyncIterable<SDKMessage> {
+            captured.push(parameters.prompt);
+
+            return Readable.from([buildSuccessResult()]);
+        }
+        const runner = new SdkAgentRunner({ queryFunction: captureQuery });
+
+        await collectRunTurnEvents(runner, buildRunTurnRequest(new AbortController()));
+
+        expect(typeof captured[0])
+            .toBe('string');
     });
 });

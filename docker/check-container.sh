@@ -113,5 +113,23 @@ docker exec --user bot "$CONTAINER_NAME" rm /var/lib/cloudbot-workspaces/probe-w
 docker exec --user cloudbot "$CONTAINER_NAME" rmdir /var/lib/cloudbot-workspaces/probe-workspace
 echo "ok: bot can write to a server-created workspace"
 
+# Uploads are read-only for the bot. It reads a file the server wrote, but it cannot add, rename or replace anything.
+UPLOAD_PROBE="/var/lib/cloudbot-uploads/probe-upload"
+docker exec --user cloudbot "$CONTAINER_NAME" sh -c "mkdir -m 2750 '$UPLOAD_PROBE' && printf upload > '$UPLOAD_PROBE/file.png' && chmod 0640 '$UPLOAD_PROBE/file.png'" \
+    || fail "cloudbot cannot write an upload"
+docker exec --user bot "$CONTAINER_NAME" cat "$UPLOAD_PROBE/file.png" > /dev/null \
+    || fail "bot cannot read an upload"
+if docker exec --user bot "$CONTAINER_NAME" sh -c "printf x > '$UPLOAD_PROBE/new.txt'" > /dev/null 2>&1; then
+    fail "bot can create a file in an upload folder"
+fi
+if docker exec --user bot "$CONTAINER_NAME" mv "$UPLOAD_PROBE/file.png" "$UPLOAD_PROBE/moved.png" > /dev/null 2>&1; then
+    fail "bot can rename an upload"
+fi
+if docker exec --user bot "$CONTAINER_NAME" sh -c "printf x > /var/lib/cloudbot-uploads/new.txt" > /dev/null 2>&1; then
+    fail "bot can create a file in the upload root"
+fi
+docker exec --user cloudbot "$CONTAINER_NAME" rm -rf "$UPLOAD_PROBE"
+echo "ok: bot can read uploads and cannot create, rename or replace files in them"
+
 docker exec --user cloudbot "$CONTAINER_NAME" rm -f "$PROBE_FILE"
 echo "All container checks passed."

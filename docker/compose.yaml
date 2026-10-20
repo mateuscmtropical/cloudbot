@@ -13,6 +13,7 @@ services:
       - cloudbot-data:/var/lib/cloudbot
       - cloudbot-home:/home/bot
       - cloudbot-workspaces:/var/lib/cloudbot-workspaces
+      - cloudbot-uploads:/var/lib/cloudbot-uploads
     expose:
       - "3000"
 
@@ -36,5 +37,6 @@ volumes:
   cloudbot-data:
   cloudbot-home:
   cloudbot-workspaces:
+  cloudbot-uploads:
   caddy-data:
   caddy-config:

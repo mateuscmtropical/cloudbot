@@ -24,7 +24,22 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
 
     switch (body.kind) {
         case 'text':
-            return <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(body.text) }} />;
+            return (
+                <div className="text-message">
+                    <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(body.text) }} />
+                    {body.attachments === undefined || body.attachments.length === 0
+                        ? null
+                        : (
+                                <ul className="attachment-list">
+                                    {body.attachments.map((file, index) => (
+                                        <li key={`${String(index)}-${file.name}`} className="attachment-item">
+                                            {file.name}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                </div>
+            );
         case 'choice':
             return (
                 <div className="setup-card">

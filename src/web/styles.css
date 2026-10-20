@@ -254,6 +254,15 @@ svg {
     overflow-wrap: anywhere;
 }
 
+/* The wrapper is the flex item, so it takes the width limit. A percentage on the bubble inside would shrink it below its text. */
+.text-message {
+    max-width: min(640px, 80%);
+}
+
+.text-message .bubble {
+    max-width: none;
+}
+
 .message-user .bubble {
     background: var(--color-user-bubble);
 }
@@ -423,7 +432,44 @@ svg {
     }
 
     .bubble,
-    .setup-card {
+    .setup-card,
+    .text-message {
         max-width: 92%;
     }
+}
+
+.attachment-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+}
+
+.attachment-item {
+    border: 1px solid currentColor;
+    border-radius: 8px;
+    font-size: 0.85em;
+    opacity: 0.85;
+    padding: 2px 8px;
+}
+.attachment-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    list-style: none;
+    margin: 0 0 6px;
+    padding: 0 12px;
+}
+
+.attachment-chip {
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-size: 0.85em;
+    padding: 2px 10px;
+}
+
+.attachment-chip.is-uploading {
+    opacity: 0.6;
 }

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,8 +12,22 @@ import { BotStore } from '../store/BotStore.ts';
 import { MessageStore } from '../store/MessageStore.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
+import { buildMultipartUpload } from '../attachments/testMultipart.ts';
+import type { MultipartFile } from '../attachments/testMultipart.ts';
 import { ChatService } from './ChatService.ts';
 import { createChatRoutes } from './createChatRoutes.ts';
+
+async function postUpload(app: Hono, botId: string, files: MultipartFile[]): Promise<Response> {
+    const upload = await buildMultipartUpload(files);
+    const chunks = await upload.body.toArray() as Buffer[];
+    const bytes = Buffer.concat(chunks);
+
+    return app.request(`/api/bots/${botId}/attachments`, {
+        method: 'POST',
+        headers: { 'content-type': upload.contentType },
+        body: bytes,
+    });
+}
 
 function describeEvent(event: ChatEvent): string {
     if (event.type === 'turn') {
@@ -239,6 +253,116 @@ describe('chat routes', () => {
 
         expect(receivedText)
             .toContain(': heartbeat');
+    });
+
+    it('stores an uploaded file in the bot upload folder and answers 201 with its summary', async () => {
+        const app = buildApp([]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const response = await postUpload(app, bot.id, [{ name: 'notes.txt', bytes: Buffer.from('hello') }]);
+
+        expect(response.status)
+            .toBe(201);
+        expect(await response.json())
+            .toEqual([{ name: 'notes.txt', mimeType: 'application/octet-stream', sizeBytes: 5 }]);
+        expect(await readdir(join(dataDir, 'uploads', bot.id)))
+            .toHaveLength(1);
+    });
+
+    it('answers 413 when a file is over CLOUDBOT_MAX_UPLOAD_MB and keeps nothing', async () => {
+        const chatService = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir });
+        const app = createChatRoutes(chatService, { maxUploadBytes: 4 });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const response = await postUpload(app, bot.id, [{ name: 'big.txt', bytes: Buffer.alloc(100) }]);
+
+        expect(response.status)
+            .toBe(413);
+        await expect(readdir(join(dataDir, 'uploads', bot.id)))
+            .rejects.toThrow();
+    });
+
+    it('answers 400 when the body is not multipart form data', async () => {
+        const app = buildApp([]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const response = await app.request(`/api/bots/${bot.id}/attachments`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: '{}',
+        });
+
+        expect(response.status)
+            .toBe(400);
+    });
+
+    it('answers 404 for an upload to an unknown bot', async () => {
+        const app = buildApp([]);
+        const response = await postUpload(app, 'missing', [{ name: 'notes.txt', bytes: Buffer.from('hello') }]);
+
+        expect(response.status)
+            .toBe(404);
+    });
+
+    it('answers 400 when one request carries more than 10 files', async () => {
+        const app = buildApp([]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const elevenFiles = Array.from({ length: 11 }, (_value, index) => ({ name: `file-${String(index)}.txt`, bytes: Buffer.from('x') }));
+        const response = await postUpload(app, bot.id, elevenFiles);
+
+        expect(response.status)
+            .toBe(400);
+    });
+
+    it('answers 413 when the next message already holds 10 files', async () => {
+        const app = buildApp([]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const tenFiles = Array.from({ length: 10 }, (_value, index) => ({ name: `file-${String(index)}.txt`, bytes: Buffer.from('x') }));
+        const firstResponse = await postUpload(app, bot.id, tenFiles);
+        const secondResponse = await postUpload(app, bot.id, [{ name: 'extra.txt', bytes: Buffer.from('x') }]);
+
+        expect(firstResponse.status)
+            .toBe(201);
+        expect(secondResponse.status)
+            .toBe(413);
+    });
+
+    it('answers 409 when files are uploaded while the bot is still answering, and keeps nothing', async () => {
+        const app = buildApp([{ event: { type: 'text', text: 'Late' }, delayMs: 60_000 }]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await postJson(app, `/api/bots/${bot.id}/messages`, { text: 'first' });
+
+        const uploadResponse = await postUpload(app, bot.id, [{ name: 'late.txt', bytes: Buffer.from('x') }]);
+        const stopResponse = await app.request(`/api/bots/${bot.id}/stop`, { method: 'POST' });
+
+        expect(uploadResponse.status)
+            .toBe(409);
+        expect(await uploadResponse.json())
+            .toEqual({ error: 'Wait until the reply finishes.' });
+        expect(stopResponse.status)
+            .toBe(204);
+    });
+
+    it('lists the waiting files, removes one with 204, and answers 404 for an unknown file or bot', async () => {
+        const app = buildApp([]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await postUpload(app, bot.id, [{ name: 'notes.txt', bytes: Buffer.from('hello') }]);
+
+        const listResponse = await app.request(`/api/bots/${bot.id}/uploads`);
+        const uploads = await listResponse.json() as { id: string; name: string; sizeBytes: number }[];
+
+        expect(uploads.map(upload => upload.name))
+            .toEqual(['notes.txt']);
+
+        const removeResponse = await app.request(`/api/bots/${bot.id}/uploads/${uploads[0]?.id ?? ''}`, { method: 'DELETE' });
+        const unknownFileResponse = await app.request(`/api/bots/${bot.id}/uploads/unknown`, { method: 'DELETE' });
+        const unknownBotResponse = await app.request('/api/bots/missing/uploads');
+
+        expect(removeResponse.status)
+            .toBe(204);
+        expect(unknownFileResponse.status)
+            .toBe(404);
+        expect(unknownBotResponse.status)
+            .toBe(404);
     });
 });
 

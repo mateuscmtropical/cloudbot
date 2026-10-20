@@ -14,6 +14,7 @@ All notable changes to this project are listed here. The format follows
   keeps the real key out of the agent environment.
 - Optional agent execution as the bot user with restricted sudo, a minimal environment and workspaces outside the server data folder.
 - Persistent bot home and workspace volumes for Claude credentials, sessions and bot memory. The CLI in the home volume updates itself across image upgrades.
+- Attachments: `POST /api/bots/:id/attachments` saves uploaded files in a per-bot upload folder that the bot can read but not change, up to `CLOUDBOT_MAX_UPLOAD_MB` (default 20). The next message lists the files, and PNG, JPEG, GIF and WEBP images up to 5 MB also go to Claude as images. The web app shows the files in the user message.
 - Claude subscription login helpers for the setup chat, with sign-in links,
   code submission, cancellation, timeout handling and CLI status checks.
 - Project setup: server with a health route, lint, tests, CI and docs.

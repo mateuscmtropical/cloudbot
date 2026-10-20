@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { listBots, listMessages, stopTurn } from './apiClient.ts';
+import { listBots, listMessages, RequestFailedError, stopTurn, uploadAttachments } from './apiClient.ts';
 
 function stubFetch(response: Response): ReturnType<typeof vi.fn> {
     const fetchMock = vi.fn(() => Promise.resolve(response));
@@ -9,6 +9,25 @@ function stubFetch(response: Response): ReturnType<typeof vi.fn> {
 
     return fetchMock;
 }
+
+describe('uploadAttachments', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('carries the error text the server sent with a refused upload', async () => {
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({ error: 'Send at most 10 files at once.' }), { status: 400 }))));
+
+        const uploadPromise = uploadAttachments('bot-1', [new File(['x'], 'a.txt')]);
+        const failure = await uploadPromise
+            .catch((error: unknown) => error);
+
+        expect(failure)
+            .toBeInstanceOf(RequestFailedError);
+        expect(failure instanceof RequestFailedError ? failure.serverMessage : undefined)
+            .toBe('Send at most 10 files at once.');
+    });
+});
 
 describe('apiClient', () => {
     afterEach(() => {

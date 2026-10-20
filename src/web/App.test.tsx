@@ -2,9 +2,9 @@
 import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { BotSummary, ChatEvent, ChatMessage } from '../shared/chatTypes.ts';
+import type { BotSummary, ChatEvent, ChatMessage, PendingUpload } from '../shared/chatTypes.ts';
 import { App } from './App.tsx';
-import { listBots, listMessages, sendMessage, subscribeToEvents } from './apiClient.ts';
+import { listBots, listMessages, listUploads, sendMessage, subscribeToEvents, uploadAttachments } from './apiClient.ts';
 import { MESSAGE_PAGE_SIZE } from './messageList.ts';
 
 // The waits below end when the state appears. The longer limit only covers slow runs with the whole suite in parallel.
@@ -13,6 +13,8 @@ configure({ asyncUtilTimeout: 5000 });
 vi.setConfig({ testTimeout: 15000 });
 
 vi.mock('./apiClient.ts', () => ({
+    // A stand-in class, so `instanceof` checks in the app have something to test against.
+    RequestFailedError: class RequestFailedError extends Error {},
     listBots: vi.fn(),
     listMessages: vi.fn(),
     sendMessage: vi.fn(),
@@ -22,6 +24,8 @@ vi.mock('./apiClient.ts', () => ({
     submitSecret: vi.fn(),
     subscribeToEvents: vi.fn(),
     uploadAttachments: vi.fn(),
+    listUploads: vi.fn(() => Promise.resolve([])),
+    removeUpload: vi.fn(),
 }));
 
 function createBot(name: string, id = 'bot-1'): BotSummary {
@@ -88,6 +92,207 @@ describe('App bot list', () => {
         });
         expect(listBots)
             .toHaveBeenCalledTimes(2);
+    });
+
+    it('reloads the pending files when a turn ends, so files put back by a stopped turn show up', async () => {
+        const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
+
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(listUploads)
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ id: 'upload-9', name: 'notes.txt', sizeBytes: 5 }]);
+        vi.mocked(subscribeToEvents)
+            .mockImplementation((_botId, onEvent) => {
+                emitEvent.current = onEvent;
+
+                return () => {};
+            });
+
+        render(<App />);
+
+        await waitFor(() => {
+            expect(renderedBotName())
+                .toBe('CloudBot');
+        });
+
+        act(() => {
+            emitEvent.current?.({ type: 'turn', botId: 'bot-1', isRunning: true });
+        });
+
+        expect(listUploads)
+            .toHaveBeenCalledTimes(1);
+
+        act(() => {
+            emitEvent.current?.({ type: 'turn', botId: 'bot-1', isRunning: false });
+        });
+
+        await waitFor(() => {
+            expect(screen.getByText('notes.txt'))
+                .toBeTruthy();
+        });
+        expect(listUploads)
+            .toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('App pending files', () => {
+    it('keeps a restored file when the send response arrives after the turn-end list', async () => {
+        const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
+        const notes: PendingUpload = { id: 'server-1', name: 'notes.txt', sizeBytes: 5 };
+        const sentMessage: ChatMessage = {
+            id: 'm1',
+            botId: 'bot-1',
+            role: 'user',
+            createdAt: 1,
+            sequence: 1,
+            body: { kind: 'text', text: 'Read this' },
+        };
+        let resolveSend: (message: ChatMessage) => void = () => {};
+        const sendResult = new Promise<ChatMessage>((resolve) => {
+            resolveSend = resolve;
+        });
+
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(listUploads)
+            .mockResolvedValueOnce([notes])
+            .mockResolvedValueOnce([notes])
+            .mockResolvedValueOnce([notes]);
+        vi.mocked(sendMessage)
+            .mockReturnValueOnce(sendResult);
+        vi.mocked(subscribeToEvents)
+            .mockImplementation((_botId, onEvent) => {
+                emitEvent.current = onEvent;
+
+                return () => {};
+            });
+
+        render(<App />);
+
+        await waitFor(() => {
+            expect(screen.getByText('notes.txt'))
+                .toBeTruthy();
+        });
+
+        const textarea = screen.getByPlaceholderText('Message CloudBot');
+
+        fireEvent.change(textarea, { target: { value: 'Read this' } });
+        fireEvent.keyDown(textarea, { key: 'Enter' });
+
+        // The turn ends first and puts the file back. Its list is applied.
+        act(() => {
+            emitEvent.current?.({ type: 'turn', botId: 'bot-1', isRunning: false });
+        });
+
+        await waitFor(() => {
+            expect(listUploads)
+                .toHaveBeenCalledTimes(2);
+        });
+
+        // The send response comes last. It must not hide the file.
+        act(() => {
+            resolveSend(sentMessage);
+        });
+
+        await waitFor(() => {
+            expect(listUploads)
+                .toHaveBeenCalledTimes(3);
+        });
+        expect(screen.getByText('notes.txt'))
+            .toBeTruthy();
+    });
+
+    it('ignores a pending list issued before a newer one, so a fresh upload stays visible', async () => {
+        const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
+        let resolveStale: (uploads: PendingUpload[]) => void = () => {};
+        const staleList = new Promise<PendingUpload[]>((resolve) => {
+            resolveStale = resolve;
+        });
+
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(listUploads)
+            .mockResolvedValueOnce([])
+            .mockReturnValueOnce(staleList)
+            .mockResolvedValueOnce([{ id: 'fresh-1', name: 'fresh.txt', sizeBytes: 5 }]);
+        vi.mocked(uploadAttachments)
+            .mockResolvedValueOnce(undefined);
+        vi.mocked(subscribeToEvents)
+            .mockImplementation((_botId, onEvent) => {
+                emitEvent.current = onEvent;
+
+                return () => {};
+            });
+
+        const { container } = render(<App />);
+
+        await waitFor(() => {
+            expect(renderedBotName())
+                .toBe('CloudBot');
+        });
+
+        // A turn ends, and its list request is still in flight when the upload happens.
+        act(() => {
+            emitEvent.current?.({ type: 'turn', botId: 'bot-1', isRunning: false });
+        });
+
+        const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+        fireEvent.change(fileInput, { target: { files: [new File(['hello'], 'fresh.txt')] } });
+
+        await waitFor(() => {
+            expect(screen.getByText('fresh.txt'))
+                .toBeTruthy();
+        });
+
+        // The older list arrives late with nothing in it. It must not hide the fresh file.
+        act(() => {
+            resolveStale([]);
+        });
+
+        expect(screen.getByText('fresh.txt'))
+            .toBeTruthy();
+        expect(listUploads)
+            .toHaveBeenCalledTimes(3);
+    });
+
+    it('shows a file the server queued even when the upload response failed', async () => {
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(listUploads)
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ id: 'queued-1', name: 'queued.txt', sizeBytes: 5 }]);
+        vi.mocked(uploadAttachments)
+            .mockRejectedValueOnce(new Error('connection lost'));
+        vi.mocked(subscribeToEvents)
+            .mockImplementation(() => () => {});
+
+        const { container } = render(<App />);
+
+        await waitFor(() => {
+            expect(renderedBotName())
+                .toBe('CloudBot');
+        });
+
+        const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+        fireEvent.change(fileInput, { target: { files: [new File(['hello'], 'queued.txt')] } });
+
+        await waitFor(() => {
+            expect(screen.getByText('queued.txt'))
+                .toBeTruthy();
+        });
+        expect(screen.getByText('Could not upload the files.'))
+            .toBeTruthy();
     });
 });
 

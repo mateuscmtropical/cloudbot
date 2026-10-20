@@ -1,4 +1,4 @@
-import type { BotSummary, ChatEvent, ChatMessage } from '../shared/chatTypes.ts';
+import type { BotSummary, ChatEvent, ChatMessage, PendingUpload } from '../shared/chatTypes.ts';
 
 const API_ROOT = '/api';
 
@@ -149,6 +149,23 @@ async function uploadAttachments(botId: string, files: File[]): Promise<void> {
 
     const response = await fetch(path, { method: 'POST', body: formData });
 
+    if (!response.ok) {
+        const serverMessage = await readServerMessage(response);
+
+        throw new RequestFailedError(path, response.status, serverMessage);
+    }
+}
+
+function listUploads(botId: string): Promise<PendingUpload[]> {
+    const path = botPath(botId, '/uploads');
+
+    return requestJson<PendingUpload[]>(path, {});
+}
+
+async function removeUpload(botId: string, uploadId: string): Promise<void> {
+    const path = botPath(botId, `/uploads/${encodeURIComponent(uploadId)}`);
+    const response = await fetch(path, { method: 'DELETE' });
+
     ensureOk(response, path);
 }
 
@@ -185,4 +202,6 @@ export {
     submitSecret,
     subscribeToEvents,
     uploadAttachments,
+    listUploads,
+    removeUpload,
 };
