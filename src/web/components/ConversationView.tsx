@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
+import { renderMarkdown } from '../markdown.ts';
 import { Composer } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
 import type { MessageActions } from './MessageItem.tsx';
@@ -9,6 +10,7 @@ import type { MessageActions } from './MessageItem.tsx';
 interface ConversationViewProps {
     bot: BotSummary | undefined;
     messages: ChatMessage[];
+    draftText: string;
     isRunning: boolean;
     actions: MessageActions;
     onOpenBotList: () => void;
@@ -20,6 +22,7 @@ interface ConversationViewProps {
 function ConversationView({
     bot,
     messages,
+    draftText,
     isRunning,
     actions,
     onOpenBotList,
@@ -36,7 +39,7 @@ function ConversationView({
         if (messageListElement !== null) {
             messageListElement.scrollTop = messageListElement.scrollHeight;
         }
-    }, [messages]);
+    }, [messages, draftText]);
 
     return (
         <section className="conversation">
@@ -50,6 +53,13 @@ function ConversationView({
                 {messages.map(message => (
                     <MessageItem key={message.id} message={message} actions={actions} />
                 ))}
+                {draftText === ''
+                    ? null
+                    : (
+                            <div className="message message-assistant is-draft">
+                                <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(draftText) }} />
+                            </div>
+                        )}
             </div>
             <Composer
                 botName={botName}

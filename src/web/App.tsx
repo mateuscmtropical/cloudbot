@@ -1,19 +1,34 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatEvent, ChatMessage } from '../shared/chatTypes.ts';
 import { BotList } from './components/BotList.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
-import { listBots, listMessages, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments } from './apiClient.ts';
-import { upsertMessage } from './messageList.ts';
+import { listBots, listMessages, RequestFailedError, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments } from './apiClient.ts';
+import { mergeMessages, upsertMessage } from './messageList.ts';
+
+interface DraftState {
+    botId: string;
+    text: string;
+    // The highest message sequence known when the draft started. Older replies never clear it.
+    afterSequence: number;
+}
+
+const emptyDraft: DraftState = { botId: '', text: '', afterSequence: 0 };
 
 function App(): ReactElement {
     const [bots, setBots] = useState<BotSummary[]>([]);
     const [selectedBotId, setSelectedBotId] = useState<string | undefined>(undefined);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [draft, setDraft] = useState<DraftState>(emptyDraft);
     const [runningBotId, setRunningBotId] = useState<string | undefined>(undefined);
     const [isBotListOpen, setIsBotListOpen] = useState(false);
     const [errorText, setErrorText] = useState<string | undefined>(undefined);
+    const messagesRef = useRef<ChatMessage[]>([]);
+
+    useEffect(() => {
+        messagesRef.current = messages;
+    }, [messages]);
 
     useEffect(() => {
         listBots()
@@ -35,25 +50,68 @@ function App(): ReactElement {
 
         let isCurrent = true;
 
-        listMessages(selectedBotId)
-            .then((loadedMessages) => {
-                if (isCurrent) {
-                    setMessages(loadedMessages);
-                }
-            })
-            .catch(() => {
-                setErrorText('Could not load the conversation.');
-            });
+        // Runs on every stream connect, so messages missed during a dropout come back.
+        const reloadMessages = (): void => {
+            listMessages(selectedBotId)
+                .then((loadedMessages) => {
+                    if (!isCurrent) {
+                        return;
+                    }
+
+                    const replies = loadedMessages.filter(message => message.role === 'assistant' && message.body.kind === 'text');
+
+                    // A reply stored after the draft started means the draft is already written, as a message event would.
+                    setDraft((previousDraft) => {
+                        const hasNewerReply = replies.some(reply => reply.sequence > previousDraft.afterSequence);
+
+                        return previousDraft.botId === selectedBotId && hasNewerReply ? emptyDraft : previousDraft;
+                    });
+
+                    setMessages(previousMessages => mergeMessages(previousMessages, loadedMessages));
+                })
+                .catch(() => {
+                    setErrorText('Could not load the conversation.');
+                });
+        };
 
         const unsubscribe = subscribeToEvents(selectedBotId, (event: ChatEvent) => {
+            if (event.type === 'textDelta') {
+                const knownSequences = messagesRef.current.map(message => message.sequence);
+                const knownSequence = Math.max(0, ...knownSequences);
+
+                setDraft((previousDraft) => {
+                    const isNewDraft = previousDraft.botId !== event.botId;
+
+                    return {
+                        botId: event.botId,
+                        text: (isNewDraft ? '' : previousDraft.text) + event.text,
+                        afterSequence: isNewDraft ? knownSequence : previousDraft.afterSequence,
+                    };
+                });
+
+                return;
+            }
+
+            // A stored message ends the block being written, so its draft goes away.
             if (event.type === 'message') {
+                setDraft(emptyDraft);
                 setMessages(previousMessages => upsertMessage(previousMessages, event.message));
 
                 return;
             }
 
+            setDraft(emptyDraft);
             setRunningBotId(event.isRunning ? event.botId : undefined);
-        });
+
+            // A finished turn may have renamed the bot, so the sidebar list is refreshed.
+            if (!event.isRunning) {
+                listBots()
+                    .then(setBots)
+                    .catch(() => {
+                        setErrorText('Could not load your bots.');
+                    });
+            }
+        }, reloadMessages);
 
         return () => {
             isCurrent = false;
@@ -84,6 +142,15 @@ function App(): ReactElement {
         setRunningBotId(selectedBotId);
         const sendPromise = sendMessage(selectedBotId, text);
 
+        // A failed send never starts a turn, so the running state must not stay on.
+        sendPromise.catch((error: unknown) => {
+            // A 409 means a turn is already running, so the running state stays on.
+            const isBusy = error instanceof RequestFailedError && error.status === 409;
+
+            if (!isBusy) {
+                setRunningBotId(undefined);
+            }
+        });
         showMessageResult(sendPromise);
     }
 
@@ -174,6 +241,7 @@ function App(): ReactElement {
                 <ConversationView
                     bot={selectedBot}
                     messages={visibleMessages}
+                    draftText={draft.botId === selectedBotId ? draft.text : ''}
                     isRunning={isRunning}
                     actions={{ onChoose: handleChoose, onSubmitCode: handleSubmitCode, onSubmitSecret: handleSubmitSecret }}
                     onOpenBotList={() => {

@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 import { cleanup, render, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatMessage, MessageBody } from '../../shared/chatTypes.ts';
 import { ConversationView } from './ConversationView.tsx';
 
 function createMessage(id: string, role: ChatMessage['role'], body: MessageBody): ChatMessage {
-    return { id, botId: 'bot-1', role, createdAt: 1, body };
+    return { id, botId: 'bot-1', role, createdAt: 1, sequence: 1, body };
 }
 
 const allKindMessages: ChatMessage[] = [
@@ -48,24 +49,45 @@ const noopActions = {
     onSubmitSecret: vi.fn(),
 };
 
-function renderConversation(messages: ChatMessage[]): void {
-    render(
+function conversationElement(messages: ChatMessage[], draftText: string): ReactElement {
+    return (
         <ConversationView
             bot={undefined}
             messages={messages}
+            draftText={draftText}
             isRunning={false}
             actions={noopActions}
             onOpenBotList={vi.fn()}
             onSend={vi.fn()}
             onStop={vi.fn()}
             onAttach={vi.fn()}
-        />,
+        />
     );
+}
+
+function renderConversation(messages: ChatMessage[]): void {
+    render(conversationElement(messages, ''));
 }
 
 describe('ConversationView message list', () => {
     afterEach(() => {
         cleanup();
+    });
+
+    it('shows the draft text as an assistant bubble until the finished message replaces it', () => {
+        const view = render(conversationElement([], 'Partial **reply**'));
+
+        expect(screen.getByText('reply').tagName)
+            .toBe('STRONG');
+        expect(view.container.querySelector('.message-assistant.is-draft'))
+            .not.toBeNull();
+
+        view.rerender(conversationElement([createMessage('m7', 'assistant', { kind: 'text', text: 'Partial reply' })], ''));
+
+        expect(view.container.querySelector('.is-draft'))
+            .toBeNull();
+        expect(screen.getByText('Partial reply'))
+            .toBeTruthy();
     });
 
     it('renders every message kind', () => {

@@ -9,6 +9,9 @@ import { requireSession, SESSION_COOKIE_NAME } from './access/requireSession.ts'
 import type { AccessErrorResponse } from './access/requireSession.ts';
 import type { SetupAccess } from './access/SetupAccess.ts';
 
+import { createChatRoutes } from './chat/createChatRoutes.ts';
+import type { ChatService } from './chat/ChatService.ts';
+
 interface HealthResponse {
     status: 'ok';
     version: string;
@@ -18,6 +21,7 @@ interface AppOptions {
     version: string;
     access: SetupAccess;
     webRoot?: string;
+    chatService?: ChatService;
 }
 
 const DEFAULT_WEB_ROOT = 'dist/web';
@@ -55,6 +59,13 @@ function createApp(options: AppOptions): Hono {
     const sessionCheck = requireSession(options.access);
 
     app.use('/api/*', sessionCheck);
+
+    // Chat routes sit behind the session check. The web fallback would otherwise answer them.
+    if (options.chatService !== undefined) {
+        const chatRoutes = createChatRoutes(options.chatService);
+
+        app.route('/', chatRoutes);
+    }
 
     app.get('/setup', async (context) => {
         const setupCode = context.req.query('code') ?? '';

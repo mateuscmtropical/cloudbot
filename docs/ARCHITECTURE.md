@@ -50,6 +50,7 @@ src/
   server/          HTTP server and the code that wires the parts together
     access/        Setup link, session cookie and the check that guards /api
     agent/         Runs one conversation turn through the Claude Agent SDK
+    chat/          Chat routes, the turn run and the event stream to the web app
     createApp.ts   Hono app and routes
     main.ts        Entry point
     claudeAuth/    CLI subscription login sessions and sign-in status
@@ -102,6 +103,21 @@ database, issues a new code and prints the link, which ends every session. The
 running server reads the code from the database on each request, so it does
 not need a restart. Run it with the server stopped or the database idle, since
 both processes write to the same SQLite file.
+
+## Chat
+
+`ChatService` in `src/server/chat/` holds the chat rules. It stores the user
+message, runs one turn at a time per bot through an `AgentRunner`, and stores
+each reply. The Claude session id from the runner is saved on the bot, so the
+next turn resumes it.
+
+Routes are under `/api/bots`: list bots, list and send messages, stop a turn,
+and `GET /events`. The event stream sends a `turn` event on connect, then the
+`message` and `turn` events in the order they happen. While a text block is
+written, the server sends `textDelta` events with the partial text. Deltas are
+never stored. When the block ends, its whole text goes out once as a `message`
+event, which replaces the draft. The web app shows the draft as an assistant
+bubble, so the text is never shown twice.
 
 ## Secrets
 

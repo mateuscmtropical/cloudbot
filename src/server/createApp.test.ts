@@ -6,7 +6,11 @@ import type { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { SetupAccess } from './access/SetupAccess.ts';
+import { FakeAgentRunner } from './agent/FakeAgentRunner.ts';
+import { ChatService } from './chat/ChatService.ts';
 import { createApp } from './createApp.ts';
+import { BotStore } from './store/BotStore.ts';
+import { MessageStore } from './store/MessageStore.ts';
 import type { OpenedDatabase } from './store/openDatabase.ts';
 import { openDatabase } from './store/openDatabase.ts';
 import { SettingsStore } from './store/SettingsStore.ts';
@@ -30,6 +34,18 @@ function readSessionCookie(response: Response): string | undefined {
     const match = /cloudbot_session=([^;]+)/.exec(setCookieHeader);
 
     return match?.[1];
+}
+
+// No turn runs in these tests, so the data folder is never created.
+function buildChatService(database: OpenedDatabase): ChatService {
+    const runner = new FakeAgentRunner([]);
+
+    return new ChatService({
+        botStore: new BotStore(database.db),
+        messageStore: new MessageStore(database.db),
+        runner,
+        dataDir: join(tmpdir(), 'cloudbot-app-test'),
+    });
 }
 
 function requestWithSession(app: Hono, path: string, sessionToken: string | undefined): Response | Promise<Response> {
@@ -92,6 +108,28 @@ describe('createApp', () => {
 
         expect(response.status)
             .toBe(401);
+    });
+
+    it('rejects the chat routes and the event stream without the cookie', async () => {
+        const chatService = buildChatService(opened);
+        const app = createApp({ version: '1.2.3', access, chatService });
+        const listResponse = await app.request('/api/bots');
+        const eventsResponse = await app.request('/api/bots/any/events');
+
+        expect(listResponse.status)
+            .toBe(401);
+        expect(eventsResponse.status)
+            .toBe(401);
+    });
+
+    it('serves the chat routes with a valid session cookie', async () => {
+        const chatService = buildChatService(opened);
+        const app = createApp({ version: '1.2.3', access, chatService });
+        const sessionToken = await signIn(app, access);
+        const response = await requestWithSession(app, '/api/bots', sessionToken);
+
+        expect(response.status)
+            .toBe(200);
     });
 
     it('rejects an api request with a cookie that was never issued', async () => {

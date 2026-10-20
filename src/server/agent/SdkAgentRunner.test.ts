@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Options, SDKAssistantMessage, SDKMessage, SDKResultMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { SdkAgentRunner, buildQueryOptions, mapSdkMessage } from './SdkAgentRunner.ts';
+import type { SdkQueryFunction } from './SdkAgentRunner.ts';
 import type { AgentEvent } from './AgentEvent.ts';
 import type { TurnRequest } from './AgentRunner.ts';
 
@@ -325,6 +326,20 @@ async function collectRunTurnEvents(runner: SdkAgentRunner, request: TurnRequest
 }
 
 describe('SdkAgentRunner.runTurn', () => {
+    it('does not start the SDK query when the turn was stopped before it began', async () => {
+        const queryFunction = vi.fn<SdkQueryFunction>(() => streamSdkMessages([]));
+        const runner = new SdkAgentRunner({ queryFunction });
+        const abortController = new AbortController();
+
+        abortController.abort();
+
+        const events = await collectRunTurnEvents(runner, buildRunTurnRequest(abortController));
+
+        expect(events)
+            .toEqual([]);
+        expect(queryFunction).not.toHaveBeenCalled();
+    });
+
     it('fills a usage limit error with the latest reset time seen in the turn', async () => {
         const rateLimitMessage = {
             type: 'rate_limit_event',
