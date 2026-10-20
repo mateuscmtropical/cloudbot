@@ -235,6 +235,37 @@ describe('buildQueryOptions', () => {
         expect(options)
             .toMatchObject({ env: { PATH: '/usr/bin' } });
     });
+
+    it('passes the MCP servers, allowed tools and system prompt from the request', () => {
+        const mcpServers = { cloudbot: { type: 'sdk' as const, name: 'cloudbot', instance: {} as never } };
+        const options = buildQueryOptions(
+            buildRequest({ systemPrompt: 'You are Ana.', mcpServers, allowedTools: ['mcp__cloudbot__update_profile'] }),
+            {},
+            abortController,
+        );
+
+        expect(options)
+            .toMatchObject({
+                systemPrompt: { type: 'preset', preset: 'claude_code', append: 'You are Ana.' },
+                mcpServers,
+                allowedTools: ['mcp__cloudbot__update_profile'],
+            });
+    });
+
+    it('keeps the Claude Code preset prompt without an append when the request has no profile prompt', () => {
+        const options = buildQueryOptions(buildRequest({}), {}, abortController);
+
+        expect(options)
+            .toMatchObject({ systemPrompt: { type: 'preset', preset: 'claude_code' } });
+        expect(options.systemPrompt).not.toHaveProperty('append');
+    });
+
+    it('leaves out MCP servers and allowed tools when the request has none', () => {
+        const options = buildQueryOptions(buildRequest({}), {}, abortController);
+
+        expect(options).not.toHaveProperty('mcpServers');
+        expect(options).not.toHaveProperty('allowedTools');
+    });
 });
 
 describe('rate limit events', () => {

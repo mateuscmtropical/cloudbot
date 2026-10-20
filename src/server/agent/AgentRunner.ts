@@ -1,3 +1,5 @@
+import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+
 import type { AgentEvent } from './AgentEvent.ts';
 
 interface TurnRequest {
@@ -6,6 +8,8 @@ interface TurnRequest {
     prompt: string;
     sessionId?: string;
     systemPrompt?: string;
+    mcpServers?: Record<string, McpServerConfig>;
+    allowedTools?: string[];
     abortSignal: AbortSignal;
 }
 

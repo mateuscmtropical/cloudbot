@@ -54,12 +54,16 @@ class BotStore {
         return rows;
     }
 
-    async updateProfile(botId: string, profile: BotProfile): Promise<Bot | undefined> {
+    // Only the fields present in `changes` are written, so a partial update never overwrites the others.
+    async updateProfile(botId: string, changes: Partial<BotProfile>): Promise<Bot | undefined> {
         const botCondition = eq(bots.id, botId);
+        const hasChanges = Object.keys(changes).length > 0;
 
-        await this.database.update(bots)
-            .set({ name: profile.name, title: profile.title, description: profile.description })
-            .where(botCondition);
+        if (hasChanges) {
+            await this.database.update(bots)
+                .set(changes)
+                .where(botCondition);
+        }
 
         return this.getById(botId);
     }

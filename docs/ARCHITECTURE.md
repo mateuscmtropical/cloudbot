@@ -68,6 +68,22 @@ The Claude Agent SDK runs the `claude` CLI installed by Anthropic's installer
 (`pathToClaudeCodeExecutable`). Sign-in, status and the agent all use that one
 CLI. See [provider terms](PROVIDER_TERMS.md).
 
+The bot profile reaches the agent in two ways. `buildSystemPrompt` turns the
+name, title and description into a prompt that is appended to Claude Code's
+default prompt, so the bot keeps its tool and coding instructions. The prompt
+also says the bot runs
+on the owner's VPS through CloudBot, and that its memory is `CLAUDE.md` in its
+workspace. `createProfileToolServer` builds an in-process MCP server with one
+tool, `update_profile`, which saves changes through `BotStore`. The tool is
+bound to one bot id, and it is allowed up front so headless turns never ask.
+The tool trims its fields and caps them at 40, 80 and 500 characters. It writes
+only the fields the model passed, so a reply cannot overwrite the others. The
+profile text is framed as the owner's words, with newlines collapsed, so it
+cannot add instructions as new paragraphs. The server is built for each turn,
+and its key in `mcpServers` must be `cloudbot`, because `allowedTools` names the
+tool as `mcp__cloudbot__update_profile`. The SDK loads `CLAUDE.md` from the
+working directory by default, so the workspace file is the bot's memory.
+
 `startClaudeLogin` runs login in a util-linux `script` pseudo terminal on Linux.
 It exposes `signInUrl`, `submitCode`, `cancel` and `finished` for the planned
 setup conversation. `signInUrl` resolves to null if login ends before a link
