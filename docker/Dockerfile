@@ -30,7 +30,8 @@ RUN groupadd --system cloudbot \
     && useradd --create-home --shell /bin/bash bot \
     && usermod -a -G bot cloudbot \
     && install -d -o cloudbot -g cloudbot -m 0700 /var/lib/cloudbot \
-    && install -d -o bot -g bot -m 2770 /var/lib/cloudbot-workspaces
+    && install -d -o bot -g bot -m 2770 /var/lib/cloudbot-workspaces \
+    && install -d -o cloudbot -g bot -m 2750 /var/lib/cloudbot-uploads
 
 COPY --chmod=0440 docker/cloudbot-agent.sudoers /etc/sudoers.d/cloudbot-agent
 RUN visudo -cf /etc/sudoers.d/cloudbot-agent

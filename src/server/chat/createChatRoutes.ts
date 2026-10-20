@@ -1,9 +1,12 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { streamSSE } from 'hono/streaming';
 import type { SSEStreamingApi } from 'hono/streaming';
 
 import type { ChatEvent } from '../../shared/chatTypes.ts';
-import { DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, TurnInProgressError } from './ChatService.ts';
+import { MAX_FILES_PER_UPLOAD, readMaxUploadBytes } from '../attachments/saveUpload.ts';
+import { DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, TurnInProgressError, UploadDuringTurnError } from './ChatService.ts';
 import type { ChatService, MessagePageOptions } from './ChatService.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
 import type { SetupAction } from '../setup/SetupConversation.ts';
@@ -17,12 +20,18 @@ const EMPTY_TEXT: ChatErrorResponse = { error: 'Send a non-empty "text" string.'
 const TURN_IN_PROGRESS: ChatErrorResponse = { error: 'This bot is still answering. Stop it or wait.' };
 const INVALID_BEFORE: ChatErrorResponse = { error: '"before" must be a message sequence number, 1 or more.' };
 const INVALID_LIMIT: ChatErrorResponse = { error: '"limit" must be a whole number, 1 or more.' };
+const NO_FILE: ChatErrorResponse = { error: 'Send the files as multipart form data.' };
+const NO_PENDING_UPLOAD: ChatErrorResponse = { error: 'No file waiting for the next message has this id.' };
+const TOO_LARGE: ChatErrorResponse = { error: 'The upload is larger than CLOUDBOT_MAX_UPLOAD_MB.' };
+const UPLOAD_DURING_TURN: ChatErrorResponse = { error: 'Wait until the reply finishes.' };
+const TOO_MANY_FILES: ChatErrorResponse = { error: `Send at most ${String(MAX_FILES_PER_UPLOAD)} files at once.` };
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 25_000;
 // An SSE comment line. Clients ignore it, and it keeps idle proxies from closing the stream.
 const HEARTBEAT_FRAME = ': heartbeat\n\n';
 
 interface ChatRoutesOptions {
     heartbeatIntervalMs?: number;
+    maxUploadBytes?: number;
 }
 
 // Only plain digits count. Anything else, including 0, a sign or a decimal, is rejected.
@@ -85,9 +94,23 @@ function createEventWriter(stream: SSEStreamingApi): (event: ChatEvent) => void 
     };
 }
 
+// Reads the uploaded files from the form. A body that is not form data has no files.
+async function readUploadedFiles(context: Context): Promise<File[]> {
+    try {
+        const form = await context.req.parseBody({ all: true });
+        const values = Object.values(form);
+        const entries = values.flat();
+
+        return entries.filter((entry): entry is File => entry instanceof File);
+    } catch {
+        return [];
+    }
+}
+
 function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions = {}): Hono {
     const routes = new Hono();
     const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+    const maxUploadBytes = options.maxUploadBytes ?? readMaxUploadBytes(process.env);
     const setupActions: SetupAction[] = ['choice', 'code', 'secret'];
 
     setupActions.forEach((action) => {
@@ -182,6 +205,73 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
 
             throw error;
         }
+    });
+
+    const tooLarge = (context: Context): Response => context.json(TOO_LARGE, 413);
+    const uploadLimit = bodyLimit({ maxSize: maxUploadBytes, onError: tooLarge });
+
+    routes.post(
+        '/api/bots/:id/attachments',
+        uploadLimit,
+        async (context) => {
+            const botId = context.req.param('id');
+            const files = await readUploadedFiles(context);
+
+            if (files.length === 0) {
+                return context.json(NO_FILE, 400);
+            }
+
+            if (files.length > MAX_FILES_PER_UPLOAD) {
+                return context.json(TOO_MANY_FILES, 400);
+            }
+
+            try {
+                const attachments = await chatService.saveUploads(botId, files);
+
+                if (attachments === undefined) {
+                    return context.json(BOT_NOT_FOUND, 404);
+                }
+
+                return context.json(attachments, 201);
+            } catch (error: unknown) {
+                if (error instanceof UploadDuringTurnError) {
+                    return context.json(UPLOAD_DURING_TURN, 409);
+                }
+
+                if (error instanceof PendingUploadLimitError) {
+                    return context.json({ error: error.message }, 413);
+                }
+
+                throw error;
+            }
+        },
+    );
+
+    routes.get('/api/bots/:id/uploads', async (context) => {
+        const botId = context.req.param('id');
+        const uploads = await chatService.listPendingUploads(botId);
+
+        if (uploads === undefined) {
+            return context.json(BOT_NOT_FOUND, 404);
+        }
+
+        return context.json(uploads);
+    });
+
+    routes.delete('/api/bots/:id/uploads/:uploadId', async (context) => {
+        const botId = context.req.param('id');
+        const uploadId = context.req.param('uploadId');
+        const isRemoved = await chatService.removePendingUpload(botId, uploadId);
+
+        if (isRemoved === undefined) {
+            return context.json(BOT_NOT_FOUND, 404);
+        }
+
+        if (!isRemoved) {
+            return context.json(NO_PENDING_UPLOAD, 404);
+        }
+
+        return context.body(null, 204);
     });
 
     routes.post('/api/bots/:id/stop', async (context) => {

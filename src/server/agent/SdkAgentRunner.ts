@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { USAGE_LIMIT_ERROR_PREFIXES, query } from '@anthropic-ai/claude-agent-sdk';
 import type {
     Options,
@@ -9,12 +10,12 @@ import type {
     SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentEvent, TurnErrorEvent } from './AgentEvent.ts';
-import type { AgentRunner, TurnRequest } from './AgentRunner.ts';
+import type { AgentRunner, TurnImage, TurnRequest } from './AgentRunner.ts';
 import { buildAgentEnvironment, createAgentUserSpawn } from './createAgentUserSpawn.ts';
 import { validateAgentIsolation } from './buildClaudeCommand.ts';
 import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
 
-type SdkQueryFunction = (parameters: { prompt: string; options: Options }) => AsyncIterable<SDKMessage>;
+type SdkQueryFunction = (parameters: { prompt: string | AsyncIterable<SDKUserMessage>; options: Options }) => AsyncIterable<SDKMessage>;
 
 interface SdkAgentRunnerOptions {
     agentUser?: string | undefined;
@@ -206,6 +207,8 @@ function buildQueryOptions(
     const mcpServersOption = request.mcpServers ? { mcpServers: request.mcpServers } : {};
     // Headless turns cannot answer a permission prompt, so the bot's own tools are allowed up front.
     const allowedToolsOption = request.allowedTools ? { allowedTools: request.allowedTools } : {};
+    // Extra folders the agent may read, such as the upload folder of the bot.
+    const additionalDirectoriesOption = request.additionalDirectories ? { additionalDirectories: request.additionalDirectories } : {};
 
     return {
         cwd: request.workspaceDir,
@@ -218,7 +221,35 @@ function buildQueryOptions(
         ...systemPromptOption,
         ...mcpServersOption,
         ...allowedToolsOption,
+        ...additionalDirectoriesOption,
     };
+}
+
+// With images, the SDK takes a stream of user messages. Its first message carries the text and the images.
+function createImageMessages(text: string, images: TurnImage[]): AsyncIterable<SDKUserMessage> {
+    const textBlock = { type: 'text' as const, text };
+    const imageBlocks = images.map(image => ({
+        type: 'image' as const,
+        source: { type: 'base64' as const, media_type: image.mediaType, data: image.data },
+    }));
+
+    const message: SDKUserMessage = {
+        type: 'user',
+        message: { role: 'user', content: [textBlock, ...imageBlocks] },
+        parent_tool_use_id: null,
+    };
+
+    return Readable.from([message]);
+}
+
+function buildPrompt(request: TurnRequest): string | AsyncIterable<SDKUserMessage> {
+    const images = request.images ?? [];
+
+    if (images.length === 0) {
+        return request.prompt;
+    }
+
+    return createImageMessages(request.prompt, images);
 }
 
 class SdkAgentRunner implements AgentRunner {
@@ -267,7 +298,8 @@ class SdkAgentRunner implements AgentRunner {
             }
 
             const queryOptions = buildQueryOptions(request, this.runnerOptions, abortController, onStderrTail);
-            const conversation = this.queryFunction({ prompt: request.prompt, options: queryOptions });
+            const prompt = buildPrompt(request);
+            const conversation = this.queryFunction({ prompt, options: queryOptions });
 
             // The SDK's Query is an async iterator, so `for await` is the only
             // loop form that fits. Plain loops are banned by lint.

@@ -71,8 +71,8 @@ permission to change owners. Existing files and symbolic links are rejected
 as workspace directories. All bots share one Unix account, so workspaces do
 not isolate bots from each other.
 
-Compose and the CI container mount separate named volumes at `/home/bot`
-and `/var/lib/cloudbot-workspaces`, alongside the private server data volume.
+Compose and the CI container mount separate named volumes at `/home/bot`,
+`/var/lib/cloudbot-workspaces` and `/var/lib/cloudbot-uploads`, alongside the private server data volume.
 They preserve login credentials, sessions and workspace memory in `CLAUDE.md`
 across container replacement. New volumes inherit the image's ownership and
 permissions. The CLI in the bot home volume updates itself and is not replaced
@@ -170,7 +170,47 @@ never stored. When the block ends, its whole text goes out once as a `message`
 event, which replaces the draft. The web app shows the draft as an assistant
 bubble, so the text is never shown twice.
 
+## Attachments
+
+Uploads go to `POST /api/bots/:id/attachments` as multipart form data. Hono's
+`bodyLimit` caps the request body at `CLOUDBOT_MAX_UPLOAD_MB` (default 20) and
+answers 413 before anything is read. A request holds at most 10 files, so more
+gets 400. `saveFiles` in `src/server/attachments/` reads each file into memory
+and writes it under a generated name with flag `wx`. The mode is set on the open
+handle and the folder mode again after `mkdir`, so the umask cannot strip the
+bot's read access. Files are 0640 and folders 2750. If one write fails, every
+attempted path is removed, including a partial file.
+
+Files live outside the agent's writable workspace. In agent user mode the folder
+is `/var/lib/cloudbot-uploads/<botId>`, owned by cloudbot with group bot. The bot
+can read the files and cannot create, rename or replace anything. Without an
+agent user the folder is `<dataDir>/uploads/<botId>`. `ChatService.uploadDirFor`
+returns it. Every turn passes the folder to the SDK as an additional directory,
+so the agent can read an earlier upload by its path.
+
+`ChatService` keeps the saved files as pending for the bot, with their bytes in
+memory. The pending queue of a bot holds at most 10 files and
+`CLOUDBOT_MAX_UPLOAD_MB` bytes. An upload that would go over gets 413, and its
+files are removed. Uploads are refused with 409 while a reply runs for the bot,
+so the queue is empty during a turn. The web app disables the attach button for
+the same time. `GET /api/bots/:id/uploads` lists the queue, and
+`DELETE /api/bots/:id/uploads/:uploadId` drops one file and deletes it. The next
+message takes the queue, and its prompt lists the absolute paths. A turn that
+ends without a session event from the agent puts its files back in the queue,
+whatever the reason, such as a stop during startup or a failed start. A turn
+that got a session event keeps its files, so the agent never gets the same files
+twice.
+
+Images up to 5 MB go to the SDK as image blocks, built from the bytes in memory.
+The disk is never read back for them. Images are detected from their first bytes,
+not from the client type. The user message stores the file names for the web app.
+The web app shows the pending files as chips, disables Send while a file is still
+uploading, and clears only the chips that existed when the message was sent. It
+reloads the pending files when a turn ends, so files put back by a turn show up.
+Pending files live in memory, so a restart drops them.
+
 ## Secrets
+
 
 The vault in `src/server/vault/` encrypts each secret with AES-256-GCM. Its
 key is in `vault.key`, next to `vault.json`, and both files belong to the

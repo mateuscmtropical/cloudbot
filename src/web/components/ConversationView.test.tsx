@@ -57,6 +57,9 @@ function conversationElement(messages: ChatMessage[], draftText: string): ReactE
             messages={messages}
             draftText={draftText}
             isRunning={false}
+            attachments={[]}
+            isUploading={false}
+            onRemoveAttachment={vi.fn()}
             actions={noopActions}
             onOpenBotList={vi.fn()}
             onSend={vi.fn()}
@@ -118,6 +121,18 @@ describe('ConversationView message list', () => {
         expect(userMessage?.className)
             .toContain('message-user');
     });
+    it('lists the files attached to a user message under its text', () => {
+        renderConversation([
+            createMessage('m7', 'user', {
+                kind: 'text',
+                text: 'Read this',
+                attachments: [{ name: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5 }],
+            }),
+        ]);
+
+        expect(screen.getByText('notes.txt').className)
+            .toBe('attachment-item');
+    });
 });
 
 function createSequencedMessage(sequence: number): ChatMessage {
@@ -140,6 +155,9 @@ function historyElement(messages: ChatMessage[], historyProps: HistoryProps, bot
             onSend={vi.fn()}
             onStop={vi.fn()}
             onAttach={vi.fn()}
+            attachments={[]}
+            isUploading={false}
+            onRemoveAttachment={vi.fn()}
             {...historyProps}
         />
     );
@@ -228,6 +246,9 @@ describe('ConversationView older messages', () => {
                 onSend={vi.fn()}
                 onStop={vi.fn()}
                 onAttach={vi.fn()}
+                attachments={[]}
+                isUploading={false}
+                onRemoveAttachment={vi.fn()}
             />,
         );
 
@@ -254,6 +275,9 @@ describe('ConversationView older messages', () => {
                 onSend={vi.fn()}
                 onStop={vi.fn()}
                 onAttach={vi.fn()}
+                attachments={[]}
+                isUploading={false}
+                onRemoveAttachment={vi.fn()}
             />,
         );
 

@@ -4,6 +4,7 @@ import type { ReactElement } from 'react';
 import type { BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
 import { renderMarkdown } from '../markdown.ts';
 import { Composer } from './Composer.tsx';
+import type { DraftAttachment } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
 import type { MessageActions } from './MessageItem.tsx';
 
@@ -17,6 +18,9 @@ interface ConversationViewProps {
     messages: ChatMessage[];
     draftText: string;
     isRunning: boolean;
+    attachments: DraftAttachment[];
+    isUploading: boolean;
+    onRemoveAttachment: (attachmentId: string) => void;
     actions: MessageActions;
     hasOlderMessages?: boolean;
     isLoadingOlder?: boolean;
@@ -59,6 +63,9 @@ function ConversationView({
     messages,
     draftText,
     isRunning,
+    attachments,
+    isUploading,
+    onRemoveAttachment,
     actions,
     hasOlderMessages = false,
     isLoadingOlder = false,
@@ -186,6 +193,9 @@ function ConversationView({
             <Composer
                 botName={botName}
                 isRunning={isRunning}
+                attachments={attachments}
+                isUploading={isUploading}
+                onRemoveAttachment={onRemoveAttachment}
                 onSend={onSend}
                 onStop={onStop}
                 onAttach={onAttach}

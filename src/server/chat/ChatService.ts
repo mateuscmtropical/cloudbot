@@ -2,21 +2,26 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { AgentEvent } from '../agent/AgentEvent.ts';
-import type { AgentRunner, TurnRequest } from '../agent/AgentRunner.ts';
+import type { AgentRunner, TurnImage, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
 import { PROFILE_SERVER_NAME, UPDATE_PROFILE_TOOL_FULL_NAME, createProfileToolServer } from '../agent/createProfileToolServer.ts';
 import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from '../agent/prepareAgentWorkspace.ts';
+import { describeAttachments, readTurnImages } from '../attachments/attachmentPrompt.ts';
+import { readMaxUploadBytes, removeFiles, saveFiles } from '../attachments/saveUpload.ts';
+import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore } from '../store/BotStore.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
 import type { SetupAction, SetupConversation } from '../setup/SetupConversation.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
 import type { Bot, Message } from '../store/types.ts';
 import type {
+    AttachmentSummary,
     BotSummary,
     ChatEvent,
     ChatMessage,
     ChatRole,
     MessageBody,
+    PendingUpload,
     TextBody,
 } from '../../shared/chatTypes.ts';
 
@@ -27,6 +32,8 @@ interface ChatServiceOptions {
     dataDir: string;
     // Set when the agent runs as its own user. The runner then prepares the folder under AGENT_WORKSPACE_ROOT.
     agentUser?: string | undefined;
+    // Caps the bytes a bot's next message may hold. Defaults to CLOUDBOT_MAX_UPLOAD_MB.
+    maxUploadBytes?: number | undefined;
 }
 
 interface SessionOption {
@@ -37,14 +44,20 @@ interface AttemptOutcome {
     failureText: string | undefined;
 }
 
-// What every attempt of one turn shares. The profile server is built once per turn.
+// What a turn learned about its start. Files come back when the turn ends without a session event.
+interface TurnState {
+    agentStarted: boolean;
+}
+
 interface TurnContext {
     botId: string;
     prompt: string;
     abortController: AbortController;
     workspaceDir: string;
+    images: TurnImage[];
     systemPrompt: string;
     mcpServers: NonNullable<TurnRequest['mcpServers']>;
+    additionalDirectories: string[];
 }
 
 type ChatEventListener = (event: ChatEvent) => void;
@@ -56,14 +69,29 @@ interface MessagePageOptions {
 
 const DEFAULT_MESSAGE_PAGE_LIMIT = 50;
 const MAX_MESSAGE_PAGE_LIMIT = 200;
+// The upload root for agent user mode. The image creates it, owned by cloudbot and readable by the bot group.
+const AGENT_UPLOAD_ROOT = '/var/lib/cloudbot-uploads';
+const MAX_PENDING_FILES = 10;
 const PREVIEW_LENGTH = 80;
 const AVATAR_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6'];
 const FALLBACK_AVATAR_COLOR = '#3b82f6';
 
+class PendingUploadLimitError extends Error {
+    constructor() {
+        super('The next message already holds too many files. Send it first.');
+        this.name = 'PendingUploadLimitError';
+    }
+}
 class TurnInProgressError extends Error {
     constructor() {
         super('A turn is already running for this bot.');
         this.name = 'TurnInProgressError';
+    }
+}
+class UploadDuringTurnError extends Error {
+    constructor() {
+        super('Wait until the reply finishes.');
+        this.name = 'UploadDuringTurnError';
     }
 }
 
@@ -104,6 +132,20 @@ function pickAvatarColor(botId: string): string {
     return AVATAR_COLORS[paletteIndex] ?? FALLBACK_AVATAR_COLOR;
 }
 
+// The next message may hold at most MAX_PENDING_FILES files and maxBytes bytes.
+function isOverPendingLimit(uploads: SavedUpload[], maxBytes: number): boolean {
+    const totalBytes = uploads.reduce((sum, upload) => sum + upload.sizeBytes, 0);
+
+    return uploads.length > MAX_PENDING_FILES || totalBytes > maxBytes;
+}
+
+function toPendingUpload(upload: SavedUpload): PendingUpload {
+    return { id: upload.id, name: upload.name, sizeBytes: upload.sizeBytes };
+}
+function toAttachmentSummary(upload: SavedUpload): AttachmentSummary {
+    return { name: upload.name, mimeType: upload.mimeType, sizeBytes: upload.sizeBytes };
+}
+
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
@@ -121,9 +163,12 @@ class ChatService {
     private readonly runner: AgentRunner;
     private readonly dataDir: string;
     private readonly agentUser: string | undefined;
+    private readonly maxPendingBytes: number;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
     private setup: SetupConversation | undefined;
+    // Files uploaded since the bot's last message. The next message takes them.
+    private readonly pendingUploads = new Map<string, SavedUpload[]>();
 
     constructor(options: ChatServiceOptions) {
         this.botStore = options.botStore;
@@ -131,6 +176,105 @@ class ChatService {
         this.runner = options.runner;
         this.dataDir = options.dataDir;
         this.agentUser = options.agentUser;
+        this.maxPendingBytes = options.maxUploadBytes ?? readMaxUploadBytes(process.env);
+    }
+
+    // Uploads live outside the agent's writable workspace. The agent reads them and cannot change them.
+    uploadDirFor(botId: string): string {
+        if (this.agentUser) {
+            return agentWorkspacePath(botId, AGENT_UPLOAD_ROOT);
+        }
+
+        return join(this.dataDir, 'uploads', botId);
+    }
+
+    // Every path the bot uses starts here, so turns and uploads share one folder.
+    workspaceFor(botId: string): string {
+        if (this.agentUser) {
+            return agentWorkspacePath(botId, AGENT_WORKSPACE_ROOT);
+        }
+
+        return join(this.dataDir, 'workspaces', botId);
+    }
+
+    // Saves uploaded files for the bot's next message. Returns undefined for an unknown bot.
+    // Throws UploadDuringTurnError while a reply runs, so the queue is empty during a turn.
+    // Throws PendingUploadLimitError when the next message would hold too many files or bytes.
+    async saveUploads(botId: string, files: File[]): Promise<AttachmentSummary[] | undefined> {
+        const bot = await this.botStore.getById(botId);
+
+        if (bot === undefined) {
+            return undefined;
+        }
+
+        if (this.runningTurns.has(botId)) {
+            throw new UploadDuringTurnError();
+        }
+
+        const uploadDir = this.uploadDirFor(botId);
+        const savedUploads = await saveFiles(uploadDir, files);
+
+        // A turn may have started while the files were written. Then they must not join the queue.
+        if (this.runningTurns.has(botId)) {
+            await removeFiles(savedUploads);
+
+            throw new UploadDuringTurnError();
+        }
+
+        const earlierUploads = this.pendingUploads.get(botId) ?? [];
+        const pendingUploads = [...earlierUploads, ...savedUploads];
+
+        // The check and the update run in one step, so two uploads cannot both pass the check.
+        if (isOverPendingLimit(pendingUploads, this.maxPendingBytes)) {
+            await removeFiles(savedUploads);
+
+            throw new PendingUploadLimitError();
+        }
+
+        this.pendingUploads.set(botId, pendingUploads);
+
+        return savedUploads.map(toAttachmentSummary);
+    }
+
+    // Files waiting for the next message. Returns undefined for an unknown bot.
+    async listPendingUploads(botId: string): Promise<PendingUpload[] | undefined> {
+        const bot = await this.botStore.getById(botId);
+
+        if (bot === undefined) {
+            return undefined;
+        }
+
+        const queuedUploads = this.pendingUploads.get(botId) ?? [];
+
+        return queuedUploads.map(toPendingUpload);
+    }
+
+    // Drops one waiting file and deletes it. Returns undefined for an unknown bot, false for an unknown file.
+    async removePendingUpload(botId: string, uploadId: string): Promise<boolean | undefined> {
+        const bot = await this.botStore.getById(botId);
+
+        if (bot === undefined) {
+            return undefined;
+        }
+
+        const queuedUploads = this.pendingUploads.get(botId) ?? [];
+        const removedUpload = queuedUploads.find(upload => upload.id === uploadId);
+
+        if (removedUpload === undefined) {
+            return false;
+        }
+
+        const remainingUploads = queuedUploads.filter(upload => upload.id !== uploadId);
+
+        this.pendingUploads.set(botId, remainingUploads);
+        await removeFiles([removedUpload]);
+
+        return true;
+    }
+
+    // Puts uploads back for the next message. The queue is empty during a turn, so this is a plain set.
+    private restoreUploads(botId: string, uploads: SavedUpload[]): void {
+        this.pendingUploads.set(botId, uploads);
     }
 
     async listBots(): Promise<BotSummary[]> {
@@ -222,18 +366,27 @@ class ChatService {
         this.runningTurns.set(botId, abortController);
         this.publish(botId, { type: 'turn', botId, isRunning: true });
 
+        const turnUploads = this.pendingUploads.get(botId) ?? [];
+        const attachmentSummaries = turnUploads.map(toAttachmentSummary);
+        const userBody: TextBody = attachmentSummaries.length === 0
+            ? { kind: 'text', text }
+            : { kind: 'text', text, attachments: attachmentSummaries };
+
+        this.pendingUploads.delete(botId);
+
         let userMessage: ChatMessage;
 
         try {
-            userMessage = await this.saveAndPublish(botId, 'user', { kind: 'text', text });
+            userMessage = await this.saveAndPublish(botId, 'user', userBody);
         } catch (error: unknown) {
+            this.restoreUploads(botId, turnUploads);
             this.finishTurn(botId);
 
             throw error;
         }
 
         // The turn runs in the background. Its failures are reported to the chat.
-        this.runTurn(botId, text, abortController)
+        this.runTurn(botId, text, turnUploads, abortController)
             .catch((error: unknown) => {
                 console.error('The chat turn failed outside the conversation', error);
             });
@@ -314,7 +467,9 @@ class ChatService {
         return chatMessage;
     }
 
-    private async runTurn(botId: string, prompt: string, abortController: AbortController): Promise<void> {
+    private async runTurn(botId: string, text: string, uploads: SavedUpload[], abortController: AbortController): Promise<void> {
+        const turnState: TurnState = { agentStarted: false };
+
         try {
             const bot = await this.botStore.getById(botId);
 
@@ -322,10 +477,7 @@ class ChatService {
                 return;
             }
 
-            // The agent user's folder is prepared by the runner, so nothing is created under the data folder then.
-            const workspaceDir = this.agentUser
-                ? agentWorkspacePath(botId, AGENT_WORKSPACE_ROOT)
-                : join(this.dataDir, 'workspaces', botId);
+            const workspaceDir = this.workspaceFor(botId);
 
             if (!this.agentUser) {
                 await mkdir(workspaceDir, { recursive: true });
@@ -339,34 +491,45 @@ class ChatService {
             // The profile tool and prompt are built from the bot as it is now, so a
             // change made in the previous turn already applies.
             const profileServer = createProfileToolServer(this.botStore, botId);
+            const prompt = uploads.length === 0 ? text : `${text}\n\n${describeAttachments(uploads)}`;
+            const images = readTurnImages(uploads);
+            // The upload folder is passed on every turn, so earlier uploads stay readable by path.
+            const additionalDirectories = [this.uploadDirFor(botId)];
             const turnContext: TurnContext = {
+                additionalDirectories,
                 botId,
                 prompt,
                 abortController,
                 workspaceDir,
+                images,
                 systemPrompt: buildSystemPrompt(bot),
                 mcpServers: { [PROFILE_SERVER_NAME]: profileServer },
             };
-            const firstAttempt = await this.runAttempt(turnContext, bot.sessionId);
+            const firstAttempt = await this.runAttempt(turnContext, bot.sessionId, turnState);
 
             // A resumed session that fails before it starts is usually gone, for example
             // after a container rebuild. Start a fresh session once instead of failing every turn.
             if (firstAttempt.failureText !== undefined) {
                 await this.botStore.setSessionId(botId, null);
-                await this.runAttempt(turnContext, null);
+                await this.runAttempt(turnContext, null, turnState);
             }
         } catch (error: unknown) {
             const errorBody: TextBody = { kind: 'text', text: describeError(error) };
 
             await this.saveAndPublish(botId, 'system', errorBody);
         } finally {
+            // A turn that ends without a session event never handed the files to the agent. They go back.
+            if (!turnState.agentStarted) {
+                this.restoreUploads(botId, uploads);
+            }
+
             this.finishTurn(botId);
         }
     }
 
     // With a session to resume, a failure before the session starts is held back
     // and returned as failureText, so the caller can retry without it.
-    private async runAttempt(turnContext: TurnContext, sessionId: string | null): Promise<AttemptOutcome> {
+    private async runAttempt(turnContext: TurnContext, sessionId: string | null, turnState: TurnState): Promise<AttemptOutcome> {
         const { botId } = turnContext;
         const toolNamesById = new Map<string, string>();
         const sessionOption = buildSessionOption(sessionId);
@@ -374,10 +537,12 @@ class ChatService {
             botId,
             workspaceDir: turnContext.workspaceDir,
             prompt: turnContext.prompt,
+            images: turnContext.images,
             abortSignal: turnContext.abortController.signal,
             systemPrompt: turnContext.systemPrompt,
             mcpServers: turnContext.mcpServers,
             allowedTools: [UPDATE_PROFILE_TOOL_FULL_NAME],
+            additionalDirectories: turnContext.additionalDirectories,
             ...sessionOption,
         };
         const isResumeAttempt = sessionId !== null;
@@ -388,6 +553,7 @@ class ChatService {
             for await (const agentEvent of this.runner.runTurn(turnRequest)) {
                 if (agentEvent.type === 'session') {
                     hasSession = true;
+                    turnState.agentStarted = true;
                 }
 
                 if (isResumeAttempt && !hasSession && agentEvent.type === 'turn_error') {
@@ -457,5 +623,5 @@ class ChatService {
     }
 }
 
-export { ChatService, DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, TurnInProgressError };
+export { ChatService, DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, TurnInProgressError, UploadDuringTurnError };
 export type { ChatEventListener, ChatServiceOptions, MessagePageOptions };

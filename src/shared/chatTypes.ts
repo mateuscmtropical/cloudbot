@@ -7,9 +7,22 @@ interface ChoiceOption {
     label: string;
 }
 
+interface PendingUpload {
+    id: string;
+    name: string;
+    sizeBytes: number;
+}
+
+interface AttachmentSummary {
+    name: string;
+    mimeType: string;
+    sizeBytes: number;
+}
+
 interface TextBody {
     kind: 'text';
     text: string;
+    attachments?: AttachmentSummary[];
 }
 
 interface ChoiceBody {
@@ -90,6 +103,8 @@ interface ChatTextDeltaEvent {
 type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent;
 
 export type {
+    AttachmentSummary,
+    PendingUpload,
     BotSummary,
     ChatEvent,
     ChatMessage,

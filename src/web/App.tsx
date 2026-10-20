@@ -1,10 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatEvent, ChatMessage } from '../shared/chatTypes.ts';
 import { BotList } from './components/BotList.tsx';
+import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
-import { listBots, listMessages, RequestFailedError, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments } from './apiClient.ts';
+import { listBots, listMessages, RequestFailedError, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload } from './apiClient.ts';
+import { mergeLoadedUploads } from './attachmentChips.ts';
 import { MESSAGE_PAGE_SIZE, mergeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
 
 interface DraftState {
@@ -70,11 +72,35 @@ function App(): ReactElement {
     const [runningBotId, setRunningBotId] = useState<string | undefined>(undefined);
     const [isBotListOpen, setIsBotListOpen] = useState(false);
     const [errorText, setErrorText] = useState<string | undefined>(undefined);
+    // Chips per bot: files still uploading, and the files the server holds for the next message.
+    const [attachmentsByBot, setAttachmentsByBot] = useState<Record<string, DraftAttachment[]>>({});
     const messagesRef = useRef<ChatMessage[]>([]);
     const selectedBotIdRef = useRef<string | undefined>(undefined);
     // Checked before the state updates, so a fast second scroll cannot start a duplicate request.
     const olderLoadsInFlightRef = useRef(new Set<string>());
     const generationsRef = useRef<Record<string, number>>({});
+    // Every pending-list request gets a number. A response older than the applied one is dropped.
+    const listRequestCount = useRef(0);
+    const appliedListRequest = useRef<Record<string, number>>({});
+
+    // Ready chips only ever come from the server's list, so no local edit removes one.
+    const loadPendingUploads = useCallback((botId: string): void => {
+        listRequestCount.current += 1;
+        const requestNumber = listRequestCount.current;
+
+        listUploads(botId)
+            .then((uploads) => {
+                if (requestNumber < (appliedListRequest.current[botId] ?? 0)) {
+                    return;
+                }
+
+                appliedListRequest.current[botId] = requestNumber;
+                setAttachmentsByBot(previous => ({ ...previous, [botId]: mergeLoadedUploads(previous[botId] ?? [], uploads) }));
+            })
+            .catch(() => {
+                setErrorText('Could not load the attached files.');
+            });
+    }, []);
 
     const messages = chatState.messages;
     const olderPaging = chatState.olderPaging;
@@ -107,6 +133,9 @@ function App(): ReactElement {
         }
 
         let isCurrent = true;
+
+        // Files waiting for the next message come back on connect and after every change to them.
+        loadPendingUploads(selectedBotId);
 
         // Runs on every stream connect, so messages missed during a dropout come back.
         const reloadMessages = (): void => {
@@ -199,8 +228,10 @@ function App(): ReactElement {
             setDraft(emptyDraft);
             setRunningBotId(event.isRunning ? event.botId : undefined);
 
-            // A finished turn may have renamed the bot, so the sidebar list is refreshed.
+            // A finished turn may have put files back in the queue, and may have renamed the bot.
             if (!event.isRunning) {
+                loadPendingUploads(selectedBotId);
+
                 listBots()
                     .then(setBots)
                     .catch(() => {
@@ -213,7 +244,7 @@ function App(): ReactElement {
             isCurrent = false;
             unsubscribe();
         };
-    }, [selectedBotId]);
+    }, [selectedBotId, loadPendingUploads]);
 
     function showMessageResult(resultPromise: Promise<ChatMessage>): void {
         resultPromise
@@ -310,13 +341,26 @@ function App(): ReactElement {
         setIsBotListOpen(false);
     }
 
+    const nextAttachmentNumber = useRef(0);
+
+    function updateAttachments(botId: string, update: (chips: DraftAttachment[]) => DraftAttachment[]): void {
+        setAttachmentsByBot(previous => ({ ...previous, [botId]: update(previous[botId] ?? []) }));
+    }
+
     function handleSend(text: string): void {
         if (selectedBotId === undefined) {
             return;
         }
 
-        setRunningBotId(selectedBotId);
-        const sendPromise = sendMessage(selectedBotId, text);
+        const sentBotId = selectedBotId;
+
+        setRunningBotId(sentBotId);
+        const sendPromise = sendMessage(sentBotId, text);
+
+        // The server empties its queue when it accepts the message. The list after that shows it.
+        sendPromise.then(() => {
+            loadPendingUploads(sentBotId);
+        }, () => undefined);
 
         // A failed send never starts a turn, so the running state must not stay on.
         sendPromise.catch((error: unknown) => {
@@ -353,7 +397,6 @@ function App(): ReactElement {
 
         showMessageResult(resultPromise);
     }
-
     function handleStop(): void {
         if (selectedBotId === undefined) {
             return;
@@ -367,14 +410,50 @@ function App(): ReactElement {
     }
 
     function handleAttach(files: File[]): void {
+        if (selectedBotId === undefined || files.length === 0) {
+            return;
+        }
+
+        const botId = selectedBotId;
+        const newChips = files.map((file) => {
+            nextAttachmentNumber.current += 1;
+
+            return { id: `upload-${String(nextAttachmentNumber.current)}`, name: file.name, status: 'uploading' as const };
+        });
+        const newIds = newChips.map(chip => chip.id);
+
+        updateAttachments(botId, chips => [...chips, ...newChips]);
+
+        const uploadPromise = uploadAttachments(botId, files);
+
+        uploadPromise.then(() => {
+            updateAttachments(botId, chips => chips.filter(chip => !newIds.includes(chip.id)));
+            loadPendingUploads(botId);
+        }, (error: unknown) => {
+            updateAttachments(botId, chips => chips.filter(chip => !newIds.includes(chip.id)));
+
+            // The server says why it refused the files, such as the size or the file count.
+            const serverMessage = error instanceof RequestFailedError ? error.serverMessage : undefined;
+
+            setErrorText(serverMessage ?? 'Could not upload the files.');
+            // A lost response can hide files the server did queue, so the server list decides.
+            loadPendingUploads(botId);
+        });
+    }
+
+    function handleRemoveAttachment(attachmentId: string): void {
         if (selectedBotId === undefined) {
             return;
         }
 
-        const uploadPromise = uploadAttachments(selectedBotId, files);
+        const botId = selectedBotId;
+        const removePromise = removeUpload(botId, attachmentId);
 
-        uploadPromise.catch(() => {
-            setErrorText('Could not upload the files.');
+        removePromise.then(() => {
+            loadPendingUploads(botId);
+        }, () => {
+            setErrorText('Could not remove the file.');
+            loadPendingUploads(botId);
         });
     }
 
@@ -420,6 +499,9 @@ function App(): ReactElement {
     const hasOlderMessages = selectedPaging?.hasMore === true;
     const isLoadingOlder = selectedPaging?.isLoading === true;
 
+    const botAttachments = selectedBotId === undefined ? [] : (attachmentsByBot[selectedBotId] ?? []);
+    const isUploading = botAttachments.some(attachment => attachment.status === 'uploading');
+
     return (
         <div className="app">
             <BotList
@@ -451,6 +533,9 @@ function App(): ReactElement {
                     messages={visibleMessages}
                     draftText={draft.botId === selectedBotId ? draft.text : ''}
                     isRunning={isRunning}
+                    attachments={botAttachments}
+                    isUploading={isUploading}
+                    onRemoveAttachment={handleRemoveAttachment}
                     actions={{ onChoose: handleChoose, onSubmitCode: handleSubmitCode, onSubmitSecret: handleSubmitSecret }}
                     hasOlderMessages={hasOlderMessages}
                     isLoadingOlder={isLoadingOlder}
