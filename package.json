@@ -1,0 +1,47 @@
+{
+  "name": "cloudbot",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Your own always-on AI coworker on your VPS, powered by Claude.",
+  "license": "MIT",
+  "author": "Mateus Silva",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mateuscmtropical/cloudbot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mateuscmtropical/cloudbot/issues"
+  },
+  "homepage": "https://github.com/mateuscmtropical/cloudbot#readme",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.28.2",
+  "scripts": {
+    "build": "tsup",
+    "dev": "node --watch --experimental-strip-types src/server/main.ts",
+    "start": "node dist/server/main.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "tsup": "^9.0.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^5.0.5"
+  }
+}

@@ -1,0 +1,74 @@
+name: Bug report
+description: Something does not work as described
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not paste API keys, passwords, cookies or other secrets into this issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A short summary of the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest steps that show the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: CloudBot version
+      description: The version shown by `cloudbot status`, or the commit hash.
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Server operating system
+      placeholder: "e.g. Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: auth
+    attributes:
+      label: How Claude is connected
+      options:
+        - Subscription
+        - API key
+        - Not connected yet
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Output from `cloudbot logs`, with secrets removed.
+      render: text
+
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues for this problem.
+          required: true
