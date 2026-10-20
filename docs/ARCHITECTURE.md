@@ -29,6 +29,12 @@ the CLI does not run.
 The server finds `drizzle/` relative to its install folder, so it starts
 from any working directory. The image health check calls `/api/health`.
 
+`docker/install.sh` runs on a fresh Debian or Ubuntu server as root. It installs Docker when
+it is missing, clones the repository to `/opt/cloudbot`, writes `CLOUDBOT_DOMAIN` to
+`/opt/cloudbot/.env`, starts the compose file with that env file and copies
+`docker/cloudbot` to `/usr/local/bin/cloudbot`. The `cloudbot` command wraps status,
+logs, update and setup-link. The setup link is read from the container logs.
+
 `docker/compose.yaml` runs the server and Caddy. `docker/Caddyfile` reads the
 domain from `CLOUDBOT_DOMAIN`. CI runs `docker/check-container.sh` on the built
 image. It checks the health route and proves that `bot` cannot read a file the
@@ -52,7 +58,7 @@ src/
   shared/          Types shared by the server and the web app
     chatTypes.ts   Messages, bots and chat events
   web/             Chat interface in React, built with Vite to dist/web and served by the server
-docker/            Dockerfile, compose file, Caddyfile and the container check script
+docker/            Dockerfile, compose file, Caddyfile, install.sh, the cloudbot command and the container check script
 docs/              Project documentation
 ```
 

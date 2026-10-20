@@ -58,3 +58,39 @@ jobs:
       - name: Show container logs on failure
         if: failure()
         run: docker logs cloudbot-ci
+
+  shellcheck:
+    name: ShellCheck the shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: shellcheck docker/install.sh docker/cloudbot docker/check-container.sh
+
+  install:
+    name: Run install.sh on a fresh runner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Copy the checkout to the install folder
+        run: sudo cp -a "$GITHUB_WORKSPACE" /opt/cloudbot
+
+      - name: Run install.sh against the checkout
+        run: sudo CLOUDBOT_SKIP_CLONE=1 bash /opt/cloudbot/docker/install.sh localhost | tee install.log
+
+      - name: Check the setup link printed by install.sh
+        run: grep -F 'https://localhost/setup?code=' install.log
+
+      - name: Check the setup link from cloudbot setup-link
+        run: |
+          sudo cloudbot status
+          sudo cloudbot setup-link | tee setup-link.log
+          grep -F 'https://localhost/setup?code=' setup-link.log
+
+      - name: Check the health route through Caddy
+        run: curl -ksf --retry 10 --retry-delay 3 --retry-all-errors https://localhost/api/health
+
+      - name: Show container logs on failure
+        if: failure()
+        run: sudo docker compose -f /opt/cloudbot/docker/compose.yaml --env-file /opt/cloudbot/.env logs
