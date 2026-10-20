@@ -66,7 +66,7 @@ const STYLISTIC_CONFIG = stylistic.configs.customize({
 
 export default defineConfig(
     {
-        ignores: ['dist', 'coverage', 'node_modules', 'data'],
+        ignores: ['dist', 'coverage', 'node_modules', 'data', 'drizzle'],
     },
     eslint.configs.recommended,
     tseslint.configs.strictTypeChecked,

@@ -12,3 +12,4 @@ All notable changes to this project are listed here. The format follows
   code submission, cancellation, timeout handling and CLI status checks.
 - Project setup: server with a health route, lint, tests, CI and docs.
 - Secrets vault with encryption at rest, a secure form endpoint and a local key proxy that adds the API key to requests.
+- SQLite storage for bots, messages and settings with Drizzle ORM, with migrations that run on start.

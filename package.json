@@ -20,6 +20,7 @@
   "packageManager": "pnpm@10.28.2",
   "scripts": {
     "build": "tsup",
+    "db:generate": "drizzle-kit generate",
     "dev": "node --watch --experimental-strip-types src/server/main.ts",
     "start": "node dist/server/main.js",
     "lint": "eslint .",
@@ -31,12 +32,14 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
+    "drizzle-orm": "0.45.4",
     "hono": "^4.13.13"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/node": "^24.0.0",
+    "drizzle-kit": "0.31.11",
     "eslint": "^10.13.0",
     "globals": "^17.13.0",
     "tsup": "^9.0.0",

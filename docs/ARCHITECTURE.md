@@ -23,6 +23,8 @@ src/
     createApp.ts   Hono app and routes
     main.ts        Entry point
     claudeAuth/    CLI subscription login sessions and sign-in status
+    store/         SQLite storage: bots, messages, settings and migrations
+    vault/         Encrypted secrets, secure form route and key proxy
   web/             Chat interface, React (planned)
 docker/            Image, compose file and install script (planned)
 docs/              Project documentation
@@ -36,6 +38,17 @@ Rules between folders:
 ## Storage
 
 SQLite through `node:sqlite`, in the data volume. No native dependencies.
+Queries go through Drizzle ORM. Drizzle's `sqlite-proxy` driver sends its SQL
+to `node:sqlite`, so there is no native binding.
+
+The database is `cloudbot.db` in the folder given by `CLOUDBOT_DATA_DIR`
+(default `./data`). `schema.ts` declares the tables. `openDatabase` enables WAL
+and foreign keys, then applies the migrations in `drizzle/` that have not run
+yet. `BotStore`, `MessageStore` and `SettingsStore` wrap the tables.
+
+After a schema change, run `pnpm db:generate` to write a new migration into
+`drizzle/`. Generated migrations are append only: never edit one that has
+shipped, add a new one instead.
 
 ## Secrets
 
