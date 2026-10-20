@@ -20,6 +20,7 @@ as the vault and the database, are not readable by the bot.
 ```text
 src/
   server/          HTTP server and the code that wires the parts together
+    agent/         Runs one conversation turn through the Claude Agent SDK
     createApp.ts   Hono app and routes
     main.ts        Entry point
     claudeAuth/    CLI subscription login sessions and sign-in status
