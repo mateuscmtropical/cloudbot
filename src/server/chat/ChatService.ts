@@ -8,6 +8,8 @@ import { PROFILE_SERVER_NAME, UPDATE_PROFILE_TOOL_FULL_NAME, createProfileToolSe
 import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from '../agent/prepareAgentWorkspace.ts';
 import type { BotStore } from '../store/BotStore.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
+import type { SetupAction, SetupConversation } from '../setup/SetupConversation.ts';
+import { SetupAnswerError } from '../setup/SetupConversation.ts';
 import type { Bot, Message } from '../store/types.ts';
 import type {
     BotSummary,
@@ -115,6 +117,7 @@ class ChatService {
     private readonly agentUser: string | undefined;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
+    private setup: SetupConversation | undefined;
 
     constructor(options: ChatServiceOptions) {
         this.botStore = options.botStore;
@@ -129,6 +132,36 @@ class ChatService {
         const summaryPromises = bots.map(bot => this.summarizeBot(bot));
 
         return Promise.all(summaryPromises);
+    }
+
+    setSetup(setup: SetupConversation): void {
+        this.setup = setup;
+    }
+
+    async answerSetup(botId: string, messageId: string, action: SetupAction, value: string): Promise<ChatMessage> {
+        if (this.setup === undefined) {
+            throw new SetupAnswerError('Setup is not active.');
+        }
+
+        return this.setup.answer(botId, messageId, action, value);
+    }
+
+    async postSetupMessage(botId: string, body: MessageBody): Promise<ChatMessage> {
+        return this.saveAndPublish(botId, 'assistant', body);
+    }
+
+    async updateSetupMessage(messageId: string, body: MessageBody): Promise<ChatMessage> {
+        const stored = await this.messageStore.updateContent(messageId, body);
+
+        if (stored === undefined) {
+            throw new SetupAnswerError('This setup question does not exist.');
+        }
+
+        const message = toChatMessage(stored);
+
+        this.publish(message.botId, { type: 'message', message });
+
+        return message;
     }
 
     async hasBot(botId: string): Promise<boolean> {
@@ -155,6 +188,18 @@ class ChatService {
 
         if (bot === undefined) {
             return undefined;
+        }
+
+        if (this.setup !== undefined && !this.setup.isDone()) {
+            const reminder = this.setup.isStarting()
+                ? 'CloudBot is starting. Try again in a moment.'
+                : this.setup.isSetupBot(botId)
+                    ? 'Finish connecting Claude above to start chatting.'
+                    : 'Finish connecting Claude in the CloudBot conversation to start chatting.';
+
+            this.publish(botId, { type: 'turn', botId, isRunning: false });
+
+            return this.saveAndPublish(botId, 'assistant', { kind: 'text', text: reminder });
         }
 
         if (this.runningTurns.has(botId)) {

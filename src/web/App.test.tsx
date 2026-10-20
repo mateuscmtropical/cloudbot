@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
-import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotSummary, ChatEvent, ChatMessage } from '../shared/chatTypes.ts';
 import { App } from './App.tsx';
-import { listBots, listMessages, subscribeToEvents } from './apiClient.ts';
+import { listBots, listMessages, sendMessage, subscribeToEvents } from './apiClient.ts';
 
 vi.mock('./apiClient.ts', () => ({
     listBots: vi.fn(),
@@ -171,10 +171,16 @@ describe('App draft and history', () => {
             stream.onEvent?.({ type: 'textDelta', botId: 'bot-1', text: 'prefix ' });
         });
 
-        await act(async () => {
+        act(() => {
             stream.onOpen?.();
-            await new Promise<void>((resolve) => {
-                setTimeout(resolve, 0);
+        });
+
+        await waitFor(() => {
+            historyAfterDelta.forEach((message) => {
+                if (message.body.kind === 'text') {
+                    expect(container.textContent)
+                        .toContain(message.body.text);
+                }
             });
         });
 
@@ -198,5 +204,50 @@ describe('App draft and history', () => {
             .toBeNull();
         expect(container.textContent)
             .toContain('Newer reply');
+    });
+});
+
+describe('App setup reminder', () => {
+    it('shows local input and the assistant reminder and clears Stop without a turn event', async () => {
+        const reminder: ChatMessage = {
+            id: 'reminder', botId: 'bot-1', role: 'assistant', sequence: 2, createdAt: 1,
+            body: { kind: 'text', text: 'Finish connecting Claude above to start chatting.' },
+        };
+
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(subscribeToEvents)
+            .mockImplementation(() => () => {});
+        vi.mocked(sendMessage)
+            .mockResolvedValue(reminder);
+
+        const view = render(<App />);
+
+        await waitFor(() => {
+            expect(renderedBotName())
+                .toBe('CloudBot');
+        });
+
+        const composer = view.getByRole('textbox');
+
+        fireEvent.change(composer, { target: { value: 'private input' } });
+        fireEvent.click(view.getByRole('button', { name: 'Send' }));
+        await waitFor(() => {
+            expect(view.queryByRole('button', { name: 'Stop' }))
+                .toBeNull();
+            expect(view.container.querySelector('.message-user')?.textContent.trim())
+                .toBe('private input');
+            expect(view.container.querySelector('.message-assistant')?.textContent)
+                .toContain('Finish connecting Claude above');
+        });
+        cleanup();
+        render(<App />);
+        await waitFor(() => {
+            expect(renderedBotName())
+                .toBe('CloudBot');
+        });
+        expect(document.body.textContent).not.toContain('private input');
     });
 });

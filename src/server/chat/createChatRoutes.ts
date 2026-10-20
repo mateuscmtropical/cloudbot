@@ -5,6 +5,8 @@ import type { SSEStreamingApi } from 'hono/streaming';
 import type { ChatEvent } from '../../shared/chatTypes.ts';
 import { TurnInProgressError } from './ChatService.ts';
 import type { ChatService } from './ChatService.ts';
+import { SetupAnswerError } from '../setup/SetupConversation.ts';
+import type { SetupAction } from '../setup/SetupConversation.ts';
 
 interface ChatErrorResponse {
     error: string;
@@ -49,6 +51,41 @@ function createEventWriter(stream: SSEStreamingApi): (event: ChatEvent) => void 
 function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions = {}): Hono {
     const routes = new Hono();
     const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+    const setupActions: SetupAction[] = ['choice', 'code', 'secret'];
+
+    setupActions.forEach((action) => {
+        routes.post(`/api/bots/:id/messages/:mid/${action}`, async (context) => {
+            const botId = context.req.param('id');
+            const messageId = context.req.param('mid');
+            const field = action === 'choice' ? 'choiceId' : action === 'secret' ? 'value' : 'code';
+            let payload: unknown;
+
+            try {
+                payload = await context.req.json();
+            } catch {
+                return context.json({ error: 'Send a valid JSON body.' }, 400);
+            }
+
+            const value: unknown = typeof payload === 'object' && payload !== null ? Reflect.get(payload, field) : undefined;
+
+            if (typeof value !== 'string' || value.trim().length === 0) {
+                return context.json({ error: 'Send a non-empty value.' }, 400);
+            }
+
+            try {
+                const message = await chatService.answerSetup(botId, messageId, action, value);
+
+                return context.json(message);
+            } catch (error: unknown) {
+                if (error instanceof SetupAnswerError) {
+                    return context.json({ error: error.message }, 409);
+                }
+
+                // Never pass a dependency error to Hono because it may contain submitted input.
+                return context.json({ error: 'Could not save this setup answer. Try again.' }, 500);
+            }
+        });
+    });
 
     routes.get('/api/bots', async (context) => {
         const bots = await chatService.listBots();

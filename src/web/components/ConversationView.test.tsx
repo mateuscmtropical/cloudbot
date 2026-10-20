@@ -44,9 +44,9 @@ const allKindMessages: ChatMessage[] = [
 ];
 
 const noopActions = {
-    onChoose: vi.fn(),
+    onChoose: vi.fn(() => Promise.resolve()),
     onSubmitCode: vi.fn(),
-    onSubmitSecret: vi.fn(),
+    onSubmitSecret: vi.fn(() => Promise.resolve()),
 };
 
 function conversationElement(messages: ChatMessage[], draftText: string): ReactElement {

@@ -42,6 +42,25 @@ class MessageStore {
         return insertedMessage;
     }
 
+    async getById(messageId: string): Promise<Message | undefined> {
+        const condition = eq(messages.id, messageId);
+        const rows = await this.database.select()
+            .from(messages)
+            .where(condition);
+
+        return rows[0];
+    }
+
+    async updateContent(messageId: string, content: unknown): Promise<Message | undefined> {
+        const condition = eq(messages.id, messageId);
+        const rows = await this.database.update(messages)
+            .set({ content })
+            .where(condition)
+            .returning();
+
+        return rows[0];
+    }
+
     // Returns the newest `limit` messages, oldest first. Pass the `sequence` of
     // the oldest message in the last page as `beforeSequence` to load the page
     // before it.

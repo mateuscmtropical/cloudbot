@@ -122,10 +122,13 @@ function App(): ReactElement {
     function showMessageResult(resultPromise: Promise<ChatMessage>): void {
         resultPromise
             .then((savedMessage) => {
+                setErrorText(undefined);
                 setMessages(previousMessages => upsertMessage(previousMessages, savedMessage));
             })
-            .catch(() => {
-                setErrorText('The request failed. Try again.');
+            .catch((error: unknown) => {
+                const serverMessage = error instanceof RequestFailedError ? error.serverMessage : undefined;
+
+                setErrorText(serverMessage ?? 'The request failed. Try again.');
             });
     }
 
@@ -151,7 +154,28 @@ function App(): ReactElement {
                 setRunningBotId(undefined);
             }
         });
-        showMessageResult(sendPromise);
+        const resultPromise = sendPromise.then((message) => {
+            if (message.role === 'assistant') {
+                const localMessage: ChatMessage = {
+                    id: crypto.randomUUID(), botId: selectedBotId, role: 'user',
+                    createdAt: Date.now(), sequence: message.sequence - 0.5,
+                    body: { kind: 'text', text },
+                };
+
+                // Setup input stays in this browser view and is never saved on the server.
+                setMessages((previousMessages) => {
+                    const withInput = upsertMessage(previousMessages, localMessage);
+                    const withReminder = upsertMessage(withInput, message);
+
+                    return withReminder.sort((first, second) => first.sequence - second.sequence);
+                });
+                setRunningBotId(undefined);
+            }
+
+            return message;
+        });
+
+        showMessageResult(resultPromise);
     }
 
     function handleStop(): void {
@@ -178,14 +202,16 @@ function App(): ReactElement {
         });
     }
 
-    function handleChoose(messageId: string, choiceId: string): void {
+    function handleChoose(messageId: string, choiceId: string): Promise<void> {
         if (selectedBotId === undefined) {
-            return;
+            return Promise.resolve();
         }
 
         const choicePromise = submitChoice(selectedBotId, messageId, choiceId);
 
         showMessageResult(choicePromise);
+
+        return choicePromise.then(() => undefined, () => undefined);
     }
 
     function handleSubmitCode(messageId: string, code: string): void {
@@ -198,14 +224,17 @@ function App(): ReactElement {
         showMessageResult(codePromise);
     }
 
-    function handleSubmitSecret(messageId: string, value: string): void {
+    // Settles when the server answered, so the form can show that the key is being checked.
+    function handleSubmitSecret(messageId: string, value: string): Promise<void> {
         if (selectedBotId === undefined) {
-            return;
+            return Promise.resolve();
         }
 
         const secretPromise = submitSecret(selectedBotId, messageId, value);
 
         showMessageResult(secretPromise);
+
+        return secretPromise.then(() => undefined, () => undefined);
     }
 
     const selectedBot = bots.find(bot => bot.id === selectedBotId);

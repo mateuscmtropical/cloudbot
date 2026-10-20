@@ -28,13 +28,13 @@ function CodeField({ prompt, placeholder, submitted, onSubmit }: CodeFieldProps)
             <p>{prompt}</p>
             {submitted
                 ? (
-                        <p className="setup-done">Sent</p>
+                        <p className="setup-done">This code field is closed.</p>
                     )
                 : (
                         <form className="setup-form" onSubmit={handleSubmit}>
                             <input
-                                type="text"
-                                autoComplete="one-time-code"
+                                type="password"
+                                autoComplete="off"
                                 placeholder={placeholder}
                                 value={code}
                                 onChange={(event) => {

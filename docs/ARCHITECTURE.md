@@ -179,6 +179,39 @@ The key proxy listens on 127.0.0.1 and adds the API key to each request to
 Anthropic. The agent gets `ANTHROPIC_BASE_URL` and a dummy key, never the real
 one.
 
+## Setup conversation
+
+`SetupConversation` in `src/server/setup/` writes scripted messages through
+`ChatService`, so setup uses the same storage and live message events as chat.
+It starts before the HTTP server, in the first bot's conversation. Until setup
+finishes, messages to any bot receive a short reminder without starting an agent
+turn or storing the submitted text.
+
+The `claude.setup` entry in `SettingsStore` holds the step, chosen mode and
+active message id. Subscription mode is connected only when CLI auth status
+confirms sign-in. API mode is connected when `ANTHROPIC_API_KEY` exists in the
+vault. Startup checks the chosen connection again and restores setup if it is
+missing. An interrupted subscription login starts a new CLI process and replaces
+the old link and code field. Pending choices and API forms survive a restart.
+
+Session-protected `POST /api/bots/:id/messages/:mid/choice`, `/code` and `/secret`
+routes accept setup answers. Answers are serialized and must match the bot,
+message kind, active step and message id. Choices save only `chosenId`. Code
+fields and secure forms save only `submitted`, which also closes expired forms.
+Message updates are published over SSE and replace the existing message in the
+web app. Replayed answers are rejected.
+
+Subscription codes go directly to the in-memory login session, then setup waits
+for completion and confirms CLI status. Fixed failure messages avoid exposing
+terminal input from dependency errors. Keys go directly into the vault under
+`ANTHROPIC_API_KEY`, without an API validation request. Neither codes nor keys
+enter message bodies, settings, responses or logs.
+
+`main.ts` starts the loopback key proxy when API mode connects, including after
+a restart. The runner environment receives its `ANTHROPIC_BASE_URL` and a dummy
+key. Subscription mode receives no API key or proxy URL. Server environment
+API credentials are removed before constructing the runner environment.
+
 ## Claude
 
 The Claude Agent SDK runs the `claude` CLI installed by Anthropic's installer
@@ -202,7 +235,7 @@ tool as `mcp__cloudbot__update_profile`. The SDK loads `CLAUDE.md` from the
 working directory by default, so the workspace file is the bot's memory.
 
 `startClaudeLogin` runs login in a util-linux `script` pseudo terminal on Linux.
-It exposes `signInUrl`, `submitCode`, `cancel` and `finished` for the planned
+It exposes `signInUrl`, `submitCode`, `cancel` and `finished` for the
 setup conversation. `signInUrl` resolves to null if login ends before a link
 arrives. Failures name timeout, missing CLI, unsuccessful exit or cancellation.
 Sessions time out after five minutes by default.
@@ -210,4 +243,4 @@ Sessions time out after five minutes by default.
 After a successful exit, the caller must use `getClaudeAuthStatus` to confirm
 sign-in. It returns only login state and the authentication method. These
 helpers do not read credential files or persist terminal output or codes.
-The setup conversation and HTTP wiring are still planned.
+The setup conversation calls these helpers and exposes only fixed status messages.
