@@ -74,10 +74,37 @@ function listBots(): Promise<BotSummary[]> {
     return requestJson<BotSummary[]>(path, {});
 }
 
-function listMessages(botId: string): Promise<ChatMessage[]> {
-    const path = botPath(botId, '/messages');
+interface MessagePageRequest {
+    beforeSequence?: number;
+    limit?: number;
+}
 
-    return requestJson<ChatMessage[]>(path, {});
+// An empty request sends no query string, so the server answers with its default page.
+function buildPageQuery(page: MessagePageRequest): string {
+    const searchParams = new URLSearchParams();
+
+    if (page.beforeSequence !== undefined) {
+        const beforeText = String(page.beforeSequence);
+
+        searchParams.set('before', beforeText);
+    }
+
+    if (page.limit !== undefined) {
+        const limitText = String(page.limit);
+
+        searchParams.set('limit', limitText);
+    }
+
+    const queryText = searchParams.toString();
+
+    return queryText === '' ? '' : `?${queryText}`;
+}
+
+function listMessages(botId: string, page: MessagePageRequest = {}): Promise<ChatMessage[]> {
+    const path = botPath(botId, '/messages');
+    const query = buildPageQuery(page);
+
+    return requestJson<ChatMessage[]>(`${path}${query}`, {});
 }
 
 function sendMessage(botId: string, text: string): Promise<ChatMessage> {
@@ -146,6 +173,7 @@ function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void, o
     };
 }
 
+export type { MessagePageRequest };
 export {
     RequestFailedError,
     listBots,

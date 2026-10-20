@@ -241,3 +241,118 @@ describe('chat routes', () => {
             .toContain(': heartbeat');
     });
 });
+
+describe('GET /api/bots/:id/messages paging', () => {
+    let dataDir: string;
+    let opened: OpenedDatabase;
+    let botStore: BotStore;
+    let messageStore: MessageStore;
+
+    beforeEach(async () => {
+        dataDir = await mkdtemp(join(tmpdir(), 'cloudbot-paging-'));
+        opened = await openDatabase(':memory:');
+        botStore = new BotStore(opened.db);
+        messageStore = new MessageStore(opened.db);
+    });
+
+    afterEach(async () => {
+        opened.close();
+        await rm(dataDir, { recursive: true, force: true });
+    });
+
+    function buildApp(): Hono {
+        const chatService = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir });
+
+        return createChatRoutes(chatService);
+    }
+
+    // Writes one at a time, so the sequences follow the numbers in the text.
+    async function seedMessages(botId: string, count: number): Promise<void> {
+        await Array.from({ length: count })
+            .reduce<Promise<void>>(async (previousWrite, _unused, index) => {
+                await previousWrite;
+                await messageStore.add({
+                    botId,
+                    role: 'user',
+                    kind: 'text',
+                    content: { kind: 'text', text: `message ${String(index + 1)}` },
+                });
+            }, Promise.resolve());
+    }
+
+    async function fetchStatus(app: Hono, path: string): Promise<number> {
+        const response = await app.request(path);
+
+        return response.status;
+    }
+
+    async function fetchTexts(app: Hono, path: string): Promise<string[]> {
+        const response = await app.request(path);
+        const messages = await response.json() as ChatMessage[];
+
+        return messages.map(message => (message.body.kind === 'text' ? message.body.text : ''));
+    }
+
+    it('answers the newest 50 messages, oldest first, when no page is asked for', async () => {
+        const app = buildApp();
+        const bot = await botStore.create({ name: 'Ana', title: '', description: '' });
+
+        await seedMessages(bot.id, 60);
+
+        const texts = await fetchTexts(app, `/api/bots/${bot.id}/messages`);
+
+        expect(texts)
+            .toEqual(Array.from({ length: 50 }, (_unused, index) => `message ${String(index + 11)}`));
+    });
+
+    it('answers a middle page before the given sequence', async () => {
+        const app = buildApp();
+        const bot = await botStore.create({ name: 'Ana', title: '', description: '' });
+
+        await seedMessages(bot.id, 60);
+
+        const storedMessages = await messageStore.listByBot(bot.id, { limit: 200 });
+        const sequenceOfMessage31 = storedMessages[30]?.sequence;
+        const texts = await fetchTexts(app, `/api/bots/${bot.id}/messages?before=${String(sequenceOfMessage31)}&limit=10`);
+
+        expect(texts)
+            .toEqual(Array.from({ length: 10 }, (_unused, index) => `message ${String(index + 21)}`));
+    });
+
+    it('answers the last page with only the messages that remain', async () => {
+        const app = buildApp();
+        const bot = await botStore.create({ name: 'Ana', title: '', description: '' });
+
+        await seedMessages(bot.id, 60);
+
+        const storedMessages = await messageStore.listByBot(bot.id, { limit: 200 });
+        const sequenceOfMessage3 = storedMessages[2]?.sequence;
+        const texts = await fetchTexts(app, `/api/bots/${bot.id}/messages?before=${String(sequenceOfMessage3)}&limit=10`);
+
+        expect(texts)
+            .toEqual(['message 1', 'message 2']);
+    });
+
+    it('caps the page size at 200 when a larger limit is asked for', async () => {
+        const app = buildApp();
+        const bot = await botStore.create({ name: 'Ana', title: '', description: '' });
+
+        await seedMessages(bot.id, 205);
+
+        const texts = await fetchTexts(app, `/api/bots/${bot.id}/messages?limit=500`);
+
+        expect(texts)
+            .toHaveLength(200);
+    });
+
+    it('answers 400 for a cursor or limit that is not a whole number of 1 or more', async () => {
+        const app = buildApp();
+        const bot = await botStore.create({ name: 'Ana', title: '', description: '' });
+        const badQueries = ['before=abc', 'before=0', 'before=-1', 'before=1.5', 'limit=0', 'limit=abc', 'limit=-3'];
+        const statusPromises = badQueries.map(query => fetchStatus(app, `/api/bots/${bot.id}/messages?${query}`));
+        const statuses = await Promise.all(statusPromises);
+
+        expect(statuses)
+            .toEqual(badQueries.map(() => 400));
+    });
+});

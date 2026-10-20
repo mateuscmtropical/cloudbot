@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { listBots, stopTurn } from './apiClient.ts';
+import { listBots, listMessages, stopTurn } from './apiClient.ts';
 
 function stubFetch(response: Response): ReturnType<typeof vi.fn> {
     const fetchMock = vi.fn(() => Promise.resolve(response));
@@ -41,5 +41,23 @@ describe('apiClient', () => {
 
         expect(fetchMock)
             .toHaveBeenCalledWith('/api/bots/bot%2F1/stop', { method: 'POST' });
+    });
+
+    it('asks for the page before a sequence with a limit', async () => {
+        const fetchMock = stubFetch(Response.json([]));
+
+        await listMessages('bot-1', { beforeSequence: 51, limit: 50 });
+
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/bots/bot-1/messages?before=51&limit=50', {});
+    });
+
+    it('sends no query string when no page is asked for', async () => {
+        const fetchMock = stubFetch(Response.json([]));
+
+        await listMessages('bot-1');
+
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/bots/bot-1/messages', {});
     });
 });

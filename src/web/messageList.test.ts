@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChatMessage } from '../shared/chatTypes.ts';
-import { mergeMessages, upsertMessage } from './messageList.ts';
+import { mergeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
 
 function createMessage(id: string, text: string, sequence = 1): ChatMessage {
     return {
@@ -13,6 +13,27 @@ function createMessage(id: string, text: string, sequence = 1): ChatMessage {
         body: { kind: 'text', text },
     };
 }
+
+describe('upsertLiveMessage', () => {
+    it('leaves out an unheld message older than the oldest held one, so paging skips nothing', () => {
+        const held = [createMessage('m60', 'held', 60), createMessage('m61', 'held', 61)];
+        const oldUpdate = createMessage('m10', 'updated setup question', 10);
+
+        expect(upsertLiveMessage(held, oldUpdate))
+            .toBe(held);
+    });
+
+    it('updates a held message in place and keeps store order for a new one', () => {
+        const held = [createMessage('m1', 'first', 1), createMessage('m3', 'third', 3)];
+        const updated = upsertLiveMessage(held, createMessage('m1', 'first updated', 1));
+        const inserted = upsertLiveMessage(updated, createMessage('m2', 'second', 2));
+
+        expect(inserted.map(message => message.id))
+            .toEqual(['m1', 'm2', 'm3']);
+        expect(inserted[0]?.body)
+            .toEqual({ kind: 'text', text: 'first updated' });
+    });
+});
 
 describe('mergeMessages', () => {
     it('keeps a message that arrived by the event stream when the loaded list lacks it', () => {

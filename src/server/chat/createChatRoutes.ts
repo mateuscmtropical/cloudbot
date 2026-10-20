@@ -3,8 +3,8 @@ import { streamSSE } from 'hono/streaming';
 import type { SSEStreamingApi } from 'hono/streaming';
 
 import type { ChatEvent } from '../../shared/chatTypes.ts';
-import { TurnInProgressError } from './ChatService.ts';
-import type { ChatService } from './ChatService.ts';
+import { DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, TurnInProgressError } from './ChatService.ts';
+import type { ChatService, MessagePageOptions } from './ChatService.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
 import type { SetupAction } from '../setup/SetupConversation.ts';
 
@@ -15,12 +15,49 @@ interface ChatErrorResponse {
 const BOT_NOT_FOUND: ChatErrorResponse = { error: 'No bot has this id.' };
 const EMPTY_TEXT: ChatErrorResponse = { error: 'Send a non-empty "text" string.' };
 const TURN_IN_PROGRESS: ChatErrorResponse = { error: 'This bot is still answering. Stop it or wait.' };
+const INVALID_BEFORE: ChatErrorResponse = { error: '"before" must be a message sequence number, 1 or more.' };
+const INVALID_LIMIT: ChatErrorResponse = { error: '"limit" must be a whole number, 1 or more.' };
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 25_000;
 // An SSE comment line. Clients ignore it, and it keeps idle proxies from closing the stream.
 const HEARTBEAT_FRAME = ': heartbeat\n\n';
 
 interface ChatRoutesOptions {
     heartbeatIntervalMs?: number;
+}
+
+// Only plain digits count. Anything else, including 0, a sign or a decimal, is rejected.
+function parsePositiveInteger(rawValue: string): number | undefined {
+    if (!/^\d+$/.test(rawValue)) {
+        return undefined;
+    }
+
+    const parsedNumber = Number(rawValue);
+
+    return Number.isSafeInteger(parsedNumber) && parsedNumber >= 1 ? parsedNumber : undefined;
+}
+
+function isErrorResponse(parsedPage: MessagePageOptions | ChatErrorResponse): parsedPage is ChatErrorResponse {
+    return 'error' in parsedPage;
+}
+
+// A limit above the maximum is capped, not rejected, so a client can ask for "as many as allowed".
+function parseMessagePage(beforeText: string | undefined, limitText: string | undefined): MessagePageOptions | ChatErrorResponse {
+    const beforeSequence = beforeText === undefined ? undefined : parsePositiveInteger(beforeText);
+
+    if (beforeText !== undefined && beforeSequence === undefined) {
+        return INVALID_BEFORE;
+    }
+
+    const requestedLimit = limitText === undefined ? DEFAULT_MESSAGE_PAGE_LIMIT : parsePositiveInteger(limitText);
+
+    if (requestedLimit === undefined) {
+        return INVALID_LIMIT;
+    }
+
+    return {
+        limit: Math.min(requestedLimit, MAX_MESSAGE_PAGE_LIMIT),
+        beforeSequence,
+    };
 }
 
 function readText(requestBody: unknown): string | undefined {
@@ -95,7 +132,15 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
 
     routes.get('/api/bots/:id/messages', async (context) => {
         const botId = context.req.param('id');
-        const messages = await chatService.listMessages(botId);
+        const beforeText = context.req.query('before');
+        const limitText = context.req.query('limit');
+        const parsedPage = parseMessagePage(beforeText, limitText);
+
+        if (isErrorResponse(parsedPage)) {
+            return context.json(parsedPage, 400);
+        }
+
+        const messages = await chatService.listMessages(botId, parsedPage);
 
         if (messages === undefined) {
             return context.json(BOT_NOT_FOUND, 404);

@@ -216,9 +216,18 @@ svg {
 }
 
 .message-list {
+    position: relative;
     flex: 1;
     overflow-y: auto;
+    overflow-anchor: none;
     padding: 16px 24px;
+}
+
+.load-older-button {
+    display: block;
+    margin: 0 auto 8px;
+    padding: 4px 12px;
+    font-size: 0.85rem;
 }
 
 .message {
