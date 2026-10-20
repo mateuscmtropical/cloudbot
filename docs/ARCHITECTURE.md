@@ -159,7 +159,14 @@ both processes write to the same SQLite file.
 
 `ChatService` in `src/server/chat/` holds the chat rules. It stores the user
 message, runs one turn at a time per bot through an `AgentRunner`, and stores
-each reply. The Claude session id from the runner is saved on the bot, so the
+each reply. A message sent during a turn joins the bot's queue and runs after
+it. It is saved at once and marked as queued until its turn starts. When the
+runner reports a rejected usage limit, the turn waits until the reset time, or
+5 minutes when the runner gives none. Then it runs again: the same message if
+no session event came, otherwise a short "Continue." turn in the same session.
+The chat shows the resume time as a system message. Stop during a wait cancels
+the wait and the queue. The queue and the wait are stored in SQLite, so they
+survive a restart, and the timers are rebuilt on start. The Claude session id from the runner is saved on the bot, so the
 next turn resumes it.
 
 Routes are under `/api/bots`: list bots, list and send messages, stop a turn,
@@ -191,11 +198,12 @@ so the agent can read an earlier upload by its path.
 `ChatService` keeps the saved files as pending for the bot, with their bytes in
 memory. The pending queue of a bot holds at most 10 files and
 `CLOUDBOT_MAX_UPLOAD_MB` bytes. An upload that would go over gets 413, and its
-files are removed. Uploads are refused with 409 while a reply runs for the bot,
-so the queue is empty during a turn. The web app disables the attach button for
-the same time. `GET /api/bots/:id/uploads` lists the queue, and
-`DELETE /api/bots/:id/uploads/:uploadId` drops one file and deletes it. The next
-message takes the queue, and its prompt lists the absolute paths. A turn that
+files are removed. Uploads are refused with 409 while a reply runs for the bot
+or a usage limit wait is pending, so the queue is empty during a turn. The web
+app disables the attach button for the same time. `GET /api/bots/:id/uploads`
+lists the queue, and `DELETE /api/bots/:id/uploads/:uploadId` drops one file and
+deletes it. The next turn that starts takes the queue, and its prompt lists the
+absolute paths. A turn that
 ends without a session event from the agent puts its files back in the queue,
 whatever the reason, such as a stop during startup or a failed start. A turn
 that got a session event keeps its files, so the agent never gets the same files

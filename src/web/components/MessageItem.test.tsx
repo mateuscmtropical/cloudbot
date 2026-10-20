@@ -40,4 +40,14 @@ describe('answered setup messages', () => {
         expect(actions.onChoose)
             .toHaveBeenCalledWith('key-form', 'subscription');
     });
+
+    it('marks a user message sent during a turn as queued', () => {
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const body: MessageBody = { kind: 'text', text: 'and then this', isQueued: true };
+        const message = { id: 'queued', botId: 'bot', role: 'user' as const, sequence: 2, createdAt: 2, body };
+
+        render(<MessageItem message={message} actions={actions} />);
+        expect(screen.getByText('Queued'))
+            .toBeTruthy();
+    });
 });

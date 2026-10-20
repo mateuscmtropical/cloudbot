@@ -70,6 +70,21 @@ describe('Composer', () => {
             .toBeNull();
     });
 
+    it('sends a draft typed while a turn runs, so it is queued', () => {
+        const onSend = vi.fn();
+        const textarea = renderComposer({ onSend, isRunning: true });
+
+        fireEvent.change(textarea, { target: { value: 'next question' } });
+
+        expect(screen.getByRole('button', { name: 'Send' }))
+            .toBeTruthy();
+
+        fireEvent.keyDown(textarea, { key: 'Enter' });
+
+        expect(onSend)
+            .toHaveBeenCalledWith('next question');
+    });
+
     it('lists the attached files as chips and marks the ones still uploading', () => {
         renderComposer({
             attachments: [

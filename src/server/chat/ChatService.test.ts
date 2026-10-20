@@ -16,7 +16,7 @@ import { MessageStore } from '../store/MessageStore.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
 import type { ChatEvent } from '../../shared/chatTypes.ts';
-import { ChatService, PendingUploadLimitError, TurnInProgressError, UploadDuringTurnError } from './ChatService.ts';
+import { ChatService, PendingUploadLimitError, UploadDuringTurnError } from './ChatService.ts';
 
 interface TestSetup {
     service: ChatService;
@@ -64,6 +64,582 @@ async function* waitForAbort(abortSignal: AbortSignal): AsyncGenerator<AgentEven
 
     yield { type: 'turn_finished' };
 }
+
+// Plays one script per turn, so each turn can end differently. It uses no timers of its own.
+class SequenceRunner implements AgentRunner {
+    readonly receivedRequests: TurnRequest[] = [];
+    private readonly scripts: AgentEvent[][];
+
+    constructor(scripts: AgentEvent[][]) {
+        this.scripts = scripts;
+    }
+
+    runTurn(request: TurnRequest): AsyncIterable<AgentEvent> {
+        this.receivedRequests.push(request);
+
+        const finishedScript: AgentEvent[] = [{ type: 'turn_finished' }];
+        const script = this.scripts.shift() ?? finishedScript;
+
+        return replayEvents(script);
+    }
+}
+
+// A replay has nothing to await. The runner still needs an async iterable.
+// eslint-disable-next-line @typescript-eslint/require-await
+async function* replayEvents(events: AgentEvent[]): AsyncGenerator<AgentEvent> {
+    yield* events;
+}
+
+const SESSION_SCRIPT: AgentEvent[] = [{ type: 'session', sessionId: 'session-1' }];
+const REPLY_SCRIPT: AgentEvent[] = [{ type: 'text', text: 'Done' }, { type: 'turn_finished' }];
+const ONE_MINUTE_MS = 60_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// A rejected limit is followed by the error that ends the turn. The reset time is optional.
+function usageLimitScript(resetsAt: number | undefined): AgentEvent[] {
+    const resetsAtOption = resetsAt === undefined ? {} : { resetsAt };
+
+    return [
+        { type: 'rate_limit', status: 'rejected', ...resetsAtOption },
+        { type: 'turn_error', message: 'You\'ve hit your limit', isUsageLimit: true, ...resetsAtOption },
+    ];
+}
+
+// Resolves after the given number of turns have reported that they finished.
+function waitForTurnFinishes(service: ChatService, botId: string, count: number): Promise<void> {
+    let finishedCount = 0;
+
+    return new Promise((resolve) => {
+        const unsubscribe = service.subscribe(botId, (event: ChatEvent) => {
+            if (event.type === 'turn' && !event.isRunning) {
+                finishedCount += 1;
+
+                if (finishedCount === count) {
+                    unsubscribe();
+                    resolve();
+                }
+            }
+        });
+    });
+}
+
+async function readSystemTexts(service: ChatService, botId: string): Promise<string[]> {
+    const messages = (await service.listMessages(botId)) ?? [];
+
+    return messages.flatMap(message => (message.role === 'system' && message.body.kind === 'text' ? [message.body.text] : []));
+}
+
+// Resolves when the chat shows that a usage limit wait has started.
+function waitForUsageLimitNotice(service: ChatService, botId: string): Promise<void> {
+    return new Promise((resolve) => {
+        const unsubscribe = service.subscribe(botId, (event: ChatEvent) => {
+            if (event.type === 'message' && event.message.body.kind === 'text' && event.message.body.text.startsWith('The usage limit was reached')) {
+                unsubscribe();
+                resolve();
+            }
+        });
+    });
+}
+
+// The agent cannot start, so the turn ends with an error once it is stopped.
+async function* errorAfterAbort(abortSignal: AbortSignal): AsyncGenerator<AgentEvent> {
+    await new Promise<void>((resolve) => {
+        abortSignal.addEventListener('abort', () => {
+            resolve();
+        }, { once: true });
+    });
+
+    yield { type: 'turn_error', message: 'Stopped before it started', isUsageLimit: false };
+}
+describe('ChatService usage limit and queue', () => {
+    let dataDir: string;
+    let opened: OpenedDatabase;
+    let botStore: BotStore;
+    let messageStore: MessageStore;
+
+    beforeEach(async () => {
+        dataDir = await mkdtemp(join(tmpdir(), 'cloudbot-queue-'));
+        opened = await openDatabase(':memory:');
+        botStore = new BotStore(opened.db);
+        messageStore = new MessageStore(opened.db);
+    });
+
+    afterEach(async () => {
+        vi.useRealTimers();
+        opened.close();
+        await rm(dataDir, { recursive: true, force: true });
+    });
+
+    it('runs the same message again after the reset when the agent never started', async () => {
+        vi.useFakeTimers();
+        const resetsAt = Date.now() + ONE_MINUTE_MS;
+        const runner = new SequenceRunner([usageLimitScript(resetsAt), REPLY_SCRIPT]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const firstFinished = waitForUsageLimitNotice(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await firstFinished;
+
+        const systemTexts = await readSystemTexts(service, bot.id);
+
+        expect(systemTexts)
+            .toContainEqual(expect.stringMatching(/^The usage limit was reached\. CloudBot continues at .+ UTC\.$/));
+
+        const retryFinished = waitForTurnFinish(service, bot.id);
+
+        await vi.advanceTimersByTimeAsync(ONE_MINUTE_MS - 1);
+
+        expect(runner.receivedRequests)
+            .toHaveLength(1);
+
+        await vi.advanceTimersByTimeAsync(1);
+        await retryFinished;
+
+        expect(runner.receivedRequests.map(request => request.prompt))
+            .toEqual(['Hi', 'Hi']);
+
+        service.dispose();
+    });
+
+    it('continues the session with "Continue." when the limit hit a session that had started', async () => {
+        vi.useFakeTimers();
+        const resetsAt = Date.now() + ONE_MINUTE_MS;
+        const runner = new SequenceRunner([[...SESSION_SCRIPT, ...usageLimitScript(resetsAt)], REPLY_SCRIPT]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const firstFinished = waitForUsageLimitNotice(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await firstFinished;
+
+        const retryFinished = waitForTurnFinish(service, bot.id);
+
+        await vi.advanceTimersByTimeAsync(ONE_MINUTE_MS);
+        await retryFinished;
+
+        expect(runner.receivedRequests.map(request => request.prompt))
+            .toEqual(['Hi', 'Continue.']);
+        expect(runner.receivedRequests[1]?.sessionId)
+            .toBe('session-1');
+
+        const storedMessages = (await service.listMessages(bot.id)) ?? [];
+
+        expect(storedMessages.filter(message => message.role === 'user'))
+            .toHaveLength(1);
+
+        service.dispose();
+    });
+
+    it('waits five minutes when the runner reports a limit without a reset time', async () => {
+        vi.useFakeTimers();
+        const runner = new SequenceRunner([usageLimitScript(undefined), REPLY_SCRIPT]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const firstFinished = waitForUsageLimitNotice(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await firstFinished;
+
+        const retryFinished = waitForTurnFinish(service, bot.id);
+
+        await vi.advanceTimersByTimeAsync((5 * 60 * 1000) - 1);
+
+        expect(runner.receivedRequests)
+            .toHaveLength(1);
+
+        await vi.advanceTimersByTimeAsync(1);
+        await retryFinished;
+
+        expect(runner.receivedRequests)
+            .toHaveLength(2);
+
+        service.dispose();
+    });
+
+    it('runs the messages queued during a wait after the retry, in the order they were sent', async () => {
+        vi.useFakeTimers();
+        const resetsAt = Date.now() + ONE_MINUTE_MS;
+        const runner = new SequenceRunner([usageLimitScript(resetsAt), REPLY_SCRIPT, REPLY_SCRIPT]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const firstFinished = waitForUsageLimitNotice(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await firstFinished;
+
+        const queuedMessage = await service.sendMessage(bot.id, 'second');
+
+        expect(queuedMessage?.body)
+            .toEqual({ kind: 'text', text: 'second', isQueued: true });
+
+        const allFinished = waitForTurnFinishes(service, bot.id, 1);
+
+        await vi.advanceTimersByTimeAsync(ONE_MINUTE_MS);
+        await allFinished;
+
+        expect(runner.receivedRequests.map(request => request.prompt))
+            .toEqual(['Hi', 'Hi', 'second']);
+
+        service.dispose();
+    });
+
+    it('stops the wait and drops the queue when a stop arrives during the wait', async () => {
+        vi.useFakeTimers();
+        const resetsAt = Date.now() + ONE_MINUTE_MS;
+        const runner = new SequenceRunner([usageLimitScript(resetsAt), REPLY_SCRIPT]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const firstFinished = waitForUsageLimitNotice(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await firstFinished;
+        await service.sendMessage(bot.id, 'second');
+
+        const stopFinished = waitForTurnFinish(service, bot.id);
+
+        expect(await service.stopTurn(bot.id))
+            .toBe(true);
+        await stopFinished;
+        await vi.advanceTimersByTimeAsync(ONE_MINUTE_MS * 10);
+
+        expect(runner.receivedRequests.map(request => request.prompt))
+            .toEqual(['Hi']);
+
+        const storedMessages = (await service.listMessages(bot.id)) ?? [];
+        const queuedStored = storedMessages.find(message => message.body.kind === 'text' && message.body.text === 'second');
+
+        expect(queuedStored?.body)
+            .toEqual({ kind: 'text', text: 'second', isQueued: false });
+        expect(await readSystemTexts(service, bot.id))
+            .toContain('Stopped. The queued messages were not answered.');
+
+        service.dispose();
+    });
+
+    it('resumes the retry and the queued message after a restart', async () => {
+        vi.useFakeTimers();
+        const resetsAt = Date.now() + ONE_MINUTE_MS;
+        const firstRunner = new SequenceRunner([usageLimitScript(resetsAt)]);
+        const firstService = new ChatService({ botStore, messageStore, runner: firstRunner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const firstFinished = waitForUsageLimitNotice(firstService, bot.id);
+
+        await firstService.sendMessage(bot.id, 'Hi');
+        await firstFinished;
+        await firstService.sendMessage(bot.id, 'second');
+        firstService.dispose();
+
+        // The process restarts: a new service reads the queue and the wait from the database.
+        const restartedRunner = new SequenceRunner([REPLY_SCRIPT, REPLY_SCRIPT]);
+        const restartedService = new ChatService({ botStore, messageStore, runner: restartedRunner, dataDir });
+
+        await restartedService.resumeQueue();
+
+        const allFinished = waitForTurnFinishes(restartedService, bot.id, 1);
+
+        await vi.advanceTimersByTimeAsync(ONE_MINUTE_MS);
+        await allFinished;
+
+        expect(firstRunner.receivedRequests)
+            .toHaveLength(1);
+        expect(restartedRunner.receivedRequests.map(request => request.prompt))
+            .toEqual(['Hi', 'second']);
+
+        restartedService.dispose();
+    });
+
+    it('does not wait when the runner only warns about the limit', async () => {
+        const runner = new SequenceRunner([[{ type: 'rate_limit', status: 'allowed_warning' }, ...REPLY_SCRIPT]]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        expect(runner.receivedRequests)
+            .toHaveLength(1);
+        expect(await readSystemTexts(service, bot.id))
+            .toEqual([]);
+    });
+    it('keeps the bot busy during a usage limit wait, so Stop stays available', async () => {
+        vi.useFakeTimers();
+        const resetsAt = Date.now() + ONE_MINUTE_MS;
+        const runner = new SequenceRunner([usageLimitScript(resetsAt), REPLY_SCRIPT]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const busyStates: boolean[] = [];
+
+        service.subscribe(bot.id, (event: ChatEvent) => {
+            if (event.type === 'turn') {
+                busyStates.push(event.isRunning);
+            }
+        });
+        const noticeShown = waitForUsageLimitNotice(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await noticeShown;
+
+        expect(service.isBusy(bot.id))
+            .toBe(true);
+        expect(busyStates)
+            .not.toContain(false);
+
+        const retryFinished = waitForTurnFinish(service, bot.id);
+
+        await vi.advanceTimersByTimeAsync(ONE_MINUTE_MS);
+        await retryFinished;
+
+        expect(busyStates.slice(0, -1))
+            .not.toContain(false);
+        expect(busyStates[busyStates.length - 1])
+            .toBe(false);
+
+        service.dispose();
+    });
+
+    it('does not show the bot idle between a turn and the queued message behind it', async () => {
+        const prompts: string[] = [];
+        const firstStarted = Promise.withResolvers<boolean>();
+        const runner: AgentRunner = {
+            runTurn: (request) => {
+                prompts.push(request.prompt);
+
+                if (prompts.length === 1) {
+                    firstStarted.resolve(true);
+
+                    return waitForAbort(request.abortSignal);
+                }
+
+                return replayEvents(REPLY_SCRIPT);
+            },
+        };
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const busyStates: boolean[] = [];
+
+        service.subscribe(bot.id, (event: ChatEvent) => {
+            if (event.type === 'turn') {
+                busyStates.push(event.isRunning);
+            }
+        });
+
+        await service.sendMessage(bot.id, 'first');
+        await firstStarted.promise;
+        await service.sendMessage(bot.id, 'second');
+
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.stopTurn(bot.id);
+        await finished;
+
+        expect(prompts)
+            .toEqual(['first', 'second']);
+        expect(busyStates.slice(0, -1))
+            .not.toContain(false);
+        expect(busyStates[busyStates.length - 1])
+            .toBe(false);
+    });
+
+    it('waits for a usage limit error even when no rejected rate limit event came first', async () => {
+        vi.useFakeTimers();
+        const resetsAt = Date.now() + ONE_MINUTE_MS;
+        const errorOnly: AgentEvent[] = [{ type: 'turn_error', message: 'You\'ve hit your limit', isUsageLimit: true, resetsAt }];
+        const runner = new SequenceRunner([errorOnly, REPLY_SCRIPT]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const noticeShown = waitForUsageLimitNotice(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await noticeShown;
+
+        const retryFinished = waitForTurnFinish(service, bot.id);
+
+        await vi.advanceTimersByTimeAsync(ONE_MINUTE_MS);
+        await retryFinished;
+
+        expect(runner.receivedRequests.map(request => request.prompt))
+            .toEqual(['Hi', 'Hi']);
+
+        service.dispose();
+    });
+
+    it('retries a past reset time after one minute, not at once', async () => {
+        vi.useFakeTimers();
+        const runner = new SequenceRunner([usageLimitScript(Date.now() - 60 * 60 * 1000), REPLY_SCRIPT]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const noticeShown = waitForUsageLimitNotice(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await noticeShown;
+        expect(await botStore.listUsageWaits())
+            .toEqual([{ botId: bot.id, resumeAt: Date.now() + ONE_MINUTE_MS }]);
+
+        expect(runner.receivedRequests)
+            .toHaveLength(1);
+
+        const retryFinished = waitForTurnFinish(service, bot.id);
+
+        await vi.advanceTimersByTimeAsync(ONE_MINUTE_MS - 1);
+
+        expect(runner.receivedRequests)
+            .toHaveLength(1);
+
+        await vi.advanceTimersByTimeAsync(1);
+        await retryFinished;
+
+        expect(runner.receivedRequests)
+            .toHaveLength(2);
+
+        service.dispose();
+    });
+
+    it('caps a reset time beyond eight days, so the wait does not fire at once', async () => {
+        vi.useFakeTimers();
+        const runner = new SequenceRunner([usageLimitScript(Date.now() + 30 * DAY_MS), REPLY_SCRIPT]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const noticeShown = waitForUsageLimitNotice(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await noticeShown;
+
+        expect(await botStore.listUsageWaits())
+            .toEqual([{ botId: bot.id, resumeAt: Date.now() + 8 * DAY_MS }]);
+
+        await vi.advanceTimersByTimeAsync(8 * DAY_MS - 1);
+
+        expect(runner.receivedRequests)
+            .toHaveLength(1);
+
+        service.dispose();
+    });
+
+    it('uses the reset time of the rejected limit over the one copied onto the error', async () => {
+        vi.useFakeTimers();
+        const rejectedResetsAt = Date.now() + ONE_MINUTE_MS;
+        const errorResetsAt = Date.now() + 3 * ONE_MINUTE_MS;
+        const limitScript: AgentEvent[] = [
+            { type: 'rate_limit', status: 'rejected', resetsAt: rejectedResetsAt },
+            { type: 'turn_error', message: 'You\'ve hit your limit', isUsageLimit: true, resetsAt: errorResetsAt },
+        ];
+        const runner = new SequenceRunner([limitScript, REPLY_SCRIPT]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const noticeShown = waitForUsageLimitNotice(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await noticeShown;
+
+        const retryFinished = waitForTurnFinish(service, bot.id);
+
+        await vi.advanceTimersByTimeAsync(ONE_MINUTE_MS);
+        await retryFinished;
+
+        expect(runner.receivedRequests)
+            .toHaveLength(2);
+
+        service.dispose();
+    });
+
+    it('keeps the files restored by an earlier turn when a later queued turn restores none', async () => {
+        const firstStarted = Promise.withResolvers<boolean>();
+        let runCount = 0;
+        const runner: AgentRunner = {
+            runTurn: (request) => {
+                runCount += 1;
+
+                if (runCount === 1) {
+                    firstStarted.resolve(true);
+
+                    return errorAfterAbort(request.abortSignal);
+                }
+
+                return replayEvents(REPLY_SCRIPT);
+            },
+        };
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await service.saveUploads(bot.id, [new File([Buffer.from('notes')], 'notes.txt')]);
+        await service.sendMessage(bot.id, 'first');
+        await firstStarted.promise;
+        await service.sendMessage(bot.id, 'second');
+
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.stopTurn(bot.id);
+        await finished;
+
+        expect((await service.listPendingUploads(bot.id))?.map(upload => upload.name))
+            .toEqual(['notes.txt']);
+    });
+
+    it('clears the running state when the queue cannot start the next turn', async () => {
+        const prompts: string[] = [];
+        const firstStarted = Promise.withResolvers<boolean>();
+        const runner: AgentRunner = {
+            runTurn: (request) => {
+                prompts.push(request.prompt);
+
+                if (prompts.length === 1) {
+                    firstStarted.resolve(true);
+
+                    return waitForAbort(request.abortSignal);
+                }
+
+                return replayEvents(REPLY_SCRIPT);
+            },
+        };
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        vi.spyOn(botStore, 'deleteQueuedTurn')
+            .mockRejectedValueOnce(new Error('Disk is full'));
+        await service.sendMessage(bot.id, 'first');
+        await firstStarted.promise;
+        await service.sendMessage(bot.id, 'second');
+
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.stopTurn(bot.id);
+        await finished;
+        await vi.waitFor(() => {
+            expect(service.isBusy(bot.id))
+                .toBe(false);
+        });
+
+        const thirdFinished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'third');
+        await thirdFinished;
+
+        expect(prompts)
+            .toEqual(['first', 'third']);
+    });
+
+    it('puts the files of a dropped retry back for the next message when a stop cancels the wait', async () => {
+        vi.useFakeTimers();
+        const runner = new SequenceRunner([usageLimitScript(Date.now() + ONE_MINUTE_MS)]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await service.saveUploads(bot.id, [new File([Buffer.from('notes')], 'notes.txt')]);
+        const noticeShown = waitForUsageLimitNotice(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Read this');
+        await noticeShown;
+
+        expect(await service.stopTurn(bot.id))
+            .toBe(true);
+        expect((await service.listPendingUploads(bot.id))?.map(upload => upload.name))
+            .toEqual(['notes.txt']);
+
+        service.dispose();
+    });
+});
 
 describe('ChatService', () => {
     it('sends the agent workspace path and creates nothing under the data folder when an agent user is set', async () => {
@@ -215,7 +791,7 @@ describe('ChatService', () => {
 
     it('stores a turn error as a system message', async () => {
         const { service } = buildSetup([
-            { event: { type: 'turn_error', message: 'Usage limit reached', isUsageLimit: true } },
+            { event: { type: 'turn_error', message: 'Agent crashed', isUsageLimit: false } },
         ]);
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
         const finished = waitForTurnFinish(service, bot.id);
@@ -226,22 +802,31 @@ describe('ChatService', () => {
         const storedMessages = await service.listMessages(bot.id);
 
         expect(storedMessages?.[1])
-            .toMatchObject({ role: 'system', body: { kind: 'text', text: 'Usage limit reached' } });
+            .toMatchObject({ role: 'system', body: { kind: 'text', text: 'Agent crashed' } });
     });
 
-    it('rejects a second message while the first turn is still running', async () => {
-        const { service } = buildSetup([{ event: { type: 'text', text: 'Late' }, delayMs: 60_000 }]);
+    it('queues a message sent while a turn runs and runs it after that turn', async () => {
+        const { service, runner } = buildSetup([{ event: { type: 'text', text: 'Reply' }, delayMs: 50 }]);
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
 
         await service.sendMessage(bot.id, 'first');
 
-        await expect(service.sendMessage(bot.id, 'second'))
-            .rejects.toBeInstanceOf(TurnInProgressError);
+        const queuedMessage = await service.sendMessage(bot.id, 'second');
 
-        const finished = waitForTurnFinish(service, bot.id);
+        expect(queuedMessage?.body)
+            .toEqual({ kind: 'text', text: 'second', isQueued: true });
 
-        await service.stopTurn(bot.id);
         await finished;
+
+        expect(runner.receivedRequests.map(request => request.prompt))
+            .toEqual(['first', 'second']);
+
+        const storedMessages = await service.listMessages(bot.id);
+        const secondStored = storedMessages?.find(message => message.body.kind === 'text' && message.body.text === 'second');
+
+        expect(secondStored?.body)
+            .toEqual({ kind: 'text', text: 'second', isQueued: false });
     });
 
     it('stops a running turn and keeps only the messages stored before the stop', async () => {

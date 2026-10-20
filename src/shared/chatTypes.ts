@@ -23,6 +23,8 @@ interface TextBody {
     kind: 'text';
     text: string;
     attachments?: AttachmentSummary[];
+    // Set on a user message sent during a turn. Cleared when its turn starts.
+    isQueued?: boolean;
 }
 
 interface ChoiceBody {

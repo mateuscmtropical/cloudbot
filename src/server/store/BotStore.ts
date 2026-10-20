@@ -2,8 +2,24 @@ import { randomUUID } from 'node:crypto';
 
 import { asc, eq } from 'drizzle-orm';
 
-import { bots } from './schema.ts';
+import { bots, turnQueue, turnWaits } from './schema.ts';
+import type { StoredUploadRecord } from './schema.ts';
 import type { AppDatabase, Bot, BotProfile, StoreOptions } from './types.ts';
+
+// One message waiting for its turn, in run order.
+interface QueuedTurnRecord {
+    id: string;
+    botId: string;
+    position: number;
+    messageId: string | null;
+    text: string;
+    uploads: StoredUploadRecord[];
+}
+
+interface UsageWaitRecord {
+    botId: string;
+    resumeAt: number;
+}
 
 class BotStore {
     private readonly database: AppDatabase;
@@ -77,6 +93,53 @@ class BotStore {
 
         return this.getById(botId);
     }
+
+    // Every queued turn of every bot, in run order. The chat service reads it once at start.
+    async listQueuedTurns(): Promise<QueuedTurnRecord[]> {
+        const byPosition = asc(turnQueue.position);
+
+        return this.database.select()
+            .from(turnQueue)
+            .orderBy(byPosition);
+    }
+
+    async insertQueuedTurn(record: QueuedTurnRecord): Promise<void> {
+        await this.database.insert(turnQueue)
+            .values(record);
+    }
+
+    async deleteQueuedTurn(queuedTurnId: string): Promise<void> {
+        const isQueuedTurn = eq(turnQueue.id, queuedTurnId);
+
+        await this.database.delete(turnQueue)
+            .where(isQueuedTurn);
+    }
+
+    async deleteQueuedTurnsOfBot(botId: string): Promise<void> {
+        const isBotTurn = eq(turnQueue.botId, botId);
+
+        await this.database.delete(turnQueue)
+            .where(isBotTurn);
+    }
+
+    async listUsageWaits(): Promise<UsageWaitRecord[]> {
+        return this.database.select()
+            .from(turnWaits);
+    }
+
+    async setUsageWait(botId: string, resumeAt: number): Promise<void> {
+        await this.database.insert(turnWaits)
+            .values({ botId, resumeAt })
+            .onConflictDoUpdate({ target: turnWaits.botId, set: { resumeAt } });
+    }
+
+    async deleteUsageWait(botId: string): Promise<void> {
+        const isUsageWait = eq(turnWaits.botId, botId);
+
+        await this.database.delete(turnWaits)
+            .where(isUsageWait);
+    }
 }
 
 export { BotStore };
+export type { QueuedTurnRecord, UsageWaitRecord };

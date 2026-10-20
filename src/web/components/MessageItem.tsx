@@ -38,6 +38,7 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
                                     ))}
                                 </ul>
                             )}
+                    {body.isQueued === true ? <span className="queued-label">Queued</span> : null}
                 </div>
             );
         case 'choice':
