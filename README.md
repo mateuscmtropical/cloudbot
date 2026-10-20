@@ -74,6 +74,29 @@ a new link and ends every existing session.
 
 The link uses `CLOUDBOT_PUBLIC_URL` when it is set, and `http://localhost:PORT`
 otherwise. The cookie is `Secure`, so open the link on localhost or over HTTPS.
+## Run with Docker
+
+The image runs the server as the `cloudbot` user and installs the Claude Code
+CLI as the `bot` user. The data folder is a Docker volume that only
+`cloudbot` can read.
+
+To run it locally behind Caddy on `https://localhost`:
+
+```sh
+docker compose -f docker/compose.yaml up --build
+```
+
+On a VPS, point a domain at the server and set it before you start:
+
+```sh
+CLOUDBOT_DOMAIN=bot.example.com docker compose -f docker/compose.yaml up -d --build
+```
+
+Caddy gets the HTTPS certificate for that domain. Ports 80 and 443 must be open.
+
+The setup link is in the logs (`docker compose -f docker/compose.yaml logs cloudbot`).
+To print a new one, run
+`docker compose -f docker/compose.yaml exec cloudbot node dist/server/newSetupLink.js`.
 
 ## License
 

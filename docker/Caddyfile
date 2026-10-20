@@ -1,0 +1,4 @@
+{$CLOUDBOT_DOMAIN} {
+    encode gzip
+    reverse_proxy cloudbot:3000
+}

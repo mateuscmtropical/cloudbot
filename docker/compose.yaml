@@ -1,0 +1,36 @@
+name: cloudbot
+
+services:
+  cloudbot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: cloudbot:local
+    environment:
+      CLOUDBOT_PUBLIC_URL: https://${CLOUDBOT_DOMAIN:-localhost}
+    restart: unless-stopped
+    volumes:
+      - cloudbot-data:/var/lib/cloudbot
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      cloudbot:
+        condition: service_healthy
+    environment:
+      CLOUDBOT_DOMAIN: ${CLOUDBOT_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  cloudbot-data:
+  caddy-data:
+  caddy-config:
