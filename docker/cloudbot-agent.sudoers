@@ -1,0 +1,4 @@
+Defaults:cloudbot env_reset
+Defaults:cloudbot secure_path="/usr/local/bin:/usr/bin:/bin"
+Defaults:cloudbot env_keep="ANTHROPIC_BASE_URL ANTHROPIC_API_KEY"
+cloudbot ALL=(bot) NOPASSWD: NOSETENV: /home/bot/.local/bin/claude

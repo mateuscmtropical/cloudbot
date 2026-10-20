@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as fileSystem from 'node:fs/promises';
 import type { Options, SDKAssistantMessage, SDKMessage, SDKResultMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { SdkAgentRunner, buildQueryOptions, mapSdkMessage } from './SdkAgentRunner.ts';
 import type { SdkQueryFunction } from './SdkAgentRunner.ts';
 import type { AgentEvent } from './AgentEvent.ts';
 import type { TurnRequest } from './AgentRunner.ts';
+
+vi.mock('node:fs/promises', { spy: true });
 
 const SESSION_ID = '5f0c2d1e-0000-4000-8000-000000000001';
 
@@ -228,6 +231,27 @@ describe('buildQueryOptions', () => {
         expect(options).not.toHaveProperty('resume');
         expect(options).not.toHaveProperty('pathToClaudeCodeExecutable');
         expect(options).not.toHaveProperty('env');
+        expect(options).not.toHaveProperty('spawnClaudeCodeProcess');
+    });
+
+    it('sets the user spawn hook, minimal env and isolated workspace when configured', () => {
+        const options = buildQueryOptions(buildRequest({ workspaceDir: '/var/lib/cloudbot-workspaces/bot-1' }), {
+            agentUser: 'bot',
+            pathToClaudeCodeExecutable: '/home/bot/.local/bin/claude',
+            environment: { SERVER_SECRET: 'secret', ANTHROPIC_BASE_URL: 'http://127.0.0.1:1234' },
+        }, abortController);
+
+        expect(options.spawnClaudeCodeProcess)
+            .toBeTypeOf('function');
+        expect(options.cwd)
+            .toBe('/var/lib/cloudbot-workspaces/bot-1');
+        expect(options.env)
+            .toEqual({
+                HOME: '/home/bot',
+                PATH: '/usr/local/bin:/usr/bin:/bin',
+                ANTHROPIC_BASE_URL: 'http://127.0.0.1:1234',
+                ANTHROPIC_API_KEY: 'cloudbot-key-proxy',
+            });
     });
 
     it('passes the configured environment to the SDK as env', () => {
@@ -338,6 +362,38 @@ describe('SdkAgentRunner.runTurn', () => {
         expect(events)
             .toEqual([]);
         expect(queryFunction).not.toHaveBeenCalled();
+    });
+
+    it('refuses to construct an unisolated runner in production', () => {
+        vi.stubEnv('NODE_ENV', 'production');
+        vi.stubEnv('CLOUDBOT_AGENT_USER', '');
+        try {
+            expect(() => new SdkAgentRunner({}))
+                .toThrow('CLOUDBOT_AGENT_USER must be set in production');
+        } finally {
+            vi.unstubAllEnvs();
+        }
+    });
+
+    it('logs workspace preparation details and returns a message without paths', async () => {
+        const failure = new Error('EACCES: permission denied, mkdir /var/lib/cloudbot-workspaces/bot-1');
+        const mkdir = vi.spyOn(fileSystem, 'mkdir')
+            .mockRejectedValue(failure);
+        const log = vi.spyOn(console, 'error')
+            .mockImplementation(() => undefined);
+        const queryFunction = vi.fn(() => streamSdkMessages([]));
+        const runner = new SdkAgentRunner({ agentUser: 'bot', queryFunction });
+        const request = buildRunTurnRequest(new AbortController());
+        const events = await collectRunTurnEvents(runner, request);
+
+        expect(events)
+            .toEqual([{ type: 'turn_error', message: 'Could not prepare the agent workspace. Please try again.', isUsageLimit: false }]);
+        expect(log)
+            .toHaveBeenCalledWith('Could not prepare the agent workspace:', failure);
+        expect(mkdir)
+            .toHaveBeenCalled();
+        expect(queryFunction)
+            .not.toHaveBeenCalled();
     });
 
     it('fills a usage limit error with the latest reset time seen in the turn', async () => {

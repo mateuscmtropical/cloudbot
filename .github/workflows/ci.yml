@@ -50,7 +50,9 @@ jobs:
         run: >
           docker run -d --name cloudbot-ci -p 3000:3000
           --health-interval=2s --health-start-period=2s
-          -v cloudbot-ci-data:/var/lib/cloudbot cloudbot:ci
+          -v cloudbot-ci-data:/var/lib/cloudbot
+          -v cloudbot-ci-home:/home/bot
+          -v cloudbot-ci-workspaces:/var/lib/cloudbot-workspaces cloudbot:ci
 
       - name: Check health route and data folder isolation
         run: bash docker/check-container.sh cloudbot-ci 3000

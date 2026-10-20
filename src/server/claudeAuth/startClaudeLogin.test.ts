@@ -26,6 +26,26 @@ afterEach(async () => {
 });
 
 describe('startClaudeLogin', () => {
+    it('wraps sudo in the pseudo terminal with only the bot environment', async () => {
+        const spawnProcess = vi.fn(SPAWN_FAKE);
+
+        vi.stubEnv('CLOUDBOT_AGENT_USER', 'bot');
+        vi.stubEnv('SERVER_SECRET', 'private');
+        try {
+            const session = startClaudeLogin({ claudePath: '/home/bot/.local/bin/claude', spawnProcess });
+
+            SESSIONS.push(session);
+            expect(spawnProcess)
+                .toHaveBeenCalledExactlyOnceWith('script', [
+                    '-q', '-e', '-c', '\'/usr/bin/sudo\' \'-n\' \'-u\' \'bot\' \'--\' \'/home/bot/.local/bin/claude\' \'auth\' \'login\' \'--claudeai\'', '/dev/null',
+                ], { env: { HOME: '/home/bot', PATH: '/usr/local/bin:/usr/bin:/bin' } });
+            await session.signInUrl;
+            session.cancel();
+        } finally {
+            vi.unstubAllEnvs();
+        }
+    });
+
     it('parses the sign-in URL after removing ANSI output and accepts a good code', async () => {
         const session = startFakeLogin();
 

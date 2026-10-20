@@ -91,6 +91,10 @@ The image runs the server as the `cloudbot` user and installs the Claude Code
 CLI as the `bot` user. The data folder is a Docker volume that only
 `cloudbot` can read.
 
+The bot home and workspaces also use named volumes to preserve Claude login,
+sessions and memory. See [installation and updates](docs/INSTALL.md) for volume
+and CLI update behavior.
+
 To run it locally behind Caddy on `https://localhost`:
 
 ```sh

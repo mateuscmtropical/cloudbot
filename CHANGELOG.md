@@ -8,6 +8,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Optional agent execution as the bot user with restricted sudo, a minimal environment and workspaces outside the server data folder.
+- Persistent bot home and workspace volumes for Claude credentials, sessions and bot memory. The CLI in the home volume updates itself across image upgrades.
 - Claude subscription login helpers for the setup chat, with sign-in links,
   code submission, cancellation, timeout handling and CLI status checks.
 - Project setup: server with a health route, lint, tests, CI and docs.
@@ -22,3 +24,10 @@ All notable changes to this project are listed here. The format follows
 - Chat web interface in `src/web`: bot list, Markdown messages, setup messages and a composer. The server serves the build from `dist/web`.
 - One-time setup link printed on start. Opening it sets a session cookie, and every `/api` route except health needs that cookie. A new code ends the old sessions.
 - `pnpm setup-link` prints a new setup link for an owner who lost the cookie. Set `CLOUDBOT_PUBLIC_URL` to make the link use your public address.
+
+### Fixed
+
+- Claude login and auth status use the isolated agent user and minimal environment, with the login pseudo terminal wrapping sudo.
+- Production startup requires an agent user. Container checks verify that it is bot and validate sudo denial messages.
+- Workspace permissions are restored explicitly after creation and on reuse without default ACLs. Preparation errors are logged on the server and hidden from chat.
+- Agent stderr is drained through a pipe with only its last 4 KB retained for failure diagnostics.

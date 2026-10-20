@@ -20,7 +20,7 @@ RUN pnpm build
 
 FROM base AS runtime
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates curl \
+    && apt-get install -y --no-install-recommends bash ca-certificates curl sudo \
     && rm -rf /var/lib/apt/lists/*
 
 # cloudbot runs the server and owns the data. bot runs the Claude Code CLI and
@@ -28,7 +28,12 @@ RUN apt-get update \
 RUN groupadd --system cloudbot \
     && useradd --system --gid cloudbot --no-create-home --shell /usr/sbin/nologin cloudbot \
     && useradd --create-home --shell /bin/bash bot \
-    && install -d -o cloudbot -g cloudbot -m 0700 /var/lib/cloudbot
+    && usermod -a -G bot cloudbot \
+    && install -d -o cloudbot -g cloudbot -m 0700 /var/lib/cloudbot \
+    && install -d -o bot -g bot -m 2770 /var/lib/cloudbot-workspaces
+
+COPY --chmod=0440 docker/cloudbot-agent.sudoers /etc/sudoers.d/cloudbot-agent
+RUN visudo -cf /etc/sudoers.d/cloudbot-agent
 
 # pipefail makes a failed download fail the build instead of piping nothing into bash.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -46,6 +51,7 @@ COPY --from=build /app/package.json ./package.json
 ENV NODE_ENV=production \
     PORT=3000 \
     CLOUDBOT_DATA_DIR=/var/lib/cloudbot \
+    CLOUDBOT_AGENT_USER=bot \
     CLAUDE_PATH=/home/bot/.local/bin/claude
 
 EXPOSE 3000

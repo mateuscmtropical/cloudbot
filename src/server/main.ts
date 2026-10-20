@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server';
+import { validateAgentIsolation } from './agent/buildClaudeCommand.ts';
 
 import { SdkAgentRunner } from './agent/SdkAgentRunner.ts';
 import { SetupAccess } from './access/SetupAccess.ts';
@@ -11,6 +12,8 @@ import { ensureDefaultBot } from './store/ensureDefaultBot.ts';
 import { openDatabase } from './store/openDatabase.ts';
 import { databasePath, resolveDataDir } from './store/resolveDataDir.ts';
 import { SettingsStore } from './store/SettingsStore.ts';
+
+validateAgentIsolation(process.env.CLOUDBOT_AGENT_USER);
 
 const port = readServerPort(process.env);
 const version = process.env.CLOUDBOT_VERSION ?? 'dev';
@@ -27,7 +30,7 @@ await ensureDefaultBot(botStore);
 const claudePath = process.env.CLAUDE_PATH;
 // The agent inherits this process environment for now. Later the server passes a minimal one.
 const runner = new SdkAgentRunner({ pathToClaudeCodeExecutable: claudePath });
-const chatService = new ChatService({ botStore, messageStore, runner, dataDir });
+const chatService = new ChatService({ botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER });
 const app = createApp({ version, access, chatService });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.

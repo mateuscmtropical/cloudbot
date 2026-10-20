@@ -3,6 +3,23 @@ import { describe, expect, it, vi } from 'vitest';
 import { getClaudeAuthStatus } from './getClaudeAuthStatus.ts';
 
 describe('getClaudeAuthStatus', () => {
+    it('uses sudo and only the bot environment when an agent user is configured', async () => {
+        const runCommand = vi.fn()
+            .mockResolvedValue('{"loggedIn":true}');
+
+        vi.stubEnv('CLOUDBOT_AGENT_USER', 'bot');
+        vi.stubEnv('SERVER_SECRET', 'private');
+        try {
+            await getClaudeAuthStatus({ claudePath: '/home/bot/.local/bin/claude', runCommand });
+            expect(runCommand)
+                .toHaveBeenCalledExactlyOnceWith('/usr/bin/sudo', [
+                    '-n', '-u', 'bot', '--', '/home/bot/.local/bin/claude', 'auth', 'status', '--json',
+                ], { HOME: '/home/bot', PATH: '/usr/local/bin:/usr/bin:/bin' });
+        } finally {
+            vi.unstubAllEnvs();
+        }
+    });
+
     it('maps the real CLI status shape and excludes account details', async () => {
         const runCommand = vi.fn()
             .mockResolvedValue(JSON.stringify({

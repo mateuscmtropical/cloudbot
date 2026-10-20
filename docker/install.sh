@@ -148,7 +148,8 @@ print_setup_link() {
     local started_at
     local setup_link
     started_at="$(docker inspect -f '{{.State.StartedAt}}' "$CONTAINER_ID")"
-    setup_link="$(compose logs --no-color --since "$started_at" cloudbot | grep -Eo 'https?://[^ ]*/setup[?]code=[^ ]*' | tail -n 1 || true)"
+    # Only a link on our own domain counts, and the server prints it first after start.
+    setup_link="$(compose logs --no-color --since "$started_at" cloudbot | grep -Eo "https://${DOMAIN//./\\.}/setup[?]code=[A-Za-z0-9_-]+" | head -n 1 || true)"
 
     echo ""
     if [ -n "$setup_link" ]; then
