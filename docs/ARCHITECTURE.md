@@ -36,6 +36,15 @@ Rules between folders:
 
 SQLite through `node:sqlite`, in the data volume. No native dependencies.
 
+## Secrets
+
+The vault in `src/server/vault/` encrypts each secret with AES-256-GCM. Its
+key is in `vault.key`, next to `vault.json`, and both files belong to the
+server user. The secure form endpoint stores a value and never sends it back.
+The key proxy listens on 127.0.0.1 and adds the API key to each request to
+Anthropic. The agent gets `ANTHROPIC_BASE_URL` and a dummy key, never the real
+one.
+
 ## Claude
 
 The Claude Agent SDK runs the `claude` CLI installed by Anthropic's installer

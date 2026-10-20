@@ -9,3 +9,4 @@ All notable changes to this project are listed here. The format follows
 ### Added
 
 - Project setup: server with a health route, lint, tests, CI and docs.
+- Secrets vault with encryption at rest, a secure form endpoint and a local key proxy that adds the API key to requests.
