@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { stripVTControlCharacters } from 'node:util';
+import { buildClaudeCommand } from '../agent/buildClaudeCommand.ts';
 
 type ClaudeLoginFailureReason = 'timeout' | 'cliMissing' | 'exitedWithError' | 'cancelled';
 
@@ -14,10 +15,15 @@ interface ClaudeLoginFailure {
 }
 
 type ClaudeLoginResult = ClaudeLoginSuccess | ClaudeLoginFailure;
-type SpawnLoginProcess = (command: string, commandArguments: string[]) => ChildProcessWithoutNullStreams;
+interface LoginProcessOptions {
+    env: Record<string, string>;
+}
+
+type SpawnLoginProcess = (command: string, commandArguments: string[], options?: LoginProcessOptions) => ChildProcessWithoutNullStreams;
 
 interface ClaudeLoginOptions {
     claudePath: string;
+    agentUser?: string;
     spawnProcess?: SpawnLoginProcess;
     timeoutMs?: number;
 }
@@ -31,8 +37,11 @@ interface ClaudeLoginSession {
 
 function startClaudeLogin(options: ClaudeLoginOptions): ClaudeLoginSession {
     const spawnProcess = options.spawnProcess ?? spawn;
-    const escapedPath = options.claudePath.replaceAll('\'', '\'"\'"\'');
-    const command = `'${escapedPath}' auth login --claudeai`;
+    const invocation = buildClaudeCommand(options.claudePath, ['auth', 'login', '--claudeai'], options.agentUser);
+    const escapedPath = invocation.command.replaceAll('\'', '\'"\'"\'');
+    const quotedArguments = invocation.args.map(argument => `'${argument.replaceAll('\'', '\'"\'"\'')}'`);
+    const argumentsText = invocation.env ? quotedArguments.join(' ') : 'auth login --claudeai';
+    const command = `'${escapedPath}' ${argumentsText}`;
     const urlResolvers = Promise.withResolvers<string | null>();
     const finishedResolvers = Promise.withResolvers<ClaudeLoginResult>();
     const signInUrl = urlResolvers.promise;
@@ -108,7 +117,11 @@ function startClaudeLogin(options: ClaudeLoginOptions): ClaudeLoginSession {
     }
 
     try {
-        child = spawnProcess('script', ['-q', '-e', '-c', command, '/dev/null']);
+        const scriptArguments = ['-q', '-e', '-c', command, '/dev/null'];
+
+        child = invocation.env
+            ? spawnProcess('script', scriptArguments, { env: invocation.env })
+            : spawnProcess('script', scriptArguments);
         child.stdout.setEncoding('utf8');
         child.stderr.setEncoding('utf8');
         child.stdout.on('data', onOutput);

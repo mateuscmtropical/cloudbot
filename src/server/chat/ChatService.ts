@@ -5,6 +5,7 @@ import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
 import { PROFILE_SERVER_NAME, UPDATE_PROFILE_TOOL_FULL_NAME, createProfileToolServer } from '../agent/createProfileToolServer.ts';
+import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from '../agent/prepareAgentWorkspace.ts';
 import type { BotStore } from '../store/BotStore.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
 import type { Bot, Message } from '../store/types.ts';
@@ -22,6 +23,8 @@ interface ChatServiceOptions {
     messageStore: MessageStore;
     runner: AgentRunner;
     dataDir: string;
+    // Set when the agent runs as its own user. The runner then prepares the folder under AGENT_WORKSPACE_ROOT.
+    agentUser?: string | undefined;
 }
 
 interface SessionOption {
@@ -109,6 +112,7 @@ class ChatService {
     private readonly messageStore: MessageStore;
     private readonly runner: AgentRunner;
     private readonly dataDir: string;
+    private readonly agentUser: string | undefined;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
 
@@ -117,6 +121,7 @@ class ChatService {
         this.messageStore = options.messageStore;
         this.runner = options.runner;
         this.dataDir = options.dataDir;
+        this.agentUser = options.agentUser;
     }
 
     async listBots(): Promise<BotSummary[]> {
@@ -262,9 +267,14 @@ class ChatService {
                 return;
             }
 
-            const workspaceDir = join(this.dataDir, 'workspaces', botId);
+            // The agent user's folder is prepared by the runner, so nothing is created under the data folder then.
+            const workspaceDir = this.agentUser
+                ? agentWorkspacePath(botId, AGENT_WORKSPACE_ROOT)
+                : join(this.dataDir, 'workspaces', botId);
 
-            await mkdir(workspaceDir, { recursive: true });
+            if (!this.agentUser) {
+                await mkdir(workspaceDir, { recursive: true });
+            }
 
             // Stop can arrive during the setup above. Then the runner must not start.
             if (abortController.signal.aborted) {

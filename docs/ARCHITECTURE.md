@@ -8,8 +8,8 @@ as planned.
 | Process | Runs as | Job |
 |---|---|---|
 | Server | `cloudbot` user | HTTP API, chat, setup, vault, task queue, storage |
-| Agent | `bot` user | The Claude Agent SDK and the `claude` CLI for one conversation (planned) |
-| Key proxy | `cloudbot` user | Adds the API key to requests from the agent, so the agent never holds it (planned) |
+| Agent | `bot` user | The `claude` CLI for one conversation, started by the SDK in the server |
+| Key proxy | `cloudbot` user | Adds the API key to requests from the agent, so the agent never holds it |
 | Computer | `bot` user | Desktop, Chromium and noVNC for the bot's screen (planned, v0.2) |
 
 The bot runs as its own Linux user. Files that belong to the server user, such
@@ -24,7 +24,59 @@ which is mode 700 and holds `CLOUDBOT_DATA_DIR`. `bot` installs the Claude
 Code CLI with Anthropic's installer (`curl -fsSL https://claude.ai/install.sh | bash`),
 which puts it in `/home/bot/.local/bin/claude`. The image sets `CLAUDE_PATH` to that path,
 so the server can pass it to the SDK as `pathToClaudeCodeExecutable`. The build fails if
-the CLI does not run.
+the CLI does not run. The runtime installs sudo and sets `CLOUDBOT_AGENT_USER=bot`.
+`SdkAgentRunner` reads that setting and `CLAUDE_PATH`, with constructor options
+available for explicit configuration. Production startup fails if no agent user
+is configured. Without an agent user, local development on Windows and macOS
+keeps the normal SDK spawn behavior.
+
+With an agent user, the SDK's `spawnClaudeCodeProcess` hook starts
+`sudo -n -u bot -- /home/bot/.local/bin/claude` with the SDK arguments as a
+literal argument array. It forwards the SDK working directory and cancellation
+signal, with piped input and output. The sudoers file permits only this CLI
+path as `bot`, with any CLI arguments, without a password. It grants no root
+commands, shells or environment override permission. The image validates the
+file with `visudo`.
+
+The login and auth status helpers use the same sudo command and minimal
+environment. For login, `script` wraps sudo in a pseudo terminal. Credentials
+and sessions therefore belong to `bot` in `/home/bot`. Without an agent user,
+the helpers retain their direct CLI execution for local development.
+
+The agent's stderr is piped and drained rather than inherited into server
+logs. Only its last 4096 bytes are retained for failure diagnostics, printed
+as one JSON-quoted line when the SDK throws. Workspace preparation failures
+are logged on the server and reach chat as a short message without paths.
+
+The wrapper constructs an environment containing only `HOME=/home/bot` and a
+fixed system `PATH`. When the caller supplies the key proxy's
+`ANTHROPIC_BASE_URL` in the runner environment, it also passes that URL and a
+fixed dummy `ANTHROPIC_API_KEY`. It drops all other caller and SDK environment
+values, including real keys and auth tokens. Sudo resets the environment,
+sets the target user's home and identity variables, applies the same fixed
+system path and preserves only the two proxy variables. Sudo may add its own
+process metadata. Server environment secrets are never inherited by the CLI.
+
+The image prepares `/var/lib/cloudbot-workspaces` outside the private data
+folder. The root belongs to `bot:bot` and has mode 2770. `cloudbot` is a
+member of the `bot` group. Before starting a turn, the server creates
+`/var/lib/cloudbot-workspaces/<botId>` with mode 770. Bot ids must be single
+safe path components. The setgid parent makes the new directory's group `bot`.
+After creation and on reuse, the server explicitly sets mode 770 to restore
+group write access regardless of its umask, without relying on filesystem ACLs.
+The creator remains `cloudbot`, so these directories are owned by
+`cloudbot:bot`, while bot-created files belong to `bot`. This shared group
+design lets the server create workspaces without another sudo command or
+permission to change owners. Existing files and symbolic links are rejected
+as workspace directories. All bots share one Unix account, so workspaces do
+not isolate bots from each other.
+
+Compose and the CI container mount separate named volumes at `/home/bot`
+and `/var/lib/cloudbot-workspaces`, alongside the private server data volume.
+They preserve login credentials, sessions and workspace memory in `CLAUDE.md`
+across container replacement. New volumes inherit the image's ownership and
+permissions. The CLI in the bot home volume updates itself and is not replaced
+by a new image, because the mounted volume hides the image's copy of `/home/bot`.
 
 The server finds `drizzle/` relative to its install folder, so it starts
 from any working directory. The image health check calls `/api/health`.
@@ -37,11 +89,10 @@ logs, update and setup-link. The setup link is read from the container logs.
 
 `docker/compose.yaml` runs the server and Caddy. `docker/Caddyfile` reads the
 domain from `CLOUDBOT_DOMAIN`. CI runs `docker/check-container.sh` on the built
-image. It checks the health route and proves that `bot` cannot read a file the
-server user wrote to the data folder.
-
-Not wired yet: the server does not run the agent as `bot`. Until it does,
-the CLI runs as `cloudbot`, and the isolation check only covers the data folder.
+image. It checks the health route, proves that `bot` cannot read a file the
+server user wrote to the data folder, verifies the allowed CLI sudo command
+and denied shell and root commands, and checks bot write access to a
+server-created workspace.
 
 ## Folders
 

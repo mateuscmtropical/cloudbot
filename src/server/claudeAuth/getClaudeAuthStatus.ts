@@ -1,20 +1,22 @@
 import { execFile } from 'node:child_process';
+import { buildClaudeCommand } from '../agent/buildClaudeCommand.ts';
 
 interface ClaudeAuthStatus {
     isLoggedIn: boolean;
     method?: string;
 }
 
-type RunClaudeCommand = (command: string, commandArguments: string[]) => Promise<string>;
+type RunClaudeCommand = (command: string, commandArguments: string[], environment?: Record<string, string>) => Promise<string>;
 
 interface ClaudeAuthStatusOptions {
     claudePath: string;
+    agentUser?: string;
     runCommand?: RunClaudeCommand;
 }
 
-function runClaudeCommand(command: string, commandArguments: string[]): Promise<string> {
+function runClaudeCommand(command: string, commandArguments: string[], environment?: Record<string, string>): Promise<string> {
     return new Promise((resolve, reject) => {
-        execFile(command, commandArguments, { encoding: 'utf8', timeout: 10000, maxBuffer: 65536 }, (error, stdout) => {
+        execFile(command, commandArguments, { env: environment, encoding: 'utf8', timeout: 10000, maxBuffer: 65536 }, (error, stdout) => {
             // The CLI may return 1 with JSON when it is signed out.
             if (error && error.code !== 1) {
                 const message = error.code === 'ENOENT' ? 'Claude CLI is missing.' : 'Could not check Claude sign-in status.';
@@ -31,10 +33,13 @@ function runClaudeCommand(command: string, commandArguments: string[]): Promise<
 
 async function getClaudeAuthStatus(options: ClaudeAuthStatusOptions): Promise<ClaudeAuthStatus> {
     const runCommand = options.runCommand ?? runClaudeCommand;
+    const invocation = buildClaudeCommand(options.claudePath, ['auth', 'status', '--json'], options.agentUser);
     let output: string;
 
     try {
-        output = await runCommand(options.claudePath, ['auth', 'status', '--json']);
+        output = invocation.env
+            ? await runCommand(invocation.command, invocation.args, invocation.env)
+            : await runCommand(invocation.command, invocation.args);
     } catch {
         throw new Error('Could not check Claude sign-in status. Verify that the Claude CLI is installed and try again.');
     }

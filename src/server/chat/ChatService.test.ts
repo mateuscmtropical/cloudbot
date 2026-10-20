@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -65,6 +66,21 @@ async function* waitForAbort(abortSignal: AbortSignal): AsyncGenerator<AgentEven
 }
 
 describe('ChatService', () => {
+    it('sends the agent workspace path and creates nothing under the data folder when an agent user is set', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, agentUser: 'bot' });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        expect(runner.receivedRequests[0]?.workspaceDir)
+            .toBe(`/var/lib/cloudbot-workspaces/${bot.id}`);
+        expect(existsSync(join(dataDir, 'workspaces')))
+            .toBe(false);
+    });
+
     let dataDir: string;
     let opened: OpenedDatabase;
     let botStore: BotStore;

@@ -80,5 +80,38 @@ case "$LIST_OUTPUT" in
 esac
 echo "ok: bot user cannot read or list the data folder"
 
+CLAUDE_PATH="$(docker exec "$CONTAINER_NAME" printenv CLAUDE_PATH)"
+AGENT_USER="$(docker exec "$CONTAINER_NAME" printenv CLOUDBOT_AGENT_USER)"
+[ "$AGENT_USER" = "bot" ] || fail "CLOUDBOT_AGENT_USER must be bot"
+docker exec --user cloudbot "$CONTAINER_NAME" sudo -n -u bot -- "$CLAUDE_PATH" --version \
+    || fail "cloudbot cannot run the CLI as bot"
+echo "ok: cloudbot can run the CLI as bot"
+
+if SHELL_OUTPUT="$(docker exec --user cloudbot "$CONTAINER_NAME" sudo -n -u bot -- /bin/sh -c 'exit 0' 2>&1)"; then
+    fail "cloudbot can run a shell as bot"
+fi
+case "$SHELL_OUTPUT" in
+    *"not allowed"*|*"a password is required"*) ;;
+    *) fail "unexpected sudo shell error: $SHELL_OUTPUT" ;;
+esac
+if ROOT_OUTPUT="$(docker exec --user cloudbot "$CONTAINER_NAME" sudo -n id 2>&1)"; then
+    fail "cloudbot can run id as root"
+fi
+case "$ROOT_OUTPUT" in
+    *"not allowed"*|*"a password is required"*) ;;
+    *) fail "unexpected sudo root error: $ROOT_OUTPUT" ;;
+esac
+echo "ok: sudo denies a shell as bot and id as root"
+
+docker exec --user cloudbot "$CONTAINER_NAME" mkdir -m 0770 /var/lib/cloudbot-workspaces/probe-workspace \
+    || fail "cloudbot cannot create a workspace"
+docker exec --user cloudbot "$CONTAINER_NAME" chmod 0770 /var/lib/cloudbot-workspaces/probe-workspace \
+    || fail "cloudbot cannot set workspace permissions"
+docker exec --user bot "$CONTAINER_NAME" sh -c 'printf own > /var/lib/cloudbot-workspaces/probe-workspace/control.txt' \
+    || fail "bot cannot write to a server-created workspace"
+docker exec --user bot "$CONTAINER_NAME" rm /var/lib/cloudbot-workspaces/probe-workspace/control.txt
+docker exec --user cloudbot "$CONTAINER_NAME" rmdir /var/lib/cloudbot-workspaces/probe-workspace
+echo "ok: bot can write to a server-created workspace"
+
 docker exec --user cloudbot "$CONTAINER_NAME" rm -f "$PROBE_FILE"
 echo "All container checks passed."

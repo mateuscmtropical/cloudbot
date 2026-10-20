@@ -10,10 +10,14 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentEvent, TurnErrorEvent } from './AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from './AgentRunner.ts';
+import { buildAgentEnvironment, createAgentUserSpawn } from './createAgentUserSpawn.ts';
+import { validateAgentIsolation } from './buildClaudeCommand.ts';
+import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
 
 type SdkQueryFunction = (parameters: { prompt: string; options: Options }) => AsyncIterable<SDKMessage>;
 
 interface SdkAgentRunnerOptions {
+    agentUser?: string | undefined;
     pathToClaudeCodeExecutable?: string | undefined;
     environment?: Record<string, string>;
     // Tests inject a fake here. Production leaves it out and uses the SDK query.
@@ -170,12 +174,25 @@ function buildQueryOptions(
     request: TurnRequest,
     runnerOptions: SdkAgentRunnerOptions,
     abortController: AbortController,
+    onStderrTail?: (tail: string) => void,
 ): Options {
     const executableOption = runnerOptions.pathToClaudeCodeExecutable
         ? { pathToClaudeCodeExecutable: runnerOptions.pathToClaudeCodeExecutable }
         : {};
     // Without env the SDK subprocess inherits process.env, and with env it replaces the whole environment, so the caller must pass PATH and HOME too.
-    const environmentOption = runnerOptions.environment ? { env: runnerOptions.environment } : {};
+    const environmentOption = runnerOptions.agentUser
+        ? { env: buildAgentEnvironment(runnerOptions.agentUser, runnerOptions.environment) }
+        : runnerOptions.environment ? { env: runnerOptions.environment } : {};
+    const spawnOption = runnerOptions.agentUser
+        ? {
+                spawnClaudeCodeProcess: createAgentUserSpawn({
+                    user: runnerOptions.agentUser,
+                    executable: runnerOptions.pathToClaudeCodeExecutable ?? '',
+                    environment: runnerOptions.environment,
+                    onStderrTail,
+                }),
+            }
+        : {};
     const resumeOption = request.sessionId ? { resume: request.sessionId } : {};
     // A plain string systemPrompt would replace Claude Code's default prompt, so the bot profile is appended to the preset.
     const systemPromptAppendOption = request.systemPrompt ? { append: request.systemPrompt } : {};
@@ -196,6 +213,7 @@ function buildQueryOptions(
         includePartialMessages: true,
         ...executableOption,
         ...environmentOption,
+        ...spawnOption,
         ...resumeOption,
         ...systemPromptOption,
         ...mcpServersOption,
@@ -208,7 +226,12 @@ class SdkAgentRunner implements AgentRunner {
     private readonly queryFunction: SdkQueryFunction;
 
     constructor(options: SdkAgentRunnerOptions) {
-        this.runnerOptions = options;
+        const agentUser = options.agentUser ?? process.env.CLOUDBOT_AGENT_USER;
+        const pathToClaudeCodeExecutable = options.pathToClaudeCodeExecutable ?? process.env.CLAUDE_PATH;
+
+        validateAgentIsolation(agentUser);
+
+        this.runnerOptions = { ...options, agentUser, pathToClaudeCodeExecutable };
         this.queryFunction = options.queryFunction ?? query;
     }
 
@@ -222,14 +245,30 @@ class SdkAgentRunner implements AgentRunner {
         const forwardAbort = (): void => {
             abortController.abort();
         };
+        const diagnostics = { stderrTail: '' };
+        const onStderrTail = (tail: string): void => {
+            diagnostics.stderrTail = tail;
+        };
 
         request.abortSignal.addEventListener('abort', forwardAbort, { once: true });
 
-        const queryOptions = buildQueryOptions(request, this.runnerOptions, abortController);
-        const conversation = this.queryFunction({ prompt: request.prompt, options: queryOptions });
         let latestResetsAt: number | undefined;
 
         try {
+            if (this.runnerOptions.agentUser) {
+                try {
+                    await prepareAgentWorkspace(request.workspaceDir);
+                } catch (error: unknown) {
+                    console.error('Could not prepare the agent workspace:', error);
+                    yield { type: 'turn_error', message: 'Could not prepare the agent workspace. Please try again.', isUsageLimit: false };
+
+                    return;
+                }
+            }
+
+            const queryOptions = buildQueryOptions(request, this.runnerOptions, abortController, onStderrTail);
+            const conversation = this.queryFunction({ prompt: request.prompt, options: queryOptions });
+
             // The SDK's Query is an async iterator, so `for await` is the only
             // loop form that fits. Plain loops are banned by lint.
             for await (const sdkMessage of conversation) {
@@ -252,6 +291,13 @@ class SdkAgentRunner implements AgentRunner {
 
             const message = error instanceof Error ? error.message : String(error);
             const errorEvent: TurnErrorEvent = { type: 'turn_error', message, isUsageLimit: isUsageLimitText(message) };
+
+            if (diagnostics.stderrTail) {
+                // Keep untrusted CLI text on one quoted line in error reports.
+                const report = JSON.stringify(diagnostics);
+
+                console.error('Agent process diagnostics:', report);
+            }
 
             yield withResetsAt(errorEvent, latestResetsAt);
         } finally {
