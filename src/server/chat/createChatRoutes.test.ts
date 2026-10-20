@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import type { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { AgentEvent } from '../agent/AgentEvent.ts';
+import type { AgentRunner } from '../agent/AgentRunner.ts';
 import type { ChatEvent, ChatMessage } from '../../shared/chatTypes.ts';
 import { FakeAgentRunner } from '../agent/FakeAgentRunner.ts';
 import type { ScriptedAgentStep } from '../agent/FakeAgentRunner.ts';
@@ -86,6 +88,29 @@ async function postJson(app: Hono, path: string, payload: unknown): Promise<Resp
     });
 
     return response;
+}
+
+// The first turn runs until a stop aborts it. Its own runner signal is the only way out.
+async function* stayOpenUntilAborted(abortSignal: AbortSignal): AsyncGenerator<AgentEvent> {
+    await new Promise<void>((resolve) => {
+        abortSignal.addEventListener('abort', () => {
+            resolve();
+        }, { once: true });
+    });
+
+    yield { type: 'turn_finished' };
+}
+
+// A rejected usage limit that ends the turn, as the runner reports it.
+// eslint-disable-next-line @typescript-eslint/require-await
+async function* usageLimitEvents(resetsAt: number): AsyncGenerator<AgentEvent> {
+    yield { type: 'rate_limit', status: 'rejected', resetsAt };
+    yield { type: 'turn_error', message: 'You\'ve hit your limit', isUsageLimit: true, resetsAt };
+}
+// Yields one event, so there is nothing to await. The runner still needs an async iterable.
+// eslint-disable-next-line @typescript-eslint/require-await
+async function* finishImmediately(): AsyncGenerator<AgentEvent> {
+    yield { type: 'turn_finished' };
 }
 
 describe('chat routes', () => {
@@ -174,21 +199,94 @@ describe('chat routes', () => {
             .toBe(404);
     });
 
-    it('answers 409 when a message is posted while the bot is still answering', async () => {
-        const app = buildApp([{ event: { type: 'text', text: 'Late' }, delayMs: 60_000 }]);
+    it('accepts a message posted while the bot is still answering, and queues it', async () => {
+        let turnCount = 0;
+        const firstTurnStarted = Promise.withResolvers<boolean>();
+        const runner: AgentRunner = {
+            runTurn: (request) => {
+                turnCount += 1;
+
+                if (turnCount === 1) {
+                    firstTurnStarted.resolve(true);
+
+                    return stayOpenUntilAborted(request.abortSignal);
+                }
+
+                return finishImmediately();
+            },
+        };
+        const chatService = new ChatService({ botStore, messageStore, runner, dataDir });
+        const app = createChatRoutes(chatService);
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        let finishedTurns = 0;
+        const bothFinished = new Promise<void>((resolve) => {
+            chatService.subscribe(bot.id, (event: ChatEvent) => {
+                if (event.type === 'turn' && !event.isRunning) {
+                    finishedTurns += 1;
+
+                    if (finishedTurns === 1) {
+                        resolve();
+                    }
+                }
+            });
+        });
 
         await postJson(app, `/api/bots/${bot.id}/messages`, { text: 'first' });
+        await firstTurnStarted.promise;
 
         const secondResponse = await postJson(app, `/api/bots/${bot.id}/messages`, { text: 'second' });
         const stopResponse = await app.request(`/api/bots/${bot.id}/stop`, { method: 'POST' });
 
         expect(secondResponse.status)
-            .toBe(409);
+            .toBe(201);
         expect(stopResponse.status)
             .toBe(204);
+
+        await bothFinished;
     });
 
+    it('tells a reloaded page that the bot is busy while it waits for a usage limit', async () => {
+        const resetsAt = Date.now() + 60 * 60 * 1000;
+        const runner: AgentRunner = {
+            runTurn: () => usageLimitEvents(resetsAt),
+        };
+        const chatService = new ChatService({ botStore, messageStore, runner, dataDir });
+        const app = createChatRoutes(chatService);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const noticeShown = new Promise<void>((resolve) => {
+            const unsubscribe = chatService.subscribe(bot.id, (event: ChatEvent) => {
+                if (event.type === 'message' && event.message.role === 'system') {
+                    unsubscribe();
+                    resolve();
+                }
+            });
+        });
+
+        await postJson(app, `/api/bots/${bot.id}/messages`, { text: 'first' });
+        await noticeShown;
+
+        // The notice comes before the turn settles. The page reloads after it has.
+        await vi.waitFor(() => {
+            expect(chatService.isTurnRunning(bot.id))
+                .toBe(false);
+        });
+
+        const eventsResponse = await app.request(`/api/bots/${bot.id}/events`);
+        const decoder = new TextDecoder();
+        const chunks = eventsResponse.body as AsyncIterable<Uint8Array>;
+        let firstText = '';
+
+        for await (const chunk of chunks) {
+            firstText = decoder.decode(chunk);
+
+            break;
+        }
+
+        chatService.dispose();
+
+        expect(firstText)
+            .toContain('"isRunning":true');
+    });
     it('streams the events of a turn to a connected client in order', async () => {
         const app = buildApp([
             { event: { type: 'session', sessionId: 'session-1' } },

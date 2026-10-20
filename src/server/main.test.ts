@@ -78,6 +78,8 @@ vi.mock('./chat/ChatService.ts', () => ({
     ChatService: class {
         setSetup(): void {}
 
+        async resumeQueue(): Promise<void> {}
+
         postSetupMessage = runtime.post;
     },
 }));

@@ -23,7 +23,9 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
     const fileInputRef = useRef<HTMLInputElement>(null);
     const trimmedDraft = draft.trim();
     // Send waits for uploads in flight, so their files reach this message and not the next one.
-    const canSend = trimmedDraft.length > 0 && !isRunning && !isUploading;
+    const canSend = trimmedDraft.length > 0 && !isUploading;
+    // A message sent during a turn is queued. Stop shows only while the draft is empty.
+    const showStop = isRunning && trimmedDraft.length === 0;
 
     function sendDraft(): void {
         if (!canSend) {
@@ -97,7 +99,7 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
                     }}
                     onKeyDown={handleKeyDown}
                 />
-                {isRunning
+                {showStop
                     ? (
                             <button type="button" className="send-button is-stop" aria-label="Stop" onClick={onStop}>
                                 <svg viewBox="0 0 24 24" aria-hidden="true">

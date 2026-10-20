@@ -76,6 +76,8 @@ const setup = new SetupConversation({
 });
 
 chatService.setSetup(setup);
+// Queued messages and usage limit waits from the last run continue before the first request.
+await chatService.resumeQueue();
 
 const app = createApp({ version, access, chatService });
 

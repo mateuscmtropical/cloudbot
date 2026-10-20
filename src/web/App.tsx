@@ -353,6 +353,7 @@ function App(): ReactElement {
         }
 
         const sentBotId = selectedBotId;
+        const wasRunning = runningBotId === sentBotId;
 
         setRunningBotId(sentBotId);
         const sendPromise = sendMessage(sentBotId, text);
@@ -362,12 +363,9 @@ function App(): ReactElement {
             loadPendingUploads(sentBotId);
         }, () => undefined);
 
-        // A failed send never starts a turn, so the running state must not stay on.
-        sendPromise.catch((error: unknown) => {
-            // A 409 means a turn is already running, so the running state stays on.
-            const isBusy = error instanceof RequestFailedError && error.status === 409;
-
-            if (!isBusy) {
+        // A failed send never starts a turn. It clears the running state only when no turn ran before it.
+        sendPromise.catch(() => {
+            if (!wasRunning) {
                 setRunningBotId(undefined);
             }
         });

@@ -6,7 +6,7 @@ import type { SSEStreamingApi } from 'hono/streaming';
 
 import type { ChatEvent } from '../../shared/chatTypes.ts';
 import { MAX_FILES_PER_UPLOAD, readMaxUploadBytes } from '../attachments/saveUpload.ts';
-import { DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, TurnInProgressError, UploadDuringTurnError } from './ChatService.ts';
+import { DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError } from './ChatService.ts';
 import type { ChatService, MessagePageOptions } from './ChatService.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
 import type { SetupAction } from '../setup/SetupConversation.ts';
@@ -17,7 +17,6 @@ interface ChatErrorResponse {
 
 const BOT_NOT_FOUND: ChatErrorResponse = { error: 'No bot has this id.' };
 const EMPTY_TEXT: ChatErrorResponse = { error: 'Send a non-empty "text" string.' };
-const TURN_IN_PROGRESS: ChatErrorResponse = { error: 'This bot is still answering. Stop it or wait.' };
 const INVALID_BEFORE: ChatErrorResponse = { error: '"before" must be a message sequence number, 1 or more.' };
 const INVALID_LIMIT: ChatErrorResponse = { error: '"limit" must be a whole number, 1 or more.' };
 const NO_FILE: ChatErrorResponse = { error: 'Send the files as multipart form data.' };
@@ -190,21 +189,14 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
             return context.json(EMPTY_TEXT, 400);
         }
 
-        try {
-            const savedMessage = await chatService.sendMessage(botId, text);
+        // A message sent while the bot is busy is queued, so it is accepted with 201 as well.
+        const savedMessage = await chatService.sendMessage(botId, text);
 
-            if (savedMessage === undefined) {
-                return context.json(BOT_NOT_FOUND, 404);
-            }
-
-            return context.json(savedMessage, 201);
-        } catch (error: unknown) {
-            if (error instanceof TurnInProgressError) {
-                return context.json(TURN_IN_PROGRESS, 409);
-            }
-
-            throw error;
+        if (savedMessage === undefined) {
+            return context.json(BOT_NOT_FOUND, 404);
         }
+
+        return context.json(savedMessage, 201);
     });
 
     const tooLarge = (context: Context): Response => context.json(TOO_LARGE, 413);
@@ -307,7 +299,7 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
             }
 
             const writeEvent = createEventWriter(stream);
-            const initialEvent: ChatEvent = { type: 'turn', botId, isRunning: chatService.isTurnRunning(botId) };
+            const initialEvent: ChatEvent = { type: 'turn', botId, isRunning: chatService.isBusy(botId) };
 
             writeEvent(initialEvent);
 

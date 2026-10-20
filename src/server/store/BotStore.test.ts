@@ -19,6 +19,43 @@ describe('BotStore', () => {
         opened.close();
     });
 
+    it('lists queued turns in position order, including ones put in front', async () => {
+        const bot = await store.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const back = { id: 'back', botId: bot.id, position: 1, messageId: 'm2', text: 'second', uploads: [] };
+        const front = { id: 'front', botId: bot.id, position: 0, messageId: null, text: 'Continue.', uploads: [] };
+
+        await store.insertQueuedTurn(back);
+        await store.insertQueuedTurn(front);
+
+        expect((await store.listQueuedTurns()).map(turn => turn.id))
+            .toEqual(['front', 'back']);
+    });
+
+    it('drops the queued turns of a bot when they are deleted for it', async () => {
+        const bot = await store.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await store.insertQueuedTurn({ id: 'turn-1', botId: bot.id, position: 1, messageId: 'm1', text: 'Hi', uploads: [] });
+        await store.deleteQueuedTurnsOfBot(bot.id);
+
+        expect(await store.listQueuedTurns())
+            .toEqual([]);
+    });
+
+    it('keeps one usage wait per bot and removes it', async () => {
+        const bot = await store.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await store.setUsageWait(bot.id, 5000);
+        await store.setUsageWait(bot.id, 9000);
+
+        expect(await store.listUsageWaits())
+            .toEqual([{ botId: bot.id, resumeAt: 9000 }]);
+
+        await store.deleteUsageWait(bot.id);
+
+        expect(await store.listUsageWaits())
+            .toEqual([]);
+    });
+
     it('creates a bot with no session and the current time', async () => {
         const bot = await store.create({ name: 'Ana', title: 'Assistant', description: 'Helps with mail' });
 
