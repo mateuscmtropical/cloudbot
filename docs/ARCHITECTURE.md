@@ -22,6 +22,7 @@ src/
   server/          HTTP server and the code that wires the parts together
     createApp.ts   Hono app and routes
     main.ts        Entry point
+    claudeAuth/    CLI subscription login sessions and sign-in status
   web/             Chat interface, React (planned)
 docker/            Image, compose file and install script (planned)
 docs/              Project documentation
@@ -50,3 +51,14 @@ one.
 The Claude Agent SDK runs the `claude` CLI installed by Anthropic's installer
 (`pathToClaudeCodeExecutable`). Sign-in, status and the agent all use that one
 CLI. See [provider terms](PROVIDER_TERMS.md).
+
+`startClaudeLogin` runs login in a util-linux `script` pseudo terminal on Linux.
+It exposes `signInUrl`, `submitCode`, `cancel` and `finished` for the planned
+setup conversation. `signInUrl` resolves to null if login ends before a link
+arrives. Failures name timeout, missing CLI, unsuccessful exit or cancellation.
+Sessions time out after five minutes by default.
+
+After a successful exit, the caller must use `getClaudeAuthStatus` to confirm
+sign-in. It returns only login state and the authentication method. These
+helpers do not read credential files or persist terminal output or codes.
+The setup conversation and HTTP wiring are still planned.
