@@ -46,7 +46,7 @@ pnpm dev
 | `pnpm lint:fix` | Fixes the problems ESLint can fix |
 | `pnpm typecheck` | Runs the TypeScript compiler without writing output |
 | `pnpm test` | Runs the test suite once |
-| `pnpm build` | Builds the server into `dist` |
+| `pnpm build` | Builds the server into `dist/server` and the web app into `dist/web` |
 | `pnpm db:generate` | Writes a Drizzle migration into `drizzle/` after a schema change |
 | `pnpm check` | Runs lint, typecheck, tests and build |
 

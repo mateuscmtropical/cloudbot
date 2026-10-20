@@ -2,6 +2,7 @@ import eslint from '@eslint/js';
 import stylistic from '@stylistic/eslint-plugin';
 import { defineConfig } from 'eslint/config';
 import globals from 'globals';
+import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 // Loops are allowed only when array methods cannot express the logic
@@ -122,6 +123,26 @@ export default defineConfig(
         },
     },
     {
+        files: ['src/web/**/*.{ts,tsx}'],
+        plugins: reactHooks.configs.flat.recommended.plugins,
+        languageOptions: {
+            globals: {
+                ...globals.browser,
+            },
+        },
+        rules: {
+            ...reactHooks.configs.flat.recommended.rules,
+            '@typescript-eslint/naming-convention': [
+                'error',
+                { selector: 'default', format: ['camelCase'], leadingUnderscore: 'allow' },
+                { selector: 'function', format: ['camelCase', 'PascalCase'] },
+                { selector: 'variable', format: ['camelCase', 'UPPER_CASE'] },
+                { selector: 'typeLike', format: ['PascalCase'] },
+                { selector: 'import', format: ['camelCase', 'PascalCase'] },
+                { selector: ['objectLiteralProperty', 'typeProperty'], format: null },
+            ],
+        },
+    }, {
         files: ['**/*.js'],
         extends: [tseslint.configs.disableTypeChecked],
         rules: {
