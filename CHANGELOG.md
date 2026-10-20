@@ -13,3 +13,4 @@ All notable changes to this project are listed here. The format follows
 - Project setup: server with a health route, lint, tests, CI and docs.
 - Secrets vault with encryption at rest, a secure form endpoint and a local key proxy that adds the API key to requests.
 - SQLite storage for bots, messages and settings with Drizzle ORM, with migrations that run on start.
+- Agent runner that streams one conversation turn through the Claude Agent SDK.
