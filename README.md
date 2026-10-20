@@ -13,6 +13,16 @@ comes back when the job is done or when it needs you.
 > Claude Code CLI and the official Claude Agent SDK, with your own Claude
 > subscription or your own API key.
 
+> [!WARNING]
+> **Your use, your responsibility.** CloudBot can use websites, apps and
+> accounts for you. Many platforms forbid or limit automated use in their terms.
+> Using CloudBot on them can break those terms and lead to limits, a suspended
+> or banned account, or other action by the platform. You are responsible for
+> how you use CloudBot and for following the terms of every service it uses.
+> CloudBot is provided "as is", without warranty of any kind, as stated in the
+> [MIT license](LICENSE). Its authors and contributors are not responsible for
+> how anyone uses it or for any loss, ban or claim that comes from that use.
+
 ## What it will do
 
 - **Chat like a messenger.** A list of bots on the left, the conversation in
