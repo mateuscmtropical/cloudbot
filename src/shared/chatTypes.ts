@@ -54,6 +54,8 @@ interface ChatMessage {
     botId: string;
     role: ChatRole;
     createdAt: number;
+    // The store insertion order. Messages created in the same millisecond sort by it.
+    sequence: number;
     body: MessageBody;
 }
 
@@ -77,7 +79,15 @@ interface ChatTurnEvent {
     isRunning: boolean;
 }
 
-type ChatEvent = ChatMessageEvent | ChatTurnEvent;
+// Partial text of the assistant block that is still being written. The whole
+// block arrives later as a message event, which replaces this draft.
+interface ChatTextDeltaEvent {
+    type: 'textDelta';
+    botId: string;
+    text: string;
+}
+
+type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent;
 
 export type {
     BotSummary,
@@ -94,5 +104,6 @@ export type {
     TextBody,
     ToolActivityBody,
     ToolStatus,
+    ChatTextDeltaEvent,
     ChatTurnEvent,
 };

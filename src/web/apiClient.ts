@@ -14,9 +14,19 @@ function messagePath(botId: string, messageId: string, suffix: string): string {
     return botPath(botId, `/messages/${encodedMessageId}${suffix}`);
 }
 
+class RequestFailedError extends Error {
+    readonly status: number;
+
+    constructor(path: string, status: number) {
+        super(`Request to ${path} failed with status ${String(status)}`);
+        this.name = 'RequestFailedError';
+        this.status = status;
+    }
+}
+
 function ensureOk(response: Response, path: string): void {
     if (!response.ok) {
-        throw new Error(`Request to ${path} failed with status ${String(response.status)}`);
+        throw new RequestFailedError(path, response.status);
     }
 }
 
@@ -94,9 +104,15 @@ async function uploadAttachments(botId: string, files: File[]): Promise<void> {
     ensureOk(response, path);
 }
 
-function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void): () => void {
+// onOpen runs on the first connection and on every reconnect. Events missed while
+// the stream was down are lost, so the caller reloads the conversation there.
+function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void, onOpen: () => void): () => void {
     const path = botPath(botId, '/events');
     const eventSource = new EventSource(path);
+
+    eventSource.addEventListener('open', () => {
+        onOpen();
+    });
 
     eventSource.addEventListener('message', (messageEvent: MessageEvent<string>) => {
         const parsedEvent = JSON.parse(messageEvent.data) as ChatEvent;
@@ -110,6 +126,7 @@ function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void): 
 }
 
 export {
+    RequestFailedError,
     listBots,
     listMessages,
     sendMessage,

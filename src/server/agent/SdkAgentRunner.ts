@@ -14,7 +14,7 @@ import type { AgentRunner, TurnRequest } from './AgentRunner.ts';
 type SdkQueryFunction = (parameters: { prompt: string; options: Options }) => AsyncIterable<SDKMessage>;
 
 interface SdkAgentRunnerOptions {
-    pathToClaudeCodeExecutable?: string;
+    pathToClaudeCodeExecutable?: string | undefined;
     environment?: Record<string, string>;
     // Tests inject a fake here. Production leaves it out and uses the SDK query.
     queryFunction?: SdkQueryFunction;
@@ -213,6 +213,11 @@ class SdkAgentRunner implements AgentRunner {
     }
 
     async* runTurn(request: TurnRequest): AsyncGenerator<AgentEvent> {
+        // An abort event that already fired is never seen again, so check the state first.
+        if (request.abortSignal.aborted) {
+            return;
+        }
+
         const abortController = new AbortController();
         const forwardAbort = (): void => {
             abortController.abort();
@@ -240,7 +245,8 @@ class SdkAgentRunner implements AgentRunner {
             }
         } catch (error: unknown) {
             // Aborting the turn makes the SDK throw. That is a stop, not an error.
-            if (request.abortSignal.aborted) {
+            // The controller is checked, not the request signal: the top-of-method check narrows the signal.
+            if (abortController.signal.aborted) {
                 return;
             }
 
