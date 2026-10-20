@@ -15,6 +15,28 @@ as planned.
 The bot runs as its own Linux user. Files that belong to the server user, such
 as the vault and the database, are not readable by the bot.
 
+## Docker
+
+`docker/Dockerfile` builds on `node:24-bookworm-slim` in four stages: a base with pnpm,
+production dependencies, the build, then the runtime image. The runtime
+image has two users. `cloudbot` runs the server and owns `/var/lib/cloudbot`,
+which is mode 700 and holds `CLOUDBOT_DATA_DIR`. `bot` installs the Claude
+Code CLI with Anthropic's installer (`curl -fsSL https://claude.ai/install.sh | bash`),
+which puts it in `/home/bot/.local/bin/claude`. The image sets `CLAUDE_PATH` to that path,
+so the server can pass it to the SDK as `pathToClaudeCodeExecutable`. The build fails if
+the CLI does not run.
+
+The server finds `drizzle/` relative to its install folder, so it starts
+from any working directory. The image health check calls `/api/health`.
+
+`docker/compose.yaml` runs the server and Caddy. `docker/Caddyfile` reads the
+domain from `CLOUDBOT_DOMAIN`. CI runs `docker/check-container.sh` on the built
+image. It checks the health route and proves that `bot` cannot read a file the
+server user wrote to the data folder.
+
+Not wired yet: the server does not run the agent as `bot`. Until it does,
+the CLI runs as `cloudbot`, and the isolation check only covers the data folder.
+
 ## Folders
 
 ```text
@@ -30,7 +52,7 @@ src/
   shared/          Types shared by the server and the web app
     chatTypes.ts   Messages, bots and chat events
   web/             Chat interface in React, built with Vite to dist/web and served by the server
-docker/            Image, compose file and install script (planned)
+docker/            Dockerfile, compose file, Caddyfile and the container check script
 docs/              Project documentation
 ```
 

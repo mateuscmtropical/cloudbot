@@ -35,3 +35,26 @@ jobs:
       - run: pnpm test
 
       - run: pnpm build
+
+  docker:
+    name: Build image and check isolation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: docker compose -f docker/compose.yaml config --quiet
+
+      - run: docker build -f docker/Dockerfile -t cloudbot:ci .
+
+      - name: Start the container
+        run: >
+          docker run -d --name cloudbot-ci -p 3000:3000
+          --health-interval=2s --health-start-period=2s
+          -v cloudbot-ci-data:/var/lib/cloudbot cloudbot:ci
+
+      - name: Check health route and data folder isolation
+        run: bash docker/check-container.sh cloudbot-ci 3000
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs cloudbot-ci

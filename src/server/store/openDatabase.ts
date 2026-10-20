@@ -1,11 +1,13 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { fileURLToPath } from 'node:url';
 
 import type { AsyncRemoteCallback } from 'drizzle-orm/sqlite-proxy';
 import { drizzle } from 'drizzle-orm/sqlite-proxy';
 import { migrate } from 'drizzle-orm/sqlite-proxy/migrator';
 
+import { findMigrationsFolder } from './findMigrationsFolder.ts';
 import * as schema from './schema.ts';
 import type { AppDatabase } from './types.ts';
 
@@ -23,7 +25,8 @@ type SqliteBinding = number | string | bigint | null | Uint8Array;
 type RemoteMethod = 'run' | 'all' | 'values' | 'get';
 
 const IN_MEMORY_PATH = ':memory:';
-const DEFAULT_MIGRATIONS_FOLDER = 'drizzle';
+const STORE_FILE_PATH = fileURLToPath(import.meta.url);
+const STORE_DIRECTORY = dirname(STORE_FILE_PATH);
 
 // Drizzle sends SQL plus bound values. node:sqlite runs it and returns rows as
 // arrays of values, which is the shape Drizzle expects from a proxy. The Node
@@ -99,7 +102,7 @@ async function openDatabase(filePath: string, options: OpenDatabaseOptions = {})
 
     const remoteCallback = createRemoteCallback(sqlite);
     const db = drizzle(remoteCallback, { schema });
-    const migrationsFolder = options.migrationsFolder ?? DEFAULT_MIGRATIONS_FOLDER;
+    const migrationsFolder = options.migrationsFolder ?? findMigrationsFolder(STORE_DIRECTORY);
 
     try {
         await migrate(db, queries => applyMigrationQueries(sqlite, queries), { migrationsFolder });
