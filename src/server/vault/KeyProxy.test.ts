@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { startKeyProxy } from './KeyProxy.ts';
 import type { KeyProxy } from './KeyProxy.ts';
@@ -58,6 +58,7 @@ describe('startKeyProxy', () => {
     });
 
     afterEach(async () => {
+        vi.restoreAllMocks();
         await proxy?.close();
         proxy = undefined;
         upstreamServer.closeAllConnections();
@@ -165,5 +166,72 @@ describe('startKeyProxy', () => {
                 resolve();
             });
         });
+    });
+
+    it.each(['//evil.example/x', 'https://evil.example/c', '*'])('rejects unsafe request target %s without forwarding', async (path) => {
+        const vault = new Vault(folderPath);
+        const fetchSpy = vi.spyOn(globalThis, 'fetch')
+            .mockResolvedValue(new Response(null, { status: 204 }));
+
+        vault.set('ANTHROPIC_API_KEY', 'sk-ant-real');
+        proxy = await startKeyProxy({ vault, secretName: 'ANTHROPIC_API_KEY', upstreamUrl });
+
+        const status = await new Promise<number | undefined>((resolve, reject) => {
+            const client = request(proxy!.url, { path }, (response) => {
+                response.resume();
+                resolve(response.statusCode);
+            });
+
+            client.on('error', reject);
+            client.end();
+        });
+
+        expect(status)
+            .toBe(400);
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(receivedRequests)
+            .toHaveLength(0);
+    });
+
+    it('forwards the path and query to the configured origin', async () => {
+        const vault = new Vault(folderPath);
+        const fetchSpy = vi.spyOn(globalThis, 'fetch')
+            .mockResolvedValue(new Response(null, { status: 204 }));
+
+        vault.set('ANTHROPIC_API_KEY', 'sk-ant-real');
+        proxy = await startKeyProxy({ vault, secretName: 'ANTHROPIC_API_KEY', upstreamUrl: upstreamUrl + '/ignored' });
+
+        await new Promise<void>((resolve, reject) => {
+            const client = request(proxy!.url, { path: '/v1/models?limit=1' }, (response) => {
+                response.resume();
+                response.on('end', resolve);
+            });
+
+            client.on('error', reject);
+            client.end();
+        });
+        expect(fetchSpy.mock.calls[0]?.[0])
+            .toEqual(new URL(upstreamUrl + '/v1/models?limit=1'));
+        fetchSpy.mockRestore();
+    });
+
+    it('logs fixed text when fetch rejects a key as an invalid header value', async () => {
+        const vault = new Vault(folderPath);
+        const secret = 'sk-private\ninvalid';
+        const errorLog = vi.spyOn(console, 'error')
+            .mockImplementation(() => undefined);
+
+        vault.set('ANTHROPIC_API_KEY', secret);
+        proxy = await startKeyProxy({ vault, secretName: 'ANTHROPIC_API_KEY', upstreamUrl });
+
+        const response = await fetch(proxy.url + '/v1/models');
+
+        expect(response.status)
+            .toBe(502);
+        expect(errorLog.mock.calls)
+            .toEqual([['Key proxy request failed.']]);
+        expect(receivedRequests)
+            .toHaveLength(0);
+        errorLog.mockRestore();
     });
 });

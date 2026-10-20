@@ -8,6 +8,10 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Scripted Claude setup in the first bot's chat, with subscription sign-in or
+  an API key form, persisted progress, retry messages and guarded answer routes.
+  Answered forms close in the web app. API mode starts the local key proxy and
+  keeps the real key out of the agent environment.
 - Optional agent execution as the bot user with restricted sudo, a minimal environment and workspaces outside the server data folder.
 - Persistent bot home and workspace volumes for Claude credentials, sessions and bot memory. The CLI in the home volume updates itself across image upgrades.
 - Claude subscription login helpers for the setup chat, with sign-in links,

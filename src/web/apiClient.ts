@@ -14,13 +14,20 @@ function messagePath(botId: string, messageId: string, suffix: string): string {
     return botPath(botId, `/messages/${encodedMessageId}${suffix}`);
 }
 
+interface ErrorResponseBody {
+    error?: unknown;
+}
+
 class RequestFailedError extends Error {
     readonly status: number;
+    // The server's own error text, shown to the user when present.
+    readonly serverMessage: string | undefined;
 
-    constructor(path: string, status: number) {
+    constructor(path: string, status: number, serverMessage?: string) {
         super(`Request to ${path} failed with status ${String(status)}`);
         this.name = 'RequestFailedError';
         this.status = status;
+        this.serverMessage = serverMessage;
     }
 }
 
@@ -30,10 +37,24 @@ function ensureOk(response: Response, path: string): void {
     }
 }
 
+async function readServerMessage(response: Response): Promise<string | undefined> {
+    try {
+        const body = (await response.json()) as ErrorResponseBody;
+
+        return typeof body.error === 'string' ? body.error : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 async function requestJson<ResponseBody>(path: string, init: RequestInit): Promise<ResponseBody> {
     const response = await fetch(path, init);
 
-    ensureOk(response, path);
+    if (!response.ok) {
+        const serverMessage = await readServerMessage(response);
+
+        throw new RequestFailedError(path, response.status, serverMessage);
+    }
 
     const body = (await response.json()) as ResponseBody;
 

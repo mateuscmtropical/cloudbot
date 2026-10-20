@@ -108,6 +108,23 @@ async function forwardRequest(
     target: ForwardTarget,
     upstreamAbort: AbortController,
 ): Promise<void> {
+    const requestTarget = incomingRequest.url ?? '';
+    const upstreamOrigin = new URL(target.upstreamBase).origin;
+
+    if (!requestTarget.startsWith('/') || requestTarget.startsWith('//')) {
+        sendJsonError(outgoingResponse, 400, 'Invalid request target.');
+
+        return;
+    }
+
+    const requestUrl = new URL(upstreamOrigin + requestTarget);
+
+    if (requestUrl.origin !== upstreamOrigin) {
+        sendJsonError(outgoingResponse, 400, 'Invalid request target.');
+
+        return;
+    }
+
     const apiKey = target.vault.get(target.secretName);
 
     if (apiKey === undefined) {
@@ -117,7 +134,6 @@ async function forwardRequest(
     }
 
     const requestBody = await readRequestBody(incomingRequest);
-    const requestUrl = new URL(incomingRequest.url ?? '/', target.upstreamBase);
     const requestHeaders = buildRequestHeaders(incomingRequest.headers, apiKey);
     const upstreamResponse = await fetch(requestUrl, {
         method: incomingRequest.method ?? DEFAULT_HTTP_METHOD,
@@ -142,7 +158,7 @@ async function forwardRequest(
 
     pipeline(upstreamStream, outgoingResponse, (pipelineError) => {
         if (pipelineError && !upstreamAbort.signal.aborted) {
-            console.error(`Key proxy stream failed: ${pipelineError.message}`);
+            console.error('Key proxy stream failed.');
         }
     });
 }
@@ -170,16 +186,13 @@ async function forwardRequestSafely(
 
     try {
         await forwardRequest(incomingRequest, outgoingResponse, target, upstreamAbort);
-    } catch (error: unknown) {
+    } catch {
         // Expected when the agent disconnected: the abort error is not a failure.
         if (upstreamAbort.signal.aborted) {
             return;
         }
 
-        // Logs the message only. The request headers, which hold the key, are never printed.
-        const errorMessage = error instanceof Error ? error.message : 'unknown error';
-
-        console.error(`Key proxy request failed: ${errorMessage}`);
+        console.error('Key proxy request failed.');
 
         if (outgoingResponse.headersSent) {
             outgoingResponse.destroy();

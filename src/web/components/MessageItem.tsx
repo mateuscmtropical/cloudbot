@@ -8,9 +8,10 @@ import { LinkCard } from './LinkCard.tsx';
 import { SecureForm } from './SecureForm.tsx';
 
 interface MessageActions {
-    onChoose: (messageId: string, choiceId: string) => void;
+    // Settles when the server answered.
+    onChoose: (messageId: string, choiceId: string) => Promise<void>;
     onSubmitCode: (messageId: string, code: string) => void;
-    onSubmitSecret: (messageId: string, value: string) => void;
+    onSubmitSecret: (messageId: string, value: string) => Promise<void>;
 }
 
 interface MessageItemProps {
@@ -32,7 +33,7 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
                         options={body.options}
                         chosenId={body.chosenId}
                         onChoose={(choiceId) => {
-                            actions.onChoose(message.id, choiceId);
+                            void actions.onChoose(message.id, choiceId);
                         }}
                     />
                 </div>
@@ -57,14 +58,17 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
             );
         case 'secureForm':
             return (
-                <SecureForm
-                    prompt={body.prompt}
-                    secretName={body.secretName}
-                    submitted={body.submitted}
-                    onSubmit={(value) => {
-                        actions.onSubmitSecret(message.id, value);
-                    }}
-                />
+                <div className="setup-card">
+                    <SecureForm
+                        prompt={body.prompt}
+                        secretName={body.secretName}
+                        submitted={body.submitted}
+                        onSubmit={value => actions.onSubmitSecret(message.id, value)}
+                        alternative={body.secretName === 'ANTHROPIC_API_KEY'
+                            ? { label: 'Use subscription instead', onSelect: () => actions.onChoose(message.id, 'subscription') }
+                            : undefined}
+                    />
+                </div>
             );
         case 'toolActivity':
             return (

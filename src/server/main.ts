@@ -1,3 +1,4 @@
+import type { Server } from 'node:http';
 import { serve } from '@hono/node-server';
 import { validateAgentIsolation } from './agent/buildClaudeCommand.ts';
 
@@ -12,6 +13,17 @@ import { ensureDefaultBot } from './store/ensureDefaultBot.ts';
 import { openDatabase } from './store/openDatabase.ts';
 import { databasePath, resolveDataDir } from './store/resolveDataDir.ts';
 import { SettingsStore } from './store/SettingsStore.ts';
+import { checkApiKey } from './setup/checkApiKey.ts';
+import { SetupConversation, API_KEY_NAME } from './setup/SetupConversation.ts';
+import { startClaudeLogin } from './claudeAuth/startClaudeLogin.ts';
+import { getClaudeAuthStatus } from './claudeAuth/getClaudeAuthStatus.ts';
+import { Vault } from './vault/Vault.ts';
+import { startKeyProxy } from './vault/KeyProxy.ts';
+import type { KeyProxy } from './vault/KeyProxy.ts';
+
+interface RuntimeConnection {
+    proxy?: KeyProxy;
+}
 
 validateAgentIsolation(process.env.CLOUDBOT_AGENT_USER);
 
@@ -21,16 +33,50 @@ const dataDir = resolveDataDir();
 const databaseFilePath = databasePath(dataDir);
 // One database handle serves the setup access and the chat stores.
 const opened = await openDatabase(databaseFilePath);
-const access = new SetupAccess(new SettingsStore(opened.db));
+const settings = new SettingsStore(opened.db);
+const access = new SetupAccess(settings);
 const botStore = new BotStore(opened.db);
 const messageStore = new MessageStore(opened.db);
 
 await ensureDefaultBot(botStore);
 
 const claudePath = process.env.CLAUDE_PATH;
-// The agent inherits this process environment for now. Later the server passes a minimal one.
-const runner = new SdkAgentRunner({ pathToClaudeCodeExecutable: claudePath });
+const agentUser = process.env.CLOUDBOT_AGENT_USER;
+const authOptions = { claudePath: claudePath ?? 'claude', ...(agentUser ? { agentUser } : {}) };
+const environmentEntries = Object.entries(process.env)
+    .filter((entry): entry is [string, string] => entry[1] !== undefined
+        && !entry[0].startsWith('ANTHROPIC_') && entry[0] !== 'CLAUDE_CODE_OAUTH_TOKEN');
+const environment = Object.fromEntries(environmentEntries);
+const connection: RuntimeConnection = {};
+const vault = new Vault(dataDir);
+const runner = new SdkAgentRunner({ pathToClaudeCodeExecutable: claudePath, environment });
 const chatService = new ChatService({ botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER });
+const bots = await botStore.list();
+const firstBot = bots[0];
+
+if (firstBot === undefined) {
+    throw new Error('The default bot is missing.');
+}
+
+const setup = new SetupConversation({
+    botId: firstBot.id, chat: chatService, messages: messageStore, settings, vault,
+    startLogin: () => startClaudeLogin(authOptions),
+    authStatus: () => getClaudeAuthStatus(authOptions),
+    checkKey: checkApiKey,
+    connect: async (mode) => {
+        if (mode === 'apiKey') {
+            connection.proxy ??= await startKeyProxy({ vault, secretName: API_KEY_NAME });
+            environment.ANTHROPIC_BASE_URL = connection.proxy.url;
+            environment.ANTHROPIC_API_KEY = 'cloudbot-key-proxy';
+        } else {
+            delete environment.ANTHROPIC_BASE_URL;
+            delete environment.ANTHROPIC_API_KEY;
+        }
+    },
+});
+
+chatService.setSetup(setup);
+
 const app = createApp({ version, access, chatService });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
@@ -44,6 +90,23 @@ if (!hasSession) {
     console.log(`Open this link to make this browser the owner: ${setupLink}`);
 }
 
-serve({ fetch: app.fetch, port }, (address) => {
+const server = serve({ fetch: app.fetch, port }, (address) => {
     console.log(`CloudBot is listening on http://localhost:${String(address.port)}`);
+    void setup.start()
+        .catch(() => {
+            console.error('Could not start Claude setup.');
+        });
+});
+
+function shutdown(): void {
+    setup.close();
+    server.close();
+    (server as Server).closeAllConnections();
+    void connection.proxy?.close();
+}
+
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
+server.once('close', () => {
+    setup.close();
 });

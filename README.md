@@ -74,6 +74,24 @@ a new link and ends every existing session.
 
 The link uses `CLOUDBOT_PUBLIC_URL` when it is set, and `http://localhost:PORT`
 otherwise. The cookie is `Secure`, so open the link on localhost or over HTTPS.
+
+## Connect Claude in chat
+
+After opening the owner link, the first bot asks how to connect Claude. This
+is a scripted conversation that works before Claude is connected.
+
+- **Subscription:** open the sign-in link, sign in on Anthropic's page and
+  paste its code into the code field. CloudBot passes it to the official CLI
+  and checks sign-in status. The code is never stored or logged.
+- **API key:** paste your Anthropic key into the secure form. It is stored
+  only in the encrypted vault. Saving the key completes setup without an API
+  validation request. The first chat turn uses it through a local key proxy.
+  The agent receives the proxy address and a dummy key.
+
+Setup remembers your mode and step across restarts. An interrupted subscription
+login gets a fresh link and code field because the old login process has ended.
+Failures offer another choice. Normal chat starts once setup says Claude is ready.
+
 ## Install on a server
 
 On a fresh Debian or Ubuntu server with a public IP, one command installs Docker,

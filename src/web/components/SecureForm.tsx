@@ -1,30 +1,64 @@
 import { useId, useState } from 'react';
 import type { ReactElement, SyntheticEvent } from 'react';
 
+// Another way to answer the form. Both answers are disabled while either one is pending.
+interface SecureFormAlternative {
+    label: string;
+    // Settles when the server answered.
+    onSelect: () => Promise<void>;
+}
+
+type PendingAnswer = 'submit' | 'alternative';
+
 interface SecureFormProps {
     prompt: string;
     secretName: string;
     submitted: boolean;
-    onSubmit: (value: string) => void;
+    // Settles when the server answered. The key check can take a few seconds.
+    onSubmit: (value: string) => Promise<void>;
+    alternative?: SecureFormAlternative | undefined;
 }
 
-function SecureForm({ prompt, secretName, submitted, onSubmit }: SecureFormProps): ReactElement {
+function SecureForm({ prompt, secretName, submitted, onSubmit, alternative }: SecureFormProps): ReactElement {
     const [value, setValue] = useState('');
+    const [pendingAnswer, setPendingAnswer] = useState<PendingAnswer | undefined>(undefined);
     const inputId = useId();
     const isEmpty = value.length === 0;
+    const isPending = pendingAnswer !== undefined;
+
+    function waitFor(answer: PendingAnswer, answerPromise: Promise<void>): void {
+        setPendingAnswer(answer);
+        void answerPromise.finally(() => {
+            setPendingAnswer(undefined);
+        });
+    }
 
     function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
         event.preventDefault();
 
-        if (isEmpty || submitted) {
+        if (isEmpty || submitted || isPending) {
             return;
         }
 
         // Clear the field first so the value is never kept in component state after submit.
         const submittedValue = value;
+        const submitPromise = onSubmit(submittedValue);
 
         setValue('');
-        onSubmit(submittedValue);
+        waitFor('submit', submitPromise);
+    }
+
+    function handleAlternative(selected: SecureFormAlternative): void {
+        if (submitted || isPending) {
+            return;
+        }
+
+        // A typed value must not stay in component state after the form is left.
+        setValue('');
+
+        const selectPromise = selected.onSelect();
+
+        waitFor('alternative', selectPromise);
     }
 
     if (submitted) {
@@ -32,9 +66,7 @@ function SecureForm({ prompt, secretName, submitted, onSubmit }: SecureFormProps
             <div className="setup-card">
                 <p>{prompt}</p>
                 <p className="setup-done">
-                    Stored as
-                    {secretName}
-                    . The bot can use it but cannot read it.
+                    This form is closed. Check the conversation for the result.
                 </p>
             </div>
         );
@@ -50,12 +82,26 @@ function SecureForm({ prompt, secretName, submitted, onSubmit }: SecureFormProps
                     type="password"
                     autoComplete="off"
                     value={value}
+                    disabled={isPending}
                     onChange={(event) => {
                         setValue(event.target.value);
                     }}
                 />
-                <button type="submit" disabled={isEmpty}>Save secret</button>
+                <button type="submit" disabled={isEmpty || isPending}>
+                    {pendingAnswer === 'submit' ? 'Checking...' : 'Save secret'}
+                </button>
             </form>
+            {alternative !== undefined && (
+                <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => {
+                        handleAlternative(alternative);
+                    }}
+                >
+                    {alternative.label}
+                </button>
+            )}
         </div>
     );
 }
