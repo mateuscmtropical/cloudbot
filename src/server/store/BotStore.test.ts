@@ -80,6 +80,22 @@ describe('BotStore', () => {
             .toBeNull();
     });
 
+    it('updates only the fields that are passed and keeps the others', async () => {
+        const createdBot = await store.create({ name: 'Ana', title: 'Assistant', description: 'Helps with mail' });
+
+        const updatedBot = await store.updateProfile(createdBot.id, { title: 'Editor' });
+
+        expect(updatedBot)
+            .toEqual({ ...createdBot, title: 'Editor' });
+    });
+
+    it('returns the bot unchanged when no field is passed', async () => {
+        const createdBot = await store.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await expect(store.updateProfile(createdBot.id, {}))
+            .resolves.toEqual(createdBot);
+    });
+
     it('returns undefined when updating a bot that does not exist', async () => {
         await expect(store.updateProfile('missing-id', { name: '', title: '', description: '' }))
             .resolves.toBeUndefined();

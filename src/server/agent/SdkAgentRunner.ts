@@ -177,7 +177,18 @@ function buildQueryOptions(
     // Without env the SDK subprocess inherits process.env, and with env it replaces the whole environment, so the caller must pass PATH and HOME too.
     const environmentOption = runnerOptions.environment ? { env: runnerOptions.environment } : {};
     const resumeOption = request.sessionId ? { resume: request.sessionId } : {};
-    const systemPromptOption = request.systemPrompt ? { systemPrompt: request.systemPrompt } : {};
+    // A plain string systemPrompt would replace Claude Code's default prompt, so the bot profile is appended to the preset.
+    const systemPromptAppendOption = request.systemPrompt ? { append: request.systemPrompt } : {};
+    const systemPromptOption = {
+        systemPrompt: {
+            type: 'preset' as const,
+            preset: 'claude_code' as const,
+            ...systemPromptAppendOption,
+        },
+    };
+    const mcpServersOption = request.mcpServers ? { mcpServers: request.mcpServers } : {};
+    // Headless turns cannot answer a permission prompt, so the bot's own tools are allowed up front.
+    const allowedToolsOption = request.allowedTools ? { allowedTools: request.allowedTools } : {};
 
     return {
         cwd: request.workspaceDir,
@@ -187,6 +198,8 @@ function buildQueryOptions(
         ...environmentOption,
         ...resumeOption,
         ...systemPromptOption,
+        ...mcpServersOption,
+        ...allowedToolsOption,
     };
 }
 
