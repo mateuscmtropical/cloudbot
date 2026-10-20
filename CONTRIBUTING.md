@@ -47,6 +47,7 @@ pnpm dev
 | `pnpm typecheck` | Runs the TypeScript compiler without writing output |
 | `pnpm test` | Runs the test suite once |
 | `pnpm build` | Builds the server into `dist` |
+| `pnpm db:generate` | Writes a Drizzle migration into `drizzle/` after a schema change |
 | `pnpm check` | Runs lint, typecheck, tests and build |
 
 Run `pnpm lint:fix` before you commit. Run `pnpm check` before you open a pull
