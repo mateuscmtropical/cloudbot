@@ -25,7 +25,7 @@
     "start": "node dist/server/main.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/web",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
