@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Runs CloudBot on this server. install.sh links it as /usr/local/bin/cloudbot.
+#
+# Usage: sudo cloudbot <status|logs|update|setup-link>
+
+set -euo pipefail
+
+# The install folder is two levels above this script, which is found through
+# the symlink in /usr/local/bin. /opt/cloudbot is the fallback.
+find_home() {
+    local script_path
+    local candidate
+
+    script_path="$(readlink -f "$0")"
+    candidate="$(dirname "$(dirname "$script_path")")"
+
+    if [ -f "$candidate/docker/compose.yaml" ]; then
+        printf '%s' "$candidate"
+    else
+        printf '%s' "/opt/cloudbot"
+    fi
+}
+
+CLOUDBOT_HOME="${CLOUDBOT_HOME:-$(find_home)}"
+
+usage() {
+    cat <<'EOF'
+Usage: sudo cloudbot <command>
+
+Commands:
+  status       Show the containers and their health
+  logs         Follow the logs (Ctrl+C to stop)
+  update       Pull the latest code and rebuild
+  setup-link   Print a new setup link. It ends every existing session.
+EOF
+}
+
+compose() {
+    docker compose -f "$CLOUDBOT_HOME/docker/compose.yaml" --env-file "$CLOUDBOT_HOME/.env" "$@"
+}
+
+require_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "error: run as root, for example: sudo cloudbot $1" >&2
+        exit 1
+    fi
+}
+
+command_status() {
+    compose ps
+}
+
+command_logs() {
+    compose logs --follow --tail=200
+}
+
+command_update() {
+    git -C "$CLOUDBOT_HOME" pull --ff-only
+    compose up -d --build
+}
+
+command_setup_link() {
+    compose exec -T cloudbot node dist/server/newSetupLink.js
+}
+
+main() {
+    local command="${1:-}"
+
+    case "$command" in
+        "" | -h | --help | help)
+            usage
+            ;;
+        status)
+            require_root "$command"
+            command_status
+            ;;
+        logs)
+            require_root "$command"
+            command_logs
+            ;;
+        update)
+            require_root "$command"
+            command_update
+            ;;
+        setup-link)
+            require_root "$command"
+            command_setup_link
+            ;;
+        *)
+            usage >&2
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

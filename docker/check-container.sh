@@ -18,7 +18,7 @@ fail() {
 }
 
 wait_for_health_route() {
-    for attempt in $(seq "$ATTEMPTS"); do
+    for _attempt in $(seq "$ATTEMPTS"); do
         if curl -fsS "http://127.0.0.1:$HOST_PORT/api/health" >/dev/null 2>&1; then
             return 0
         fi
@@ -28,7 +28,7 @@ wait_for_health_route() {
 }
 
 wait_for_healthy_status() {
-    for attempt in $(seq "$ATTEMPTS"); do
+    for _attempt in $(seq "$ATTEMPTS"); do
         local status
         status="$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER_NAME")"
         if [ "$status" = "healthy" ]; then

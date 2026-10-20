@@ -74,6 +74,17 @@ a new link and ends every existing session.
 
 The link uses `CLOUDBOT_PUBLIC_URL` when it is set, and `http://localhost:PORT`
 otherwise. The cookie is `Secure`, so open the link on localhost or over HTTPS.
+## Install on a server
+
+On a fresh Debian or Ubuntu server with a public IP, one command installs Docker,
+starts CloudBot behind HTTPS and prints the setup link:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash
+```
+
+See [install guide](docs/INSTALL.md) for your own domain, updates and the `cloudbot` command.
+
 ## Run with Docker
 
 The image runs the server as the `cloudbot` user and installs the Claude Code
