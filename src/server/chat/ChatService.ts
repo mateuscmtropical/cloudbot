@@ -49,7 +49,13 @@ interface TurnContext {
 
 type ChatEventListener = (event: ChatEvent) => void;
 
-const MESSAGE_PAGE_LIMIT = 200;
+interface MessagePageOptions {
+    limit: number;
+    beforeSequence?: number | undefined;
+}
+
+const DEFAULT_MESSAGE_PAGE_LIMIT = 50;
+const MAX_MESSAGE_PAGE_LIMIT = 200;
 const PREVIEW_LENGTH = 80;
 const AVATAR_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6'];
 const FALLBACK_AVATAR_COLOR = '#3b82f6';
@@ -170,14 +176,18 @@ class ChatService {
         return bot !== undefined;
     }
 
-    async listMessages(botId: string): Promise<ChatMessage[] | undefined> {
+    // Returns one page, oldest first. Pass the sequence of the oldest message you have as beforeSequence to get the page before it.
+    async listMessages(
+        botId: string,
+        page: MessagePageOptions = { limit: DEFAULT_MESSAGE_PAGE_LIMIT },
+    ): Promise<ChatMessage[] | undefined> {
         const bot = await this.botStore.getById(botId);
 
         if (bot === undefined) {
             return undefined;
         }
 
-        const storedMessages = await this.messageStore.listByBot(botId, { limit: MESSAGE_PAGE_LIMIT });
+        const storedMessages = await this.messageStore.listByBot(botId, page);
 
         return storedMessages.map(toChatMessage);
     }
@@ -447,5 +457,5 @@ class ChatService {
     }
 }
 
-export { ChatService, TurnInProgressError };
-export type { ChatEventListener, ChatServiceOptions };
+export { ChatService, DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, TurnInProgressError };
+export type { ChatEventListener, ChatServiceOptions, MessagePageOptions };

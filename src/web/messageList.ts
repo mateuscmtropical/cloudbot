@@ -18,4 +18,26 @@ function mergeMessages(currentMessages: ChatMessage[], loadedMessages: ChatMessa
     return [...mergedMessages].sort((first, second) => first.sequence - second.sequence);
 }
 
-export { mergeMessages, upsertMessage };
+// Adds a message from the event stream or a request. A message the list does not hold that is
+// older than the bot's oldest held message is left out: it comes with an older page, and adding
+// it now would move the paging cursor past the messages between.
+function upsertLiveMessage(messages: ChatMessage[], message: ChatMessage): ChatMessage[] {
+    const isHeld = messages.some(existingMessage => existingMessage.id === message.id);
+    const botSequences = messages
+        .filter(existingMessage => existingMessage.botId === message.botId)
+        .map(existingMessage => existingMessage.sequence);
+    const isOlderThanHeld = botSequences.length > 0 && message.sequence < Math.min(...botSequences);
+
+    if (!isHeld && isOlderThanHeld) {
+        return messages;
+    }
+
+    const updatedMessages = upsertMessage(messages, message);
+
+    return [...updatedMessages].sort((first, second) => first.sequence - second.sequence);
+}
+
+// The page size the web app asks for. A page with fewer messages than this is the last one.
+const MESSAGE_PAGE_SIZE = 50;
+
+export { MESSAGE_PAGE_SIZE, mergeMessages, upsertLiveMessage, upsertMessage };

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
@@ -7,16 +7,51 @@ import { Composer } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
 import type { MessageActions } from './MessageItem.tsx';
 
+// Within this many pixels of the top, the view asks for the page of older messages.
+const LOAD_OLDER_THRESHOLD_PX = 40;
+// Within this many pixels of the bottom, new messages keep the view at the bottom.
+const NEAR_BOTTOM_PX = 40;
+
 interface ConversationViewProps {
     bot: BotSummary | undefined;
     messages: ChatMessage[];
     draftText: string;
     isRunning: boolean;
     actions: MessageActions;
+    hasOlderMessages?: boolean;
+    isLoadingOlder?: boolean;
+    onLoadOlder?: () => void;
     onOpenBotList: () => void;
     onSend: (text: string) => void;
     onStop: () => void;
     onAttach: (files: File[]) => void;
+}
+
+// A message kept in place while older messages are added, and where it sat in the viewport.
+interface OlderAnchor {
+    messageId: string;
+    offset: number;
+}
+
+function findMessageElement(messageListElement: HTMLElement, messageId: string): HTMLElement | undefined {
+    const messageElements = messageListElement.querySelectorAll<HTMLElement>('[data-message-id]');
+
+    return Array.from(messageElements)
+        .find(element => element.dataset.messageId === messageId);
+}
+
+// The first message that is at least partly on screen, with its offset from the top of the viewport.
+function topVisibleAnchor(messageListElement: HTMLElement): OlderAnchor | undefined {
+    const messageElements = messageListElement.querySelectorAll<HTMLElement>('[data-message-id]');
+    const topElement = Array.from(messageElements)
+        .find(element => element.offsetTop + element.offsetHeight > messageListElement.scrollTop);
+    const messageId = topElement?.dataset.messageId;
+
+    if (topElement === undefined || messageId === undefined) {
+        return undefined;
+    }
+
+    return { messageId, offset: topElement.offsetTop - messageListElement.scrollTop };
 }
 
 function ConversationView({
@@ -25,21 +60,99 @@ function ConversationView({
     draftText,
     isRunning,
     actions,
+    hasOlderMessages = false,
+    isLoadingOlder = false,
+    onLoadOlder,
     onOpenBotList,
     onSend,
     onStop,
     onAttach,
 }: ConversationViewProps): ReactElement {
     const messageListRef = useRef<HTMLDivElement>(null);
+    const previousBotIdRef = useRef<string | undefined>(undefined);
+    const previousOldestSequenceRef = useRef<number | undefined>(undefined);
+    // The list height after the last change this view handled. Used for the near-bottom check.
+    const previousScrollHeightRef = useRef(0);
+    const olderAnchorRef = useRef<OlderAnchor | undefined>(undefined);
+    const previousIsLoadingRef = useRef(false);
     const botName = bot?.name ?? 'CloudBot';
+    const botId = bot?.id;
 
-    useEffect(() => {
+    // Older messages are added above the ones on screen. The anchor message is kept at the same
+    // place on screen, so growth below it in the same render cannot move the view. Without an anchor,
+    // the near-bottom rule applies. A new bot, or a change at the bottom while the reader is near it,
+    // scrolls to the bottom.
+    // This effect is declared before the loading one, so it still sees the anchor when a page arrives.
+    useLayoutEffect(() => {
         const messageListElement = messageListRef.current;
 
-        if (messageListElement !== null) {
+        if (messageListElement === null) {
+            return;
+        }
+
+        const oldestSequence = messages[0]?.sequence;
+        const previousOldestSequence = previousOldestSequenceRef.current;
+        const isSameBot = previousBotIdRef.current === botId;
+        const isOlderMessagesAdded = isSameBot
+            && oldestSequence !== undefined
+            && previousOldestSequence !== undefined
+            && oldestSequence < previousOldestSequence;
+        const distanceFromBottom = previousScrollHeightRef.current - messageListElement.scrollTop - messageListElement.clientHeight;
+        const isNearBottom = distanceFromBottom <= NEAR_BOTTOM_PX;
+        const anchor = olderAnchorRef.current;
+        const anchoredElement = anchor === undefined ? undefined : findMessageElement(messageListElement, anchor.messageId);
+        // A load that ends without older messages still removes the load button, which shifts the list.
+        // That is restored from the anchor too.
+        const isOlderLoadEnded = previousIsLoadingRef.current && !isLoadingOlder;
+        const shouldRestoreAnchor = isOlderMessagesAdded || isOlderLoadEnded;
+
+        if (shouldRestoreAnchor) {
+            olderAnchorRef.current = undefined;
+        }
+
+        if (shouldRestoreAnchor && anchor !== undefined && anchoredElement !== undefined) {
+            messageListElement.scrollTop = anchoredElement.offsetTop - anchor.offset;
+        } else if (!isSameBot || isNearBottom) {
             messageListElement.scrollTop = messageListElement.scrollHeight;
         }
-    }, [messages, draftText]);
+
+        previousBotIdRef.current = botId;
+        previousOldestSequenceRef.current = oldestSequence;
+        previousIsLoadingRef.current = isLoadingOlder;
+        previousScrollHeightRef.current = messageListElement.scrollHeight;
+    }, [messages, draftText, botId, isLoadingOlder]);
+
+    // Anchors the message at the top of the screen when a load starts. Drops the anchor when no load runs.
+    useLayoutEffect(() => {
+        const messageListElement = messageListRef.current;
+
+        olderAnchorRef.current = isLoadingOlder && messageListElement !== null
+            ? topVisibleAnchor(messageListElement)
+            : undefined;
+    }, [isLoadingOlder]);
+
+    function handleScroll(): void {
+        const messageListElement = messageListRef.current;
+
+        if (messageListElement === null) {
+            return;
+        }
+
+        // While a page is pending, the reader may scroll. The anchor follows the reader.
+        if (isLoadingOlder) {
+            olderAnchorRef.current = topVisibleAnchor(messageListElement);
+
+            return;
+        }
+
+        if (!hasOlderMessages) {
+            return;
+        }
+
+        if (messageListElement.scrollTop <= LOAD_OLDER_THRESHOLD_PX) {
+            onLoadOlder?.();
+        }
+    }
 
     return (
         <section className="conversation">
@@ -49,9 +162,18 @@ function ConversationView({
                 </button>
                 <span className="bot-pill">{botName}</span>
             </header>
-            <div className="message-list" ref={messageListRef}>
+            <div className="message-list" ref={messageListRef} onScroll={handleScroll}>
+                {hasOlderMessages
+                    ? (
+                            <button type="button" className="load-older-button" disabled={isLoadingOlder} onClick={onLoadOlder}>
+                                {isLoadingOlder ? 'Loading...' : 'Load older messages'}
+                            </button>
+                        )
+                    : null}
                 {messages.map(message => (
-                    <MessageItem key={message.id} message={message} actions={actions} />
+                    <div key={message.id} data-message-id={message.id}>
+                        <MessageItem message={message} actions={actions} />
+                    </div>
                 ))}
                 {draftText === ''
                     ? null
