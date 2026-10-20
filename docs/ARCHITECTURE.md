@@ -26,7 +26,9 @@ src/
     claudeAuth/    CLI subscription login sessions and sign-in status
     store/         SQLite storage: bots, messages, settings and migrations
     vault/         Encrypted secrets, secure form route and key proxy
-  web/             Chat interface, React (planned)
+  shared/          Types shared by the server and the web app
+    chatTypes.ts   Messages, bots and chat events
+  web/             Chat interface in React, built with Vite to dist/web and served by the server
 docker/            Image, compose file and install script (planned)
 docs/              Project documentation
 ```
@@ -34,7 +36,7 @@ docs/              Project documentation
 Rules between folders:
 
 - `src/web` never imports from `src/server`. They talk over HTTP only.
-- Shared request and response types live in `src/shared` once they exist.
+- Shared request, response and message types live in `src/shared`.
 
 ## Storage
 
