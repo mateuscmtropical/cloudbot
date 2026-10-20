@@ -23,6 +23,7 @@
     "db:generate": "drizzle-kit generate",
     "dev": "node --watch --experimental-strip-types src/server/main.ts",
     "start": "node dist/server/main.js",
+    "setup-link": "node dist/server/newSetupLink.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit && tsc --noEmit -p src/web",

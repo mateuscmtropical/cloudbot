@@ -64,6 +64,17 @@ pnpm dev
 `pnpm check` runs lint, typecheck, tests and build. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
 
+## Owner access
+
+When the server starts with no owner, it prints a setup link. Open it in the
+browser you want as the owner. The link works once and sets a session cookie.
+
+If you lose the cookie, run `pnpm build` and then `pnpm setup-link`. It prints
+a new link and ends every existing session.
+
+The link uses `CLOUDBOT_PUBLIC_URL` when it is set, and `http://localhost:PORT`
+otherwise. The cookie is `Secure`, so open the link on localhost or over HTTPS.
+
 ## License
 
 [MIT](LICENSE)

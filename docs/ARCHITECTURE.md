@@ -20,6 +20,7 @@ as the vault and the database, are not readable by the bot.
 ```text
 src/
   server/          HTTP server and the code that wires the parts together
+    access/        Setup link, session cookie and the check that guards /api
     agent/         Runs one conversation turn through the Claude Agent SDK
     createApp.ts   Hono app and routes
     main.ts        Entry point
@@ -52,6 +53,27 @@ yet. `BotStore`, `MessageStore` and `SettingsStore` wrap the tables.
 After a schema change, run `pnpm db:generate` to write a new migration into
 `drizzle/`. Generated migrations are append only: never edit one that has
 shipped, add a new one instead.
+
+## Access
+
+On start, a server with no session prints a setup link with a one-time code.
+Opening the link sets a session cookie (`HttpOnly`, `Secure`, `SameSite=Strict`)
+and the code stops working. Every `/api` route except health needs the cookie.
+Only SHA-256 hashes of the code and the session token are stored, in the
+settings table, and they are compared in constant time. Issuing a new code
+clears the session, which ends old sessions. This keeps strangers out. It is
+not a sign-in.
+
+The link starts with `CLOUDBOT_PUBLIC_URL` when it is set, and with
+`http://localhost:PORT` otherwise. `buildSetupLink` in `setupLinkUrl.ts` builds
+it for both the server start and the `setup-link` entry point. The cookie is
+`Secure`, so the link works only on localhost or over HTTPS.
+
+`pnpm setup-link` runs `dist/server/newSetupLink.js`. It opens the same
+database, issues a new code and prints the link, which ends every session. The
+running server reads the code from the database on each request, so it does
+not need a restart. Run it with the server stopped or the database idle, since
+both processes write to the same SQLite file.
 
 ## Secrets
 

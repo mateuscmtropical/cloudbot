@@ -94,6 +94,8 @@ async function openDatabase(filePath: string, options: OpenDatabaseOptions = {})
     // Drizzle has no API for pragmas, so they run on the raw handle.
     sqlite.exec('PRAGMA journal_mode = WAL');
     sqlite.exec('PRAGMA foreign_keys = ON');
+    // The setup-link command writes the same file as the server, so a write waits instead of failing.
+    sqlite.exec('PRAGMA busy_timeout = 5000');
 
     const remoteCallback = createRemoteCallback(sqlite);
     const db = drizzle(remoteCallback, { schema });

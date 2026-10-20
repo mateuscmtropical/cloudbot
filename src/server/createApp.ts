@@ -3,6 +3,11 @@ import { existsSync } from 'node:fs';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
+import { setCookie } from 'hono/cookie';
+
+import { requireSession, SESSION_COOKIE_NAME } from './access/requireSession.ts';
+import type { AccessErrorResponse } from './access/requireSession.ts';
+import type { SetupAccess } from './access/SetupAccess.ts';
 
 interface HealthResponse {
     status: 'ok';
@@ -11,11 +16,20 @@ interface HealthResponse {
 
 interface AppOptions {
     version: string;
+    access: SetupAccess;
     webRoot?: string;
 }
 
 const DEFAULT_WEB_ROOT = 'dist/web';
 const API_PREFIX = '/api/';
+const SESSION_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
+const SESSION_COOKIE_OPTIONS = {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'Strict',
+    path: '/',
+    maxAge: SESSION_MAX_AGE_SECONDS,
+} as const;
 
 function skipApiRoutes(serve: MiddlewareHandler): MiddlewareHandler {
     return (context, next) => {
@@ -31,10 +45,30 @@ function createApp(options: AppOptions): Hono {
     const app = new Hono();
     const webRoot = options.webRoot ?? DEFAULT_WEB_ROOT;
 
+    // Health is registered before the session check, so it answers without a cookie.
     app.get('/api/health', (context) => {
         const body: HealthResponse = { status: 'ok', version: options.version };
 
         return context.json(body);
+    });
+
+    const sessionCheck = requireSession(options.access);
+
+    app.use('/api/*', sessionCheck);
+
+    app.get('/setup', async (context) => {
+        const setupCode = context.req.query('code') ?? '';
+        const sessionToken = await options.access.redeemSetupCode(setupCode);
+
+        if (sessionToken === undefined) {
+            const body: AccessErrorResponse = { error: 'This setup link is not valid. Ask the server for a new one.' };
+
+            return context.json(body, 401);
+        }
+
+        setCookie(context, SESSION_COOKIE_NAME, sessionToken, SESSION_COOKIE_OPTIONS);
+
+        return context.redirect('/');
     });
 
     // The web app is optional. Without a build the server only has the API.
