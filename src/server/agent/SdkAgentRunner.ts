@@ -2,6 +2,7 @@ import { Readable } from 'node:stream';
 import { USAGE_LIMIT_ERROR_PREFIXES, query } from '@anthropic-ai/claude-agent-sdk';
 import type {
     HookCallback,
+    PreToolUseHookInput,
     Options,
     SDKAssistantMessage,
     SDKMessage,
@@ -11,7 +12,7 @@ import type {
     SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentEvent, TurnErrorEvent } from './AgentEvent.ts';
-import type { AgentRunner, TurnImage, TurnRequest } from './AgentRunner.ts';
+import type { AgentRunner, ToolCallDecision, TurnImage, TurnRequest } from './AgentRunner.ts';
 import { buildAgentEnvironment, createAgentUserSpawn } from './createAgentUserSpawn.ts';
 import { validateAgentIsolation } from './buildClaudeCommand.ts';
 import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
@@ -175,6 +176,19 @@ function withResetsAt(agentEvent: AgentEvent, latestResetsAt: number | undefined
 // A call may wait for the owner, so the hook outlasts the one hour wait of the approval gate.
 const REVIEW_HOOK_TIMEOUT_SECONDS = 3900;
 
+// A hook that throws may let the call run, so any failure of the review becomes a refusal.
+async function decideReview(
+    reviewToolCall: NonNullable<TurnRequest['reviewToolCall']>,
+    input: PreToolUseHookInput,
+    signal: AbortSignal,
+): Promise<ToolCallDecision> {
+    try {
+        return await reviewToolCall({ toolName: input.tool_name, input: input.tool_input }, signal);
+    } catch {
+        return { isAllowed: false, reason: 'This action could not be reviewed, so it was not run.' };
+    }
+}
+
 // PreToolUse runs for every tool, including the ones allowedTools lets through. Only a refusal changes the outcome.
 function buildReviewHooks(
     reviewToolCall: NonNullable<TurnRequest['reviewToolCall']>,
@@ -186,7 +200,7 @@ function buildReviewHooks(
         }
 
         const signal = AbortSignal.any([hookOptions.signal, turnSignal]);
-        const decision = await reviewToolCall({ toolName: input.tool_name, input: input.tool_input }, signal);
+        const decision = await decideReview(reviewToolCall, input, signal);
 
         if (decision.isAllowed) {
             return {};

@@ -730,11 +730,7 @@ class ChatService {
             return answered;
         }
 
-        // No call waits for this question. It is left from before a restart or is not a valid choice.
-        if (this.approvals?.isPending(messageId) !== true && body.options.some(option => option.id === choiceId)) {
-            await this.updateSetupMessage(messageId, { ...body, chosenId: 'deny' });
-        }
-
+        // No call waits for this question. A restart leaves such cards, and the next start closes them.
         throw new SetupAnswerError('The bot is no longer waiting for this answer.');
     }
 

@@ -25,10 +25,13 @@ interface ApprovalGateOptions {
 interface PendingApproval {
     botId: string;
     body: ChoiceBody;
-    settle: (choiceId: ApprovalChoiceId) => void;
+    settle: (outcome: ApprovalOutcome) => void;
 }
 
 type ApprovalChoiceId = 'approve' | 'deny';
+
+// expired means the turn stopped or nobody answered in time.
+type ApprovalOutcome = ApprovalChoiceId | 'expired';
 
 // The agent hook waits at most this long, so it must outlast the default wait below.
 const DEFAULT_APPROVAL_TIMEOUT_MS = 60 * 60 * 1000;
@@ -38,6 +41,11 @@ const APPROVAL_OPTIONS = [
     { id: 'deny', label: 'Deny' },
 ];
 const REVIEW_FAILED_SUMMARY = 'Run a tool call that could not be reviewed.';
+
+// A function call keeps TypeScript from narrowing the flag, which can change during an await.
+function isStopped(signal: AbortSignal): boolean {
+    return signal.aborted;
+}
 
 function toOneLine(text: string): string {
     const singleLine = text.replace(/\s+/g, ' ')
@@ -125,27 +133,38 @@ class ApprovalGate {
 
         const body = buildApprovalBody(summary);
         const posted = await this.chat.post(botId, body);
+
+        // A stop during the post fired its event before the listener existed.
+        if (isStopped(signal)) {
+            await this.closeQuietly(posted.id, { ...body, chosenId: 'deny' });
+
+            return { isAllowed: false, reason: 'The turn was stopped.' };
+        }
+
         let timer: ReturnType<typeof setTimeout> | undefined;
-        let onAbort = (): void => undefined;
-        const answered = new Promise<ApprovalChoiceId>((resolve) => {
-            this.pendingByMessage.set(posted.id, { botId, body, settle: resolve });
-            onAbort = (): void => {
-                resolve('deny');
+        let expire = (): void => undefined;
+        const outcomePromise = new Promise<ApprovalOutcome>((resolve) => {
+            // Whoever deletes the entry first wins, so an answer and an expiry never both apply.
+            expire = (): void => {
+                if (this.pendingByMessage.delete(posted.id)) {
+                    resolve('expired');
+                }
             };
-            timer = setTimeout(onAbort, this.timeoutMs);
-            signal.addEventListener('abort', onAbort, { once: true });
+            this.pendingByMessage.set(posted.id, { botId, body, settle: resolve });
+            timer = setTimeout(expire, this.timeoutMs);
+            signal.addEventListener('abort', expire, { once: true });
         });
-        const choiceId = await answered;
+        const outcome = await outcomePromise;
 
         clearTimeout(timer);
-        signal.removeEventListener('abort', onAbort);
+        signal.removeEventListener('abort', expire);
 
         // The owner's answer already closed the question. Stop and timeout close it here.
-        if (this.pendingByMessage.delete(posted.id)) {
+        if (outcome === 'expired') {
             await this.closeQuietly(posted.id, { ...body, chosenId: 'deny' });
         }
 
-        if (choiceId === 'approve') {
+        if (outcome === 'approve') {
             return { isAllowed: true };
         }
 

@@ -421,6 +421,15 @@ describe('SdkAgentRunner tool call review', () => {
             .toEqual({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'No.' } });
     });
 
+    it('denies the call when the review throws', async () => {
+        const hook = await runWithReview(() => Promise.reject(new Error('disk full')));
+
+        const output = await hook(buildHookInput(), 'tool-1', { signal: new AbortController().signal });
+
+        expect(output)
+            .toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny' } });
+    });
+
     it('gives the reviewer a signal that fires when the turn stops', async () => {
         let reviewSignal: AbortSignal | undefined;
         const abortController = new AbortController();

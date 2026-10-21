@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
 
 import type { ChatMessage, ChoiceBody } from '../../shared/chatTypes.ts';
 import { ApprovalGate } from './ApprovalGate.ts';
@@ -11,7 +12,7 @@ function buildMessage(id: string, body: ChoiceBody): ChatMessage {
 }
 
 interface FakeChat {
-    chat: ApprovalChat;
+    chat: { post: Mock<ApprovalChat['post']>; close: Mock<ApprovalChat['close']> };
     posted: ChoiceBody[];
     closed: { messageId: string; body: ChoiceBody }[];
 }
@@ -194,5 +195,58 @@ describe('ApprovalGate', () => {
             .not.toContain('\n');
         expect(posted[0]?.prompt.length)
             .toBeLessThan(400);
+    });
+
+    it('closes the question when the turn stops while the question is being posted', async () => {
+        const abortController = new AbortController();
+        const { gate, chat, closed } = createGate(() => Promise.resolve({ decision: 'ask', summary: 'Book a room' }));
+
+        chat.post.mockImplementationOnce((_botId: string, body: ChoiceBody) => {
+            abortController.abort();
+
+            return Promise.resolve(buildMessage('message-1', body));
+        });
+
+        const decision = await gate.review('bot-1', SEND_CALL, abortController.signal);
+
+        expect(decision)
+            .toMatchObject({ isAllowed: false });
+        expect(closed[0]?.body.chosenId)
+            .toBe('deny');
+        expect(gate.isPending('message-1'))
+            .toBe(false);
+    });
+
+    it('ignores an answer that arrives after the turn stopped', async () => {
+        const { gate, posted } = createGate(() => Promise.resolve({ decision: 'ask', summary: 'Send it' }));
+        const abortController = new AbortController();
+        const pending = gate.review('bot-1', SEND_CALL, abortController.signal);
+
+        await vi.waitFor(() => {
+            expect(posted)
+                .toHaveLength(1);
+        });
+        abortController.abort();
+
+        await expect(gate.answer('bot-1', 'message-1', 'approve'))
+            .resolves.toBeUndefined();
+        await expect(pending)
+            .resolves.toMatchObject({ isAllowed: false });
+    });
+
+    it('keeps the owner answer when the card cannot be saved', async () => {
+        const { gate, chat, posted } = createGate(() => Promise.resolve({ decision: 'ask', summary: 'Send it' }));
+        const pending = gate.review('bot-1', SEND_CALL, new AbortController().signal);
+
+        await vi.waitFor(() => {
+            expect(posted)
+                .toHaveLength(1);
+        });
+        chat.close.mockImplementationOnce(() => Promise.reject(new Error('disk full')));
+
+        await expect(gate.answer('bot-1', 'message-1', 'approve'))
+            .rejects.toThrow('disk full');
+        await expect(pending)
+            .resolves.toEqual({ isAllowed: true });
     });
 });
