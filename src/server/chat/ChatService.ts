@@ -42,6 +42,8 @@ import type { DeliveryMemory, WebhookRefusalLog } from '../webhooks/webhookMemor
 import { WATCH_TOOL_FULL_NAMES, createWatchTools } from '../watches/createWatchTools.ts';
 import type { WatchStore } from '../store/WatchStore.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
+import type { ConnectedApps } from '../apps/ConnectedApps.ts';
+import { APP_TOOL_FULL_NAMES, createAppTools } from '../apps/createAppTools.ts';
 import { REQUEST_SCREEN_TOOL_FULL_NAME, createRequestScreenTool } from '../desktop/createScreenTools.ts';
 import type { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import { TYPE_SECRET_TOOL_FULL_NAME, createTypeSecretTool } from '../secrets/createTypeSecretTool.ts';
@@ -100,6 +102,8 @@ interface ChatServiceOptions {
     limitStore?: LimitStore | undefined;
     // Page watches the bot can create, list and delete. Without it the bot has no watch tools.
     watchStore?: WatchStore | undefined;
+    // Remote MCP servers the owner connected by URL. Without it the bot has no app tools and no outside servers.
+    connectedApps?: ConnectedApps | undefined;
     // The private hosts the owner let the browser reach. Without it the bot has no browser allow tools.
     browserAllowStore?: BrowserAllowStore | undefined;
     // Webhooks the bot can list, create and remove. Without it the bot has no webhook tools.
@@ -384,6 +388,7 @@ class ChatService {
     private readonly modelStore: ModelStore | undefined;
     private readonly limitStore: LimitStore | undefined;
     private readonly watchStore: WatchStore | undefined;
+    private readonly connectedApps: ConnectedApps | undefined;
     private readonly browserAllowStore: BrowserAllowStore | undefined;
     private readonly webhookStore: WebhookStore | undefined;
     private readonly webhookRefusals: WebhookRefusalLog | undefined;
@@ -426,6 +431,7 @@ class ChatService {
         this.modelStore = options.modelStore;
         this.limitStore = options.limitStore;
         this.watchStore = options.watchStore;
+        this.connectedApps = options.connectedApps;
         this.browserAllowStore = options.browserAllowStore;
         this.webhookStore = options.webhookStore;
         this.webhookBaseUrl = options.webhookBaseUrl;
@@ -1383,12 +1389,15 @@ class ChatService {
             const webhookTools = this.webhookTools(botId);
             const watchTools = this.watchStore === undefined ? [] : createWatchTools(this.watchStore, botId);
             const browserAllowTools = this.browserAllowStore === undefined || this.browser === undefined ? [] : createBrowserAllowTools(this.browserAllowStore);
+            const appTools = this.connectedApps === undefined ? [] : createAppTools(this.connectedApps, botId);
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools],
             );
+            // The servers the owner connected are read for each turn, so a change applies to the next message.
+            const remoteServers = this.connectedApps === undefined ? {} : await this.connectedApps.serverConfigs();
             const prompt = uploads.length === 0 ? text : `${text}\n\n${describeAttachments(uploads)}`;
             const images = readTurnImages(uploads);
             // The upload folder is passed on every turn, so earlier uploads stay readable by path.
@@ -1438,7 +1447,7 @@ class ChatService {
                 ...modelOption,
                 ...effortOption,
                 limit: turnLimit,
-                mcpServers: { [PROFILE_SERVER_NAME]: profileServer },
+                mcpServers: { [PROFILE_SERVER_NAME]: profileServer, ...remoteServers },
             };
             const firstAttempt = await this.runAttempt(turnContext, bot.sessionId, turnState);
 
@@ -1524,8 +1533,9 @@ class ChatService {
         const limitToolNames = this.limitStore === undefined ? [] : [LIMITS_SET_TOOL_FULL_NAME];
         const webhookToolNames = this.webhookStore === undefined ? [] : WEBHOOK_TOOL_FULL_NAMES;
         const watchToolNames = this.watchStore === undefined ? [] : WATCH_TOOL_FULL_NAMES;
+        const appToolNames = this.connectedApps === undefined ? [] : APP_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames];
     }
 
     private webhookTools(botId: string): CloudbotTool[] {
@@ -1549,6 +1559,10 @@ class ChatService {
         const toolNamesById = new Map<string, string>();
         const sessionOption = buildSessionOption(sessionId);
         const hasHelpers = Object.keys(turnContext.agents).length > 0;
+        // Every server in the turn except the bot's own gets a pattern, such as mcp__linear__*.
+        const remoteServerNames = Object.keys(turnContext.mcpServers)
+            .filter(name => name !== PROFILE_SERVER_NAME);
+        const remoteToolPatterns = remoteServerNames.map(name => `mcp__${name}__*`);
         const turnRequest: TurnRequest = {
             botId,
             workspaceDir: turnContext.workspaceDir,
@@ -1558,7 +1572,8 @@ class ChatService {
             systemPrompt: turnContext.systemPrompt,
             mcpServers: turnContext.mcpServers,
             // The Agent tool lets the main turn hand work to its helpers. It is allowed only when there are helpers.
-            allowedTools: hasHelpers ? [...this.allowedToolNames(), AGENT_TOOL_NAME] : this.allowedToolNames(),
+            // The tools of the connected servers are listed here so they reach the review hook. The review still decides each call.
+            allowedTools: hasHelpers ? [...this.allowedToolNames(), ...remoteToolPatterns, AGENT_TOOL_NAME] : [...this.allowedToolNames(), ...remoteToolPatterns],
             disallowedTools: turnContext.disallowedTools,
             additionalDirectories: turnContext.additionalDirectories,
             ...(hasHelpers ? { agents: turnContext.agents } : {}),

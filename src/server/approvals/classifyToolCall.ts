@@ -26,11 +26,15 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__profile_set_mascot',
     'mcp__cloudbot__browser_allowed_hosts',
     'mcp__cloudbot__browser_remove_host',
+    'mcp__cloudbot__app_list',
+    'mcp__cloudbot__app_remove',
 ]);
 
 // Letting the browser reach a private host always needs the owner's approval, whatever the rules say.
+// A new outside server, and the tools it brings, always need the owner's approval too.
 const ALWAYS_ASK_TOOL_NAMES = new Set([
     'mcp__cloudbot__browser_allow_host',
+    'mcp__cloudbot__app_connect',
 ]);
 
 // The tools of the bot itself have fixed names. Any other tool is an outside connector.

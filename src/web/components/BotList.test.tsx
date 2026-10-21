@@ -17,7 +17,7 @@ describe('BotList', () => {
 
     it('shows a mascot in each bot, in the bot color and shape', () => {
         const { container } = render(
-            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" isOpen={false} onSelectBot={vi.fn()} />,
+            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" isOpen={false} onSelectBot={vi.fn()} onConnectApps={vi.fn()} />,
         );
         const mascots = container.querySelectorAll('.bot-item .cloud-mascot');
 
@@ -31,7 +31,7 @@ describe('BotList', () => {
 
     it('shows the live face on the selected bot and the idle face on the others', () => {
         const { container } = render(
-            <BotList bots={BOTS} selectedBotId="bot-a" selectedMascotState="thinking" isOpen={false} onSelectBot={vi.fn()} />,
+            <BotList bots={BOTS} selectedBotId="bot-a" selectedMascotState="thinking" isOpen={false} onSelectBot={vi.fn()} onConnectApps={vi.fn()} />,
         );
         const selectedFace = container.querySelector('.bot-item.is-selected .cloud-mascot');
         const otherFace = container.querySelector('.bot-item:not(.is-selected) .cloud-mascot');

@@ -146,3 +146,22 @@ describe('profile_set_mascot', () => {
             .toBe('skip');
     });
 });
+
+describe('connected app tools', () => {
+    it('always asks the owner before a new outside server is connected', () => {
+        expect(classify('mcp__cloudbot__app_connect'))
+            .toBe('always-ask');
+    });
+
+    it('skips the list and the removal, which only change what the bot can reach', () => {
+        expect(classify('mcp__cloudbot__app_list'))
+            .toBe('skip');
+        expect(classify('mcp__cloudbot__app_remove'))
+            .toBe('skip');
+    });
+
+    it('reviews the tools of a connected server like any other outside connector', () => {
+        expect(classify('mcp__linear__list_issues'))
+            .toBe('review');
+    });
+});

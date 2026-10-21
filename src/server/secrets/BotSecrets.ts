@@ -99,6 +99,17 @@ class BotSecrets {
         this.vault.set(vaultName, stored);
     }
 
+    // Removes a secret the bot saved. A name that cannot exist is a no-op.
+    remove(botId: string, name: string): void {
+        if (!BOT_SECRET_NAME_PATTERN.test(name)) {
+            return;
+        }
+
+        const vaultName = buildVaultName(botId, name);
+
+        this.vault.delete(vaultName);
+    }
+
     read(botId: string, name: string): BotSecret | undefined {
         if (!BOT_SECRET_NAME_PATTERN.test(name)) {
             return undefined;
