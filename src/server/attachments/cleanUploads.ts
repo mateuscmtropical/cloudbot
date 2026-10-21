@@ -3,8 +3,8 @@ import { join } from 'node:path';
 
 interface CleanUploadsOptions {
     uploadRoot: string;
-    // Files that a queued message still needs. They are never removed.
-    protectedPaths: ReadonlySet<string>;
+    // Asked right before a file is removed, so a turn that starts during the scan keeps its files.
+    isProtected: (botId: string, path: string) => boolean;
     maxAgeMs: number;
     nowMs: number;
 }
@@ -32,11 +32,11 @@ async function listNames(folder: string): Promise<string[]> {
     }
 }
 
-async function removeIfOld(path: string, options: CleanUploadsOptions): Promise<string | undefined> {
+async function removeIfOld(botId: string, path: string, options: CleanUploadsOptions): Promise<string | undefined> {
     try {
         const fileStats = await stat(path);
 
-        if (!fileStats.isFile() || options.nowMs - fileStats.mtimeMs <= options.maxAgeMs) {
+        if (!fileStats.isFile() || options.nowMs - fileStats.mtimeMs <= options.maxAgeMs || options.isProtected(botId, path)) {
             return undefined;
         }
 
@@ -53,18 +53,20 @@ async function removeIfOld(path: string, options: CleanUploadsOptions): Promise<
 // The age comes from the modification time, which is the upload time because files are never rewritten.
 async function removeOldUploads(options: CleanUploadsOptions): Promise<string[]> {
     const botFolders = await listNames(options.uploadRoot);
-    const listBotFolder = async (botFolder: string): Promise<string[]> => {
-        const folderPath = join(options.uploadRoot, botFolder);
+    const scanBotFolder = async (botId: string): Promise<(string | undefined)[]> => {
+        const folderPath = join(options.uploadRoot, botId);
         const names = await listNames(folderPath);
+        const removalChecks = names.map((name) => {
+            const path = join(folderPath, name);
 
-        return names.map(name => join(folderPath, name));
+            return removeIfOld(botId, path, options);
+        });
+
+        return Promise.all(removalChecks);
     };
-    const folderListings = botFolders.map(listBotFolder);
-    const candidateLists = await Promise.all(folderListings);
-    const candidates = candidateLists.flat()
-        .filter(path => !options.protectedPaths.has(path));
-    const removalChecks = candidates.map(path => removeIfOld(path, options));
-    const removals = await Promise.all(removalChecks);
+    const folderScans = botFolders.map(scanBotFolder);
+    const scanResults = await Promise.all(folderScans);
+    const removals = scanResults.flat();
 
     return removals.filter((path): path is string => path !== undefined);
 }

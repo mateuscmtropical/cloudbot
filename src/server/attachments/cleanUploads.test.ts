@@ -41,7 +41,7 @@ describe('removeOldUploads', () => {
         const otherBotPath = await writeAgedFile('bot-2', 'old.txt', 31);
 
         const removed = await removeOldUploads({
-            uploadRoot, protectedPaths: new Set(), maxAgeMs: 30 * DAY_MS, nowMs: NOW_MS,
+            uploadRoot, isProtected: () => false, maxAgeMs: 30 * DAY_MS, nowMs: NOW_MS,
         });
 
         expect(removed.sort())
@@ -58,7 +58,7 @@ describe('removeOldUploads', () => {
         const queuedPath = await writeAgedFile('bot-1', 'queued.txt', 60);
 
         const removed = await removeOldUploads({
-            uploadRoot, protectedPaths: new Set([queuedPath]), maxAgeMs: 30 * DAY_MS, nowMs: NOW_MS,
+            uploadRoot, isProtected: (_botId, path) => path === queuedPath, maxAgeMs: 30 * DAY_MS, nowMs: NOW_MS,
         });
 
         expect(removed)
@@ -69,7 +69,7 @@ describe('removeOldUploads', () => {
 
     it('does nothing when the upload folder does not exist', async () => {
         const removed = await removeOldUploads({
-            uploadRoot: join(uploadRoot, 'missing'), protectedPaths: new Set(), maxAgeMs: DAY_MS, nowMs: NOW_MS,
+            uploadRoot: join(uploadRoot, 'missing'), isProtected: () => false, maxAgeMs: DAY_MS, nowMs: NOW_MS,
         });
 
         expect(removed)

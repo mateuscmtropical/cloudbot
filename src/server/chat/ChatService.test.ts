@@ -1101,6 +1101,25 @@ describe('ChatService', () => {
             .toEqual([]);
     });
 
+    it('keeps the files of a turn that is still running, however old they are', async () => {
+        const service = new ChatService({ botStore, messageStore, runner: new AbortOnlyRunner(), dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const dayMs = 24 * 60 * 60 * 1000;
+
+        await service.saveUploads(bot.id, [new File(['hello'], 'notes.txt')]);
+        await service.sendMessage(bot.id, 'read it');
+
+        expect(await service.cleanUploads(Date.now() + dayMs * 90))
+            .toEqual([]);
+        expect(await readdir(join(dataDir, 'uploads', bot.id)))
+            .toHaveLength(1);
+
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.stopTurn(bot.id);
+        await finished;
+    });
+
     it('builds the image from the bytes kept in memory, even when the file is gone from disk', async () => {
         const { service, runner } = buildSetup([{ event: { type: 'text', text: 'A cat' } }]);
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });

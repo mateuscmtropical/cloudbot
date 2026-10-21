@@ -403,38 +403,26 @@ class ChatService {
     // Files that were never sent go after one day, and queued messages keep their files.
     // Returns the removed paths. A file left from before a restart counts as used.
     async cleanUploads(nowMs: number = Date.now()): Promise<string[]> {
-        const queuedLists = [...this.queuedTurns.values()];
-        const queuedUploads = queuedLists.flat()
-            .flatMap(turn => turn.uploads);
-        const queuedPaths = queuedUploads.map(upload => upload.absolutePath);
-        const protectedPaths = new Set(queuedPaths);
         const waitingLists = [...this.pendingUploads.values()];
         const waitingUploads = waitingLists.flat();
         const expiredIds = await findExpiredUploadIds(waitingUploads, nowMs);
-        const expiredUploads = waitingUploads.filter(upload => expiredIds.has(upload.id));
-
-        // The lists change in one step, so an upload that arrives later is never lost.
-        const botIds = [...this.pendingUploads.keys()];
-
-        botIds.forEach((botId) => {
-            const uploads = this.pendingUploads.get(botId) ?? [];
-
-            const keptUploads = uploads.filter(upload => !expiredIds.has(upload.id));
+        // The pending lists are read again after the checks. A turn that took files meanwhile keeps them.
+        const expiredUploads = [...this.pendingUploads.entries()].flatMap(([botId, uploads]) => {
+            const botExpired = this.isBusy(botId) ? [] : uploads.filter(upload => expiredIds.has(upload.id));
+            const keptUploads = uploads.filter(upload => !botExpired.includes(upload));
 
             this.pendingUploads.set(botId, keptUploads);
+
+            return botExpired;
         });
 
         await removeFiles(expiredUploads);
 
-        const remainingLists = [...this.pendingUploads.values()];
-        const remainingUploads = remainingLists.flat();
-
-        remainingUploads.forEach((upload) => {
-            protectedPaths.add(upload.absolutePath);
-        });
-
+        // A bot with a running, queued or waiting turn keeps every file. A pending file is not old by now.
+        const isProtected = (botId: string, path: string): boolean => this.isBusy(botId)
+            || (this.pendingUploads.get(botId) ?? []).some(upload => upload.absolutePath === path);
         const removedOldPaths = await removeOldUploads({
-            uploadRoot: this.uploadRoot(), protectedPaths, maxAgeMs: this.uploadRetentionMs, nowMs,
+            uploadRoot: this.uploadRoot(), isProtected, maxAgeMs: this.uploadRetentionMs, nowMs,
         });
         const expiredPaths = expiredUploads.map(upload => upload.absolutePath);
 
