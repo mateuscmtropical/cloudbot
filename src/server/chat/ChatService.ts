@@ -377,8 +377,10 @@ class ChatService {
         });
         const body: FileBody = { kind: 'file', name: copy.name, mimeType: copy.mimeType, sizeBytes: copy.sizeBytes, fileId: copy.id };
 
+        let storedMessage;
+
         try {
-            await this.saveAndPublish(botId, 'assistant', body);
+            storedMessage = await this.messageStore.add({ botId, role: 'assistant', kind: body.kind, content: body });
         } catch (error: unknown) {
             // Without its message nothing points to the copy, so it would stay on the disk for good.
             const copyPath = join(shareDir, copy.id);
@@ -387,6 +389,9 @@ class ChatService {
 
             throw error;
         }
+
+        // Publishing stays outside the try, because the message is stored and the copy must stay.
+        this.publish(botId, { type: 'message', message: toChatMessage(storedMessage) });
 
         return { name: copy.name, sizeBytes: copy.sizeBytes };
     }
