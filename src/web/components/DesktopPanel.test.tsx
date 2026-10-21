@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as apiClient from '../apiClient.ts';
@@ -7,6 +7,7 @@ import { DesktopPanel, buildVncUrl } from './DesktopPanel.tsx';
 
 vi.mock('../apiClient.ts', () => ({
     getScreenHolder: vi.fn(() => Promise.resolve('bot')),
+    getScreenView: vi.fn(() => Promise.resolve('vnc')),
     takeScreen: vi.fn(() => Promise.resolve('person')),
     releaseScreen: vi.fn(() => Promise.resolve('bot')),
 }));
@@ -62,6 +63,46 @@ vi.mock('@novnc/novnc', () => ({
     },
 }));
 
+describe('DesktopPanel in local mode', () => {
+    afterEach(() => {
+        cleanup();
+        vi.unstubAllGlobals();
+    });
+
+    it('shows the browser frames over the screencast socket instead of VNC', async () => {
+        const socketUrls: string[] = [];
+
+        class FakeSocket {
+            public constructor(url: string) {
+                socketUrls.push(url);
+            }
+
+            public addEventListener(): void {
+                // The frames are not needed for this check.
+            }
+
+            public close(): void {
+                // Nothing to close in the fake.
+            }
+        }
+
+        vi.stubGlobal('WebSocket', FakeSocket);
+        vi.mocked(apiClient.getScreenView)
+            .mockResolvedValueOnce('screencast');
+        clients.length = 0;
+        render(<DesktopPanel onClose={() => undefined} />);
+        await waitFor(() => {
+            expect(socketUrls)
+                .toHaveLength(1);
+        });
+
+        expect(socketUrls[0]?.endsWith('/api/desktop/screencast'))
+            .toBe(true);
+        expect(clients)
+            .toHaveLength(0);
+    });
+});
+
 describe('buildVncUrl', () => {
     it('uses wss on https and ws on http', () => {
         expect(buildVncUrl({ protocol: 'https:', host: 'bot.example' } as Location))
@@ -82,11 +123,13 @@ describe('DesktopPanel', () => {
         cleanup();
     });
 
-    it('connects in view only mode and shows a status until connected', () => {
+    it('connects in view only mode and shows a status until connected', async () => {
         render(<DesktopPanel onClose={() => undefined} />);
+        await waitFor(() => {
+            expect(clients)
+                .toHaveLength(1);
+        });
 
-        expect(clients)
-            .toHaveLength(1);
         expect(clientAt(0).viewOnly)
             .toBe(true);
         expect(screen.getByText('Connecting to the screen...'))
@@ -100,8 +143,12 @@ describe('DesktopPanel', () => {
             .toBeNull();
     });
 
-    it('offers a retry after a disconnect and connects again', () => {
+    it('offers a retry after a disconnect and connects again', async () => {
         render(<DesktopPanel onClose={() => undefined} />);
+        await waitFor(() => {
+            expect(clients)
+                .toHaveLength(1);
+        });
         act(() => {
             fireClientEvent(0, 'disconnect');
         });
@@ -158,6 +205,10 @@ describe('DesktopPanel', () => {
             .mockResolvedValue('person');
         render(<DesktopPanel onClose={() => undefined} />);
         await screen.findByText('You have the screen. The bot is paused.');
+        await waitFor(() => {
+            expect(clients)
+                .toHaveLength(1);
+        });
         act(() => {
             fireClientEvent(0, 'disconnect');
         });
@@ -193,10 +244,14 @@ describe('DesktopPanel', () => {
             .toBeTruthy();
     });
 
-    it('disconnects when closed', () => {
+    it('disconnects when closed', async () => {
         const onClose = vi.fn();
         const { unmount } = render(<DesktopPanel onClose={onClose} />);
 
+        await waitFor(() => {
+            expect(clients)
+                .toHaveLength(1);
+        });
         fireEvent.click(screen.getByRole('button', { name: 'Close' }));
         unmount();
 

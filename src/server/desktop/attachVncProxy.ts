@@ -17,6 +17,7 @@ interface VncProxyOptions {
     // Mouse and keyboard reach the desktop only while a person holds the screen.
     screen: ScreenHolder;
     vncPort?: number;
+    publicUrl?: string | undefined;
 }
 
 const VNC_PATH = '/api/desktop/vnc';
@@ -41,6 +42,38 @@ function readCookie(request: IncomingMessage, cookieName: string): string | unde
 
 function refuse(socket: Duplex, statusLine: string): void {
     socket.end(`HTTP/1.1 ${statusLine}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+}
+
+// The host of the public address, when one is set and valid. The owner may open the panel on that address.
+function readPublicHost(publicUrl: string | undefined): string | undefined {
+    if (publicUrl === undefined || publicUrl === '') {
+        return undefined;
+    }
+
+    try {
+        return new URL(publicUrl).host.toLowerCase();
+    } catch {
+        return undefined;
+    }
+}
+
+// The session cookie does not tell localhost ports apart, so a page of another port could open the socket.
+// Only a page from this server's own host, or the host of the public address, passes. A request without an Origin is refused.
+function isOwnOrigin(request: IncomingMessage, publicHost: string | undefined): boolean {
+    const origin = request.headers.origin;
+    const host = request.headers.host;
+
+    if (origin === undefined || host === undefined) {
+        return false;
+    }
+
+    try {
+        const originHost = new URL(origin).host;
+
+        return originHost === host.toLowerCase() || originHost === publicHost;
+    } catch {
+        return false;
+    }
 }
 
 function resumeWhenDrained(webSocket: WebSocket, vncSocket: Socket): void {
@@ -95,9 +128,20 @@ function bridgeToVnc(webSocket: WebSocket, vncPort: number, screen: ScreenHolder
     });
 }
 
-function attachVncProxy(options: VncProxyOptions): void {
-    const vncPort = options.vncPort ?? DEFAULT_VNC_PORT;
+interface SessionSocketOptions {
+    server: Server;
+    access: SetupAccess;
+    // The only upgrade path this socket serves. Other paths get a 404.
+    path: string;
+    accept: (webSocket: WebSocket) => void;
+    // CLOUDBOT_PUBLIC_URL, when set. Its host may open the socket too.
+    publicUrl?: string | undefined;
+}
+
+// Upgrades one path for a signed-in owner only. The desktop views share it.
+function attachSessionSocket(options: SessionSocketOptions): void {
     const webSocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_CLIENT_MESSAGE_BYTES });
+    const publicHost = readPublicHost(options.publicUrl);
 
     options.server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
         // Node removes its own error listener before this event. A reset during the session lookup would crash the server.
@@ -107,9 +151,15 @@ function attachVncProxy(options: VncProxyOptions): void {
 
         const requestPath = (request.url ?? '').split('?')[0];
 
-        if (requestPath !== VNC_PATH) {
+        if (requestPath !== options.path) {
             // Other upgrade paths are not served.
             refuse(socket, '404 Not Found');
+
+            return;
+        }
+
+        if (!isOwnOrigin(request, publicHost)) {
+            refuse(socket, '403 Forbidden');
 
             return;
         }
@@ -124,9 +174,7 @@ function attachVncProxy(options: VncProxyOptions): void {
                     return;
                 }
 
-                webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
-                    bridgeToVnc(webSocket, vncPort, options.screen);
-                });
+                webSocketServer.handleUpgrade(request, socket, head, options.accept);
             })
             .catch(() => {
                 refuse(socket, '500 Internal Server Error');
@@ -134,5 +182,19 @@ function attachVncProxy(options: VncProxyOptions): void {
     });
 }
 
-export { attachVncProxy, VNC_PATH };
-export type { VncProxyOptions };
+function attachVncProxy(options: VncProxyOptions): void {
+    const vncPort = options.vncPort ?? DEFAULT_VNC_PORT;
+
+    attachSessionSocket({
+        server: options.server,
+        access: options.access,
+        path: VNC_PATH,
+        publicUrl: options.publicUrl,
+        accept: (webSocket) => {
+            bridgeToVnc(webSocket, vncPort, options.screen);
+        },
+    });
+}
+
+export { MAX_CLIENT_MESSAGE_BYTES, attachSessionSocket, attachVncProxy, readCookie, refuse, VNC_PATH };
+export type { SessionSocketOptions, VncProxyOptions };

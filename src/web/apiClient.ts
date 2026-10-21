@@ -1,4 +1,4 @@
-import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName } from '../shared/chatTypes.ts';
+import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName, ScreenViewName } from '../shared/chatTypes.ts';
 import type { ConnectedAppSummary } from '../shared/connectedApps.ts';
 import type { BotRoutine } from '../shared/routineTypes.ts';
 import type { BotWatch } from '../shared/watchTypes.ts';
@@ -194,6 +194,16 @@ async function getScreenHolder(): Promise<ScreenHolderName> {
     const state = await requestJson<ScreenStateResponse>(`${API_ROOT}/desktop/screen`, {});
 
     return state.holder;
+}
+
+interface ScreenViewResponse {
+    view: ScreenViewName;
+}
+
+async function getScreenView(): Promise<ScreenViewName> {
+    const response = await requestJson<ScreenViewResponse>(`${API_ROOT}/desktop/view`, {});
+
+    return response.view;
 }
 
 async function takeScreen(): Promise<ScreenHolderName> {
@@ -412,6 +422,7 @@ export {
     listUploads,
     removeUpload,
     getScreenHolder,
+    getScreenView,
     takeScreen,
     releaseScreen,
     listRules,

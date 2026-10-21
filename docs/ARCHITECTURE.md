@@ -138,6 +138,58 @@ session cookie, and pipes the frames to x11vnc on `127.0.0.1:5900` as raw
 bytes. Without a valid cookie the upgrade gets a 401. The web app loads noVNC
 only when the owner opens the Screen panel, and sets it to view only.
 
+### Local browser
+
+Without the desktop, as in local development, the server starts an installed
+browser of its own. `findLocalBrowser` in `src/server/desktop/localBrowser.ts`
+looks for Chrome, Chromium or Edge in the usual install paths of Windows, macOS
+and Linux. `CLOUDBOT_BROWSER_PATH` sets one path instead. With no browser found,
+the browser tools stay off, and the bot is told it cannot browse.
+
+With `CLOUDBOT_AGENT_USER` set, the local browser stays off. Chrome would run as
+the server user, who can read the vault, and the agent user could reach that
+through the DevTools port. The server logs why.
+
+The browser uses `<data dir>/browser-profile`, never the owner's profile. Chrome
+picks its DevTools port (`--remote-debugging-port=0`), on `127.0.0.1` only, and
+writes it to `DevToolsActivePort` in the profile. Line one is the port and line
+two is the socket path. The browser tools read the file on each action. A page
+socket is used only when it is `ws:` on loopback, on that port, and its path is
+the one on line two. Chrome gets only the variables it needs, not the server's.
+
+The browser goes through the same `BrowserGate` as Docker, with the same flags
+and `--disable-quic`. The gate listens on a free port, or on the port of the
+last run when that one is still free. The port is kept in `cloudbot-gate-port`
+in the profile. The server removes the port file when the browser it started
+exits, and only when that browser wrote it. The server stops the browser on exit.
+
+The browser tools stay off until a gate check passes. The check opens a
+throwaway listener on a loopback port and has the browser load it. A pass needs
+the gate's refusal, `ERR_SOCKS_CONNECTION_FAILED`, and no connection to the
+listener. A connection means a policy bypasses the gate, and the tools stay off.
+Any other error, such as a refused port, is not a pass, so the check retries and
+then gives up. The check runs for a new browser and for a reused one.
+
+A browser left open by a crash is reused only when it is ours. Its port must
+answer on `127.0.0.1`, `/json/version` must name Chrome or Edge, the socket
+path must match line two, and the command line (read with `SystemInfo.getInfo`)
+must name this profile and the saved gate port. Each identity call has a 2 second
+timeout, and the answer is capped at 64 KB. A port that answers but fails any
+of these, or does not answer in time, is a leftover. The browser tools stay
+off, no second browser starts on the profile, and the port file stays. Only a
+refused connection marks the file as stale and removes it. The setup chat tells
+the owner to close that CloudBot browser window.
+
+The live view is a WebSocket at `/api/desktop/screencast`. `attachScreencast`
+streams the page's JPEG frames from `Page.startScreencast`, and the owner's
+mouse and keys reach the page only while the owner holds the screen. Pointer
+positions up to 10000 pixels pass, so a page larger than the frame still takes
+clicks. Queued moves keep only the latest. A button still down is released when
+the screen goes to the bot or the panel closes. Both desktop sockets refuse an
+`Origin` that is not this server's own host or the host of `CLOUDBOT_PUBLIC_URL`,
+since the session cookie does not tell localhost ports apart. The panel asks
+`/api/desktop/view` which view to use.
+
 The image sets `CLOUDBOT_DESKTOP_COMMAND` to the script path. The server runs
 `sudo -n -u bot -- /usr/local/bin/cloudbot-desktop`, and sudoers allows that
 script only without arguments. `DesktopSupervisor` starts it again when it

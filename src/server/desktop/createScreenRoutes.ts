@@ -1,17 +1,28 @@
 import { Hono } from 'hono';
 
+import type { ScreenViewName } from '../../shared/chatTypes.ts';
 import type { ScreenHolder, ScreenHolderName } from './ScreenHolder.ts';
 
 interface ScreenStateResponse {
     holder: ScreenHolderName;
 }
 
+interface ScreenViewResponse {
+    view: ScreenViewName;
+}
+
 // The routes sit behind the session check. The bot has no tool to take the screen back.
-function createScreenRoutes(screen: ScreenHolder): Hono {
+function createScreenRoutes(screen: ScreenHolder, view: ScreenViewName = 'vnc'): Hono {
     const routes = new Hono();
 
     routes.get('/api/desktop/screen', (context) => {
         const body: ScreenStateResponse = { holder: screen.holder };
+
+        return context.json(body);
+    });
+
+    routes.get('/api/desktop/view', (context) => {
+        const body: ScreenViewResponse = { view };
 
         return context.json(body);
     });
@@ -38,4 +49,4 @@ function createScreenRoutes(screen: ScreenHolder): Hono {
 }
 
 export { createScreenRoutes };
-export type { ScreenStateResponse };
+export type { ScreenStateResponse, ScreenViewResponse };

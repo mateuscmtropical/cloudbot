@@ -56,7 +56,7 @@ describe('setup conversation', () => {
         await rm(dataDir, { recursive: true, force: true });
     });
 
-    async function fixture(start = true, localMode = false, canSignOut = true): Promise<Fixture> {
+    async function fixture(start = true, localMode = false, canSignOut = true, noBrowser?: 'notInstalled' | 'leftover'): Promise<Fixture> {
         const bots = new BotStore(opened.db);
         const bot = await bots.create({ name: 'CloudBot', title: 'Assistant', description: '' });
         const messages = new MessageStore(opened.db);
@@ -91,7 +91,7 @@ describe('setup conversation', () => {
             vault: { delete: (name) => {
                 vault.delete(name);
             }, has: name => vault.has(name), set: (name, value) => { vault.set(name, value); } },
-            checkKey, connect, authStatus, startLogin, localMode,
+            checkKey, connect, authStatus, startLogin, localMode, noBrowser,
             ...(canSignOut ? { signOut } : {}),
         });
         const app = createApp({ version: 'test', access, chatService: chat, webRoot: 'missing-web-root' });
@@ -103,6 +103,32 @@ describe('setup conversation', () => {
 
         return { app, chat, setup, messages, settings, botId: bot.id, cookie: `cloudbot_session=${cookie ?? ''}`, vault, session, connect, authStatus, runner, checkKey, startLogin, signOut };
     }
+
+    it('says once that the computer has no browser, when there is none', async () => {
+        const context = await fixture(true, false, true, 'notInstalled');
+        const history = await context.chat.listMessages(context.botId);
+        const noBrowserLines = history?.filter(message => message.body.kind === 'text' && message.body.text.includes('cannot browse'));
+
+        expect(noBrowserLines)
+            .toHaveLength(1);
+    });
+
+    it('says once to close the old browser, when a browser from the last run is still open', async () => {
+        const context = await fixture(true, false, true, 'leftover');
+        const history = await context.chat.listMessages(context.botId);
+        const leftoverLines = history?.filter(message => message.body.kind === 'text' && message.body.text.includes('Close that CloudBot browser window'));
+
+        expect(leftoverLines)
+            .toHaveLength(1);
+    });
+
+    it('says nothing about a browser when the computer has one', async () => {
+        const context = await fixture(true, false);
+        const history = await context.chat.listMessages(context.botId);
+
+        expect(history?.some(message => message.body.kind === 'text' && message.body.text.includes('cannot browse')))
+            .toBe(false);
+    });
 
     async function active(context: Fixture, kind: string): Promise<ChatMessage> {
         await vi.waitFor(async () => {

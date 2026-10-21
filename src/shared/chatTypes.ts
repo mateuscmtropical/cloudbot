@@ -139,8 +139,12 @@ interface BotRule {
 // Who may act on the bot's desktop.
 type ScreenHolderName = 'bot' | 'person';
 
+// The live view of the screen: VNC on the Docker desktop, or the browser's frames in local mode.
+type ScreenViewName = 'vnc' | 'screencast';
+
 export type {
     ScreenHolderName,
+    ScreenViewName,
     AttachmentSummary,
     BotRule,
     PendingUpload,

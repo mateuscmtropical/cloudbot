@@ -14,7 +14,8 @@ import { ChatService } from './chat/ChatService.ts';
 import { createApp } from './createApp.ts';
 import { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { attachVncProxy } from './desktop/attachVncProxy.ts';
-import { BrowserControl, DESKTOP_DEVTOOLS_URL } from './desktop/BrowserControl.ts';
+import { attachScreencast } from './desktop/attachScreencast.ts';
+import { buildLocalBrowserCommand, buildLocalBrowserTools, createLocalBrowserSpawn, defaultLocalBrowserEnvironment, localBrowserProfileDir, localGatePortFor, planLocalBrowser, saveLocalGatePort, startPlannedGate, verifyLocalBrowserGate } from './desktop/localBrowser.ts';
 import { BrowserGate } from './desktop/BrowserGate.ts';
 import { DesktopSupervisor, buildDesktopCommand } from './desktop/DesktopSupervisor.ts';
 import { BotStore } from './store/BotStore.ts';
@@ -105,10 +106,23 @@ if (claudeConfigDir !== undefined) {
 }
 const connection: RuntimeConnection = {};
 const runner = new SdkAgentRunner({ pathToClaudeCodeExecutable: claudePath, environment });
-// The image sets CLOUDBOT_DESKTOP_COMMAND. Local development leaves it unset and has no desktop or browser tools.
+// The image sets CLOUDBOT_DESKTOP_COMMAND, and its desktop starts Chromium. Without it, local runs start an installed
+// Chrome, Chromium or Edge with its own profile, and the browser tools stay off when none is found.
 const desktopCommand = buildDesktopCommand(process.env.CLOUDBOT_DESKTOP_COMMAND, agentUser);
 const desktop = desktopCommand === undefined ? undefined : new DesktopSupervisor({ desktopCommand });
-const browser = desktop === undefined ? undefined : new BrowserControl({ devtoolsUrl: DESKTOP_DEVTOOLS_URL });
+const localBrowserEnvironment = defaultLocalBrowserEnvironment();
+const localProfileDir = localBrowserProfileDir(dataDir);
+// The plan decides the desktop, no browser, a new local browser or a reused one. It logs why a browser stays off.
+const localPlan = await planLocalBrowser({
+    hasDesktop: desktop !== undefined,
+    hasAgentUser: agentUser !== undefined,
+    environment: localBrowserEnvironment,
+    profileDir: localProfileDir,
+});
+const localTools = buildLocalBrowserTools(localPlan, localProfileDir);
+const browser = localTools.browser;
+// Why the setup chat says the bot has no browser. With an agent user nothing is said, since the log says why.
+const noBrowserReason = localTools.noBrowserReason;
 const screen = new ScreenHolder();
 const vault = new Vault(dataDir);
 const botSecrets = new BotSecrets(vault);
@@ -142,12 +156,26 @@ const appProxy = new AppProxy({
     },
 });
 const connectedApps = new ConnectedApps({ store: connectedAppStore, secrets: botSecrets, proxy: appProxy, allowedHosts: allowedPrivateHosts });
-// The gate is the browser's only way out. It starts before the desktop, so Chromium never runs without it.
-const browserGate = desktop === undefined
+
+// The gate is the browser's only way out. It starts before the browser, so Chromium never runs without it.
+function createBrowserGate(gatePort: number | undefined): BrowserGate {
+    return new BrowserGate({
+        ...(gatePort === undefined ? {} : { port: gatePort }),
+        isAllowed: (host, allowedPort) => browserAllowStore.isAllowed(host, allowedPort),
+    });
+}
+
+const localGatePort = localGatePortFor(localPlan);
+const browserGate = browser === undefined
     ? undefined
-    : new BrowserGate({
-            isAllowed: (host, port) => browserAllowStore.isAllowed(host, port),
-        });
+    : await startPlannedGate(createBrowserGate, localGatePort, localPlan.kind);
+
+// A reused browser whose gate port is taken has no gate, so its tools stay off, and the setup chat says it is left open.
+const isReusedGateBusy = browser !== undefined && browserGate === undefined;
+
+if (browser !== undefined && isReusedGateBusy) {
+    browser.disable('The browser tools are off, because the gate port of the browser left open from the last run is taken.');
+}
 
 // Integrations run as their own user, which cannot read the vault, the workspaces or the bot's shell. They need the
 // agent user too, so their workspace path is the one the chat uses. Otherwise they stay off.
@@ -242,6 +270,7 @@ const setup = new SetupConversation({
     // Local sign-out is refused on macOS, so setup does not offer it there.
     ...(!agentUser && process.platform === 'darwin' ? {} : { signOut: () => signOutClaude(authOptions) }),
     localMode: !agentUser,
+    noBrowser: isReusedGateBusy ? 'leftover' : noBrowserReason,
     connect: async (mode) => {
         if (mode === 'apiKey') {
             connection.proxy ??= await startKeyProxy({ vault, secretName: API_KEY_NAME });
@@ -257,8 +286,29 @@ const setup = new SetupConversation({
 chatService.setSetup(setup);
 await appProxy.start();
 await connectedApps.start();
-await browserGate?.start();
+
+// The browser starts after the gate listens, so it gets the gate's real port. Only a new local browser is started here.
+const localBrowser = localPlan.kind === 'start' && browserGate !== undefined
+    ? new DesktopSupervisor({
+            desktopCommand: buildLocalBrowserCommand(localPlan.browserPath, { profileDir: localProfileDir, gatePort: browserGate.listeningPort }),
+            spawnFunction: createLocalBrowserSpawn(localProfileDir, process.env),
+        })
+    : undefined;
+
+if (browserGate !== undefined && desktop === undefined) {
+    saveLocalGatePort(localProfileDir, browserGate.listeningPort);
+}
+
 desktop?.start();
+localBrowser?.start();
+
+// A private address must fail at the gate. The browser tools stay off until it does, also for a reused browser.
+// The check keeps retrying until it passes, and stops when the server shuts down.
+const gateController = new AbortController();
+
+if (localTools.gateProbe !== undefined && browser !== undefined && browserGate !== undefined) {
+    void verifyLocalBrowserGate(localTools.gateProbe, browser, { signal: gateController.signal });
+}
 
 const routineScheduler = new RoutineScheduler({
     routineStore,
@@ -293,7 +343,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ version, access, chatService, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen });
+const app = createApp({ version, access, chatService, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.
@@ -314,15 +364,22 @@ const server = serve({ fetch: app.fetch, port }, (address) => {
         });
 });
 
-// The live view needs the desktop. Local development has none.
+// The live view is VNC on the desktop. Local runs show the browser's own frames instead.
+// The owner's public address may differ from the host the panel is opened on, so its host is allowed too.
+const publicUrl = process.env.CLOUDBOT_PUBLIC_URL;
+
 if (desktop !== undefined) {
-    attachVncProxy({ server: server as Server, access, screen });
+    attachVncProxy({ server: server as Server, access, screen, publicUrl });
+} else if (browser !== undefined) {
+    attachScreencast({ server: server as Server, access, browser, screen, publicUrl });
 }
 
 function shutdown(): void {
     clearInterval(cleanupTimer);
     routineScheduler.stop();
     desktop?.stop();
+    localBrowser?.stop();
+    gateController.abort();
     void browserGate?.close();
     void appProxy.close();
     void githubProxy?.close();
