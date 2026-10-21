@@ -1,4 +1,4 @@
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentDefinition, McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 
 import type { AgentEvent } from './AgentEvent.ts';
 
@@ -24,6 +24,8 @@ interface TurnRequest {
     sessionId?: string;
     // An alias or full model id from the owner's model choices. Unset keeps the CLI default.
     model?: string;
+    // Helper agents the main turn can hand work to. Each has its own model and tools.
+    agents?: Record<string, AgentDefinition>;
     systemPrompt?: string;
     mcpServers?: Record<string, McpServerConfig>;
     allowedTools?: string[];

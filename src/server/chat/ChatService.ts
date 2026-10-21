@@ -7,6 +7,8 @@ import type { ToolCallReviewer } from '../approvals/ApprovalGate.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnImage, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
+import { AGENT_TOOL_NAME, buildHelperAgents } from '../agent/buildHelperAgents.ts';
+import type { HelperKind } from '../agent/buildHelperAgents.ts';
 import {
     PROFILE_SERVER_NAME,
     SHARE_FILE_TOOL_FULL_NAME,
@@ -140,6 +142,8 @@ interface TurnContext {
     reviewToolCall?: TurnRequest['reviewToolCall'];
     additionalDirectories: string[];
     model?: string;
+    // The helper agents of this turn. Empty when the owner chose no helper.
+    agents: NonNullable<TurnRequest['agents']>;
 }
 
 type ChatEventListener = (event: ChatEvent) => void;
@@ -1219,14 +1223,25 @@ class ChatService {
             const modelChoices = this.modelStore === undefined ? undefined : await this.modelStore.get(botId);
             const chosenModel = modelChoices === undefined ? undefined : chooseTurnModel(modelChoices, turn.source);
             const modelOption = chosenModel === undefined ? {} : { model: chosenModel };
+            // A helper exists only for the work the owner chose a model for, and it gets only the tools of that work.
+            const helperAgents = modelChoices === undefined
+                ? {}
+                : buildHelperAgents(modelChoices, { disallowedTools, hasBrowser: this.browser !== undefined });
+            const helperKinds = Object.keys(helperAgents) as HelperKind[];
             const turnContext: TurnContext = {
                 additionalDirectories,
+                agents: helperAgents,
                 botId,
                 prompt,
                 abortController,
                 workspaceDir,
                 images,
-                systemPrompt: buildSystemPrompt(bot, { hasBrowser: this.browser !== undefined, hasRoutines: this.routineStore !== undefined, ownerRules }),
+                systemPrompt: buildSystemPrompt(bot, {
+                    hasBrowser: this.browser !== undefined,
+                    hasRoutines: this.routineStore !== undefined,
+                    ownerRules,
+                    helpers: helperKinds,
+                }),
                 disallowedTools,
                 ...reviewOption,
                 ...modelOption,
@@ -1321,6 +1336,7 @@ class ChatService {
         const { botId } = turnContext;
         const toolNamesById = new Map<string, string>();
         const sessionOption = buildSessionOption(sessionId);
+        const hasHelpers = Object.keys(turnContext.agents).length > 0;
         const turnRequest: TurnRequest = {
             botId,
             workspaceDir: turnContext.workspaceDir,
@@ -1329,9 +1345,11 @@ class ChatService {
             abortSignal: turnContext.abortController.signal,
             systemPrompt: turnContext.systemPrompt,
             mcpServers: turnContext.mcpServers,
-            allowedTools: this.allowedToolNames(),
+            // The Agent tool lets the main turn hand work to its helpers. It is allowed only when there are helpers.
+            allowedTools: hasHelpers ? [...this.allowedToolNames(), AGENT_TOOL_NAME] : this.allowedToolNames(),
             disallowedTools: turnContext.disallowedTools,
             additionalDirectories: turnContext.additionalDirectories,
+            ...(hasHelpers ? { agents: turnContext.agents } : {}),
             ...(turnContext.model === undefined ? {} : { model: turnContext.model }),
             ...(turnContext.reviewToolCall === undefined ? {} : { reviewToolCall: turnContext.reviewToolCall }),
             ...sessionOption,

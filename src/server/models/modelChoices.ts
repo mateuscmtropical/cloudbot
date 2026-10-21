@@ -4,22 +4,26 @@ const MODEL_ALIASES: readonly string[] = ['fable', 'opus', 'sonnet', 'haiku'];
 // Full model ids start with "claude-". The pattern keeps any other text away from the CLI.
 const MODEL_ID_PATTERN = /^claude-[a-z0-9.-]+$/;
 const MAX_MODEL_LENGTH = 100;
-const MODEL_KINDS = ['chat', 'routines', 'review'] as const;
+// The first three kinds pick the model of a turn. browsing and documents are helper agents, and a null
+// choice for either one means the bot has no helper for that work.
+const MODEL_KINDS = ['chat', 'routines', 'review', 'browsing', 'documents'] as const;
 
 type ModelKind = (typeof MODEL_KINDS)[number];
 
-// A null choice means the CLI default model.
+// A null choice means the CLI default model, or no helper for browsing and documents.
 interface ModelChoices {
     chat: string | null;
     routines: string | null;
     review: string | null;
+    browsing: string | null;
+    documents: string | null;
 }
 
 interface ModelInputError {
     error: string;
 }
 
-const INVALID_BODY: ModelInputError = { error: 'Send an object with the chat, routines and review models.' };
+const INVALID_BODY: ModelInputError = { error: 'Send an object with the chat, routines, review, browsing and documents models.' };
 
 function isValidModel(value: string): boolean {
     if (value.length > MAX_MODEL_LENGTH) {
@@ -59,6 +63,8 @@ function parseModelInput(payload: unknown): ModelChoices | ModelInputError {
         chat: toChoice(fields.chat),
         routines: toChoice(fields.routines),
         review: toChoice(fields.review),
+        browsing: toChoice(fields.browsing),
+        documents: toChoice(fields.documents),
     };
 }
 

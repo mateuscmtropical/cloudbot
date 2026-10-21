@@ -190,6 +190,9 @@ async function decideReview(
 }
 
 // PreToolUse runs for every tool, including the ones allowedTools lets through. Only a refusal changes the outcome.
+// The SDK types say the hook input carries agent_id "only when the hook fires from within a subagent (e.g., a tool
+// called by an AgentTool worker)" (BaseHookInput in node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts). So helper
+// calls reach this review hook too, and the review does not skip them.
 function buildReviewHooks(
     reviewToolCall: NonNullable<TurnRequest['reviewToolCall']>,
     turnSignal: AbortSignal,
@@ -218,6 +221,41 @@ function buildReviewHooks(
     return { PreToolUse: [{ hooks: [reviewHook], timeout: REVIEW_HOOK_TIMEOUT_SECONDS }] };
 }
 
+// The SDK types do not say that the top-level disallowedTools reaches helper agents. This hook refuses a blocked
+// tool for every agent, so an owner's block holds inside a helper whatever the SDK does.
+function buildBlockedToolHooks(blockedToolNames: string[]): NonNullable<Options['hooks']> {
+    const blockedToolHook: HookCallback = (input) => {
+        const isBlocked = input.hook_event_name === 'PreToolUse' && blockedToolNames.includes(input.tool_name);
+
+        if (!isBlocked) {
+            return Promise.resolve({});
+        }
+
+        return Promise.resolve({
+            hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                permissionDecision: 'deny',
+                permissionDecisionReason: 'The owner blocked this tool.',
+            },
+        });
+    };
+
+    return { PreToolUse: [{ hooks: [blockedToolHook] }] };
+}
+
+function buildToolHooks(request: TurnRequest): NonNullable<Options['hooks']> | undefined {
+    const blockedToolNames = request.disallowedTools ?? [];
+    const blockedHooks = request.agents !== undefined && blockedToolNames.length > 0
+        ? buildBlockedToolHooks(blockedToolNames).PreToolUse ?? []
+        : [];
+    const reviewHooks = request.reviewToolCall === undefined
+        ? []
+        : buildReviewHooks(request.reviewToolCall, request.abortSignal).PreToolUse ?? [];
+    const preToolUseHooks = [...blockedHooks, ...reviewHooks];
+
+    return preToolUseHooks.length === 0 ? undefined : { PreToolUse: preToolUseHooks };
+}
+
 function buildQueryOptions(
     request: TurnRequest,
     runnerOptions: SdkAgentRunnerOptions,
@@ -243,6 +281,8 @@ function buildQueryOptions(
         : {};
     const resumeOption = request.sessionId ? { resume: request.sessionId } : {};
     const modelOption = request.model === undefined ? {} : { model: request.model };
+    // Helper agents run their own tool calls, which the PreToolUse review hook below also sees.
+    const agentsOption = request.agents === undefined ? {} : { agents: request.agents };
     // A plain string systemPrompt would replace Claude Code's default prompt, so the bot profile is appended to the preset.
     const systemPromptAppendOption = request.systemPrompt ? { append: request.systemPrompt } : {};
     const systemPromptOption = {
@@ -261,7 +301,8 @@ function buildQueryOptions(
     // Extra folders the agent may read, such as the upload folder of the bot.
     const additionalDirectoriesOption = request.additionalDirectories ? { additionalDirectories: request.additionalDirectories } : {};
 
-    const hooksOption = request.reviewToolCall ? { hooks: buildReviewHooks(request.reviewToolCall, request.abortSignal) } : {};
+    const toolHooks = buildToolHooks(request);
+    const hooksOption = toolHooks === undefined ? {} : { hooks: toolHooks };
 
     return {
         cwd: request.workspaceDir,
@@ -272,6 +313,7 @@ function buildQueryOptions(
         ...spawnOption,
         ...resumeOption,
         ...modelOption,
+        ...agentsOption,
         ...systemPromptOption,
         ...mcpServersOption,
         ...allowedToolsOption,
