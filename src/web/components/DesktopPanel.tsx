@@ -36,14 +36,22 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
 
         client.viewOnly = true;
         client.scaleViewport = true;
+        // A client that was cleaned up still reports its close. That must not change the state of its successor.
+        let isCurrent = true;
+
         client.addEventListener('connect', () => {
-            setConnectionState('connected');
+            if (isCurrent) {
+                setConnectionState('connected');
+            }
         });
         client.addEventListener('disconnect', () => {
-            setConnectionState('disconnected');
+            if (isCurrent) {
+                setConnectionState('disconnected');
+            }
         });
 
         return () => {
+            isCurrent = false;
             client.disconnect();
         };
     }, [connectAttempt]);
