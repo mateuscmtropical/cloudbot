@@ -1,4 +1,5 @@
 import { constants } from 'node:fs';
+import type { BigIntStats } from 'node:fs';
 import { open, realpath, rm, stat } from 'node:fs/promises';
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Transform } from 'node:stream';
@@ -52,6 +53,7 @@ const MIME_TYPES_BY_EXTENSION: Record<string, string> = {
 };
 const CREATE_FLAGS = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL;
 // O_NONBLOCK keeps the open of a named pipe from waiting for a writer. The regular file check follows.
+// Windows has neither flag, so the open follows links there. The realpath and identity checks guard on every OS.
 const OPEN_FILE_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
 
 function readMaxShareBytes(): number {
@@ -85,9 +87,23 @@ function isInside(rootDir: string, targetPath: string): boolean {
     return relativePath !== '' && !leavesRoot && !isAbsolute(relativePath);
 }
 
+// Windows file ids are 64 bits, so the comparison uses bigints. A Number would lose the low digits.
+// Some network and virtual filesystems report an inode of 0 for every file, so 0 never counts as a match.
+function isSameFile(first: BigIntStats, second: BigIntStats): boolean {
+    return first.ino !== 0n && first.dev === second.dev && first.ino === second.ino;
+}
+
 async function resolveRealPath(path: string, failureText: string): Promise<string> {
     try {
         return await realpath(path);
+    } catch {
+        throw new ShareFileError(failureText);
+    }
+}
+
+async function statPath(path: string, failureText: string): Promise<BigIntStats> {
+    try {
+        return await stat(path, { bigint: true });
     } catch {
         throw new ShareFileError(failureText);
     }
@@ -138,19 +154,25 @@ async function shareWorkspaceFile(options: ShareWorkspaceFileOptions): Promise<S
     const destinationPath = join(options.shareDir, options.fileId);
 
     try {
-        const openedReal = await resolveRealPath(`/proc/self/fd/${String(sourceHandle.fd)}`, 'That file cannot be opened.');
+        const sourceStat = await sourceHandle.stat({ bigint: true });
+        const pathReal = await resolveRealPath(requestedAbsolute, 'That file cannot be opened.');
 
-        if (!isInside(workspaceReal, openedReal)) {
+        if (!isInside(workspaceReal, pathReal)) {
             throw new ShareFileError('Only files inside your workspace can be shared.');
         }
 
-        const sourceStat = await sourceHandle.stat();
+        // The path must still lead to the file that was opened. This works on every OS, unlike /proc/self/fd.
+        const pathStat = await statPath(pathReal, 'That file cannot be opened.');
+
+        if (!isSameFile(sourceStat, pathStat)) {
+            throw new ShareFileError('That file changed while it was being shared. Try again.');
+        }
 
         if (!sourceStat.isFile()) {
             throw new ShareFileError('Only regular files can be shared, not folders.');
         }
 
-        if (sourceStat.size > options.maxBytes) {
+        if (sourceStat.size > BigInt(options.maxBytes)) {
             const limitMb = Math.floor(options.maxBytes / BYTES_PER_MEGABYTE);
 
             throw new ShareFileError(`The file is larger than ${String(limitMb)} MB.`);
@@ -178,5 +200,5 @@ async function shareWorkspaceFile(options: ShareWorkspaceFileOptions): Promise<S
     }
 }
 
-export { DEFAULT_MAX_SHARE_MB, ShareFileError, cleanShareName, guessMimeType, readMaxShareBytes, shareWorkspaceFile };
+export { DEFAULT_MAX_SHARE_MB, ShareFileError, cleanShareName, guessMimeType, isSameFile, readMaxShareBytes, shareWorkspaceFile };
 export type { SharedFileCopy, ShareWorkspaceFileOptions };
