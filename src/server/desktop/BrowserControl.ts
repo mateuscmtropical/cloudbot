@@ -58,9 +58,10 @@ const LOAD_POLL_MS = 250;
 const READ_PAGE_EXPRESSION = '({ title: document.title, url: location.href, text: document.body ? document.body.innerText : "" })';
 const READY_STATE_EXPRESSION = 'document.readyState';
 // Runs in an isolated world, so the page's own scripts cannot change what it reads.
-const FOCUS_CHECK_EXPRESSION = '(() => { const field = document.activeElement; return { origin: location.origin, tag: field ? field.tagName : "", type: field && field.tagName === "INPUT" ? field.type : "", autocomplete: field && field.tagName === "INPUT" ? field.autocomplete.trim().toLowerCase() : "" }; })()';
+const FOCUS_CHECK_EXPRESSION = '(() => { const field = document.activeElement; return { origin: location.origin, tag: field ? field.tagName : "", type: field && field.tagName === "INPUT" ? field.type : "", autocomplete: field && field.tagName === "INPUT" ? (field.autocomplete.trim().toLowerCase().split(/\\s+/).pop() || "") : "" }; })()';
 const ISOLATED_WORLD_NAME = 'cloudbot-secret-check';
-// Fields that are not password inputs but still take a secret. Their autocomplete value says so.
+// Fields that are not password inputs but still take a secret. The last token of their autocomplete value says so,
+// as in "billing cc-number".
 const SECRET_AUTOCOMPLETE_VALUES = new Set(['current-password', 'new-password', 'one-time-code', 'cc-number', 'cc-csc']);
 
 class BrowserError extends Error {
