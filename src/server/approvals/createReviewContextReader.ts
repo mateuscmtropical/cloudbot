@@ -7,7 +7,7 @@ import { isWebhookMessage } from '../webhooks/webhookMessage.ts';
 interface ReviewContextSources {
     ruleStore: Pick<RuleStore, 'list'>;
     messageStore: Pick<MessageStore, 'listByBot'>;
-    modelStore: Pick<ModelStore, 'get'>;
+    modelStore: Pick<ModelStore, 'get' | 'getEfforts'>;
     messageCount?: number;
 }
 
@@ -43,17 +43,20 @@ function createReviewContextReader(sources: ReviewContextSources): (botId: strin
     const messageCount = sources.messageCount ?? DEFAULT_MESSAGE_COUNT;
 
     return async (botId) => {
-        const [rules, messages, modelChoices] = await Promise.all([
+        const [rules, messages, modelChoices, efforts] = await Promise.all([
             sources.ruleStore.list(botId),
             sources.messageStore.listByBot(botId, { limit: messageCount }),
             sources.modelStore.get(botId),
+            sources.modelStore.getEfforts(botId),
         ]);
         const reviewModelOption = modelChoices.review === null ? {} : { reviewModel: modelChoices.review };
+        const reviewEffortOption = efforts.review === null ? {} : { reviewEffort: efforts.review };
 
         return {
             ownerRules: rules.map(rule => `${rule.kind === 'block' ? 'Block' : 'Allow'}: ${rule.text}`),
             recentMessages: messages.flatMap(toChatLine),
             ...reviewModelOption,
+            ...reviewEffortOption,
         };
     };
 }

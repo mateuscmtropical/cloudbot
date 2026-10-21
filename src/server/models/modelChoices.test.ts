@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { chooseTurnModel, isModelInputError, parseModelInput } from './modelChoices.ts';
+import { chooseTurnEffort, chooseTurnModel, isModelInputError, parseEffortInput, parseModelInput, toEffortFields } from './modelChoices.ts';
+import type { EffortChoices } from './modelChoices.ts';
 
 describe('parseModelInput', () => {
     it('accepts the SDK aliases and full model ids', () => {
@@ -48,6 +49,50 @@ describe('parseModelInput', () => {
     });
 });
 
+describe('parseEffortInput', () => {
+    it('accepts each effort level and reads the flat field names', () => {
+        expect(parseEffortInput({ chatEffort: 'low', routinesEffort: 'medium', reviewEffort: 'high', browsingEffort: 'xhigh', documentsEffort: 'max' }))
+            .toEqual({ chat: 'low', routines: 'medium', review: 'high', browsing: 'xhigh', documents: 'max' });
+    });
+
+    it('treats a missing or null effort as the CLI default', () => {
+        expect(parseEffortInput({ chatEffort: 'high' }))
+            .toEqual({ chat: 'high', routines: null, review: null, browsing: null, documents: null });
+        expect(parseEffortInput({}))
+            .toEqual({ chat: null, routines: null, review: null, browsing: null, documents: null });
+    });
+
+    it('refuses a level that is not on the list', () => {
+        const parsed = parseEffortInput({ routinesEffort: 'extreme' });
+
+        expect(isModelInputError(parsed))
+            .toBe(true);
+        expect(parsed)
+            .toHaveProperty('error', expect.stringContaining('The routines effort'));
+    });
+
+    it('refuses an effort that is not a string', () => {
+        expect(isModelInputError(parseEffortInput({ chatEffort: 3 })))
+            .toBe(true);
+        expect(isModelInputError(parseEffortInput({ chatEffort: true })))
+            .toBe(true);
+    });
+
+    it('refuses a body that is not an object', () => {
+        expect(isModelInputError(parseEffortInput(null)))
+            .toBe(true);
+        expect(isModelInputError(parseEffortInput(['high'])))
+            .toBe(true);
+    });
+
+    it('names the flat fields again when it reports them', () => {
+        const efforts: EffortChoices = { chat: 'low', routines: null, review: 'max', browsing: null, documents: null };
+
+        expect(toEffortFields(efforts))
+            .toEqual({ chatEffort: 'low', routinesEffort: null, reviewEffort: 'max', browsingEffort: null, documentsEffort: null });
+    });
+});
+
 describe('chooseTurnModel', () => {
     const choices = { chat: 'haiku', routines: 'opus', review: null, browsing: null, documents: null };
 
@@ -73,6 +118,32 @@ describe('chooseTurnModel', () => {
 
     it('keeps the CLI default when nothing is chosen', () => {
         expect(chooseTurnModel({ chat: null, routines: null, review: null, browsing: null, documents: null }, 'routine'))
+            .toBeUndefined();
+    });
+});
+
+describe('chooseTurnEffort', () => {
+    const efforts: EffortChoices = { chat: 'low', routines: 'max', review: null, browsing: null, documents: null };
+
+    it('uses the routines effort for a routine or webhook turn', () => {
+        expect(chooseTurnEffort(efforts, 'routine'))
+            .toBe('max');
+        expect(chooseTurnEffort(efforts, 'webhook'))
+            .toBe('max');
+    });
+
+    it('uses the chat effort for a chat turn', () => {
+        expect(chooseTurnEffort(efforts, 'chat'))
+            .toBe('low');
+    });
+
+    it('falls back to the chat effort when the routines effort is unset', () => {
+        expect(chooseTurnEffort({ ...efforts, routines: null }, 'routine'))
+            .toBe('low');
+    });
+
+    it('keeps the CLI default when nothing is chosen', () => {
+        expect(chooseTurnEffort({ ...efforts, chat: null, routines: null }, 'routine'))
             .toBeUndefined();
     });
 });

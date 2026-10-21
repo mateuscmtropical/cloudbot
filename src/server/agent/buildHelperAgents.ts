@@ -1,6 +1,7 @@
 import type { AgentDefinition } from '@anthropic-ai/claude-agent-sdk';
 
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
+import type { EffortLevel } from '../models/modelChoices.ts';
 import { SHARE_FILE_TOOL_FULL_NAME } from './createProfileToolServer.ts';
 
 type HelperKind = 'browsing' | 'documents';
@@ -8,6 +9,12 @@ type HelperKind = 'browsing' | 'documents';
 interface HelperChoices {
     browsing: string | null;
     documents: string | null;
+}
+
+// The effort of each helper. A null effort keeps the CLI default.
+interface HelperEfforts {
+    browsing: EffortLevel | null;
+    documents: EffortLevel | null;
 }
 
 // What the main agent reads to pick a helper, and the helper's own instructions.
@@ -20,6 +27,8 @@ interface HelperAgentOptions {
     // The owner's blocked tools. They go to every helper as disallowedTools.
     disallowedTools: string[];
     hasBrowser: boolean;
+    // Unset means the CLI default effort for both helpers.
+    efforts?: HelperEfforts;
 }
 
 // The main turn delegates to a helper with the Agent tool, so that tool must be allowed.
@@ -42,12 +51,16 @@ function buildHelperDefinition(
     model: string,
     tools: string[],
     options: HelperAgentOptions,
+    effort: EffortLevel | null,
 ): AgentDefinition {
+    const effortOption = effort === null ? {} : { effort };
+
     return {
         description: text.description,
         prompt: text.prompt,
         model,
         tools,
+        ...effortOption,
         // AgentDefinition.disallowedTools in the SDK types lists the tools this agent may not use. SdkAgentRunner also
         // refuses blocked tools in a PreToolUse hook, which runs for helper calls too.
         disallowedTools: options.disallowedTools,
@@ -58,16 +71,17 @@ function buildHelperDefinition(
 function buildHelperAgents(choices: HelperChoices, options: HelperAgentOptions): Record<string, AgentDefinition> {
     const browsingModel = choices.browsing;
     const documentsModel = choices.documents;
+    const efforts = options.efforts ?? { browsing: null, documents: null };
     const browsingEntries: Record<string, AgentDefinition> = browsingModel === null || !options.hasBrowser
         ? {}
-        : { browsing: buildHelperDefinition(BROWSING_HELPER_TEXT, browsingModel, BROWSER_TOOL_FULL_NAMES, options) };
+        : { browsing: buildHelperDefinition(BROWSING_HELPER_TEXT, browsingModel, BROWSER_TOOL_FULL_NAMES, options, efforts.browsing) };
     const documentsTools = [...DOCUMENT_BUILT_IN_TOOL_NAMES, SHARE_FILE_TOOL_FULL_NAME];
     const documentsEntries: Record<string, AgentDefinition> = documentsModel === null
         ? {}
-        : { documents: buildHelperDefinition(DOCUMENTS_HELPER_TEXT, documentsModel, documentsTools, options) };
+        : { documents: buildHelperDefinition(DOCUMENTS_HELPER_TEXT, documentsModel, documentsTools, options, efforts.documents) };
 
     return { ...browsingEntries, ...documentsEntries };
 }
 
 export { AGENT_TOOL_NAME, buildHelperAgents };
-export type { HelperAgentOptions, HelperChoices, HelperKind };
+export type { HelperAgentOptions, HelperChoices, HelperEfforts, HelperKind };

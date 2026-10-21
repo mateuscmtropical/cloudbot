@@ -637,12 +637,17 @@ svg {
     flex: 1 1 200px;
 }
 
-/* One row per kind of work: the label, then its select. */
+/* One row per kind of work: the model label and select, then the effort label and select. */
 .models-form {
     display: grid;
-    grid-template-columns: max-content minmax(0, 16em);
+    grid-template-columns: max-content minmax(0, 14em) max-content minmax(0, 8em);
     gap: 8px 12px;
     align-items: center;
+}
+
+/* Groups the two pairs of a row only for the markup. Its children lay out as grid cells. */
+.model-row {
+    display: contents;
 }
 
 .models-form select {
@@ -655,6 +660,13 @@ svg {
 .models-form button[type="submit"] {
     grid-column: 1;
     justify-self: start;
+}
+
+/* On a phone each label and select pair takes its own line, so the effort follows its model. */
+@media (max-width: 720px) {
+    .models-form {
+        grid-template-columns: max-content minmax(0, 1fr);
+    }
 }
 
 /* Groups form fields only to disable them together. Its children lay out as if it were not there. */

@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import type { ReactElement, SyntheticEvent } from 'react';
 
 import { RequestFailedError, getModelSettings, saveModelSettings } from '../apiClient.ts';
-import type { ModelSettings } from '../apiClient.ts';
+import type { EffortLevel, ModelSettings } from '../apiClient.ts';
 
 interface ModelsPanelProps {
     botId: string;
@@ -11,10 +11,12 @@ interface ModelsPanelProps {
 }
 
 type LoadState = 'loading' | 'ready' | 'failed';
-type ModelKind = keyof ModelSettings;
+type ModelKind = 'chat' | 'routines' | 'review' | 'browsing' | 'documents';
+type EffortField = 'chatEffort' | 'routinesEffort' | 'reviewEffort' | 'browsingEffort' | 'documentsEffort';
 
 interface KindRow {
     kind: ModelKind;
+    effortField: EffortField;
     label: string;
     noneText: string;
 }
@@ -27,16 +29,34 @@ interface ModelSelectProps {
     onChange: (value: string | null) => void;
 }
 
+interface EffortSelectProps {
+    label: string;
+    value: EffortLevel | null;
+    levels: EffortLevel[];
+    onChange: (value: EffortLevel | null) => void;
+}
+
 // One row per kind of work. Helpers are off by default, so their empty choice says no helper.
 const KIND_ROWS: KindRow[] = [
-    { kind: 'chat', label: 'Chat', noneText: 'Default' },
-    { kind: 'routines', label: 'Routines', noneText: 'Default' },
-    { kind: 'review', label: 'Review agent', noneText: 'Default' },
-    { kind: 'browsing', label: 'Browsing helper', noneText: 'No helper' },
-    { kind: 'documents', label: 'Documents helper', noneText: 'No helper' },
+    { kind: 'chat', effortField: 'chatEffort', label: 'Chat', noneText: 'Default' },
+    { kind: 'routines', effortField: 'routinesEffort', label: 'Routines', noneText: 'Default' },
+    { kind: 'review', effortField: 'reviewEffort', label: 'Review agent', noneText: 'Default' },
+    { kind: 'browsing', effortField: 'browsingEffort', label: 'Browsing helper', noneText: 'No helper' },
+    { kind: 'documents', effortField: 'documentsEffort', label: 'Documents helper', noneText: 'No helper' },
 ];
 
-const EMPTY_SETTINGS: ModelSettings = { chat: null, routines: null, review: null, browsing: null, documents: null };
+const EMPTY_SETTINGS: ModelSettings = {
+    chat: null,
+    routines: null,
+    review: null,
+    browsing: null,
+    documents: null,
+    chatEffort: null,
+    routinesEffort: null,
+    reviewEffort: null,
+    browsingEffort: null,
+    documentsEffort: null,
+};
 
 function describeFailure(error: unknown): string {
     if (error instanceof RequestFailedError && error.serverMessage !== undefined) {
@@ -70,12 +90,38 @@ function ModelSelect({ label, noneText, value, aliases, onChange }: ModelSelectP
     );
 }
 
-// The model of each kind of work for one bot. Saving sends all five choices.
+// The effort of one kind of work. "Default" is the CLI default, so it is the empty choice.
+function EffortSelect({ label, value, levels, onChange }: EffortSelectProps): ReactElement {
+    const selectId = useId();
+
+    return (
+        <>
+            <label htmlFor={selectId}>{`${label} effort`}</label>
+            <select
+                id={selectId}
+                value={value ?? ''}
+                onChange={(event) => {
+                    const picked = levels.find(level => level === event.target.value);
+
+                    onChange(picked ?? null);
+                }}
+            >
+                <option value="">Default</option>
+                {levels.map(level => (
+                    <option key={level} value={level}>{level}</option>
+                ))}
+            </select>
+        </>
+    );
+}
+
+// The model and effort of each kind of work for one bot. Saving sends all ten choices.
 function ModelsPanel({ botId, botName, onClose }: ModelsPanelProps): ReactElement {
     const [loadState, setLoadState] = useState<LoadState>('loading');
     // Bumped by the retry button to load the choices again.
     const [loadAttempt, setLoadAttempt] = useState(0);
     const [aliases, setAliases] = useState<string[]>([]);
+    const [effortLevels, setEffortLevels] = useState<EffortLevel[]>([]);
     const [draft, setDraft] = useState<ModelSettings>(EMPTY_SETTINGS);
     const [isSaving, setIsSaving] = useState(false);
     const [isSaved, setIsSaved] = useState(false);
@@ -88,10 +134,11 @@ function ModelsPanel({ botId, botName, onClose }: ModelsPanelProps): ReactElemen
         getModelSettings(botId)
             .then((loaded) => {
                 if (isCurrent) {
-                    const { aliases: loadedAliases, ...settings } = loaded;
+                    const { aliases: loadedAliases, effortLevels: loadedLevels, ...settings } = loaded;
 
                     setDraft(settings);
                     setAliases(loadedAliases);
+                    setEffortLevels(loadedLevels);
                     setLoadState('ready');
                 }
             })
@@ -106,9 +153,14 @@ function ModelsPanel({ botId, botName, onClose }: ModelsPanelProps): ReactElemen
         };
     }, [botId, loadAttempt]);
 
-    function changeKind(kind: ModelKind, value: string | null): void {
+    function changeModel(kind: ModelKind, value: string | null): void {
         setIsSaved(false);
         setDraft(currentDraft => ({ ...currentDraft, [kind]: value }));
+    }
+
+    function changeEffort(field: EffortField, value: EffortLevel | null): void {
+        setIsSaved(false);
+        setDraft(currentDraft => ({ ...currentDraft, [field]: value }));
     }
 
     function handleSave(event: SyntheticEvent<HTMLFormElement>): void {
@@ -145,7 +197,7 @@ function ModelsPanel({ botId, botName, onClose }: ModelsPanelProps): ReactElemen
                 </button>
             </div>
             <p className="rules-help">
-                Smaller models cost less usage. Helpers are optional: a helper does its work only when you pick a model for it.
+                Smaller models cost less usage. Effort sets how much thinking a kind of work gets. Helpers are optional: a helper does its work only when you pick a model for it.
             </p>
             {loadState === 'loading' ? <p>Loading...</p> : null}
             {loadState === 'failed'
@@ -172,16 +224,25 @@ function ModelsPanel({ botId, botName, onClose }: ModelsPanelProps): ReactElemen
                             {/* A change made while a save is on its way would be replaced by the saved copy, so the fields wait. */}
                             <fieldset className="plain-fieldset" disabled={isSaving}>
                                 {KIND_ROWS.map(row => (
-                                    <ModelSelect
-                                        key={row.kind}
-                                        label={row.label}
-                                        noneText={row.noneText}
-                                        value={draft[row.kind]}
-                                        aliases={aliases}
-                                        onChange={(value) => {
-                                            changeKind(row.kind, value);
-                                        }}
-                                    />
+                                    <div key={row.kind} className="model-row">
+                                        <ModelSelect
+                                            label={row.label}
+                                            noneText={row.noneText}
+                                            value={draft[row.kind]}
+                                            aliases={aliases}
+                                            onChange={(value) => {
+                                                changeModel(row.kind, value);
+                                            }}
+                                        />
+                                        <EffortSelect
+                                            label={row.label}
+                                            value={draft[row.effortField]}
+                                            levels={effortLevels}
+                                            onChange={(value) => {
+                                                changeEffort(row.effortField, value);
+                                            }}
+                                        />
+                                    </div>
                                 ))}
                             </fieldset>
                             <button type="submit" disabled={isSaving}>

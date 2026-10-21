@@ -4,8 +4,8 @@ import { z } from 'zod/v4';
 import type { CloudbotTool } from '../agent/createProfileToolServer.ts';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
-import type { ModelChoices } from './modelChoices.ts';
-import { isModelInputError, parseModelInput } from './modelChoices.ts';
+import type { EffortChoices, EffortFields, EffortLevel, ModelChoices } from './modelChoices.ts';
+import { EFFORT_LEVELS, isModelInputError, parseEffortInput, parseModelInput } from './modelChoices.ts';
 
 interface ModelToolResult {
     [key: string]: unknown;
@@ -15,9 +15,12 @@ interface ModelToolResult {
 
 const MODELS_SET_TOOL_NAME = 'models_set';
 const MODELS_SET_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${MODELS_SET_TOOL_NAME}`;
-const MODELS_SET_DESCRIPTION = 'Change the models the owner picked for your work. Pass only the fields the owner asked to change. chat, routines and review take a model alias (haiku, sonnet, opus or fable) or a full claude- model id. browsing and documents take the same, and they also take null for no helper. Pass null for the default. Smaller models cost less usage.';
+const MODELS_SET_DESCRIPTION = 'Change the models and effort the owner picked for your work. Pass only the fields the owner asked to change. chat, routines and review take a model alias (haiku, sonnet, opus or fable) or a full claude- model id. browsing and documents take the same, and they also take null for no helper. Pass null for the default model. Smaller models cost less usage. Effort is how much thinking a kind of work gets: low, medium, high, xhigh or max, and null for the default. Effort fields are chatEffort, routinesEffort, reviewEffort, browsingEffort and documentsEffort. When the owner asks for a setup change, do it yourself with this tool. If the owner names a model but no effort, pick a sensible effort yourself and say what you picked. Do not ask the owner follow-up questions when a default works.';
 
 const MODEL_FIELD = z.string()
+    .nullable()
+    .optional();
+const EFFORT_FIELD = z.enum(EFFORT_LEVELS)
     .nullable()
     .optional();
 const MODELS_SET_SHAPE = {
@@ -26,6 +29,11 @@ const MODELS_SET_SHAPE = {
     review: MODEL_FIELD,
     browsing: MODEL_FIELD,
     documents: MODEL_FIELD,
+    chatEffort: EFFORT_FIELD,
+    routinesEffort: EFFORT_FIELD,
+    reviewEffort: EFFORT_FIELD,
+    browsingEffort: EFFORT_FIELD,
+    documentsEffort: EFFORT_FIELD,
 };
 
 interface ModelChangeArguments {
@@ -34,6 +42,11 @@ interface ModelChangeArguments {
     review?: string | null | undefined;
     browsing?: string | null | undefined;
     documents?: string | null | undefined;
+    chatEffort?: EffortLevel | null | undefined;
+    routinesEffort?: EffortLevel | null | undefined;
+    reviewEffort?: EffortLevel | null | undefined;
+    browsingEffort?: EffortLevel | null | undefined;
+    documentsEffort?: EffortLevel | null | undefined;
 }
 
 function textResult(text: string, isError = false): ModelToolResult {
@@ -53,38 +66,61 @@ function mergeChanges(stored: ModelChoices, changes: ModelChangeArguments): Mode
     };
 }
 
-function describeChoice(value: string | null, noneText: string): string {
-    return value ?? noneText;
+function mergeEffortChanges(stored: EffortChoices, changes: ModelChangeArguments): EffortFields {
+    return {
+        chatEffort: changes.chatEffort === undefined ? stored.chat : changes.chatEffort,
+        routinesEffort: changes.routinesEffort === undefined ? stored.routines : changes.routinesEffort,
+        reviewEffort: changes.reviewEffort === undefined ? stored.review : changes.reviewEffort,
+        browsingEffort: changes.browsingEffort === undefined ? stored.browsing : changes.browsingEffort,
+        documentsEffort: changes.documentsEffort === undefined ? stored.documents : changes.documentsEffort,
+    };
 }
 
-function describeChoices(choices: ModelChoices): string {
+function describeKind(model: string | null, effort: EffortLevel | null, noneText: string): string {
+    const modelText = model ?? noneText;
+    const effortText = effort ?? 'default effort';
+
+    return `${modelText} (${effortText})`;
+}
+
+function describeChoices(choices: ModelChoices, efforts: EffortChoices): string {
     return [
-        `chat ${describeChoice(choices.chat, 'default')}`,
-        `routines ${describeChoice(choices.routines, 'default')}`,
-        `review ${describeChoice(choices.review, 'default')}`,
-        `browsing ${describeChoice(choices.browsing, 'no helper')}`,
-        `documents ${describeChoice(choices.documents, 'no helper')}`,
+        `chat ${describeKind(choices.chat, efforts.chat, 'default model')}`,
+        `routines ${describeKind(choices.routines, efforts.routines, 'default model')}`,
+        `review ${describeKind(choices.review, efforts.review, 'default model')}`,
+        `browsing ${describeKind(choices.browsing, efforts.browsing, 'no helper')}`,
+        `documents ${describeKind(choices.documents, efforts.documents, 'no helper')}`,
     ].join(', ');
 }
 
-// The bot id is fixed when the tool is built. The merged choices go through the same parser as the web API.
-function createModelTools(store: Pick<ModelStore, 'get' | 'set'>, botId: string): CloudbotTool[] {
+// The bot id is fixed when the tool is built. The merged choices go through the same parsers as the web API,
+// and nothing is saved unless both parts are valid.
+function createModelTools(store: Pick<ModelStore, 'get' | 'set' | 'getEfforts' | 'setEfforts'>, botId: string): CloudbotTool[] {
     const setTool = tool(
         MODELS_SET_TOOL_NAME,
         MODELS_SET_DESCRIPTION,
         MODELS_SET_SHAPE,
         async (args): Promise<ModelToolResult> => {
-            const stored = await store.get(botId);
-            const merged = mergeChanges(stored, args);
-            const parsed = parseModelInput(merged);
+            const storedModels = await store.get(botId);
+            const storedEfforts = await store.getEfforts(botId);
+            const mergedModels = mergeChanges(storedModels, args);
+            const parsedModels = parseModelInput(mergedModels);
 
-            if (isModelInputError(parsed)) {
-                return textResult(parsed.error, true);
+            if (isModelInputError(parsedModels)) {
+                return textResult(parsedModels.error, true);
             }
 
-            await store.set(botId, parsed);
+            const mergedEfforts = mergeEffortChanges(storedEfforts, args);
+            const parsedEfforts = parseEffortInput(mergedEfforts);
 
-            return textResult(`Models saved: ${describeChoices(parsed)}.`);
+            if (isModelInputError(parsedEfforts)) {
+                return textResult(parsedEfforts.error, true);
+            }
+
+            await store.set(botId, parsedModels);
+            await store.setEfforts(botId, parsedEfforts);
+
+            return textResult(`Models saved: ${describeChoices(parsedModels, parsedEfforts)}.`);
         },
     );
 

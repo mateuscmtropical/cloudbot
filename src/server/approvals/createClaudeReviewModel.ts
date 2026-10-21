@@ -1,6 +1,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
+import type { EffortLevel } from '../models/modelChoices.ts';
 import type { ReviewModel } from './createToolCallReviewer.ts';
 
 type ReviewQueryFunction = (parameters: { prompt: string; options: Options }) => AsyncIterable<SDKMessage>;
@@ -20,12 +21,18 @@ interface ClaudeReviewModelOptions {
 const DEFAULT_REVIEW_TIMEOUT_MS = 60_000;
 const REVIEW_SYSTEM_PROMPT = 'You are a careful reviewer of tool calls. You answer with one JSON object and nothing else.';
 
-function buildReviewOptions(options: ClaudeReviewModelOptions, abortController: AbortController, model: string | undefined): Options {
+function buildReviewOptions(
+    options: ClaudeReviewModelOptions,
+    abortController: AbortController,
+    model: string | undefined,
+    effort: EffortLevel | undefined,
+): Options {
     const executableOption = options.pathToClaudeCodeExecutable
         ? { pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable }
         : {};
     const environmentOption = options.environment ? { env: options.environment } : {};
     const modelOption = model === undefined ? {} : { model };
+    const effortOption = effort === undefined ? {} : { effort };
 
     return {
         cwd: options.workingDirectory,
@@ -39,6 +46,7 @@ function buildReviewOptions(options: ClaudeReviewModelOptions, abortController: 
         ...executableOption,
         ...environmentOption,
         ...modelOption,
+        ...effortOption,
     };
 }
 
@@ -59,7 +67,7 @@ function createClaudeReviewModel(options: ClaudeReviewModelOptions): ReviewModel
     const queryFunction = options.queryFunction ?? query;
     const timeoutMs = options.timeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS;
 
-    return async (prompt, signal, model) => {
+    return async (prompt, signal, model, effort) => {
         const abortController = new AbortController();
         const abort = (): void => {
             abortController.abort();
@@ -69,7 +77,7 @@ function createClaudeReviewModel(options: ClaudeReviewModelOptions): ReviewModel
         signal?.addEventListener('abort', abort, { once: true });
 
         try {
-            const queryOptions = buildReviewOptions(options, abortController, model);
+            const queryOptions = buildReviewOptions(options, abortController, model, effort);
             const conversation = queryFunction({ prompt, options: queryOptions });
             let answer: string | undefined;
 

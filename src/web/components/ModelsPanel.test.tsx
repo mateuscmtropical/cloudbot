@@ -10,8 +10,20 @@ interface FetchCall {
     body: unknown;
 }
 
-const SAVED_CHOICES = { chat: 'haiku', routines: null, review: null, browsing: null, documents: null };
+const SAVED_CHOICES = {
+    chat: 'haiku',
+    routines: null,
+    review: null,
+    browsing: null,
+    documents: null,
+    chatEffort: null,
+    routinesEffort: null,
+    reviewEffort: null,
+    browsingEffort: null,
+    documentsEffort: null,
+};
 const ALIASES = ['fable', 'opus', 'sonnet', 'haiku'];
+const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 // Answers the GET with the saved choices and the PUT with the given status.
 function stubModelsApi(savedChoices: Record<string, unknown>, putStatus = 200, putBody: unknown = savedChoices): FetchCall[] {
@@ -24,7 +36,7 @@ function stubModelsApi(savedChoices: Record<string, unknown>, putStatus = 200, p
         calls.push({ url: input, method, body });
 
         if (method === 'GET') {
-            return Promise.resolve(Response.json({ ...savedChoices, aliases: ALIASES }));
+            return Promise.resolve(Response.json({ ...savedChoices, aliases: ALIASES, effortLevels: EFFORT_LEVELS }));
         }
 
         return Promise.resolve(Response.json(putBody, { status: putStatus }));
@@ -70,8 +82,66 @@ describe('ModelsPanel', () => {
             .toEqual({
                 url: '/api/bots/bot%201/models',
                 method: 'PUT',
-                body: { chat: 'haiku', routines: null, review: null, browsing: 'sonnet', documents: null },
+                body: { ...SAVED_CHOICES, browsing: 'sonnet' },
             });
+    });
+
+    it('shows an effort select next to each model select, set to Default when none is chosen', async () => {
+        stubModelsApi(SAVED_CHOICES);
+
+        render(<ModelsPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
+
+        expect(await screen.findByLabelText('Chat effort'))
+            .toHaveProperty('value', '');
+        expect(screen.getByLabelText('Browsing helper effort'))
+            .toHaveProperty('value', '');
+        expect(screen.getByLabelText('Review agent effort'))
+            .toHaveProperty('value', '');
+    });
+
+    it('offers the effort levels the server sends, plus Default', async () => {
+        stubModelsApi(SAVED_CHOICES);
+
+        render(<ModelsPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
+        const select = await screen.findByLabelText('Routines effort');
+        const options = [...select.querySelectorAll('option')].map(option => option.value);
+
+        expect(options)
+            .toEqual(['', 'low', 'medium', 'high', 'xhigh', 'max']);
+    });
+
+    it('saves a changed effort with the models in one request', async () => {
+        const calls = stubModelsApi(SAVED_CHOICES);
+
+        render(<ModelsPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
+        await screen.findByLabelText('Chat effort');
+
+        fireEvent.change(screen.getByLabelText('Chat effort'), { target: { value: 'max' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save models' }));
+
+        await waitFor(() => {
+            expect(calls.find(call => call.method === 'PUT'))
+                .toBeDefined();
+        });
+        expect(calls.find(call => call.method === 'PUT')?.body)
+            .toMatchObject({ chat: 'haiku', chatEffort: 'max', browsingEffort: null });
+    });
+
+    it('clears an effort back to Default before saving', async () => {
+        const calls = stubModelsApi({ ...SAVED_CHOICES, reviewEffort: 'low' });
+
+        render(<ModelsPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
+        await screen.findByLabelText('Review agent effort');
+
+        fireEvent.change(screen.getByLabelText('Review agent effort'), { target: { value: '' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save models' }));
+
+        await waitFor(() => {
+            expect(calls.find(call => call.method === 'PUT'))
+                .toBeDefined();
+        });
+        expect(calls.find(call => call.method === 'PUT')?.body)
+            .toMatchObject({ reviewEffort: null });
     });
 
     it('shows the server error text when a save is refused', async () => {

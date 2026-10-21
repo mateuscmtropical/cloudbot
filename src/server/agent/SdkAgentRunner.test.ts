@@ -221,6 +221,28 @@ describe('buildQueryOptions', () => {
             .toMatchObject({ model: 'claude-sonnet-4-5' });
     });
 
+    it('passes the chosen effort to the SDK', () => {
+        const options = buildQueryOptions(
+            buildRequest({ effort: 'high' }),
+            { pathToClaudeCodeExecutable: '/usr/local/bin/claude' },
+            abortController,
+        );
+
+        expect(options)
+            .toMatchObject({ effort: 'high' });
+    });
+
+    it('leaves the effort to the CLI default when no effort is chosen', () => {
+        const options = buildQueryOptions(
+            buildRequest({}),
+            { pathToClaudeCodeExecutable: '/usr/local/bin/claude' },
+            abortController,
+        );
+
+        expect(options)
+            .not.toHaveProperty('effort');
+    });
+
     it('leaves the model to the CLI default when no model is chosen', () => {
         const options = buildQueryOptions(
             buildRequest({}),

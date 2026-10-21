@@ -1,5 +1,6 @@
 import type { AgentDefinition, McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 
+import type { EffortLevel } from '../models/modelChoices.ts';
 import type { AgentEvent } from './AgentEvent.ts';
 
 type TurnImageMediaType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
@@ -24,6 +25,8 @@ interface TurnRequest {
     sessionId?: string;
     // An alias or full model id from the owner's model choices. Unset keeps the CLI default.
     model?: string;
+    // The effort level of the owner's effort choices. Unset keeps the CLI default.
+    effort?: EffortLevel;
     // Helper agents the main turn can hand work to. Each has its own model and tools.
     agents?: Record<string, AgentDefinition>;
     systemPrompt?: string;

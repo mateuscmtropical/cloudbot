@@ -1,9 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
 
 import { buildWebhookMessage } from '../webhooks/webhookMessage.ts';
 import { createReviewContextReader } from './createReviewContextReader.ts';
+import type { EffortChoices, ModelChoices } from '../models/modelChoices.ts';
 
-const NO_CHOICES = { chat: null, routines: null, review: null };
+const NO_CHOICES: ModelChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
+const NO_EFFORTS: EffortChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
+
+function createModelStore(choices: ModelChoices = NO_CHOICES, efforts: EffortChoices = NO_EFFORTS): { get: Mock; getEfforts: Mock } {
+    return {
+        get: vi.fn()
+            .mockResolvedValue(choices),
+        getEfforts: vi.fn()
+            .mockResolvedValue(efforts),
+    };
+}
 
 describe('createReviewContextReader', () => {
     it('lists the rules and the text of the latest messages', async () => {
@@ -18,9 +30,7 @@ describe('createReviewContextReader', () => {
                 { kind: 'block', text: 'Never email my boss.' },
                 { kind: 'allow', text: 'Edit files in the workspace.' },
             ]);
-        const get = vi.fn()
-            .mockResolvedValue(NO_CHOICES);
-        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: { get } });
+        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: createModelStore() });
 
         const context = await readContext('bot-1');
 
@@ -39,8 +49,7 @@ describe('createReviewContextReader', () => {
                 { role: 'user', content: { kind: 'text', text: 'Webhook is a word I typed' } },
             ]);
         const readContext = createReviewContextReader({ ruleStore: { list: vi.fn()
-            .mockResolvedValue([]) }, messageStore: { listByBot }, modelStore: { get: vi.fn()
-            .mockResolvedValue(NO_CHOICES) } });
+            .mockResolvedValue([]) }, messageStore: { listByBot }, modelStore: createModelStore() });
 
         const context = await readContext('bot-1');
 
@@ -53,8 +62,7 @@ describe('createReviewContextReader', () => {
         const listByBot = vi.fn()
             .mockResolvedValue([{ role: 'user', content: { kind: 'text', text: webhookText } }]);
         const readContext = createReviewContextReader({ ruleStore: { list: vi.fn()
-            .mockResolvedValue([]) }, messageStore: { listByBot }, modelStore: { get: vi.fn()
-            .mockResolvedValue(NO_CHOICES) } });
+            .mockResolvedValue([]) }, messageStore: { listByBot }, modelStore: createModelStore() });
 
         const context = await readContext('bot-1');
         const [line] = context.recentMessages;
@@ -72,9 +80,7 @@ describe('createReviewContextReader', () => {
             .mockResolvedValue([]);
         const list = vi.fn()
             .mockResolvedValue([]);
-        const get = vi.fn()
-            .mockResolvedValue({ ...NO_CHOICES, review: 'haiku' });
-        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: { get } });
+        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: createModelStore({ ...NO_CHOICES, review: 'haiku' }) });
 
         const context = await readContext('bot-1');
 
@@ -82,14 +88,26 @@ describe('createReviewContextReader', () => {
             .toBe('haiku');
     });
 
+    it('carries the review effort of the bot, and leaves it out when unset', async () => {
+        const listByBot = vi.fn()
+            .mockResolvedValue([]);
+        const list = vi.fn()
+            .mockResolvedValue([]);
+        const withEffort = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: createModelStore(NO_CHOICES, { ...NO_EFFORTS, review: 'low' }) });
+        const withoutEffort = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: createModelStore() });
+
+        expect(await withEffort('bot-1'))
+            .toHaveProperty('reviewEffort', 'low');
+        expect(await withoutEffort('bot-1'))
+            .not.toHaveProperty('reviewEffort');
+    });
+
     it('asks for a few messages of the right bot', async () => {
         const listByBot = vi.fn()
             .mockResolvedValue([]);
         const list = vi.fn()
             .mockResolvedValue([]);
-        const get = vi.fn()
-            .mockResolvedValue(NO_CHOICES);
-        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: { get }, messageCount: 3 });
+        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: createModelStore(), messageCount: 3 });
 
         await readContext('bot-9');
 
