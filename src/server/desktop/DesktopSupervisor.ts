@@ -23,10 +23,19 @@ const MAX_RESTART_DELAY_MS = 60_000;
 // A desktop that ran this long counts as healthy, so the next restart is quick again.
 const HEALTHY_RUN_MS = 60_000;
 const DESKTOP_USER_PATTERN = /^[a-z_][a-z0-9_-]*$/;
+const DESKTOP_PATH = '/usr/local/bin:/usr/bin:/bin';
+// The script's own messages are short. Only the end is kept for the server log.
+const MAX_STDERR_TAIL_LENGTH = 500;
+
+// Only HOME and PATH are passed. sudoers keeps the ANTHROPIC_ variables for the CLI,
+// so a key in the server environment would otherwise reach the bot's desktop.
+function buildDesktopEnvironment(): Record<string, string> {
+    return { HOME: process.env.HOME ?? '/', PATH: DESKTOP_PATH };
+}
 
 function spawnDesktopProcess(command: string, args: string[]): ChildProcess {
-    // The desktop writes its own log in the bot home, so its output is not needed here.
-    return spawn(command, args, { stdio: 'ignore', shell: false });
+    // The parts of the desktop write their own log in the bot home. Only the script's stderr comes here.
+    return spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'], shell: false, env: buildDesktopEnvironment() });
 }
 
 // With an agent user, sudo starts the script as that user. sudoers allows it only without arguments.
@@ -101,20 +110,45 @@ class DesktopSupervisor {
 
     private launch(): void {
         const { command, args } = this.options.desktopCommand;
-        const child = this.spawnFunction(command, args);
+        let child: ChildProcess;
+
+        this.startedAt = this.now();
+
+        try {
+            child = this.spawnFunction(command, args);
+        } catch {
+            this.log('Could not start the desktop.');
+            this.planRestart();
+
+            return;
+        }
+
+        const stderrTail = { text: '' };
 
         this.child = child;
-        this.startedAt = this.now();
-        // A failed spawn emits error and then close, so the restart is planned once, on close.
+        child.stderr?.setEncoding('utf8');
+        child.stderr?.on('data', (chunk: string) => {
+            stderrTail.text = `${stderrTail.text}${chunk}`.slice(-MAX_STDERR_TAIL_LENGTH);
+        });
+        // Node does not always emit close after error, so both end the run. The second one is ignored.
         child.once('error', () => {
             this.log('Could not start the desktop.');
+            this.handleEnd(child);
         });
         child.once('close', (code: number | null) => {
-            this.handleClose(child, code);
+            const detail = stderrTail.text.trim();
+            // JSON keeps the script's text on one quoted line.
+            const detailText = detail === '' ? '' : ` ${JSON.stringify(detail)}`;
+
+            if (this.child === child && !this.isStopped) {
+                this.log(`The desktop exited with code ${String(code)}.${detailText}`);
+            }
+
+            this.handleEnd(child);
         });
     }
 
-    private handleClose(child: ChildProcess, code: number | null): void {
+    private handleEnd(child: ChildProcess): void {
         // A child from before stop() or from an older launch is not the current one.
         if (this.child !== child) {
             return;
@@ -126,6 +160,10 @@ class DesktopSupervisor {
             return;
         }
 
+        this.planRestart();
+    }
+
+    private planRestart(): void {
         const ranMs = this.now() - this.startedAt;
 
         if (ranMs >= HEALTHY_RUN_MS) {
@@ -135,7 +173,7 @@ class DesktopSupervisor {
         const delayMs = this.restartDelayMs;
 
         this.restartDelayMs = Math.min(this.restartDelayMs * 2, MAX_RESTART_DELAY_MS);
-        this.log(`The desktop exited with code ${String(code)}. Starting it again in ${String(delayMs / 1000)} s.`);
+        this.log(`Starting the desktop again in ${String(delayMs / 1000)} s.`);
         this.restartTimer = this.setTimer(() => {
             this.restartTimer = undefined;
             this.launch();
@@ -143,5 +181,5 @@ class DesktopSupervisor {
     }
 }
 
-export { DesktopSupervisor, FIRST_RESTART_DELAY_MS, HEALTHY_RUN_MS, MAX_RESTART_DELAY_MS, buildDesktopCommand };
+export { DesktopSupervisor, FIRST_RESTART_DELAY_MS, HEALTHY_RUN_MS, MAX_RESTART_DELAY_MS, buildDesktopCommand, buildDesktopEnvironment };
 export type { DesktopCommand, DesktopSpawnFunction, DesktopSupervisorOptions };

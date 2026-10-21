@@ -135,11 +135,13 @@ The image sets `CLOUDBOT_DESKTOP_COMMAND` to the script path. The server runs
 script only without arguments. `DesktopSupervisor` starts it again when it
 exits, after 2 seconds, then 4, 8 and up to 60. A run of a minute or more
 resets the delay. Without the variable, as in local development, there is no
-desktop.
+desktop. The server passes only `HOME` and `PATH` to sudo, because sudoers
+keeps the `ANTHROPIC_` variables for the CLI. The script's own error messages
+reach the server log as one quoted line.
 
 The script holds a lock, so only one desktop runs. On start it stops parts
-left over from a crash and removes stale X and Chromium locks. When one part
-exits, it stops the others and exits, so the server starts a clean desktop.
+left over from a crash and removes stale X and Chromium locks. It checks every part
+once a second. When one part exits, it stops the others and exits, so the server starts a clean desktop.
 Its log is `/home/bot/.cache/cloudbot-desktop/desktop.log` and starts empty
 each time.
 

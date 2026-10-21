@@ -94,10 +94,16 @@ CHILD_PIDS+=("$!")
 
 echo "The desktop is running on display $DISPLAY."
 
-# wait -n returns when the first part exits. The EXIT trap stops the others.
-set +e
-wait -n
-EXIT_CODE=$?
-set -e
-echo "A desktop process exited with code $EXIT_CODE. See $LOG_FILE." >&2
-exit 1
+# Checks every part once a second and exits when one is gone. wait -n would miss
+# a part that exited before the script reached it.
+while :; do
+    for child_pid in "${CHILD_PIDS[@]}"; do
+        if ! kill -0 "$child_pid" 2>/dev/null; then
+            echo "A desktop process exited. See $LOG_FILE." >&2
+            exit 1
+        fi
+    done
+    # A background sleep lets the TERM trap run at once.
+    sleep 1 &
+    wait "$!"
+done

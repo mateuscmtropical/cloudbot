@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import type { ChildProcess } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
@@ -8,9 +9,11 @@ import {
     HEALTHY_RUN_MS,
     MAX_RESTART_DELAY_MS,
     buildDesktopCommand,
+    buildDesktopEnvironment,
 } from './DesktopSupervisor.ts';
 
 interface FakeChild extends EventEmitter {
+    stderr: PassThrough;
     killSignals: string[];
     kill: (signal: string) => boolean;
 }
@@ -33,6 +36,7 @@ interface Harness {
 function createFakeChild(): FakeChild {
     const child = new EventEmitter() as FakeChild;
 
+    child.stderr = new PassThrough();
     child.killSignals = [];
     child.kill = (signal: string): boolean => {
         child.killSignals.push(signal);
@@ -169,6 +173,57 @@ describe('DesktopSupervisor', () => {
             .toBe(FIRST_RESTART_DELAY_MS);
     });
 
+    it('restarts after a spawn error that is not followed by close', () => {
+        const { supervisor, children, timers } = createHarness();
+
+        supervisor.start();
+        children[0]?.emit('error', new Error('spawn sudo EMFILE'));
+
+        expect(supervisor.isRunning())
+            .toBe(false);
+        expect(timers)
+            .toHaveLength(1);
+    });
+
+    it('restarts when spawn throws', () => {
+        const timers: number[] = [];
+        const logs: string[] = [];
+        const supervisor = new DesktopSupervisor({
+            desktopCommand: { command: 'sudo', args: [] },
+            spawnFunction: () => {
+                throw new Error('EAGAIN');
+            },
+            setTimer: (_callback, delayMs) => {
+                timers.push(delayMs);
+
+                return setTimeout(() => {}, 0);
+            },
+            log: (message) => {
+                logs.push(message);
+            },
+        });
+
+        supervisor.start();
+
+        expect(timers)
+            .toEqual([FIRST_RESTART_DELAY_MS]);
+        expect(logs[0])
+            .toBe('Could not start the desktop.');
+        supervisor.stop();
+    });
+
+    it('logs the end of the script\'s stderr on one line when it exits', async () => {
+        const { supervisor, children, logs } = createHarness();
+
+        supervisor.start();
+        children[0]?.stderr.write('The virtual screen did not start.\nSee the log.\n');
+        await new Promise(resolve => setImmediate(resolve));
+        children[0]?.emit('close', 1);
+
+        expect(logs[0])
+            .toBe('The desktop exited with code 1. "The virtual screen did not start.\\nSee the log."');
+    });
+
     it('restarts once when a spawn error is followed by close', () => {
         const { supervisor, children, timers, logs } = createHarness();
 
@@ -222,5 +277,21 @@ describe('DesktopSupervisor', () => {
             .toBe(true);
         expect(timers)
             .toHaveLength(0);
+    });
+});
+
+describe('buildDesktopEnvironment', () => {
+    it('passes only HOME and PATH, so no ANTHROPIC_ variable reaches the desktop', () => {
+        process.env.ANTHROPIC_API_KEY = 'sk-ant-fake-test-value';
+
+        try {
+            const environment = buildDesktopEnvironment();
+
+            expect(Object.keys(environment)
+                .sort())
+                .toEqual(['HOME', 'PATH']);
+        } finally {
+            delete process.env.ANTHROPIC_API_KEY;
+        }
     });
 });
