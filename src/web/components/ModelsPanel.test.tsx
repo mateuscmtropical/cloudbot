@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TurnLimits } from '../../shared/limitTypes.ts';
 import { ModelsPanel } from './ModelsPanel.tsx';
 
 interface FetchCall {
@@ -24,9 +25,18 @@ const SAVED_CHOICES = {
 };
 const ALIASES = ['fable', 'opus', 'sonnet', 'haiku'];
 const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const NO_LIMITS: TurnLimits = {
+    chat: { minutes: null, usd: null, steps: null },
+    routines: { minutes: null, usd: null, steps: null },
+};
+const LIMIT_BOUNDS = {
+    minutes: { min: 1, max: 1440, isWhole: true },
+    usd: { min: 0.01, max: 1000, isWhole: false },
+    steps: { min: 1, max: 1000, isWhole: true },
+};
 
-// Answers the GET with the saved choices and the PUT with the given status.
-function stubModelsApi(savedChoices: Record<string, unknown>, putStatus = 200, putBody: unknown = savedChoices): FetchCall[] {
+// Answers the models GET and PUT with the saved choices, and the limits GET and PUT with the saved limits.
+function stubModelsApi(savedChoices: Record<string, unknown>, putStatus = 200, putBody: unknown = savedChoices, savedLimits: TurnLimits = NO_LIMITS): FetchCall[] {
     const calls: FetchCall[] = [];
 
     vi.stubGlobal('fetch', (input: string, init: RequestInit = {}) => {
@@ -34,6 +44,10 @@ function stubModelsApi(savedChoices: Record<string, unknown>, putStatus = 200, p
         const body: unknown = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
 
         calls.push({ url: input, method, body });
+
+        if (input.endsWith('/limits')) {
+            return Promise.resolve(method === 'GET' ? Response.json({ ...savedLimits, bounds: LIMIT_BOUNDS }) : Response.json(body));
+        }
 
         if (method === 'GET') {
             return Promise.resolve(Response.json({ ...savedChoices, aliases: ALIASES, effortLevels: EFFORT_LEVELS }));
@@ -78,7 +92,7 @@ describe('ModelsPanel', () => {
         expect(await screen.findByRole('status'))
             .toHaveProperty('textContent', 'Saved.');
 
-        expect(calls.find(call => call.method === 'PUT'))
+        expect(calls.find(call => call.method === 'PUT' && call.url.endsWith('/models')))
             .toEqual({
                 url: '/api/bots/bot%201/models',
                 method: 'PUT',
@@ -120,10 +134,10 @@ describe('ModelsPanel', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Save models' }));
 
         await waitFor(() => {
-            expect(calls.find(call => call.method === 'PUT'))
+            expect(calls.find(call => call.method === 'PUT' && call.url.endsWith('/models')))
                 .toBeDefined();
         });
-        expect(calls.find(call => call.method === 'PUT')?.body)
+        expect(calls.find(call => call.method === 'PUT' && call.url.endsWith('/models'))?.body)
             .toMatchObject({ chat: 'haiku', chatEffort: 'max', browsingEffort: null });
     });
 
@@ -137,10 +151,10 @@ describe('ModelsPanel', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Save models' }));
 
         await waitFor(() => {
-            expect(calls.find(call => call.method === 'PUT'))
+            expect(calls.find(call => call.method === 'PUT' && call.url.endsWith('/models')))
                 .toBeDefined();
         });
-        expect(calls.find(call => call.method === 'PUT')?.body)
+        expect(calls.find(call => call.method === 'PUT' && call.url.endsWith('/models'))?.body)
             .toMatchObject({ reviewEffort: null });
     });
 
@@ -169,10 +183,58 @@ describe('ModelsPanel', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Save models' }));
 
         await waitFor(() => {
-            expect(calls.find(call => call.method === 'PUT'))
+            expect(calls.find(call => call.method === 'PUT' && call.url.endsWith('/models')))
                 .toBeDefined();
         });
-        expect(calls.find(call => call.method === 'PUT')?.body)
+        expect(calls.find(call => call.method === 'PUT' && call.url.endsWith('/models'))?.body)
             .toMatchObject({ review: 'claude-sonnet-4-5' });
+    });
+
+    it('shows the saved limits of each kind of turn once loaded', async () => {
+        stubModelsApi(SAVED_CHOICES, 200, SAVED_CHOICES, {
+            chat: { minutes: 15, usd: null, steps: 30 },
+            routines: { minutes: null, usd: 0.75, steps: null },
+        });
+
+        render(<ModelsPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
+
+        expect(await screen.findByLabelText('Chat turns: Time (minutes)'))
+            .toHaveProperty('value', '15');
+        expect(screen.getByLabelText('Chat turns: Steps'))
+            .toHaveProperty('value', '30');
+        expect(screen.getByLabelText('Turns from routines, webhooks and watches: Spending (USD, estimate)'))
+            .toHaveProperty('value', '0.75');
+        expect(screen.getByLabelText('Chat turns: Spending (USD, estimate)'))
+            .toHaveProperty('value', '');
+    });
+
+    it('saves the limits with one PUT, and an emptied box saves no limit', async () => {
+        const calls = stubModelsApi(SAVED_CHOICES, 200, SAVED_CHOICES, {
+            chat: { minutes: 15, usd: null, steps: null },
+            routines: { minutes: null, usd: null, steps: null },
+        });
+
+        render(<ModelsPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
+
+        fireEvent.change(await screen.findByLabelText('Chat turns: Time (minutes)'), { target: { value: '' } });
+        fireEvent.change(screen.getByLabelText('Turns from routines, webhooks and watches: Steps'), { target: { value: '8' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save limits' }));
+
+        expect(await screen.findByText('Limits saved.'))
+            .toBeDefined();
+        expect(calls.find(call => call.method === 'PUT' && call.url.endsWith('/limits'))?.body)
+            .toEqual({
+                chat: { minutes: null, usd: null, steps: null },
+                routines: { minutes: null, usd: null, steps: 8 },
+            });
+    });
+
+    it('says the spending is an estimate and a subscription is not billed by it', async () => {
+        stubModelsApi(SAVED_CHOICES);
+
+        render(<ModelsPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
+
+        expect(await screen.findByText(/a subscription is not billed by it/))
+            .toBeDefined();
     });
 });

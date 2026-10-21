@@ -163,4 +163,15 @@ describe('createClaudeReviewModel', () => {
             vi.useRealTimers();
         }
     });
+
+    it('reports the total cost of the review to onCost', async () => {
+        const { queryFunction } = createQuery([resultMessage({ total_cost_usd: 0.07 })]);
+        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
+        const onCost = vi.fn();
+
+        await askModel('prompt', undefined, undefined, undefined, onCost);
+
+        expect(onCost)
+            .toHaveBeenCalledWith(0.07);
+    });
 });

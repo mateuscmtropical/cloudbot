@@ -441,6 +441,46 @@ The effort follows the same rule (`chooseTurnEffort`) and goes to the SDK
 its own effort on its `AgentDefinition`. An unset effort is left out, so the
 CLI default applies.
 
+## Turn limits
+
+Each bot has three optional limits per turn: `minutes`, `usd` and `steps`. There
+is one set for chat turns and one for turns started by routines, webhooks and
+watches. `LimitStore` keeps them in the `bot_limits` table (migration
+`0009_limits`), one row per bot. A null field means no limit. The routes `GET`
+and `PUT /api/bots/:id/limits` use the nested shape `{ chat, routines }`, and
+`parseLimitInput` validates it. The tool merges its flat arguments into the same
+shape and uses the same parser. The
+bot sets them with `limits_set`, which is reviewed like `models_set`.
+`chooseTurnLimit` picks the set for a turn.
+
+Each limit has its own mechanism:
+
+- Time: `TurnDeadline` counts the working time of the turn. It holds while the
+  turn waits on the owner. `ApprovalGate.onOwnerWait` reports an approval card,
+  and `ScreenHolder.onChange` reports a screen handoff. The model review of a
+  call is not owner wait.
+- Steps: the SDK `maxTurns` option. The SDK reports `error_max_turns`, which
+  becomes a `turn_limit` event with `limit: 'steps'`.
+- Spending: the SDK `maxBudgetUsd` option, reported as `error_max_budget_usd`.
+  The SDK `total_cost_usd` covers the main loop only, so the review agent cost
+  is added through `reportReviewCost` and `recordReviewCost`. The turn stops
+  when the review spend alone passes the cap. The two costs are not combined.
+  The agent and the review agent are each held to the spending limit, so a turn
+  can spend up to twice the limit. A review cost counts only for the turn that
+  asked for it. A review that returns after its turn stopped is dropped, and
+  stopping a turn also cancels its running review.
+
+When a limit stops a turn, `stopForLimit` aborts it and saves a system message
+built by `describeLimitStop`. The message names the limit and its value, and it
+says where to raise the limit. `reportOwnerWait` is the one place that reports
+waiting on or off for a turn, and `stopForLimit` is the one stop-with-reason
+path. Issue #101 reuses both.
+
+Known gaps: secure input (`requestSecret`) returns at once and does not pause
+the clock. The SDK does not report the main-loop cost while a turn runs, so the
+two costs are never added together. The helper agents' cost is assumed to count toward
+`maxBudgetUsd`, as the SDK documents, and this is not checked at runtime.
+
 ## Webhooks
 
 The owner creates a webhook in the Routines panel, with `POST

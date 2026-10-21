@@ -15,8 +15,10 @@ import type { ChatService } from './chat/ChatService.ts';
 import { createScreenRoutes } from './desktop/createScreenRoutes.ts';
 import type { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { createRuleRoutes } from './rules/createRuleRoutes.ts';
+import { createLimitRoutes } from './limits/createLimitRoutes.ts';
 import { createModelRoutes } from './models/createModelRoutes.ts';
 import { createRoutineRoutes } from './routines/createRoutineRoutes.ts';
+import type { LimitStore } from './store/LimitStore.ts';
 import type { ModelStore } from './store/ModelStore.ts';
 import type { RoutineStore } from './store/RoutineStore.ts';
 import type { RuleStore } from './store/RuleStore.ts';
@@ -39,6 +41,7 @@ interface AppOptions {
     ruleStore?: RuleStore;
     routineStore?: RoutineStore;
     modelStore?: ModelStore;
+    limitStore?: LimitStore;
     webhookStore?: WebhookStore;
     watchStore?: WatchStore;
     // The address new webhook URLs start with. Without it the server's own address is used.
@@ -137,6 +140,13 @@ function createApp(options: AppOptions): Hono {
         const modelRoutes = createModelRoutes({ modelStore: options.modelStore, hasBot: botId => chatService.hasBot(botId) });
 
         app.route('/', modelRoutes);
+    }
+
+    if (options.chatService !== undefined && options.limitStore !== undefined) {
+        const chatService = options.chatService;
+        const limitRoutes = createLimitRoutes({ limitStore: options.limitStore, hasBot: botId => chatService.hasBot(botId) });
+
+        app.route('/', limitRoutes);
     }
 
     if (options.screen !== undefined) {

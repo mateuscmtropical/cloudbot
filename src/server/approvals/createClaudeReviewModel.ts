@@ -67,7 +67,7 @@ function createClaudeReviewModel(options: ClaudeReviewModelOptions): ReviewModel
     const queryFunction = options.queryFunction ?? query;
     const timeoutMs = options.timeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS;
 
-    return async (prompt, signal, model, effort) => {
+    return async (prompt, signal, model, effort, onCost) => {
         const abortController = new AbortController();
         const abort = (): void => {
             abortController.abort();
@@ -84,6 +84,11 @@ function createClaudeReviewModel(options: ClaudeReviewModelOptions): ReviewModel
             // The SDK's Query is an async iterator, so `for await` is the only loop form that fits.
             for await (const message of conversation) {
                 answer ??= readAnswer(message);
+
+                // The review query has no subagents, so its result carries the whole cost of this review.
+                if (message.type === 'result') {
+                    onCost?.(message.total_cost_usd);
+                }
             }
 
             if (answer === undefined) {

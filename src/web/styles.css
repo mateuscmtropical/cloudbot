@@ -678,6 +678,42 @@ svg {
     display: contents;
 }
 
+/* The limits form stacks one block per kind of turn. Each row is a label and a fixed width input, on a phone too. */
+.limits-form {
+    display: block;
+}
+
+.limit-group {
+    margin-top: 12px;
+}
+
+.limit-group-title {
+    margin: 0 0 6px;
+    font-size: 0.95em;
+}
+
+.limit-row {
+    display: grid;
+    grid-template-columns: minmax(0, 14rem) 9rem;
+    gap: 8px 12px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.limit-row input {
+    width: 9rem;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 4px 8px;
+    border: none;
+    border-radius: var(--radius-control);
+    background: var(--color-surface-raised);
+}
+
+.limits-form button[type="submit"] {
+    margin-top: 8px;
+}
+
 .rules-problem {
     color: var(--color-danger);
 }

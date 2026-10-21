@@ -134,6 +134,15 @@ function mapResultMessage(message: SDKResultMessage): AgentEvent[] {
         return [{ type: 'turn_finished', costUsd: message.total_cost_usd, durationMs: message.duration_ms }];
     }
 
+    // The SDK stops a turn at maxTurns or maxBudgetUsd and reports it as its own subtype, not as an error text.
+    if (message.subtype === 'error_max_turns') {
+        return [{ type: 'turn_limit', limit: 'steps' }];
+    }
+
+    if (message.subtype === 'error_max_budget_usd') {
+        return [{ type: 'turn_limit', limit: 'spending' }];
+    }
+
     // The SDK result has no typed usage limit field. Usage limit errors show up
     // as text, so this matches the SDK's own list of usage limit messages.
     // Heuristic: a new wording from Anthropic can slip past it.
@@ -301,6 +310,9 @@ function buildQueryOptions(
         : {};
     // Extra folders the agent may read, such as the upload folder of the bot.
     const additionalDirectoriesOption = request.additionalDirectories ? { additionalDirectories: request.additionalDirectories } : {};
+    // The SDK counts the steps of the main loop and the spending of the query, and stops the turn at either limit.
+    const maxStepsOption = request.maxSteps === undefined ? {} : { maxTurns: request.maxSteps };
+    const maxSpendOption = request.maxSpendUsd === undefined ? {} : { maxBudgetUsd: request.maxSpendUsd };
 
     const toolHooks = buildToolHooks(request);
     const hooksOption = toolHooks === undefined ? {} : { hooks: toolHooks };
@@ -321,6 +333,8 @@ function buildQueryOptions(
         ...allowedToolsOption,
         ...disallowedToolsOption,
         ...additionalDirectoriesOption,
+        ...maxStepsOption,
+        ...maxSpendOption,
         ...hooksOption,
     };
 }

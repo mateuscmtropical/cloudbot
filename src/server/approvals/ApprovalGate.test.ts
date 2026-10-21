@@ -269,4 +269,47 @@ describe('ApprovalGate', () => {
         await expect(pending)
             .resolves.toMatchObject({ isAllowed: false });
     });
+
+    it('reports the owner wait from the question until the answer, and not during the model review', async () => {
+        const fake = createFakeChat();
+        const waits: boolean[] = [];
+        const gate = new ApprovalGate({
+            chat: fake.chat,
+            reviewer: () => Promise.resolve({ decision: 'ask', summary: 'Send it' }),
+            onOwnerWait: (_botId: string, isWaiting: boolean) => {
+                waits.push(isWaiting);
+            },
+        });
+        const pending = gate.review('bot-1', SEND_CALL, new AbortController().signal);
+
+        await vi.waitFor(() => {
+            expect(fake.posted)
+                .toHaveLength(1);
+        });
+        expect(waits)
+            .toEqual([true]);
+
+        await gate.answer('bot-1', 'message-1', 'approve');
+        await pending;
+
+        await vi.waitFor(() => {
+            expect(waits)
+                .toEqual([true, false]);
+        });
+    });
+
+    it('does not report an owner wait when the model allows the call', async () => {
+        const fake = createFakeChat();
+        const onOwnerWait = vi.fn();
+        const gate = new ApprovalGate({
+            chat: fake.chat,
+            reviewer: () => Promise.resolve({ decision: 'allow' }),
+            onOwnerWait,
+        });
+
+        await gate.review('bot-1', SEND_CALL, new AbortController().signal);
+
+        expect(onOwnerWait)
+            .not.toHaveBeenCalled();
+    });
 });

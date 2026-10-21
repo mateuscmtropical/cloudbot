@@ -20,6 +20,7 @@ import { MessageStore } from './store/MessageStore.ts';
 import { RoutineScheduler } from './routines/RoutineScheduler.ts';
 import { RoutineStore } from './store/RoutineStore.ts';
 import { RuleStore } from './store/RuleStore.ts';
+import { LimitStore } from './store/LimitStore.ts';
 import { ModelStore } from './store/ModelStore.ts';
 import { WebhookStore } from './store/WebhookStore.ts';
 import { WatchStore } from './store/WatchStore.ts';
@@ -76,6 +77,7 @@ const botSecrets = new BotSecrets(vault);
 const ruleStore = new RuleStore(opened.db);
 const routineStore = new RoutineStore(opened.db);
 const modelStore = new ModelStore(opened.db);
+const limitStore = new LimitStore(opened.db);
 const webhookStore = new WebhookStore(opened.db);
 const watchStore = new WatchStore(opened.db);
 // The review model has no tools, so it runs as the server user. The environment object is shared, so a change of sign-in reaches it.
@@ -85,9 +87,13 @@ const askReviewModel = createClaudeReviewModel({
 const toolCallReviewer = createToolCallReviewer({
     askModel: askReviewModel,
     readContext: createReviewContextReader({ ruleStore, messageStore, modelStore }),
+    // The review cost counts against the spending limit of the turn that asked for the review.
+    reportCost: (botId, costUsd, turnSignal) => {
+        chatService.recordReviewCost(botId, costUsd, turnSignal);
+    },
 });
 const chatService = new ChatService({
-    botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore, routineStore, modelStore, screen,
+    botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore, routineStore, modelStore, limitStore, screen,
     webhookStore,
     watchStore,
     webhookBaseUrl: readPublicBaseUrl(process.env),
@@ -153,7 +159,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ version, access, chatService, ruleStore, routineStore, modelStore, webhookStore, watchStore, isReady: () => setup.isDone(), screen });
+const app = createApp({ version, access, chatService, ruleStore, routineStore, modelStore, limitStore, webhookStore, watchStore, isReady: () => setup.isDone(), screen });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

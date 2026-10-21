@@ -4,6 +4,7 @@ type ScreenHolderName = 'bot' | 'person';
 // The state lives in memory. After a restart the bot holds the screen again.
 class ScreenHolder {
     private current: ScreenHolderName = 'bot';
+    private readonly listeners = new Set<(isPersonHolding: boolean) => void>();
 
     get holder(): ScreenHolderName {
         return this.current;
@@ -14,11 +15,34 @@ class ScreenHolder {
     }
 
     giveToPerson(): void {
-        this.current = 'person';
+        this.setHolder('person');
     }
 
     giveToBot(): void {
-        this.current = 'bot';
+        this.setHolder('bot');
+    }
+
+    // Called each time the holder changes. Returns the function that stops the calls.
+    onChange(listener: (isPersonHolding: boolean) => void): () => void {
+        this.listeners.add(listener);
+
+        return () => {
+            this.listeners.delete(listener);
+        };
+    }
+
+    private setHolder(holder: ScreenHolderName): void {
+        const isChanged = this.current !== holder;
+
+        this.current = holder;
+
+        if (isChanged) {
+            const isPersonHolding = holder === 'person';
+
+            this.listeners.forEach((listener) => {
+                listener(isPersonHolding);
+            });
+        }
     }
 }
 

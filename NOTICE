@@ -1,0 +1,7 @@
+CloudBot
+Copyright 2026 the CloudBot contributors
+
+The turn time limit (src/server/limits/TurnDeadline.ts) adapts RoomTurnDeadline
+from OpenMausBot, https://github.com/milind-soni/OpenMausBot, Copyright 2026
+Milind Soni and OpenMausBot contributors, used under the Apache License,
+Version 2.0 (third_party/openmausbot/LICENSE).

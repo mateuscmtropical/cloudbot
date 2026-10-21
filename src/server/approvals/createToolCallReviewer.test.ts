@@ -32,7 +32,7 @@ describe('createToolCallReviewer', () => {
         await reviewer('bot-1', BASH_CALL);
 
         expect(askModel)
-            .toHaveBeenCalledWith(expect.any(String), undefined, 'opus', undefined);
+            .toHaveBeenCalledWith(expect.any(String), undefined, 'opus', undefined, expect.any(Function));
     });
 
     it('asks the model with the review effort choice of the bot', async () => {
@@ -43,7 +43,7 @@ describe('createToolCallReviewer', () => {
         await reviewer('bot-1', BASH_CALL);
 
         expect(askModel)
-            .toHaveBeenCalledWith(expect.any(String), undefined, undefined, 'high');
+            .toHaveBeenCalledWith(expect.any(String), undefined, undefined, 'high', expect.any(Function));
     });
 
     it('allows a harmless call without asking the model', async () => {
@@ -195,5 +195,34 @@ describe('parseModelAnswer', () => {
     it('rejects an unknown category', () => {
         expect(() => parseModelAnswer(answer({ category: 'gift' })))
             .toThrow('unknown');
+    });
+});
+
+describe('createToolCallReviewer review cost', () => {
+    it('reports the cost of the review to the bot that made the call', async () => {
+        const reportCost = vi.fn();
+        const askModel = vi.fn((_prompt: string, _signal?: AbortSignal, _model?: string, _effort?: string, onCost?: (costUsd: number) => void) => {
+            onCost?.(0.12);
+
+            return Promise.resolve(answer({ decision: 'allow' }));
+        });
+        const reviewer = createToolCallReviewer({ askModel, readContext: () => Promise.resolve(CONTEXT), reportCost });
+
+        const turnSignal = new AbortController().signal;
+
+        await reviewer('bot-3', BASH_CALL, turnSignal);
+
+        expect(reportCost)
+            .toHaveBeenCalledWith('bot-3', 0.12, turnSignal);
+    });
+
+    it('gives the review model the signal of the turn, so a stop cancels the review', async () => {
+        const { reviewer, askModel } = createReviewer(answer({ decision: 'allow' }));
+        const turnSignal = new AbortController().signal;
+
+        await reviewer('bot-1', BASH_CALL, turnSignal);
+
+        expect(askModel)
+            .toHaveBeenCalledWith(expect.any(String), turnSignal, undefined, undefined, expect.any(Function));
     });
 });

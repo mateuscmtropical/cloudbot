@@ -38,6 +38,10 @@ interface TurnRequest {
     reviewToolCall?: (call: ToolCall, signal: AbortSignal) => Promise<ToolCallDecision>;
     images?: TurnImage[];
     additionalDirectories?: string[];
+    // The most agent steps the turn may take. Unset means no limit. The SDK stops the turn at it.
+    maxSteps?: number;
+    // The most the turn may spend, in estimated US dollars. Unset means no limit. The SDK stops the turn at it.
+    maxSpendUsd?: number;
     abortSignal: AbortSignal;
 }
 

@@ -13,6 +13,13 @@ describe('models_set', () => {
     });
 });
 
+describe('limits_set', () => {
+    it('is reviewed, so the review agent sees a change of limits', () => {
+        expect(classify('mcp__cloudbot__limits_set'))
+            .toBe('review');
+    });
+});
+
 describe('page watch tools', () => {
     it('skips the list, and reviews create and delete', () => {
         expect(classify('mcp__cloudbot__watch_list'))

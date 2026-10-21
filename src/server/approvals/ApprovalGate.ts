@@ -8,7 +8,8 @@ type ToolCallVerdict
         | { decision: 'deny'; reason: string };
 
 // Decides what happens to one tool call. A throw is treated as ask.
-type ToolCallReviewer = (botId: string, call: ToolCall) => Promise<ToolCallVerdict>;
+// The signal is the turn's. A review that the turn no longer needs can be stopped with it.
+type ToolCallReviewer = (botId: string, call: ToolCall, signal?: AbortSignal) => Promise<ToolCallVerdict>;
 
 // How the gate talks to the chat. close sets the chosen option and returns the stored message.
 interface ApprovalChat {
@@ -20,6 +21,8 @@ interface ApprovalGateOptions {
     chat: ApprovalChat;
     reviewer: ToolCallReviewer;
     timeoutMs?: number;
+    // Called when a call starts and stops waiting for the owner's answer. The turn's time limit does not count that wait.
+    onOwnerWait?: (botId: string, isWaiting: boolean) => void;
 }
 
 interface PendingApproval {
@@ -72,16 +75,18 @@ class ApprovalGate {
     private readonly chat: ApprovalChat;
     private readonly reviewer: ToolCallReviewer;
     private readonly timeoutMs: number;
+    private readonly onOwnerWait: ((botId: string, isWaiting: boolean) => void) | undefined;
     private readonly pendingByMessage = new Map<string, PendingApproval>();
 
     constructor(options: ApprovalGateOptions) {
         this.chat = options.chat;
         this.reviewer = options.reviewer;
         this.timeoutMs = options.timeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS;
+        this.onOwnerWait = options.onOwnerWait;
     }
 
     async review(botId: string, call: ToolCall, signal: AbortSignal): Promise<ToolCallDecision> {
-        const verdict = await this.readVerdict(botId, call);
+        const verdict = await this.readVerdict(botId, call, signal);
 
         if (verdict.decision === 'allow') {
             return { isAllowed: true };
@@ -117,9 +122,9 @@ class ApprovalGate {
         }
     }
 
-    private async readVerdict(botId: string, call: ToolCall): Promise<ToolCallVerdict> {
+    private async readVerdict(botId: string, call: ToolCall, signal: AbortSignal): Promise<ToolCallVerdict> {
         try {
-            return await this.reviewer(botId, call);
+            return await this.reviewer(botId, call, signal);
         } catch {
             // A reviewer that fails must not let the call through, so the owner decides.
             return { decision: 'ask', summary: REVIEW_FAILED_SUMMARY };
@@ -154,7 +159,11 @@ class ApprovalGate {
             timer = setTimeout(expire, this.timeoutMs);
             signal.addEventListener('abort', expire, { once: true });
         });
-        const outcome = await outcomePromise;
+
+        this.onOwnerWait?.(botId, true);
+        const outcome = await outcomePromise.finally(() => {
+            this.onOwnerWait?.(botId, false);
+        });
 
         clearTimeout(timer);
         signal.removeEventListener('abort', expire);
