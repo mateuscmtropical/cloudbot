@@ -2,7 +2,8 @@
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md) and [docs/ROADMAP.md](docs/ROADMAP.md)
-first. This file only adds what those documents do not say.
+first. This file only adds what those documents do not say. Commit and pull
+request details that are not listed here come from your task instructions.
 
 ## What CloudBot is
 
@@ -36,23 +37,11 @@ PolyForm Noncommercial, so study the ideas only and never copy its code.
    gh pr merge M --squash --subject "<title> (#M)" --body-file <file>
    ```
 
-   The body file holds `Closes #N`, a blank line and the trailers below.
+   The body file holds `Closes #N`, a blank line and the commit trailers
+   given in your task instructions.
 7. Delete the branch and start again from step 1.
 
 One pull request per issue. Never push to `main` directly.
-
-## Commit trailers
-
-Every commit message, and the squash body, ends with exactly these lines:
-
-```text
-Co-Authored-By: Claude <noreply@anthropic.com>
-Co-authored-by: mateusrego-archetypal <343576073+mateusrego-archetypal@users.noreply.github.com>
-Co-authored-by: pedro0509 <82070102+pedro0509@users.noreply.github.com>
-```
-
-No other trailers. No session links. No "Generated with" footer in pull
-requests, and no mention of AI in pull requests or comments.
 
 ## Text rules
 
