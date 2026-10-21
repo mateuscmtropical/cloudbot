@@ -22,6 +22,7 @@ import { BROWSER_TOOL_FULL_NAMES, createBrowserTools } from '../desktop/createBr
 import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
+import { TYPE_SECRET_TOOL_FULL_NAME, createTypeSecretTool } from '../secrets/createTypeSecretTool.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
@@ -1080,9 +1081,7 @@ class ChatService {
                         this.browser,
                         pngBase64 => this.shareScreenshot(botId, pngBase64),
                     );
-            const secretTools: CloudbotTool[] = this.botSecrets === undefined
-                ? []
-                : [createRequestSecretTool((name, purpose, site) => this.requestSecret(botId, name, purpose, site))];
+            const secretTools = this.createSecretTools(botId);
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
@@ -1138,16 +1137,33 @@ class ChatService {
         }
     }
 
-    // With a session to resume, a failure before the session starts is held back
-    // and returned as failureText, so the caller can retry without it.
+    // request_secret needs the vault. browser_type_secret also needs the browser.
+    private createSecretTools(botId: string): CloudbotTool[] {
+        const botSecrets = this.botSecrets;
+
+        if (botSecrets === undefined) {
+            return [];
+        }
+
+        const requestTool = createRequestSecretTool((name, purpose, site) => this.requestSecret(botId, name, purpose, site));
+        const typeTools = this.browser === undefined
+            ? []
+            : [createTypeSecretTool(this.browser, name => botSecrets.read(botId, name))];
+
+        return [requestTool, ...typeTools];
+    }
+
     // Headless turns cannot answer a permission prompt, so the cloudbot tools the bot has are allowed up front.
     private allowedToolNames(): string[] {
         const browserToolNames = this.browser === undefined ? [] : BROWSER_TOOL_FULL_NAMES;
-        const secretToolNames = this.botSecrets === undefined ? [] : [REQUEST_SECRET_TOOL_FULL_NAME];
+        const typeSecretToolNames = this.browser === undefined ? [] : [TYPE_SECRET_TOOL_FULL_NAME];
+        const secretToolNames = this.botSecrets === undefined ? [] : [REQUEST_SECRET_TOOL_FULL_NAME, ...typeSecretToolNames];
 
         return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames];
     }
 
+    // With a session to resume, a failure before the session starts is held back
+    // and returned as failureText, so the caller can retry without it.
     private async runAttempt(turnContext: TurnContext, sessionId: string | null, turnState: TurnState): Promise<AttemptOutcome> {
         const { botId } = turnContext;
         const toolNamesById = new Map<string, string>();

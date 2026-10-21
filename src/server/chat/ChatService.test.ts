@@ -14,6 +14,7 @@ import { BrowserControl } from '../desktop/BrowserControl.ts';
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
 import { BotSecrets } from '../secrets/BotSecrets.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME } from '../secrets/createSecretTools.ts';
+import { TYPE_SECRET_TOOL_FULL_NAME } from '../secrets/createTypeSecretTool.ts';
 import { Vault } from '../vault/Vault.ts';
 import { FakeAgentRunner } from '../agent/FakeAgentRunner.ts';
 import type { ScriptedAgentStep } from '../agent/FakeAgentRunner.ts';
@@ -944,6 +945,29 @@ describe('ChatService', () => {
 
         expect(storedMessages.at(-1)?.body)
             .toEqual({ kind: 'secureForm', prompt: 'Sign in to GitHub', secretName: 'GITHUB_PASSWORD', site: 'https://github.com', submitted: false });
+    });
+
+    it('offers browser_type_secret only when the bot has both a browser and the vault', async () => {
+        const botSecrets = new BotSecrets(new Vault(join(dataDir, 'vault')));
+        const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:9' });
+        const withBoth = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const vaultOnly = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const firstService = new ChatService({ botStore, messageStore, runner: withBoth, dataDir, botSecrets, browser });
+        const secondService = new ChatService({ botStore, messageStore, runner: vaultOnly, dataDir, botSecrets });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const firstFinished = waitForTurnFinish(firstService, bot.id);
+
+        await firstService.sendMessage(bot.id, 'Hi');
+        await firstFinished;
+
+        const secondFinished = waitForTurnFinish(secondService, bot.id);
+
+        await secondService.sendMessage(bot.id, 'Hi');
+        await secondFinished;
+
+        expect(withBoth.receivedRequests[0]?.allowedTools)
+            .toContain(TYPE_SECRET_TOOL_FULL_NAME);
+        expect(vaultOnly.receivedRequests[0]?.allowedTools).not.toContain(TYPE_SECRET_TOOL_FULL_NAME);
     });
 
     it('saves the answer only in the vault, closes the form and refuses a second answer', async () => {

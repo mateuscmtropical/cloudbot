@@ -321,4 +321,50 @@ describe('BrowserControl', () => {
         expect(sockets.sockets[0]?.sent.find(call => call.method === 'Page.handleJavaScriptDialog')?.params)
             .toEqual({ accept: true });
     });
+
+    it('types a secret only into a secret field of a page on its site, checked in an isolated world', async () => {
+        const focusAnswer = (focus: unknown): CdpAnswer => (call) => {
+            if (call.method === 'Page.getFrameTree') {
+                return { result: { frameTree: { frame: { id: 'main' } } } };
+            }
+
+            if (call.method === 'Page.createIsolatedWorld') {
+                return { result: { executionContextId: 7 } };
+            }
+
+            if (call.method === 'Runtime.evaluate') {
+                return { result: { result: { value: focus } } };
+            }
+
+            return { result: {} };
+        };
+        const passwordField = createBrowser(focusAnswer({ origin: 'https://github.com', tag: 'INPUT', type: 'password', autocomplete: '' }));
+        const codeField = createBrowser(focusAnswer({ origin: 'https://github.com', tag: 'INPUT', type: 'text', autocomplete: 'one-time-code' }));
+        const refused = [
+            [createBrowser(focusAnswer({ origin: 'https://evil.example', tag: 'INPUT', type: 'password', autocomplete: '' })), 'only for https://github.com, and the page is on https://evil.example'],
+            [createBrowser(focusAnswer({ origin: 'https://github.com', tag: 'IFRAME', type: '', autocomplete: '' })), 'inside a frame'],
+            [createBrowser(focusAnswer({ origin: 'https://github.com', tag: 'INPUT', type: 'search', autocomplete: '' })), 'not a password, one-time code or card field'],
+            [createBrowser(focusAnswer({ origin: 'https://github.com', tag: 'TEXTAREA', type: '', autocomplete: '' })), 'not a password, one-time code or card field'],
+        ] as const;
+
+        await passwordField.browser.typeSecret('https://github.com', 'fake-password-1');
+        await codeField.browser.typeSecret('https://github.com', '123456');
+
+        const passwordCalls = actionCalls(passwordField.sockets.sockets[0]);
+
+        expect(passwordCalls.find(call => call.method === 'Runtime.evaluate')?.params.contextId)
+            .toBe(7);
+        expect(passwordCalls.at(-1))
+            .toMatchObject({ method: 'Input.insertText', params: { text: 'fake-password-1' } });
+        expect(actionCalls(codeField.sockets.sockets[0])
+            .at(-1))
+            .toMatchObject({ method: 'Input.insertText', params: { text: '123456' } });
+        await Promise.all(refused.map(async ([harness, message]) => {
+            await expect(harness.browser.typeSecret('https://github.com', 'fake-password-1'))
+                .rejects.toThrow(message);
+            expect(actionCalls(harness.sockets.sockets[0])
+                .some(call => call.method === 'Input.insertText'))
+                .toBe(false);
+        }));
+    });
 });

@@ -89,8 +89,8 @@ Status: **open** means the default is in use and waits for the owner.
 - Status: open
 - Default: the bot asks with `request_secret` and gives the https site where
   the value will be used. The value goes to the vault, tied to the bot and the
-  site. The model never sees it. The next step (#51) lets the server type it
-  into the browser only on that site. Names that start with `ANTHROPIC_` or
+  site. The model never sees it. The server types it into the browser only on
+  that site, and only into a password, one-time code or card field. Names that start with `ANTHROPIC_` or
   `CLAUDE_` are refused, so a bot form cannot pass for the setup form. Passwords, codes and payment details use the same form.
 - After the owner saves a value, the bot waits until the owner tells it to
   continue. It does not start a turn on its own.
