@@ -11,6 +11,7 @@ import { AGENT_TOOL_NAME, buildHelperAgents } from '../agent/buildHelperAgents.t
 import type { HelperKind } from '../agent/buildHelperAgents.ts';
 import {
     PROFILE_SERVER_NAME,
+    SET_MASCOT_TOOL_FULL_NAME,
     SHARE_FILE_TOOL_FULL_NAME,
     UPDATE_PROFILE_TOOL_FULL_NAME,
     createProfileToolServer,
@@ -203,8 +204,6 @@ const USAGE_LIMIT_MIN_WAIT_MS = 60 * 1000;
 const USAGE_LIMIT_MAX_WAIT_MS = 8 * 24 * 60 * 60 * 1000;
 const CONTINUE_PROMPT = 'Continue.';
 const PREVIEW_LENGTH = 80;
-const AVATAR_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6'];
-const FALLBACK_AVATAR_COLOR = '#3b82f6';
 
 class PendingUploadLimitError extends Error {
     constructor() {
@@ -247,15 +246,6 @@ function previewOf(body: MessageBody): string {
         case 'secureForm':
             return body.prompt.slice(0, PREVIEW_LENGTH);
     }
-}
-
-// A deterministic color per bot, so the same bot keeps its avatar across reloads.
-function pickAvatarColor(botId: string): string {
-    const characters = Array.from(botId);
-    const characterSum = characters.reduce((total, character) => total + character.charCodeAt(0), 0);
-    const paletteIndex = characterSum % AVATAR_COLORS.length;
-
-    return AVATAR_COLORS[paletteIndex] ?? FALLBACK_AVATAR_COLOR;
 }
 
 // Files that were uploaded and never sent. The age comes from the modification time.
@@ -1162,7 +1152,8 @@ class ChatService {
             id: bot.id,
             name: bot.name,
             title: bot.title,
-            avatarColor: pickAvatarColor(bot.id),
+            mascotColor: bot.mascotColor,
+            mascotShape: bot.mascotShape,
             lastMessagePreview,
             hasUnread: false,
         };
@@ -1534,7 +1525,7 @@ class ChatService {
         const webhookToolNames = this.webhookStore === undefined ? [] : WEBHOOK_TOOL_FULL_NAMES;
         const watchToolNames = this.watchStore === undefined ? [] : WATCH_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames];
     }
 
     private webhookTools(botId: string): CloudbotTool[] {

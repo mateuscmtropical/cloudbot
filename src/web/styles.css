@@ -125,15 +125,82 @@ svg {
     color: var(--color-text-muted);
 }
 
-.avatar {
-    display: grid;
+/* The bot mascot: a cloud body and a face, see CloudMascot.tsx. The squish and the bounce are light, and reduced motion turns them off. */
+.cloud-mascot {
+    display: inline-grid;
     place-items: center;
-    width: 44px;
-    height: 44px;
     flex-shrink: 0;
-    border-radius: 50%;
-    font-weight: 600;
-    color: #fff;
+}
+
+.message.has-mascot {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.message.has-mascot > :not(.cloud-mascot) {
+    min-width: 0;
+}
+
+.cloud-mascot svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    transform-box: fill-box;
+    transform-origin: 50% 90%;
+    transition: transform 160ms ease-out;
+}
+
+.cloud-mascot:hover svg,
+.cloud-mascot:active svg {
+    transform: scale(1.06, 0.94);
+}
+
+.cloud-mascot.is-thinking svg {
+    animation: cloud-bounce 900ms ease-in-out infinite;
+}
+
+.cloud-mascot .cloud-blink {
+    animation: cloud-blink 4s ease-in-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+.cloud-mascot .cloud-face > g {
+    transition: transform 160ms ease-out;
+}
+
+@keyframes cloud-blink {
+    0%,
+    94%,
+    100% {
+        transform: scaleY(1);
+    }
+
+    96% {
+        transform: scaleY(0.1);
+    }
+}
+
+@keyframes cloud-bounce {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-4px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cloud-mascot svg,
+    .cloud-mascot .cloud-blink,
+    .cloud-mascot .cloud-face > g {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
 }
 
 .unread-dot {

@@ -1,9 +1,10 @@
 import type { ReactElement } from 'react';
 
-import type { ChatMessage } from '../../shared/chatTypes.ts';
+import type { BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
 import { formatFileSize } from '../formatFileSize.ts';
 import { renderMarkdown } from '../markdown.ts';
 import { ChoiceButtons } from './ChoiceButtons.tsx';
+import { CloudMascot } from './CloudMascot.tsx';
 import { CodeField } from './CodeField.tsx';
 import { LinkCard } from './LinkCard.tsx';
 import { SecureForm } from './SecureForm.tsx';
@@ -23,6 +24,8 @@ interface MessageActions {
 interface MessageItemProps {
     message: ChatMessage;
     actions: MessageActions;
+    // The bot whose mascot is shown beside an assistant message. Other messages show none.
+    mascot?: Pick<BotSummary, 'mascotColor' | 'mascotShape'> | undefined;
 }
 
 function renderBody(message: ChatMessage, actions: MessageActions): ReactElement | null {
@@ -121,10 +124,19 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
     }
 }
 
-function MessageItem({ message, actions }: MessageItemProps): ReactElement {
+function MessageItem({ message, actions, mascot }: MessageItemProps): ReactElement {
     const className = `message message-${message.role}`;
 
-    return <div className={className}>{renderBody(message, actions)}</div>;
+    if (mascot === undefined) {
+        return <div className={className}>{renderBody(message, actions)}</div>;
+    }
+
+    return (
+        <div className={`${className} has-mascot`}>
+            <CloudMascot color={mascot.mascotColor} shape={mascot.mascotShape} state="idle" size={28} tracksPointer={false} />
+            {renderBody(message, actions)}
+        </div>
+    );
 }
 
 export { MessageItem };

@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatEvent, ChatMessage, ChatWebhookUrlEvent } from '../shared/chatTypes.ts';
 import { BotList } from './components/BotList.tsx';
+import { deriveMascotState } from './mascotState.ts';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
 import { listBots, listMessages, RequestFailedError, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload } from './apiClient.ts';
@@ -29,9 +30,15 @@ interface ChatState {
     olderPaging: Record<string, OlderPagingState | undefined>;
 }
 
+interface FinishedTurn {
+    botId: string;
+}
+
 const emptyDraft: DraftState = { botId: '', text: '', afterSequence: 0 };
 const emptyChatState: ChatState = { messages: [], olderPaging: {} };
 const OLDER_ERROR_TEXT = 'Could not load older messages.';
+// How long the done face shows after a turn ends, before the bot shows its normal face again.
+const DONE_FACE_DURATION_MS = 2000;
 
 function lowestSequenceOf(messages: ChatMessage[], botId: string): number {
     const botSequences = messages
@@ -70,12 +77,34 @@ function App(): ReactElement {
     const [chatState, setChatState] = useState<ChatState>(emptyChatState);
     const [draft, setDraft] = useState<DraftState>(emptyDraft);
     const [runningBotId, setRunningBotId] = useState<string | undefined>(undefined);
+    // The bot whose turn is running, read by the turn event handler. The state above is for rendering.
+    const runningBotIdRef = useRef<string | undefined>(undefined);
+    // The bot the owner pressed Stop for. Its turn ending is not a finish, so it shows no done face.
+    const stoppedBotIdRef = useRef<string | undefined>(undefined);
+    // A turn that ended just now. It drives the done face for a moment, and each end is a new object.
+    const [finishedTurn, setFinishedTurn] = useState<FinishedTurn | undefined>(undefined);
+    // True while the composer has text. It drives the typing face of the live bot.
+    const [isOwnerTyping, setIsOwnerTyping] = useState(false);
     // Webhook URLs the bot made, kept in memory only, each until the owner hides it.
     const [webhookUrls, setWebhookUrls] = useState<ChatWebhookUrlEvent[]>([]);
     const [isBotListOpen, setIsBotListOpen] = useState(false);
     const [errorText, setErrorText] = useState<string | undefined>(undefined);
     // Chips per bot: files still uploading, and the files the server holds for the next message.
     const [attachmentsByBot, setAttachmentsByBot] = useState<Record<string, DraftAttachment[]>>({});
+
+    useEffect(() => {
+        if (finishedTurn === undefined) {
+            return undefined;
+        }
+
+        const timer = setTimeout(() => {
+            setFinishedTurn(undefined);
+        }, DONE_FACE_DURATION_MS);
+
+        return () => {
+            clearTimeout(timer);
+        };
+    }, [finishedTurn]);
     const messagesRef = useRef<ChatMessage[]>([]);
     const selectedBotIdRef = useRef<string | undefined>(undefined);
     // Checked before the state updates, so a fast second scroll cannot start a duplicate request.
@@ -235,7 +264,21 @@ function App(): ReactElement {
             }
 
             setDraft(emptyDraft);
+            const wasRunning = runningBotIdRef.current === event.botId;
+            const wasStopped = stoppedBotIdRef.current === event.botId;
+
+            runningBotIdRef.current = event.isRunning ? event.botId : undefined;
             setRunningBotId(event.isRunning ? event.botId : undefined);
+
+            if (!event.isRunning) {
+                stoppedBotIdRef.current = undefined;
+            }
+
+            // Only a turn that was running and has now ended gets the done face. A status on connect does not.
+            // A turn the owner stopped gets none either.
+            if (!event.isRunning && wasRunning && !wasStopped) {
+                setFinishedTurn({ botId: event.botId });
+            }
 
             // A finished turn may have put files back in the queue, and may have renamed the bot.
             if (!event.isRunning) {
@@ -409,9 +452,12 @@ function App(): ReactElement {
             return;
         }
 
+        stoppedBotIdRef.current = selectedBotId;
+
         const stopPromise = stopTurn(selectedBotId);
 
         stopPromise.catch(() => {
+            stoppedBotIdRef.current = undefined;
             setErrorText('Could not stop the bot.');
         });
     }
@@ -502,6 +548,8 @@ function App(): ReactElement {
     const selectedBot = bots.find(bot => bot.id === selectedBotId);
     const visibleMessages = messages.filter(message => message.botId === selectedBotId);
     const isRunning = selectedBotId !== undefined && runningBotId === selectedBotId;
+    const isJustFinished = selectedBotId !== undefined && finishedTurn?.botId === selectedBotId;
+    const liveMascotState = deriveMascotState({ isRunning, isOwnerTyping, isJustFinished, messages: visibleMessages });
     const selectedPaging = selectedBotId === undefined ? undefined : olderPaging[selectedBotId];
     const hasOlderMessages = selectedPaging?.hasMore === true;
     const isLoadingOlder = selectedPaging?.isLoading === true;
@@ -515,6 +563,7 @@ function App(): ReactElement {
             <BotList
                 bots={bots}
                 selectedBotId={selectedBotId}
+                selectedMascotState={liveMascotState}
                 isOpen={isBotListOpen}
                 onSelectBot={handleSelectBot}
             />
@@ -538,6 +587,8 @@ function App(): ReactElement {
                         )}
                 <ConversationView
                     bot={selectedBot}
+                    mascotState={liveMascotState}
+                    onTypingChange={setIsOwnerTyping}
                     messages={visibleMessages}
                     draftText={draft.botId === selectedBotId ? draft.text : ''}
                     isRunning={isRunning}

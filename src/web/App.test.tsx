@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotSummary, ChatEvent, ChatMessage, PendingUpload } from '../shared/chatTypes.ts';
 import { App } from './App.tsx';
-import { listBots, listMessages, listUploads, sendMessage, subscribeToEvents, uploadAttachments } from './apiClient.ts';
+import { listBots, listMessages, listUploads, sendMessage, stopTurn, subscribeToEvents, uploadAttachments } from './apiClient.ts';
 import { MESSAGE_PAGE_SIZE } from './messageList.ts';
 
 // The waits below end when the state appears. The longer limit only covers slow runs with the whole suite in parallel.
@@ -33,7 +33,7 @@ function createBot(name: string, id = 'bot-1'): BotSummary {
         id,
         name,
         title: 'Coworker',
-        avatarColor: '#336699',
+        mascotColor: 'blue', mascotShape: 'puff',
         lastMessagePreview: '',
         hasUnread: false,
     };
@@ -303,6 +303,53 @@ describe('App pending files', () => {
         });
         expect(screen.getByText('Could not upload the files.'))
             .toBeTruthy();
+    });
+});
+
+describe('App mascot', () => {
+    it('shows no done face after the owner pressed Stop, when the turn ends', async () => {
+        const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
+
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(stopTurn)
+            .mockResolvedValue(undefined);
+        vi.mocked(subscribeToEvents)
+            .mockImplementation((_botId, onEvent) => {
+                emitEvent.current = onEvent;
+
+                return () => {};
+            });
+
+        const { container } = render(<App />);
+
+        await waitFor(() => {
+            expect(renderedBotName())
+                .toBe('CloudBot');
+        });
+        // The subscription starts in an effect after the name shows, so wait until the handler exists.
+        await waitFor(() => {
+            expect(emitEvent.current)
+                .toBeDefined();
+        });
+
+        act(() => {
+            emitEvent.current?.({ type: 'turn', botId: 'bot-1', isRunning: true });
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+
+        act(() => {
+            emitEvent.current?.({ type: 'turn', botId: 'bot-1', isRunning: false });
+        });
+
+        expect(stopTurn)
+            .toHaveBeenCalledWith('bot-1');
+        expect(container.querySelector('.is-done'))
+            .toBeNull();
+        expect(container.querySelector('.cloud-mascot.is-idle'))
+            .not.toBeNull();
     });
 });
 

@@ -76,6 +76,8 @@ describe('BotStore', () => {
                 description: 'Helps with mail',
                 sessionId: null,
                 createdAt: 1000,
+                mascotColor: expect.any(String) as string,
+                mascotShape: expect.any(String) as string,
             });
     });
 

@@ -9,7 +9,7 @@ import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildPng } from '../attachments/testImages.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
-import { PROFILE_SERVER_NAME, SHARE_FILE_TOOL_FULL_NAME, UPDATE_PROFILE_TOOL_FULL_NAME } from '../agent/createProfileToolServer.ts';
+import { PROFILE_SERVER_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, UPDATE_PROFILE_TOOL_FULL_NAME } from '../agent/createProfileToolServer.ts';
 import { BrowserControl } from '../desktop/BrowserControl.ts';
 import { REQUEST_SCREEN_TOOL_FULL_NAME } from '../desktop/createScreenTools.ts';
 import { ScreenHolder } from '../desktop/ScreenHolder.ts';
@@ -913,7 +913,7 @@ describe('ChatService', () => {
         expect(turnRequest?.mcpServers)
             .toHaveProperty([PROFILE_SERVER_NAME], expect.objectContaining({ type: 'sdk' }));
         expect(turnRequest?.allowedTools)
-            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME]);
+            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME]);
         expect(turnRequest?.systemPrompt)
             .toBe(buildSystemPrompt(bot));
     });
@@ -931,7 +931,7 @@ describe('ChatService', () => {
         const turnRequest = runner.receivedRequests[0];
 
         expect(turnRequest?.allowedTools)
-            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...BROWSER_TOOL_FULL_NAMES]);
+            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...BROWSER_TOOL_FULL_NAMES]);
         expect(turnRequest?.systemPrompt)
             .toBe(buildSystemPrompt(bot, { hasBrowser: true }));
     });

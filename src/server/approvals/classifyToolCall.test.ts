@@ -139,3 +139,10 @@ describe('classifyToolCall', () => {
             .toBe('review');
     });
 });
+
+describe('profile_set_mascot', () => {
+    it('is skipped, because the bot only changes its own look that the owner asked for', () => {
+        expect(classify('mcp__cloudbot__profile_set_mascot'))
+            .toBe('skip');
+    });
+});

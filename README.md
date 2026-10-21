@@ -1,4 +1,4 @@
-# CloudBot
+<h1><img src="docs/mascot.svg" alt="" width="48" align="middle"> CloudBot</h1>
 
 Your own always-on AI coworker, running on your VPS and powered by Claude.
 
