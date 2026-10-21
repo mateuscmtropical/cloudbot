@@ -32,11 +32,15 @@ const NAME_MAX_LENGTH = 40;
 const TITLE_MAX_LENGTH = 80;
 const DESCRIPTION_MAX_LENGTH = 500;
 
+// A name is shown in chat and in bot hand-off framing, so control characters such as a newline are refused.
+const NAME_CONTROL_PATTERN = /\p{Cc}/u;
+
 const PROFILE_TOOL_SHAPE = {
     name: z.string()
         .trim()
         .min(1)
         .max(NAME_MAX_LENGTH)
+        .refine(value => !NAME_CONTROL_PATTERN.test(value), 'The name must be one line of plain text.')
         .optional(),
     title: z.string()
         .trim()

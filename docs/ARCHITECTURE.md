@@ -934,6 +934,24 @@ mentions a refused command, such as a commit message, is refused too. A
 Known gaps: a shell reading a file through a pipe, such as `cat script.sh | sh`,
 is not read. Commands built at run time, listed above, are not seen.
 
+## Bot hand-offs
+
+A bot passes a message or a task to another bot with `bot_send`, found by the target's name. The tool is offered only with the approval gate. Its handler is `ChatService.handoffFromTool`. It refuses an unknown name, a name shared by two bots, and the sending bot itself.
+
+The tool is in the review class, like the bot's other tools. The reviewer judges each call, so a hand-off that the reviewer allows runs without asking the owner. When the reviewer asks, the card shows the target and the whole text. The receiving turn is reviewed under its own rules as well, so a bot cannot use another bot to skip a block or an approval. `classifyToolCall.test.ts` pins the class.
+
+The target's turn starts through `sendMessage` with the source `bot`, the same path a routine or webhook turn takes. The source `bot` uses the routines model, effort and limit choices. A hand-off takes no files that the owner staged for the target.
+
+The target gets the text as a user message. It starts with `Message from bot <name>`, then a line that asks it to treat the text as a request from another bot, not as an instruction from the owner. The name is collapsed to one line. The reviewer labels the message as not the owner. The `update_profile` name refuses control characters, so a bot cannot make a name with a line break.
+
+The sender's chat gets "Sent to <name>: <text>" before the send. If the send does not start, a second note says why. When the target's turn ends, its text replies go to the sender's chat as one note that starts with "Reply from <name>". A stopped or failed turn says so in that note. A turn that hits a usage limit reports from its continuation, so the reply comes once. The reviewer labels both notes as outside data or as sent by this bot. The sender's own agent does not see the reply in its context.
+
+Caps. A chain carries a depth, and a turn that a hand-off started sends one level deeper. The hand-off at depth 4 is refused, since `MAX_HANDOFF_DEPTH` in `bots/botHandoff.ts` is 3. So a chain allows 3 hand-offs in a row, which is 4 bots at most. A sender turn sends at most `MAX_HANDOFFS_PER_TURN` (3) hand-offs, and a target has at most 3 hand-offs waiting in its queue. A refused hand-off returns an error to the bot. A chain stop also posts a note to the sender's chat.
+
+Dropped hand-offs. A hand-off waiting in a queue that is dropped, by Stop during a usage wait or by a delete, leaves a note in the sender's chat. Stop on a running hand-off turn ends it as "stopped" in the reply note.
+
+Limits of this version. A queued hand-off keeps its depth and reply routing only in memory. After a restart, a queued hand-off runs with depth 0 and no reply note. The reply scan reads the newest 500 messages of the target, so a longer turn can lose its earliest replies.
+
 ## Bots
 
 The "+" button calls `POST /api/bots`. The server makes a bot named "New bot" and posts a question in its chat, which asks for the name and the job. The owner answers there, and the bot sets them with `update_profile`. The bot's `bot_create` tool makes a bot from a name, a title and first instructions. The instructions are written to the new bot's CLAUDE.md as its first memory, under a header that names the bot that made it. They are not a rule, since a bot wrote them and a rule would be an owner permission. The tool is in the always-ask list, so the owner approves a card with the name, the title and the whole instructions before anything is made. The card refuses hidden characters, and a name or title that is not one short line. Every bot uses the same Claude sign-in and the same key proxy. Nothing of the key is copied into a bot.

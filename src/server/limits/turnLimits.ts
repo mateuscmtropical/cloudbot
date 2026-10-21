@@ -119,7 +119,7 @@ function isLimitInputError(value: unknown): value is LimitInputError {
 }
 
 // Chat turns use the chat limits. Every other turn uses the routines limits.
-function chooseTurnLimit(limits: TurnLimits, source: 'chat' | 'routine' | 'webhook'): TurnLimit {
+function chooseTurnLimit(limits: TurnLimits, source: 'chat' | 'routine' | 'webhook' | 'bot'): TurnLimit {
     return source === 'chat' ? limits.chat : limits.routines;
 }
 

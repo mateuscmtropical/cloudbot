@@ -2,6 +2,7 @@ import { z } from 'zod/v4';
 
 import type { ToolCall } from '../agent/AgentRunner.ts';
 import { BOT_CREATE_SHAPE, BOT_CREATE_TOOL_FULL_NAME } from '../bots/createBotTool.ts';
+import { BOT_SEND_TOOL_FULL_NAME } from '../bots/createBotSendTool.ts';
 import { hasHiddenCode } from '../text/isHiddenCode.ts';
 import { checkCommandFloor } from './commandFloor.ts';
 import { classifyToolCall } from './classifyToolCall.ts';
@@ -260,6 +261,19 @@ async function checkIntegrationChange(
     return { decision: 'ask', summary: change.summary, detail: card.text };
 }
 
+// A hand-off that the review asks about shows the owner the target and the whole text. Other verdicts pass unchanged.
+function withHandoffDetail(verdict: ToolCallVerdict, input: unknown): ToolCallVerdict {
+    if (verdict.decision !== 'ask') {
+        return verdict;
+    }
+
+    const handoffInput = input as { bot?: unknown; text?: unknown } | null;
+    const targetName = readText(handoffInput?.bot);
+    const handoffText = readText(handoffInput?.text);
+
+    return { decision: 'ask', summary: verdict.summary, detail: `Bot: ${targetName}\n\n${handoffText}` };
+}
+
 // Skips harmless calls, always asks for connector tools that send, buy or book, and lets a model judge the rest.
 // A model that fails or answers badly throws, and the approval gate then asks the owner.
 function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallReviewer {
@@ -324,8 +338,9 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
         };
         const answerText = await options.askModel(prompt, signal, context.reviewModel, context.reviewEffort, reportReviewCost);
         const answer = parseModelAnswer(answerText);
+        const verdict = toVerdict(answer, call);
 
-        return toVerdict(answer, call);
+        return call.toolName === BOT_SEND_TOOL_FULL_NAME ? withHandoffDetail(verdict, call.input) : verdict;
     };
 }
 

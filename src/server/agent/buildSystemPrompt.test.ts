@@ -21,6 +21,15 @@ describe('buildSystemPrompt', () => {
             .not.toContain('models_set');
     });
 
+    it('explains bot_send only when the bot can hand work to other bots', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+
+        expect(buildSystemPrompt(profile, { hasHandoffs: true }))
+            .toContain('with bot_send, by its name');
+        expect(buildSystemPrompt(profile))
+            .not.toContain('bot_send');
+    });
+
     it('explains the GitHub token and the --repo rule only when GitHub is on', () => {
         const profile = { name: 'Ana', title: 'Assistant', description: '' };
 

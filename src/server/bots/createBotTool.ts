@@ -64,5 +64,5 @@ function createBotCreateTool(createBot: (input: BotCreateInput) => Promise<Creat
     );
 }
 
-export { BOT_CREATE_TOOL_FULL_NAME, BOT_CREATE_SHAPE, createBotCreateTool };
+export { BOT_CREATE_TOOL_FULL_NAME, BOT_CREATE_SHAPE, createBotCreateTool, textResult };
 export type { BotCreateInput, CreatedBot };

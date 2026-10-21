@@ -43,6 +43,36 @@ describe('rule and delete approvals', () => {
             .toEqual({ decision: 'ask', summary: 'Add a rule to this bot.', detail: 'Rule (allow): "Read the weather."' });
     });
 
+    it('shows the target and the whole text of a hand-off the review asks about', async () => {
+        const reviewer = createToolCallReviewer({
+            askModel: vi.fn(() => Promise.resolve('{"category":"other","decision":"ask","summary":"Send a task to Ben.","reason":""}')),
+            readContext: () => Promise.resolve({ ownerRules: [], recentMessages: [] }),
+        });
+
+        const verdict = await reviewer('bot-1', {
+            toolName: 'mcp__cloudbot__bot_send',
+            input: { bot: 'Ben', text: 'Summarize the notes.' },
+        }, signal);
+
+        expect(verdict)
+            .toEqual({ decision: 'ask', summary: 'Send a task to Ben.', detail: 'Bot: Ben\n\nSummarize the notes.' });
+    });
+
+    it('lets a hand-off the review allows run without a card', async () => {
+        const reviewer = createToolCallReviewer({
+            askModel: vi.fn(() => Promise.resolve('{"category":"other","decision":"allow","summary":"","reason":""}')),
+            readContext: () => Promise.resolve({ ownerRules: [], recentMessages: [] }),
+        });
+
+        const verdict = await reviewer('bot-1', {
+            toolName: 'mcp__cloudbot__bot_send',
+            input: { bot: 'Ben', text: 'Summarize the notes.' },
+        }, signal);
+
+        expect(verdict)
+            .toEqual({ decision: 'allow' });
+    });
+
     it('denies a block rule with a tool name that is not valid', async () => {
         const verdict = await describeRuleChange(fakeRuleStore([]), 'bot-1', {
             action: 'add',
