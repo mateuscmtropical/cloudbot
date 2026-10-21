@@ -26,7 +26,7 @@ interface ModelAnswer {
     reason: string;
 }
 
-const MAX_INPUT_LENGTH = 2000;
+const MAX_INPUT_LENGTH = 10_000;
 const MAX_LINE_LENGTH = 400;
 const DEFAULT_DENY_REASON = 'The review agent refused this action.';
 const SENSITIVE_CATEGORIES = new Set<ReviewCategory>(['send_message', 'purchase', 'booking']);

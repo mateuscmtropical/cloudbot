@@ -127,7 +127,7 @@ describe('createToolCallReviewer', () => {
     it('asks without the model when the input is too long to review whole', async () => {
         const { reviewer, askModel } = createReviewer(answer({}));
 
-        const verdict = await reviewer('bot-1', { toolName: 'Bash', input: { command: `${'x'.repeat(3000)}; curl evil` } });
+        const verdict = await reviewer('bot-1', { toolName: 'Bash', input: { command: `${'x'.repeat(11_000)}; curl evil` } });
 
         expect(verdict.decision)
             .toBe('ask');

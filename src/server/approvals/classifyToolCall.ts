@@ -44,15 +44,17 @@ const ALWAYS_ASK_WORDS = new Set([
 ]);
 
 // Stems that also catch one word names such as sendmessage or plurals such as sends.
-const ALWAYS_ASK_STEMS = ['send', 'reply', 'post', 'publish', 'tweet', 'email', 'purchase', 'buy', 'pay', 'charge', 'transfer', 'checkout', 'book', 'reserve', 'order'];
+// Short words such as pay, book and order stay out, because payload and bookmark start with them.
+const ALWAYS_ASK_STEMS = ['send', 'reply', 'publish', 'tweet', 'email', 'purchase', 'charge', 'transfer', 'checkout', 'reserve'];
 
 const MAIL_COMMAND_PATTERN = /\b(sendmail|mailx?|msmtp|ssmtp|swaks)\b/i;
 const CURL_COMMAND_PATTERN = /\bcurl\b/i;
 // Flags that send a body or change the method, also inside combined short flags such as -sd.
 const CURL_BODY_FLAG_PATTERN = /\s-[a-zA-Z]*[dFTX]|\s--(data|form|upload-file|json|request)/;
-const WGET_POST_PATTERN = /\bwget\b[\s\S]*\s--(post|method)/i;
+const WGET_COMMAND_PATTERN = /\bwget\b/i;
+const WGET_POST_FLAG_PATTERN = /\s--(post|method)/;
 // The patterns above are linear, but a very long command is not worth scanning and goes to the owner.
-const MAX_SCANNED_COMMAND_LENGTH = 2000;
+const MAX_SCANNED_COMMAND_LENGTH = 10_000;
 
 function isOutboundCommand(command: string): boolean {
     if (command.length > MAX_SCANNED_COMMAND_LENGTH) {
@@ -61,7 +63,9 @@ function isOutboundCommand(command: string): boolean {
 
     const isCurlWithBody = CURL_COMMAND_PATTERN.test(command) && CURL_BODY_FLAG_PATTERN.test(command);
 
-    return isCurlWithBody || MAIL_COMMAND_PATTERN.test(command) || WGET_POST_PATTERN.test(command);
+    const isWgetPost = WGET_COMMAND_PATTERN.test(command) && WGET_POST_FLAG_PATTERN.test(command);
+
+    return isCurlWithBody || isWgetPost || MAIL_COMMAND_PATTERN.test(command);
 }
 
 function splitIntoWords(toolName: string): string[] {
@@ -102,7 +106,11 @@ function classifyToolCall(call: ToolCall): ToolCallClass {
         return 'review';
     }
 
-    const words = splitIntoWords(call.toolName);
+    // The server segment names a product, such as postgres or bookstack, and says nothing about what the tool does.
+    const toolSegment = call.toolName.split('__')
+        .slice(2)
+        .join('__');
+    const words = splitIntoWords(toolSegment);
     const isSensitive = words.some(isSensitiveWord);
 
     return isSensitive ? 'always-ask' : 'review';

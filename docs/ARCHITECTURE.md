@@ -426,12 +426,12 @@ service. `classifyToolCall` sorts each call first:
   the bot's own `browser_open`, `browser_read`, `browser_screenshot`,
   `browser_scroll`, `request_screen`, `request_secret`, `share_file` and
   `update_profile`.
-- A connector tool (`mcp__` but not the bot's own server) whose name has the
+- A connector tool (`mcp__` but not the bot's own server) whose tool name (the part after the server name) has the
   word send, reply, purchase, buy, pay, checkout, book, booking, reserve or
   order always answers `ask`. The model is not consulted.
 - A `Bash` command that mails or sends data out (`sendmail`, `curl` with a
   body or a method other than GET, `wget --post`) also always answers `ask`.
-- A call whose input is longer than 2000 characters answers `ask`, because
+- A call whose input is longer than 10000 characters answers `ask`, because
   the model must see the whole input.
 - Every other call goes to the model.
 

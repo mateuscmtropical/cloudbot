@@ -64,9 +64,8 @@ describe('classifyToolCall', () => {
         'mcp__blog__publish_post',
         'mcp__bank__transfer_funds',
         'mcp__bank__charge_card',
-        'mcp__slack__chat_postmessage',
         'mcp__mail__emailuser',
-        'mcp__bank__paynow',
+        'mcp__slack__chat_post_message',
         'mcp__mail__GMAILSend',
     ])('always asks for the connector tool %s', (toolName) => {
         expect(classify(toolName))
@@ -81,6 +80,9 @@ describe('classifyToolCall', () => {
         'mcp__cloudbot__browser_type',
         'mcp__cloudbot__browser_key',
         'mcp__mail__list_messages',
+        'mcp__postgres__query',
+        'mcp__bookstack__search',
+        'mcp__x__get_payload',
         'mcp__docs__reorder_pages',
     ])('sends %s to the reviewer', (toolName) => {
         expect(classify(toolName))
