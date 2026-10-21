@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
@@ -148,7 +149,7 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
     }
 }
 
-function MessageItem({ message, actions, mascot, isMascotShown = false, mascotState = 'idle' }: MessageItemProps): ReactElement {
+function MessageItemView({ message, actions, mascot, isMascotShown = false, mascotState = 'idle' }: MessageItemProps): ReactElement {
     const className = `message message-${message.role}`;
 
     if (mascot === undefined) {
@@ -165,5 +166,8 @@ function MessageItem({ message, actions, mascot, isMascotShown = false, mascotSt
     );
 }
 
-export { MessageItem };
+// A streamed reply renders the list on every delta. Memo keeps the stored messages from parsing their markdown again.
+const memoizedMessageItem = memo(MessageItemView);
+
+export { memoizedMessageItem as MessageItem };
 export type { MessageActions, MessageItemProps };

@@ -102,6 +102,7 @@ function ConversationView({
     const messageListRef = useRef<HTMLDivElement>(null);
     const previousBotIdRef = useRef<string | undefined>(undefined);
     const previousOldestSequenceRef = useRef<number | undefined>(undefined);
+    const previousNewestSequenceRef = useRef<number | undefined>(undefined);
     // The list height after the last change this view handled. Used for the near-bottom check.
     const previousScrollHeightRef = useRef(0);
     const olderAnchorRef = useRef<OlderAnchor | undefined>(undefined);
@@ -155,6 +156,21 @@ function ConversationView({
             olderAnchorRef.current = undefined;
         }
 
+        // Messages that arrive live rise into place. A loaded page does not. A stored reply takes the place of its
+        // streamed draft, which already rose, so it stays still.
+        const previousNewestSequence = previousNewestSequenceRef.current;
+
+        if (isSameBot && !isOlderMessagesAdded && previousNewestSequence !== undefined) {
+            messages
+                .filter(message => message.sequence > previousNewestSequence)
+                .filter(message => message.role !== 'assistant' || message.body.kind !== 'text')
+                .forEach((message) => {
+                    const element = findMessageElement(messageListElement, message.id);
+
+                    element?.classList.add('is-entering');
+                });
+        }
+
         if (shouldRestoreAnchor && anchor !== undefined && anchoredElement !== undefined) {
             messageListElement.scrollTop = anchoredElement.offsetTop - anchor.offset;
         } else if (!isSameBot || isNearBottom) {
@@ -163,6 +179,7 @@ function ConversationView({
 
         previousBotIdRef.current = botId;
         previousOldestSequenceRef.current = oldestSequence;
+        previousNewestSequenceRef.current = messages.at(-1)?.sequence;
         previousIsLoadingRef.current = isLoadingOlder;
         previousScrollHeightRef.current = messageListElement.scrollHeight;
     }, [messages, draftText, botId, isLoadingOlder]);

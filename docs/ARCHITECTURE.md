@@ -960,13 +960,23 @@ messages, only the last one shows the mascot (`src/web/messageMascot.ts`). The b
 space, so the text lines up. The eyes of the idle and typing faces follow the pointer on every mascot, through
 one shared window listener (`src/web/mascotPointer.ts`), batched per animation frame. While the owner types,
 the eyes turn along the text box with the caret. The caret at the left edge turns them fully left, at the right
-edge fully right, and linearly in between. They look down at the box by 2 units. A hidden mirror of the text box,
+edge fully right, and linearly in between. They look down at the box by 6 units. The eyes move up to 9 units of the
+160 unit wide view, which keeps them inside the face of every body. The whole cloud leans and shifts a little toward
+the same look, so it reads on a 28 pixel mascot. A hidden mirror of the text box,
 with the same styles and the text before the caret, gives the caret's place, so wrapped lines work. A shared
 document listener on `input` and `selectionchange` (`subscribeToTyping`) measures at once on each change, not in
 an animation frame, so a stalled frame cannot freeze the eyes. The last message mascot follows the caret too,
 and takes the typing face while the owner types. The mascots blink after a random pause of 2.5 to 6 seconds, and no timer runs
-while the tab is hidden. Under `prefers-reduced-motion` the eyes and the blink still run, with no easing
-on the eyes, so they jump. The stylesheet stops the bounce, the squish and the hover motion there.
+while the tab is hidden. A mascot that is off screen, seen through an `IntersectionObserver`, does not follow the
+pointer and does not blink, so a long chat costs nothing for them. Under `prefers-reduced-motion` the eyes, the lean
+and the blink still run, with no easing, so they jump. The stylesheet stops the bounce, the squish and the hover motion there.
+
+While a reply streams, the app joins the text deltas of one animation frame into one draft update, and the stored
+messages are memoized (`MessageItem`), so a delta renders only the draft. Live messages that are not a stored reply
+get the `is-entering` class and rise in. A stored reply takes the place of its draft, which already rose. Panels,
+the streamed reply and the phone bot list move with transform and opacity only, and reduced motion turns that off.
+The server sends `Cache-Control: public, max-age=31536000, immutable` for the hashed files under `/assets/` and
+`no-cache` for every other web app file.
 
 ## Setup conversation
 

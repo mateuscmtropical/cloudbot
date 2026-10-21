@@ -137,6 +137,37 @@ describe('CloudMascot', () => {
         addListener.mockRestore();
     });
 
+    it('stops listening to the pointer while it is off screen', () => {
+        const visibility: { report?: (entries: IntersectionObserverEntry[]) => void } = {};
+
+        class FakeIntersectionObserver {
+            constructor(report: (entries: IntersectionObserverEntry[]) => void) {
+                visibility.report = report;
+            }
+
+            observe(): void {}
+
+            disconnect(): void {}
+        }
+
+        vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+        const removeListener = vi.spyOn(window, 'removeEventListener');
+
+        renderMascot('idle');
+        act(() => {
+            const offScreenEntry = { isIntersecting: false } as IntersectionObserverEntry;
+
+            visibility.report?.([offScreenEntry]);
+        });
+
+        const pointerMoveRemoves = removeListener.mock.calls.filter(call => call[0] === 'pointermove');
+
+        expect(pointerMoveRemoves)
+            .toHaveLength(1);
+        removeListener.mockRestore();
+        vi.unstubAllGlobals();
+    });
+
     it('still follows the pointer when the owner prefers reduced motion', () => {
         setPrefersReducedMotion(true);
 
@@ -269,7 +300,10 @@ describe('CloudMascot while the owner types', () => {
 
         // Happy-dom has no layout, so the caret reads at the left edge: the eyes turn fully left and look down.
         expect(eyes?.style.transform)
-            .toBe('translate(-3px, 2px)');
+            .toBe('translate(-9px, 6px)');
+        // The whole cloud leans the same way a little, so the look reads on a small mascot too.
+        expect(container.querySelector<SVGGElement>('.cloud-look')?.style.transform)
+            .toBe('translate(-2.7px, 1.8px) rotate(-7.2deg)');
     });
 
     it('keeps the eyes on the text box and ignores the pointer while typing', () => {
