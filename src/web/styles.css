@@ -322,6 +322,10 @@ svg {
     text-decoration: none;
 }
 
+.setup-alternative {
+    margin-top: 8px;
+}
+
 .choice-button.is-selected {
     border-color: var(--color-accent);
     background: var(--color-accent);

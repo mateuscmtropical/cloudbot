@@ -99,6 +99,7 @@ function SecureForm({ prompt, secretName, submitted, onSubmit, alternative, site
             {alternative !== undefined && (
                 <button
                     type="button"
+                    className="choice-button setup-alternative"
                     disabled={isPending}
                     onClick={() => {
                         handleAlternative(alternative);
