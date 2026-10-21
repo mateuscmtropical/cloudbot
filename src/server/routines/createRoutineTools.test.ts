@@ -76,6 +76,21 @@ describe('createRoutineTools', () => {
             .toBe(true);
     });
 
+    it('keeps the limit when two routines are created at once', async () => {
+        const create = findHandler(botId, 'routine_create');
+        const routineArgs = { name: 'A', prompt: 'a', schedule: { kind: 'interval', everyMinutes: 60 } };
+
+        await Promise.all(Array.from({ length: MAX_ROUTINES_PER_BOT - 1 }, () => store.add(botId, { name: 'A', prompt: 'a', schedule: { kind: 'interval', everyMinutes: 60 } })));
+
+        const results = await Promise.all([create(routineArgs, {}), create(routineArgs, {})]);
+        const errorCount = results.filter(result => result.isError === true).length;
+
+        expect(errorCount)
+            .toBe(1);
+        await expect(store.list(botId))
+            .resolves.toHaveLength(MAX_ROUTINES_PER_BOT);
+    });
+
     it('lists routines, with off ones marked', async () => {
         const list = findHandler(botId, 'routine_list');
         const empty = await list({}, {});

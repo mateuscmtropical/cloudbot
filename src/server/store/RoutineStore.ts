@@ -19,6 +19,8 @@ interface NewRoutine {
 class RoutineStore {
     private readonly database: AppDatabase;
     private readonly now: () => number;
+    // Adds with a limit run one after the other, so two calls cannot both pass the count.
+    private limitedAdds: Promise<unknown> = Promise.resolve();
 
     constructor(database: AppDatabase, options: StoreOptions = {}) {
         this.database = database;
@@ -56,6 +58,21 @@ class RoutineStore {
         }
 
         return insertedRoutine;
+    }
+
+    // Returns undefined when the bot already has `maxRoutines` routines.
+    async addWithLimit(botId: string, routine: NewRoutine, maxRoutines: number): Promise<RoutineRecord | undefined> {
+        const addIfRoom = async (): Promise<RoutineRecord | undefined> => {
+            const existingRoutines = await this.list(botId);
+
+            return existingRoutines.length >= maxRoutines ? undefined : this.add(botId, routine);
+        };
+        // A failed add must not block the adds queued behind it.
+        const result = this.limitedAdds.then(addIfRoom, addIfRoom);
+
+        this.limitedAdds = result;
+
+        return result;
     }
 
     // Returns false when the bot has no routine with this id.

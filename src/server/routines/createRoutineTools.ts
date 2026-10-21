@@ -84,13 +84,11 @@ function createRoutineTools(store: RoutineStore, botId: string): CloudbotTool[] 
                 return textResult(`The schedule is not valid. An interval is ${String(MIN_INTERVAL_MINUTES)} to ${String(MAX_INTERVAL_MINUTES)} minutes. Hours are 0 to 23, minutes 0 to 59 and weekdays 0 to 6.`, true);
             }
 
-            const existingRoutines = await store.list(botId);
+            const routine = await store.addWithLimit(botId, { name: args.name, prompt: args.prompt, schedule }, MAX_ROUTINES_PER_BOT);
 
-            if (existingRoutines.length >= MAX_ROUTINES_PER_BOT) {
+            if (routine === undefined) {
                 return textResult(`You can have at most ${String(MAX_ROUTINES_PER_BOT)} routines. Delete one first.`, true);
             }
-
-            const routine = await store.add(botId, { name: args.name, prompt: args.prompt, schedule });
 
             return textResult(`Routine created with id ${routine.id}. The first run is at ${formatTime(routine.nextRunAt)} UTC.`);
         },
