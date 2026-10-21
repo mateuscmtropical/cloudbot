@@ -122,15 +122,20 @@ function createShareFileTool(shareFile: ShareFileHandler): SdkMcpToolDefinition<
 }
 
 // The server is built for one turn and passed as mcpServers[PROFILE_SERVER_NAME].
-// The share_file tool is added only when a handler is given.
-function createProfileToolServer(botStore: BotStore, botId: string, shareFile?: ShareFileHandler): McpSdkServerConfigWithInstance {
+// The share_file tool is added only when a handler is given. Extra tools, such as the browser tools, join the same server.
+function createProfileToolServer(
+    botStore: BotStore,
+    botId: string,
+    shareFile?: ShareFileHandler,
+    extraTools: SdkMcpToolDefinition<z.ZodRawShape>[] = [],
+): McpSdkServerConfigWithInstance {
     const updateProfileTool = createUpdateProfileTool(botStore, botId);
     const shareTools = shareFile === undefined ? [] : [createShareFileTool(shareFile)];
 
     return createSdkMcpServer({
         name: PROFILE_SERVER_NAME,
         version: '1.0.0',
-        tools: [updateProfileTool, ...shareTools],
+        tools: [updateProfileTool, ...shareTools, ...extraTools],
     });
 }
 

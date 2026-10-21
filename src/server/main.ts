@@ -8,6 +8,7 @@ import { SetupAccess } from './access/SetupAccess.ts';
 import { buildSetupLink, readServerPort } from './access/setupLinkUrl.ts';
 import { ChatService } from './chat/ChatService.ts';
 import { createApp } from './createApp.ts';
+import { BrowserControl, DESKTOP_DEVTOOLS_URL } from './desktop/BrowserControl.ts';
 import { DesktopSupervisor, buildDesktopCommand } from './desktop/DesktopSupervisor.ts';
 import { BotStore } from './store/BotStore.ts';
 import { MessageStore } from './store/MessageStore.ts';
@@ -52,7 +53,11 @@ const environment = Object.fromEntries(environmentEntries);
 const connection: RuntimeConnection = {};
 const vault = new Vault(dataDir);
 const runner = new SdkAgentRunner({ pathToClaudeCodeExecutable: claudePath, environment });
-const chatService = new ChatService({ botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER });
+// The image sets CLOUDBOT_DESKTOP_COMMAND. Local development leaves it unset and has no desktop or browser tools.
+const desktopCommand = buildDesktopCommand(process.env.CLOUDBOT_DESKTOP_COMMAND, agentUser);
+const desktop = desktopCommand === undefined ? undefined : new DesktopSupervisor({ desktopCommand });
+const browser = desktop === undefined ? undefined : new BrowserControl({ devtoolsUrl: DESKTOP_DEVTOOLS_URL });
+const chatService = new ChatService({ botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser });
 const bots = await botStore.list();
 const firstBot = bots[0];
 
@@ -78,12 +83,8 @@ const setup = new SetupConversation({
 });
 
 chatService.setSetup(setup);
-
-// The image sets CLOUDBOT_DESKTOP_COMMAND. Local development leaves it unset and has no desktop.
-const desktopCommand = buildDesktopCommand(process.env.CLOUDBOT_DESKTOP_COMMAND, agentUser);
-const desktop = desktopCommand === undefined ? undefined : new DesktopSupervisor({ desktopCommand });
-
 desktop?.start();
+
 // Queued messages and usage limit waits from the last run continue before the first request.
 await chatService.resumeQueue();
 

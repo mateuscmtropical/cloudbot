@@ -16,6 +16,8 @@ import { UNSENT_UPLOAD_MAX_AGE_MS, readUploadRetentionMs, removeOldUploads } fro
 import { describeAttachments, readTurnImages } from '../attachments/attachmentPrompt.ts';
 import { readMaxUploadBytes, removeFiles, saveFiles } from '../attachments/saveUpload.ts';
 import { readMaxShareBytes, shareWorkspaceFile } from '../files/shareFile.ts';
+import type { BrowserControl } from '../desktop/BrowserControl.ts';
+import { BROWSER_TOOL_FULL_NAMES, createBrowserTools } from '../desktop/createBrowserTools.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
@@ -48,6 +50,8 @@ interface ChatServiceOptions {
     maxShareBytes?: number | undefined;
     // How long used files stay. Defaults to CLOUDBOT_UPLOAD_RETENTION_DAYS, or 30 days.
     uploadRetentionMs?: number | undefined;
+    // The browser on the bot's desktop. Without it the bot gets no browser tools.
+    browser?: BrowserControl | undefined;
 }
 
 interface SharedFileDownload {
@@ -296,6 +300,7 @@ class ChatService {
     private readonly maxPendingBytes: number;
     private readonly uploadRetentionMs: number;
     private readonly maxShareBytes: number;
+    private readonly browser: BrowserControl | undefined;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
     private setup: SetupConversation | undefined;
@@ -315,6 +320,7 @@ class ChatService {
         this.maxPendingBytes = options.maxUploadBytes ?? readMaxUploadBytes(process.env);
         this.uploadRetentionMs = options.uploadRetentionMs ?? readUploadRetentionMs(process.env);
         this.maxShareBytes = options.maxShareBytes ?? readMaxShareBytes();
+        this.browser = options.browser;
     }
 
     // Uploads live outside the agent's writable workspace. The agent reads them and cannot change them.
@@ -946,10 +952,12 @@ class ChatService {
 
             // The profile tool and prompt are built from the bot as it is now, so a
             // change made in the previous turn already applies.
+            const browserTools = this.browser === undefined ? [] : createBrowserTools(this.browser);
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
+                browserTools,
             );
             const prompt = uploads.length === 0 ? text : `${text}\n\n${describeAttachments(uploads)}`;
             const images = readTurnImages(uploads);
@@ -962,7 +970,7 @@ class ChatService {
                 abortController,
                 workspaceDir,
                 images,
-                systemPrompt: buildSystemPrompt(bot),
+                systemPrompt: buildSystemPrompt(bot, { hasBrowser: this.browser !== undefined }),
                 mcpServers: { [PROFILE_SERVER_NAME]: profileServer },
             };
             const firstAttempt = await this.runAttempt(turnContext, bot.sessionId, turnState);
@@ -1002,6 +1010,13 @@ class ChatService {
 
     // With a session to resume, a failure before the session starts is held back
     // and returned as failureText, so the caller can retry without it.
+    // Headless turns cannot answer a permission prompt, so the cloudbot tools the bot has are allowed up front.
+    private allowedToolNames(): string[] {
+        const browserToolNames = this.browser === undefined ? [] : BROWSER_TOOL_FULL_NAMES;
+
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames];
+    }
+
     private async runAttempt(turnContext: TurnContext, sessionId: string | null, turnState: TurnState): Promise<AttemptOutcome> {
         const { botId } = turnContext;
         const toolNamesById = new Map<string, string>();
@@ -1014,7 +1029,7 @@ class ChatService {
             abortSignal: turnContext.abortController.signal,
             systemPrompt: turnContext.systemPrompt,
             mcpServers: turnContext.mcpServers,
-            allowedTools: [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME],
+            allowedTools: this.allowedToolNames(),
             additionalDirectories: turnContext.additionalDirectories,
             ...sessionOption,
         };

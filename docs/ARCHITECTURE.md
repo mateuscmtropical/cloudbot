@@ -145,6 +145,37 @@ once a second. When one part exits, it stops the others and exits, so the server
 Its log is `/home/bot/.cache/cloudbot-desktop/desktop.log` and starts empty
 each time.
 
+### Browser tools
+
+When the desktop is enabled, the cloudbot tool server also has browser tools.
+`BrowserControl` in `src/server/desktop/` finds the first page in
+`/json/list` on the DevTools port, opens a WebSocket to it with Node's built-in
+client and closes it after each action. A new blank page is opened when none
+is left.
+
+| Tool | What it does |
+|---|---|
+| `browser_open` | Opens an http or https address, waits up to 15 seconds for it to load and returns its title, address and visible text |
+| `browser_read` | Returns the title, address and visible text of the open page |
+| `browser_screenshot` | Returns a PNG of the page to the model |
+| `browser_click` | Clicks at a point, in screenshot pixels |
+| `browser_type` | Types text into the focused field |
+| `browser_key` | Presses Enter, Tab, Escape, Backspace, an arrow key, PageUp or PageDown |
+| `browser_scroll` | Scrolls the page by a number of pixels |
+
+A load that fails, such as an unknown host, is an error and does not return
+the old page. Each action enables the Page domain first. A dialog that opens
+during an action is closed with Cancel, and its text goes back to the model.
+A leave-page (`beforeunload`) dialog is accepted, so the bot can leave.
+A dialog that was already open blocks every call but a navigation, so the
+tools then answer within 3 seconds and tell the model to use `browser_open`.
+DevTools requests and the WebSocket connection give up after 5 seconds.
+
+Page text is cut at 20000 characters and is framed as data, not instructions.
+The system prompt says the same. Other schemes such as `file:` and
+`javascript:` are refused. Unexpected errors reach the model as a short
+generic message.
+
 Chromium runs with `--no-sandbox`, because Docker's default seccomp profile
 blocks the namespaces its sandbox needs. Open choices like this one are listed
 in [OWNER_QUESTIONS.md](OWNER_QUESTIONS.md).
