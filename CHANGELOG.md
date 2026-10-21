@@ -8,6 +8,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Rules panel: a Rules button in the conversation header opens the owner rules of the bot. The owner can add allow and block rules, name blocked tools and remove rules there.
 - Owner rules: each bot has allow and block rules in plain words, stored on the server and read for every turn. The sentences go into the system prompt, and block rules can name tools that the SDK then refuses. Routes: `GET`, `POST /api/bots/:id/rules` and `DELETE /api/bots/:id/rules/:ruleId`.
 - `browser_type_secret`: the server types a saved secret into the focused password, one-time code or card field, only on the site saved with it. The bot never sees the value.
 - Screenshots in the chat: `browser_screenshot` takes `showOwner`, and the screenshot then also appears in the chat. The chat shows a preview of PNG, JPEG, GIF and WEBP files up to 5 MB above the download link.

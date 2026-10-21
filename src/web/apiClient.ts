@@ -1,4 +1,4 @@
-import type { BotSummary, ChatEvent, ChatMessage, PendingUpload } from '../shared/chatTypes.ts';
+import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload } from '../shared/chatTypes.ts';
 
 const API_ROOT = '/api';
 
@@ -169,6 +169,35 @@ async function removeUpload(botId: string, uploadId: string): Promise<void> {
     ensureOk(response, path);
 }
 
+interface NewRuleRequest {
+    kind: BotRule['kind'];
+    text: string;
+    blockedTools: string[];
+}
+
+function listRules(botId: string): Promise<BotRule[]> {
+    const path = botPath(botId, '/rules');
+
+    return requestJson<BotRule[]>(path, {});
+}
+
+function addRule(botId: string, rule: NewRuleRequest): Promise<BotRule> {
+    const path = botPath(botId, '/rules');
+
+    return postJson<BotRule>(path, rule);
+}
+
+async function removeRule(botId: string, ruleId: string): Promise<void> {
+    const path = botPath(botId, `/rules/${encodeURIComponent(ruleId)}`);
+    const response = await fetch(path, { method: 'DELETE' });
+
+    if (!response.ok) {
+        const serverMessage = await readServerMessage(response);
+
+        throw new RequestFailedError(path, response.status, serverMessage);
+    }
+}
+
 // onOpen runs on the first connection and on every reconnect. Events missed while
 // the stream was down are lost, so the caller reloads the conversation there.
 function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void, onOpen: () => void): () => void {
@@ -190,7 +219,7 @@ function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void, o
     };
 }
 
-export type { MessagePageRequest };
+export type { MessagePageRequest, NewRuleRequest };
 export {
     RequestFailedError,
     listBots,
@@ -204,4 +233,7 @@ export {
     uploadAttachments,
     listUploads,
     removeUpload,
+    listRules,
+    addRule,
+    removeRule,
 };

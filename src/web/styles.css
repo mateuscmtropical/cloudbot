@@ -202,13 +202,29 @@ svg {
 }
 
 .conversation-header {
+    position: relative;
     display: flex;
     justify-content: center;
     align-items: center;
     padding: 12px 16px;
 }
 
+.rules-button {
+    position: absolute;
+    right: 16px;
+    padding: 6px 14px;
+    border: none;
+    border-radius: var(--radius-control);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    cursor: pointer;
+}
+
 .bot-pill {
+    max-width: calc(100% - 200px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding: 6px 14px;
     border-radius: var(--radius-control);
     background: var(--color-surface-raised);
@@ -497,4 +513,83 @@ svg {
 .secret-site {
     font-size: 0.9em;
     opacity: 0.8;
+}
+
+.rules-panel {
+    margin: 0 16px 12px;
+    padding: 16px;
+    border-radius: var(--radius-bubble);
+    background: var(--color-surface);
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.rules-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.rules-header h2 {
+    margin: 0;
+    font-size: 1.05em;
+}
+
+.rules-help {
+    color: var(--color-text-muted);
+    font-size: 0.9em;
+}
+
+.rules-list {
+    padding: 0;
+    list-style: none;
+}
+
+.rule-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-surface-raised);
+}
+
+.rule-kind {
+    font-weight: 600;
+}
+
+.rule-item.is-block .rule-kind {
+    color: var(--color-danger);
+}
+
+.rule-item.is-allow .rule-kind {
+    color: var(--color-success);
+}
+
+.rule-text {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.rule-tools {
+    flex-basis: 100%;
+    overflow-wrap: anywhere;
+    color: var(--color-text-muted);
+    font-size: 0.85em;
+}
+
+.rules-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.rules-form input {
+    flex: 1 1 200px;
+}
+
+.rules-problem {
+    color: var(--color-danger);
 }

@@ -373,6 +373,10 @@ commas. Only a block rule can name tools, and a bot has at most 50 rules. The
 bot has no tool to read or change rules. A misspelled tool name blocks
 nothing, so the sentence carries the intent.
 
+The web app shows them in `RulesPanel`, opened with the Rules button in the
+conversation header. It lists, adds and removes rules through these routes and
+shows the server's error text when a rule is refused.
+
 Each turn reads the bot's rules. `buildSystemPrompt` lists the sentences as
 owner rules, and the blocked tools go to the SDK as `disallowedTools`, which
 wins over `allowedTools`.

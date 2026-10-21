@@ -101,7 +101,7 @@ Status: **open** means the default is in use and waits for the owner.
 
 - Status: open
 - Default: rules live per bot, at most 50. Only the owner changes them,
-  through owner-only routes. A panel in the web app is planned in #56. The bot has no tool for them, so a
+  through owner-only routes and the Rules panel in the web app. The bot has no tool for them, so a
   web page cannot talk it into more rights.
 - Each rule is a sentence. Every sentence goes into the system prompt as an
   owner rule. Block rules can also name tools, such as `Bash(rm:*)` or
