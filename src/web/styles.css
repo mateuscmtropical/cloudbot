@@ -209,10 +209,14 @@ svg {
     padding: 12px 16px;
 }
 
-.rules-button,
-.screen-button {
+.header-actions {
     position: absolute;
     right: 16px;
+    display: flex;
+    gap: 6px;
+}
+
+.header-button {
     padding: 6px 14px;
     border: none;
     border-radius: var(--radius-control);
@@ -221,12 +225,9 @@ svg {
     cursor: pointer;
 }
 
-.screen-button {
-    right: 84px;
-}
-
+/* The name stays centered, so it keeps clear of the actions on both sides */
 .bot-pill {
-    max-width: calc(100% - 200px);
+    max-width: calc(100% - 600px);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -409,6 +410,30 @@ svg {
     background: var(--color-danger);
 }
 
+/* Three header buttons do not fit around a centered name in a narrow column, so they line up after it */
+
+@media (max-width: 1000px) {
+    .conversation-header {
+        gap: 6px;
+    }
+
+    .bot-pill {
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: none;
+        margin-right: auto;
+    }
+
+    .header-actions {
+        position: static;
+        flex: none;
+    }
+
+    .header-button {
+        padding: 6px 10px;
+    }
+}
+
 /* Narrow screens: the bot list becomes a slide-over */
 
 @media (max-width: 720px) {
@@ -441,7 +466,7 @@ svg {
     }
 
     .conversation-header {
-        position: relative;
+        padding-left: 64px;
     }
 
     .message-list {
@@ -597,6 +622,13 @@ svg {
 
 .rules-problem {
     color: var(--color-danger);
+}
+
+.rules-panel button:not(.icon-button) {
+    padding: 4px 12px;
+    border: none;
+    border-radius: 999px;
+    background: var(--color-surface-raised);
 }
 
 .desktop-panel {
