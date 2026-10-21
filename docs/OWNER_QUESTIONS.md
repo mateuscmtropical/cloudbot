@@ -114,6 +114,18 @@ Status: **open** means the default is in use and waits for the owner.
 - Other options: one holder for each bot, which matters when v0.5 adds bots
   that share one browser.
 
+## Document tools (#69)
+
+- Status: open
+- Default: Python 3 from Debian with `openpyxl`, `python-docx`, `python-pptx`,
+  `reportlab`, `pypdf` and `matplotlib`, plus `poppler-utils`. The image grows
+  by roughly 150 MB. The bot writes files in its workspace and sends them with
+  `share_file`.
+- Limits: there is no office suite, so the bot cannot convert a document to
+  PDF or render a slide to an image.
+- Other options: add LibreOffice for conversion and rendering. It adds several
+  hundred MB.
+
 ## Secure form for secrets the bot uses (#44)
 
 - Status: open
