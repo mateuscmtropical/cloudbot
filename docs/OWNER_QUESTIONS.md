@@ -53,7 +53,8 @@ Status: **open** means the default is in use and waits for the owner.
 - Status: open
 - Default: the desktop writes one log at
   `/home/bot/.cache/cloudbot-desktop/desktop.log`. It starts empty on each
-  start of the desktop. The server log only says when the desktop exits.
+  start of the desktop. The server log says when the desktop exits, with the
+  last lines of the script's own messages, and when it starts again.
 
 ## Secure form for secrets the bot uses (#44)
 
