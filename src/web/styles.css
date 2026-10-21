@@ -956,3 +956,12 @@ svg {
     overflow: hidden;
     background: #000;
 }
+
+/* Local mode shows the browser's frames. The picture keeps its shape inside the panel. */
+.desktop-screen.screencast img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+}

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { BrowserControl, BrowserError, MAX_PAGE_TEXT_LENGTH, parseWebUrl } from './BrowserControl.ts';
+import { BrowserControl, BrowserError, MAX_PAGE_TEXT_LENGTH, devtoolsSocketUrl, parseWebUrl } from './BrowserControl.ts';
 import { createFakeSocketFactory } from './testCdp.ts';
 import type { FakeCdpSocket } from './testCdp.ts';
 import type { CdpAnswer, SentCall } from './testCdp.ts';
@@ -69,6 +69,53 @@ function createBrowser(answer: CdpAnswer, targets: unknown = [{ type: 'page', we
     return { browser, sockets, fetchCalls };
 }
 
+describe('devtoolsSocketUrl', () => {
+    it('accepts a ws socket on loopback, on the DevTools port, under /devtools/', () => {
+        expect(devtoolsSocketUrl('ws://127.0.0.1:9222/devtools/page/one', '9222'))
+            .toBe('ws://127.0.0.1:9222/devtools/page/one');
+        expect(devtoolsSocketUrl('ws://localhost:9222/devtools/browser/x', '9222'))
+            .toBe('ws://localhost:9222/devtools/browser/x');
+    });
+
+    it('refuses another host, another port, another scheme or path, and text that is not a URL', () => {
+        expect(devtoolsSocketUrl('ws://192.168.1.5:9222/devtools/page/one', '9222'))
+            .toBeUndefined();
+        expect(devtoolsSocketUrl('ws://127.0.0.1:8080/devtools/page/one', '9222'))
+            .toBeUndefined();
+        expect(devtoolsSocketUrl('wss://127.0.0.1:9222/devtools/page/one', '9222'))
+            .toBeUndefined();
+        expect(devtoolsSocketUrl('ws://127.0.0.1:9222/json/list', '9222'))
+            .toBeUndefined();
+        expect(devtoolsSocketUrl('not a url', '9222'))
+            .toBeUndefined();
+        expect(devtoolsSocketUrl(undefined, '9222'))
+            .toBeUndefined();
+    });
+});
+
+describe('disable', () => {
+    it('makes every action fail with the reason, without asking the browser', async () => {
+        const { browser, fetchCalls } = createBrowser(pageAnswer({ title: 'Example', url: 'https://example.com/', text: 'Hello' }));
+
+        browser.disable('The browser tools are off.');
+
+        await expect(browser.read()).rejects.toThrow('The browser tools are off.');
+        expect(fetchCalls.calls)
+            .toEqual([]);
+    });
+
+    it('lets actions through again after enable, once the gate check has passed', async () => {
+        const { browser, fetchCalls } = createBrowser(pageAnswer({ title: 'Example', url: 'https://example.com/', text: 'Hello' }));
+
+        browser.disable('The browser tools are off.');
+        browser.enable();
+
+        await expect(browser.read()).resolves.toMatchObject({ title: 'Example' });
+        expect(fetchCalls.calls)
+            .not.toEqual([]);
+    });
+});
+
 describe('parseWebUrl', () => {
     it('accepts http and https addresses', () => {
         expect(parseWebUrl('https://example.com'))
@@ -94,6 +141,27 @@ afterEach(() => {
 });
 
 describe('BrowserControl', () => {
+    it('asks the DevTools port on each action, so a browser that starts later is found', async () => {
+        const sockets = createFakeSocketFactory(pageAnswer({ title: 'Example', url: 'https://example.com/', text: 'Hello' }));
+        const fetchCalls = createFetch([{ type: 'page', webSocketDebuggerUrl: 'ws://127.0.0.1:51234/devtools/page/one' }], {});
+        const devtools: { url: string | undefined } = { url: undefined };
+        const browser = new BrowserControl({
+            devtoolsUrl: () => devtools.url,
+            fetchFunction: fetchCalls.fetchFunction,
+            socketFactory: sockets.factory,
+            sleep: async () => {},
+        });
+
+        await expect(browser.read()).rejects.toThrow('not running');
+        expect(fetchCalls.calls)
+            .toEqual([]);
+
+        devtools.url = 'http://127.0.0.1:51234';
+        await browser.read();
+        expect(fetchCalls.calls[0])
+            .toEqual({ url: 'http://127.0.0.1:51234/json/list', method: 'GET' });
+    });
+
     it('opens a page, waits for it to load and returns its text', async () => {
         const { browser, sockets, fetchCalls } = createBrowser(pageAnswer({ title: 'Example', url: 'https://example.com/', text: 'Hello' }));
 

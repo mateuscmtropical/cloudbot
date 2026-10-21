@@ -916,7 +916,7 @@ describe('ChatService', () => {
         expect(turnRequest?.allowedTools)
             .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME]);
         expect(turnRequest?.systemPrompt)
-            .toBe(buildSystemPrompt(bot));
+            .toBe(buildSystemPrompt(bot, { hasBrowser: false }));
     });
 
     it('offers bot_create to the bot only when the approval gate exists', async () => {

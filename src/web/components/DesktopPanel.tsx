@@ -3,14 +3,14 @@ import type { ReactElement } from 'react';
 
 import RFB from '@novnc/novnc';
 
-import type { ScreenHolderName } from '../../shared/chatTypes.ts';
-import { getScreenHolder, releaseScreen, takeScreen } from '../apiClient.ts';
+import type { ScreenHolderName, ScreenViewName } from '../../shared/chatTypes.ts';
+import { getScreenHolder, getScreenView, releaseScreen, takeScreen } from '../apiClient.ts';
+import { ScreencastView } from './ScreencastView.tsx';
+import type { ConnectionState } from './ScreencastView.tsx';
 
 interface DesktopPanelProps {
     onClose: () => void;
 }
-
-type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 
 const VNC_PATH = '/api/desktop/vnc';
 // The bot can hand over the screen while the panel is open, so the holder is read again from time to time.
@@ -28,6 +28,8 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
     const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
     // Bumped by the reconnect button.
     const [connectAttempt, setConnectAttempt] = useState(0);
+    // VNC on the Docker desktop, or the browser's frames in local mode. Unknown until the server answers.
+    const [view, setView] = useState<ScreenViewName | undefined>(undefined);
     const clientRef = useRef<RFB | null>(null);
     const [holder, setHolder] = useState<ScreenHolderName>('bot');
     // The connect effect reads the holder from here, so a new client starts with the right mode.
@@ -63,6 +65,14 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
     }, []);
 
     useEffect(() => {
+        getScreenView()
+            .then(setView)
+            .catch(() => {
+                setConnectionState('disconnected');
+            });
+    }, []);
+
+    useEffect(() => {
         if (clientRef.current !== null) {
             clientRef.current.viewOnly = holder !== 'person';
         }
@@ -84,7 +94,7 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
     useEffect(() => {
         const screenElement = screenRef.current;
 
-        if (screenElement === null) {
+        if (view !== 'vnc' || screenElement === null) {
             return;
         }
 
@@ -113,7 +123,7 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
             clientRef.current = null;
             client.disconnect();
         };
-    }, [connectAttempt]);
+    }, [connectAttempt, view]);
 
     return (
         <section className="desktop-panel" aria-label="Bot screen">
@@ -153,7 +163,9 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
                         </p>
                     )
                 : null}
-            <div className="desktop-screen" ref={screenRef} />
+            {view === 'screencast'
+                ? <ScreencastView holder={holder} attempt={connectAttempt} onStateChange={setConnectionState} />
+                : <div className="desktop-screen" ref={screenRef} />}
         </section>
     );
 }

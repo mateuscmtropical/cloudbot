@@ -2,8 +2,9 @@ import { CdpConnection, CdpError } from './CdpConnection.ts';
 import type { CdpSocketFactory } from './CdpConnection.ts';
 
 interface BrowserControlOptions {
-    // The DevTools HTTP address, such as http://127.0.0.1:9222.
-    devtoolsUrl: string;
+    // The DevTools HTTP address, such as http://127.0.0.1:9222. A function is asked on each action, so a browser
+    // that starts later, or restarts on another port, is found. It returns undefined while no browser has a port.
+    devtoolsUrl: string | (() => string | undefined);
     // Tests inject fakes here.
     fetchFunction?: typeof fetch;
     socketFactory?: CdpSocketFactory;
@@ -50,6 +51,8 @@ const KEY_DEFINITIONS: Record<BrowserKey, KeyDefinition> = {
 const BROWSER_KEYS = Object.keys(KEY_DEFINITIONS) as BrowserKey[];
 // docker/cloudbot-desktop starts Chromium with this DevTools port, on localhost only.
 const DESKTOP_DEVTOOLS_URL = 'http://127.0.0.1:9222';
+const LOOPBACK_HOSTNAME = '127.0.0.1';
+const NOT_RUNNING_MESSAGE = 'The browser is not running. Try again in a few seconds.';
 const MAX_PAGE_TEXT_LENGTH = 20_000;
 const LOAD_WAIT_MS = 15_000;
 const DEVTOOLS_HTTP_TIMEOUT_MS = 5_000;
@@ -186,7 +189,9 @@ function parseWebUrl(rawUrl: string): string {
 // Drives the page that is shown on the bot's screen. Each action opens its own
 // connection, so a browser restart between two actions does not break the next one.
 class BrowserControl {
-    private readonly devtoolsUrl: string;
+    private readonly devtoolsUrl: string | (() => string | undefined);
+    // Set when the browser must not be used, such as when its gate check fails. Every action then reports it.
+    private disabledReason: string | undefined;
     private readonly fetchFunction: typeof fetch;
     private readonly socketFactory: CdpSocketFactory | undefined;
     private readonly sleep: (delayMs: number) => Promise<void>;
@@ -197,6 +202,16 @@ class BrowserControl {
         this.fetchFunction = options.fetchFunction ?? fetch;
         this.socketFactory = options.socketFactory;
         this.sleep = options.sleep ?? defaultSleep;
+    }
+
+    // Turns the browser tools off. Each action then fails with the reason.
+    disable(reason: string): void {
+        this.disabledReason = reason;
+    }
+
+    // Turns the browser tools back on, after the gate check has passed.
+    enable(): void {
+        this.disabledReason = undefined;
     }
 
     async open(rawUrl: string): Promise<PageText> {
@@ -321,6 +336,17 @@ class BrowserControl {
         return this.withPage(page => this.readPage(page));
     }
 
+    // A connection the caller keeps open, such as the live view of the screen. The caller closes it.
+    async connectPage(): Promise<CdpConnection> {
+        const socketUrl = await this.findPageSocketUrl();
+
+        try {
+            return await CdpConnection.open(socketUrl, this.socketFactory);
+        } catch {
+            throw new BrowserError('The browser is not running. Try again in a few seconds.');
+        }
+    }
+
     private async dispatchClick(page: CdpConnection, point: { x: number; y: number }): Promise<void> {
         await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
         await page.call('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
@@ -437,45 +463,95 @@ class BrowserControl {
         }
     }
 
+    private currentDevtoolsUrl(): string | undefined {
+        return typeof this.devtoolsUrl === 'string' ? this.devtoolsUrl : this.devtoolsUrl();
+    }
+
     private async findPageSocketUrl(): Promise<string> {
+        if (this.disabledReason !== undefined) {
+            throw new BrowserError(this.disabledReason);
+        }
+
+        const devtoolsUrl = this.currentDevtoolsUrl();
+
+        if (devtoolsUrl === undefined) {
+            throw new BrowserError(NOT_RUNNING_MESSAGE);
+        }
+
+        const devtoolsPort = new URL(devtoolsUrl).port;
         let targets: unknown;
 
         try {
             const signal = AbortSignal.timeout(DEVTOOLS_HTTP_TIMEOUT_MS);
-            const response = await this.fetchFunction(`${this.devtoolsUrl}/json/list`, { signal });
+            const response = await this.fetchFunction(`${devtoolsUrl}/json/list`, { signal });
 
             targets = await response.json();
         } catch {
-            throw new BrowserError('The browser is not running. Try again in a few seconds.');
+            throw new BrowserError(NOT_RUNNING_MESSAGE);
         }
 
         const pages = Array.isArray(targets) ? (targets as PageTarget[]).filter(target => target.type === 'page') : [];
-        const socketUrl = pages[0]?.webSocketDebuggerUrl;
+        const firstPage = pages[0];
 
-        if (socketUrl !== undefined) {
-            return socketUrl;
+        if (firstPage === undefined) {
+            return this.openNewPage(devtoolsUrl, devtoolsPort);
         }
 
-        return this.openNewPage();
+        return checkedSocketUrl(firstPage.webSocketDebuggerUrl, devtoolsPort);
     }
 
     // All tabs can be closed on the screen. Then a new blank tab is opened.
-    private async openNewPage(): Promise<string> {
+    private async openNewPage(devtoolsUrl: string, devtoolsPort: string): Promise<string> {
+        let target: PageTarget | undefined;
+
         try {
             const signal = AbortSignal.timeout(DEVTOOLS_HTTP_TIMEOUT_MS);
-            const response = await this.fetchFunction(`${this.devtoolsUrl}/json/new?about:blank`, { method: 'PUT', signal });
-            const target = await response.json() as PageTarget;
+            const response = await this.fetchFunction(`${devtoolsUrl}/json/new?about:blank`, { method: 'PUT', signal });
 
-            if (target.webSocketDebuggerUrl !== undefined) {
-                return target.webSocketDebuggerUrl;
-            }
+            target = await response.json() as PageTarget;
         } catch {
-            // Falls through to the same error as a browser that is not running.
+            // Falls through to the same error as a browser with no page.
         }
 
-        throw new BrowserError('The browser has no open page. Try again in a few seconds.');
+        if (target?.webSocketDebuggerUrl === undefined) {
+            throw new BrowserError('The browser has no open page. Try again in a few seconds.');
+        }
+
+        return checkedSocketUrl(target.webSocketDebuggerUrl, devtoolsPort);
     }
 }
 
-export { BROWSER_KEYS, BrowserControl, BrowserError, DESKTOP_DEVTOOLS_URL, MAX_PAGE_TEXT_LENGTH, parseWebUrl };
+// The socket of a page must be this browser's own: ws on loopback, on the DevTools port, under /devtools/.
+// Anything else is refused, so a bad answer cannot send the bot's commands somewhere else.
+function devtoolsSocketUrl(raw: unknown, devtoolsPort: string): string | undefined {
+    if (typeof raw !== 'string') {
+        return undefined;
+    }
+
+    let parsed: URL;
+
+    try {
+        parsed = new URL(raw);
+    } catch {
+        return undefined;
+    }
+
+    const isLoopbackHost = parsed.hostname === LOOPBACK_HOSTNAME || parsed.hostname === 'localhost';
+    const isOwnPort = parsed.port === devtoolsPort;
+    const isDevtoolsPath = parsed.pathname.startsWith('/devtools/');
+
+    return parsed.protocol === 'ws:' && isLoopbackHost && isOwnPort && isDevtoolsPath ? parsed.href : undefined;
+}
+
+function checkedSocketUrl(raw: unknown, devtoolsPort: string): string {
+    const socketUrl = devtoolsSocketUrl(raw, devtoolsPort);
+
+    if (socketUrl === undefined) {
+        throw new BrowserError('The browser gave an address that is not its own, so it was not used.');
+    }
+
+    return socketUrl;
+}
+
+export { BROWSER_KEYS, BrowserControl, BrowserError, DESKTOP_DEVTOOLS_URL, GATE_REFUSED_ERROR, KEY_DEFINITIONS, MAX_PAGE_TEXT_LENGTH, devtoolsSocketUrl, parseWebUrl };
 export type { BrowserControlOptions, BrowserKey, ClickResult, PageText };

@@ -13,6 +13,7 @@ import { readPublicBaseUrl } from './access/setupLinkUrl.ts';
 import { createChatRoutes } from './chat/createChatRoutes.ts';
 import type { ChatService } from './chat/ChatService.ts';
 import { createScreenRoutes } from './desktop/createScreenRoutes.ts';
+import type { ScreenViewName } from '../shared/chatTypes.ts';
 import type { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { createRuleRoutes } from './rules/createRuleRoutes.ts';
 import { createAppRoutes } from './apps/createAppRoutes.ts';
@@ -58,6 +59,8 @@ interface AppOptions {
     // Webhook calls wait for the setup to finish. Without it the server is always ready.
     isReady?: () => boolean;
     screen?: ScreenHolder;
+    // The live view of the screen. Docker uses VNC, and local mode uses the browser's frames.
+    screenView?: ScreenViewName;
 }
 
 const DEFAULT_WEB_ROOT = 'dist/web';
@@ -170,7 +173,7 @@ function createApp(options: AppOptions): Hono {
     }
 
     if (options.screen !== undefined) {
-        const screenRoutes = createScreenRoutes(options.screen);
+        const screenRoutes = createScreenRoutes(options.screen, options.screenView);
 
         app.route('/', screenRoutes);
     }

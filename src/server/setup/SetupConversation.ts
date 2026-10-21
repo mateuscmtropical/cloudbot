@@ -30,11 +30,15 @@ interface SetupConversationOptions {
     signOut?: () => Promise<void>;
     // True when no agent user is set, so the bot runs as the owner's account.
     localMode: boolean;
+    // Why the bot has no browser on this computer. The setup says so once.
+    noBrowser?: 'notInstalled' | 'leftover' | undefined;
 }
 
 const SETUP_STATE_KEY = 'claude.setup';
 const API_KEY_NAME = 'ANTHROPIC_API_KEY';
 const LOCAL_MODE_LINE = 'Local mode: I run as you, on this computer, with your files and your account.';
+const NO_BROWSER_LINE = 'This computer has no browser for me, so I cannot browse. Install Chrome, Chromium or Edge to give me one.';
+const LEFTOVER_BROWSER_LINE = 'A browser from my last run is still open on this computer, so I cannot browse. Close that CloudBot browser window, then restart CloudBot.';
 const LOGIN_FAILURES = {
     timeout: 'Sign-in timed out.',
     cliMissing: 'The Claude CLI is missing.',
@@ -189,6 +193,14 @@ class SetupConversation {
 
         if (this.options.localMode) {
             await this.say(LOCAL_MODE_LINE);
+        }
+
+        if (this.options.noBrowser === 'notInstalled') {
+            await this.say(NO_BROWSER_LINE);
+        }
+
+        if (this.options.noBrowser === 'leftover') {
+            await this.say(LEFTOVER_BROWSER_LINE);
         }
 
         await this.askMode();
