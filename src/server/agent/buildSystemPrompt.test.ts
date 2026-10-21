@@ -12,6 +12,15 @@ describe('buildSystemPrompt', () => {
             .not.toContain('documents helper');
     });
 
+    it('names models_set only when the bot can change its models', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+
+        expect(buildSystemPrompt(profile, { hasModels: true }))
+            .toContain('models_set');
+        expect(buildSystemPrompt(profile))
+            .not.toContain('models_set');
+    });
+
     it('says nothing about helpers when none is active', () => {
         const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' });
 

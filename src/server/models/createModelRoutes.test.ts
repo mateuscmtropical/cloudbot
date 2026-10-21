@@ -40,7 +40,7 @@ describe('model routes', () => {
         expect(response.status)
             .toBe(200);
         expect(await response.json())
-            .toEqual(NO_CHOICES);
+            .toEqual({ ...NO_CHOICES, aliases: ['fable', 'opus', 'sonnet', 'haiku'] });
     });
 
     it('answers 404 for a bot that does not exist', async () => {

@@ -225,9 +225,9 @@ svg {
     cursor: pointer;
 }
 
-/* The name stays centered, so it keeps clear of the actions on both sides */
+/* The name stays centered, so it keeps clear of the actions on both sides. The four buttons take about 310px. */
 .bot-pill {
-    max-width: calc(100% - 600px);
+    max-width: calc(100% - 640px);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -410,9 +410,9 @@ svg {
     background: var(--color-danger);
 }
 
-/* Three header buttons do not fit around a centered name in a narrow column, so they line up after it */
+/* The header buttons do not fit around a centered name in a narrow column, so they line up after it */
 
-@media (max-width: 1000px) {
+@media (max-width: 1200px) {
     .conversation-header {
         gap: 6px;
     }
@@ -465,8 +465,25 @@ svg {
         left: 12px;
     }
 
+    /* A phone has no room for the name and four buttons in one row, so the buttons take a second row */
     .conversation-header {
+        flex-wrap: wrap;
+        row-gap: 8px;
         padding-left: 64px;
+    }
+
+    .menu-button {
+        top: 12px;
+    }
+
+    .header-actions {
+        flex-basis: 100%;
+        justify-content: flex-end;
+        gap: 4px;
+    }
+
+    .header-button {
+        padding: 6px 10px;
     }
 
     .message-list {
@@ -618,6 +635,31 @@ svg {
 
 .rules-form input {
     flex: 1 1 200px;
+}
+
+/* One row per kind of work: the label, then its select. */
+.models-form {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 16em);
+    gap: 8px 12px;
+    align-items: center;
+}
+
+.models-form select {
+    padding: 4px 8px;
+    border: none;
+    border-radius: var(--radius-control);
+    background: var(--color-surface-raised);
+}
+
+.models-form button[type="submit"] {
+    grid-column: 1;
+    justify-self: start;
+}
+
+/* Groups form fields only to disable them together. Its children lay out as if it were not there. */
+.plain-fieldset {
+    display: contents;
 }
 
 .rules-problem {

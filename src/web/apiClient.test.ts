@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { listBots, listMessages, listRoutines, removeRoutine, RequestFailedError, stopTurn, uploadAttachments } from './apiClient.ts';
+import { getModelSettings, listBots, listMessages, listRoutines, removeRoutine, RequestFailedError, saveModelSettings, stopTurn, uploadAttachments } from './apiClient.ts';
 
 function stubFetch(response: Response): ReturnType<typeof vi.fn> {
     const fetchMock = vi.fn(() => Promise.resolve(response));
@@ -98,5 +98,26 @@ describe('apiClient', () => {
 
         expect(fetchMock)
             .toHaveBeenCalledWith('/api/bots/bot%2F1/routines/routine-1', { method: 'DELETE' });
+    });
+
+    it('reads the model settings and the aliases of a bot', async () => {
+        const fetchMock = stubFetch(Response.json({ chat: 'haiku', routines: null, review: null, browsing: null, documents: null, aliases: ['haiku'] }));
+
+        const settings = await getModelSettings('bot-1');
+
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/bots/bot-1/models', {});
+        expect(settings.aliases)
+            .toEqual(['haiku']);
+    });
+
+    it('saves all five model settings of a bot with one PUT', async () => {
+        const fetchMock = stubFetch(Response.json({ chat: 'haiku', routines: null, review: null, browsing: null, documents: null }));
+        const settings = { chat: 'haiku', routines: null, review: null, browsing: null, documents: null };
+
+        await saveModelSettings('bot-1', settings);
+
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/bots/bot-1/models', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
     });
 });

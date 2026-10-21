@@ -26,6 +26,7 @@ import { BROWSER_TOOL_FULL_NAMES, createBrowserTools } from '../desktop/createBr
 import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import { ROUTINE_TOOL_FULL_NAMES, createRoutineTools } from '../routines/createRoutineTools.ts';
+import { MODELS_SET_TOOL_FULL_NAME, createModelTools } from '../models/createModelTools.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
 import { REQUEST_SCREEN_TOOL_FULL_NAME, createRequestScreenTool } from '../desktop/createScreenTools.ts';
 import type { ScreenHolder } from '../desktop/ScreenHolder.ts';
@@ -1203,11 +1204,12 @@ class ChatService {
             const screenTools = this.createScreenTools(botId);
             const secretTools = this.createSecretTools(botId);
             const routineTools = this.routineStore === undefined ? [] : createRoutineTools(this.routineStore, botId);
+            const modelTools = this.modelStore === undefined ? [] : createModelTools(this.modelStore, botId);
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...secretTools, ...screenTools, ...routineTools],
+                [...browserTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools],
             );
             const prompt = uploads.length === 0 ? text : `${text}\n\n${describeAttachments(uploads)}`;
             const images = readTurnImages(uploads);
@@ -1239,6 +1241,7 @@ class ChatService {
                 systemPrompt: buildSystemPrompt(bot, {
                     hasBrowser: this.browser !== undefined,
                     hasRoutines: this.routineStore !== undefined,
+                    hasModels: this.modelStore !== undefined,
                     ownerRules,
                     helpers: helperKinds,
                 }),
@@ -1326,8 +1329,9 @@ class ChatService {
         const screenToolNames = this.browser === undefined || this.screen === undefined ? [] : [REQUEST_SCREEN_TOOL_FULL_NAME];
 
         const routineToolNames = this.routineStore === undefined ? [] : ROUTINE_TOOL_FULL_NAMES;
+        const modelToolNames = this.modelStore === undefined ? [] : [MODELS_SET_TOOL_FULL_NAME];
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames];
     }
 
     // With a session to resume, a failure before the session starts is held back

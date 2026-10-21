@@ -6,6 +6,7 @@ import { renderMarkdown } from '../markdown.ts';
 import { Composer } from './Composer.tsx';
 import type { DraftAttachment } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
+import { ModelsPanel } from './ModelsPanel.tsx';
 import { RoutinesPanel } from './RoutinesPanel.tsx';
 import { RulesPanel } from './RulesPanel.tsx';
 import type { MessageActions } from './MessageItem.tsx';
@@ -96,6 +97,8 @@ function ConversationView({
     const [rulesBotId, setRulesBotId] = useState<string | undefined>(undefined);
     // The id of the bot whose routines are open. Switching to another bot closes the panel.
     const [routinesBotId, setRoutinesBotId] = useState<string | undefined>(undefined);
+    // The id of the bot whose models are open. Switching to another bot closes the panel.
+    const [modelsBotId, setModelsBotId] = useState<string | undefined>(undefined);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
     const [shownBotId, setShownBotId] = useState(bot?.id);
 
@@ -104,9 +107,11 @@ function ConversationView({
         setShownBotId(bot?.id);
         setRulesBotId(undefined);
         setRoutinesBotId(undefined);
+        setModelsBotId(undefined);
     }
     const isRulesOpen = bot !== undefined && rulesBotId === bot.id;
     const isRoutinesOpen = bot !== undefined && routinesBotId === bot.id;
+    const isModelsOpen = bot !== undefined && modelsBotId === bot.id;
     const botId = bot?.id;
 
     // Older messages are added above the ones on screen. The anchor message is kept at the same
@@ -223,6 +228,15 @@ function ConversationView({
                                 >
                                     Routines
                                 </button>
+                                <button
+                                    type="button"
+                                    className="header-button"
+                                    onClick={() => {
+                                        setModelsBotId(isModelsOpen ? undefined : bot.id);
+                                    }}
+                                >
+                                    Models
+                                </button>
                             </div>
                         )}
             </header>
@@ -255,6 +269,17 @@ function ConversationView({
                             botName={botName}
                             onClose={() => {
                                 setRoutinesBotId(undefined);
+                            }}
+                        />
+                    )
+                : null}
+            {isModelsOpen
+                ? (
+                        <ModelsPanel
+                            botId={bot.id}
+                            botName={botName}
+                            onClose={() => {
+                                setModelsBotId(undefined);
                             }}
                         />
                     )

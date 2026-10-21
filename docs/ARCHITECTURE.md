@@ -401,6 +401,13 @@ wins over `allowedTools`.
 
 ## Model choices
 
+The web app shows them in `ModelsPanel`, opened with the Models button in the
+conversation header. It saves all five choices with one `PUT`. The bot can
+change them with the `models_set` tool. The tool merges the fields it gets with
+the stored choices, validates the result with `parseModelInput`, and is
+reviewed like other setting changes, because it is not on the skip list in
+`classifyToolCall`.
+
 `ModelStore` keeps one row per bot in the `bot_models` table, with a choice for
 each kind of work: `chat`, `routines`, `review`, `browsing` and `documents`. A
 null choice keeps the CLI default. For `browsing` and `documents` a null choice
