@@ -281,7 +281,7 @@ class BrowserControl {
         }
     }
 
-    // A dialog that opens during the action is closed with Cancel, and its text is kept for the model.
+    // A dialog that opens during the action is closed with Cancel, or with Leave for a leave-page dialog. Its text is kept for the model.
     // A dialog that was already open blocks Page.enable. Only a navigation gets past it.
     private async watchDialogs(page: CdpConnection, canRecoverFromDialog: boolean): Promise<void> {
         page.onEvent((method, params) => {
@@ -293,8 +293,11 @@ class BrowserControl {
 
             const shortMessage = message.slice(0, MAX_DIALOG_TEXT_LENGTH);
 
+            // Cancel on a leave-page dialog would keep the bot on the page, so that one is accepted.
+            const shouldAccept = readStringField(params, 'type') === 'beforeunload';
+
             this.dismissedDialogs.push(shortMessage);
-            page.call('Page.handleJavaScriptDialog', { accept: false })
+            page.call('Page.handleJavaScriptDialog', { accept: shouldAccept })
                 .catch(() => {
                     // The dialog may already be gone, for example after a navigation.
                 });

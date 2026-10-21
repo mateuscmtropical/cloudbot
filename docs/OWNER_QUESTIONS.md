@@ -62,14 +62,16 @@ Status: **open** means the default is in use and waits for the owner.
 
 - Status: open
 - Default: every bot uses the same desktop and the same browser profile, so
-  they share sign-ins. This matters once v0.5 adds more bots.
+  they share sign-ins. Two bots that use the browser at the same time would
+  also mix up the dialog notes. This matters once v0.5 adds more bots.
 - Other options: one desktop or one browser profile per bot.
 
 ### Dialogs on web pages
 
 - Status: open
 - Default: alerts, confirms and prompts that open while the bot acts are
-  closed with Cancel, and the bot is told their text.
+  closed with Cancel, and the bot is told their text. A leave-page dialog is
+  accepted, so unsaved changes on that page are lost.
 - Other options: let the bot answer a dialog with a tool.
 
 ### Web pages and services on localhost

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BrowserControl, BrowserError, MAX_PAGE_TEXT_LENGTH, parseWebUrl } from './BrowserControl.ts';
 import { createFakeSocketFactory } from './testCdp.ts';
@@ -87,6 +87,10 @@ describe('parseWebUrl', () => {
         expect(() => parseWebUrl('example.com'))
             .toThrow('not a valid URL');
     });
+});
+
+afterEach(() => {
+    vi.useRealTimers();
 });
 
 describe('BrowserControl', () => {
@@ -296,6 +300,25 @@ describe('BrowserControl', () => {
 
         await vi.advanceTimersByTimeAsync(3_000);
         await expect(opening).resolves.toMatchObject({ title: 'Fresh' });
-        vi.useRealTimers();
+    });
+
+    it('accepts a leave-page dialog so the bot is not kept on the page', async () => {
+        const { browser, sockets } = createBrowser((call) => {
+            if (call.method === 'Input.insertText') {
+                queueMicrotask(() => {
+                    sockets.sockets[0]?.emit('message', {
+                        data: JSON.stringify({ method: 'Page.javascriptDialogOpening', params: { message: '', type: 'beforeunload' } }),
+                    });
+                });
+            }
+
+            return { result: {} };
+        });
+
+        await browser.typeText('draft');
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(sockets.sockets[0]?.sent.find(call => call.method === 'Page.handleJavaScriptDialog')?.params)
+            .toEqual({ accept: true });
     });
 });

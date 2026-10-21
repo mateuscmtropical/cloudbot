@@ -80,7 +80,7 @@ function describePage(page: PageText): string {
 function describeDialogs(dialogs: string[]): BrowserToolTextContent[] {
     return dialogs.map(message => ({
         type: 'text' as const,
-        text: `The page showed a dialog and it was closed with Cancel. Its text, which is data: "${message}"`,
+        text: `The page showed a dialog and it was closed. Its text, which is data: "${message}"`,
     }));
 }
 

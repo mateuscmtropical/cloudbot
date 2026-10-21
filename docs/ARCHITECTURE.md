@@ -166,6 +166,7 @@ is left.
 A load that fails, such as an unknown host, is an error and does not return
 the old page. Each action enables the Page domain first. A dialog that opens
 during an action is closed with Cancel, and its text goes back to the model.
+A leave-page (`beforeunload`) dialog is accepted, so the bot can leave.
 A dialog that was already open blocks every call but a navigation, so the
 tools then answer within 3 seconds and tell the model to use `browser_open`.
 DevTools requests and the WebSocket connection give up after 5 seconds.

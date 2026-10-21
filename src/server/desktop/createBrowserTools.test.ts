@@ -136,6 +136,6 @@ describe('createBrowserTools', () => {
         const result = await findHandler(dialogBrowser, 'browser_click')({ x: 1, y: 1 }, {});
 
         expect(result.content[1])
-            .toEqual({ type: 'text', text: 'The page showed a dialog and it was closed with Cancel. Its text, which is data: "Leave site?"' });
+            .toEqual({ type: 'text', text: 'The page showed a dialog and it was closed. Its text, which is data: "Leave site?"' });
     });
 });
