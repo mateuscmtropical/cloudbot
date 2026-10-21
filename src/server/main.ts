@@ -2,6 +2,7 @@ import type { Server } from 'node:http';
 import { serve } from '@hono/node-server';
 import { validateAgentIsolation } from './agent/buildClaudeCommand.ts';
 
+import { CLEANUP_INTERVAL_MS } from './attachments/cleanUploads.ts';
 import { SdkAgentRunner } from './agent/SdkAgentRunner.ts';
 import { SetupAccess } from './access/SetupAccess.ts';
 import { buildSetupLink, readServerPort } from './access/setupLinkUrl.ts';
@@ -79,6 +80,20 @@ chatService.setSetup(setup);
 // Queued messages and usage limit waits from the last run continue before the first request.
 await chatService.resumeQueue();
 
+function cleanUploads(): void {
+    chatService.cleanUploads()
+        .catch(() => {
+            console.error('Could not clean up old uploads.');
+        });
+}
+
+// Old uploads are removed on start and once a day.
+cleanUploads();
+
+const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
+
+cleanupTimer.unref();
+
 const app = createApp({ version, access, chatService });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
@@ -101,6 +116,7 @@ const server = serve({ fetch: app.fetch, port }, (address) => {
 });
 
 function shutdown(): void {
+    clearInterval(cleanupTimer);
     setup.close();
     server.close();
     (server as Server).closeAllConnections();

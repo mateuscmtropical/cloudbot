@@ -80,6 +80,10 @@ vi.mock('./chat/ChatService.ts', () => ({
 
         async resumeQueue(): Promise<void> {}
 
+        cleanUploads(): Promise<string[]> {
+            return Promise.resolve([]);
+        }
+
         postSetupMessage = runtime.post;
     },
 }));

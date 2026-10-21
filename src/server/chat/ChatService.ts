@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { AgentEvent } from '../agent/AgentEvent.ts';
@@ -7,6 +7,7 @@ import type { AgentRunner, TurnImage, TurnRequest } from '../agent/AgentRunner.t
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
 import { PROFILE_SERVER_NAME, UPDATE_PROFILE_TOOL_FULL_NAME, createProfileToolServer } from '../agent/createProfileToolServer.ts';
 import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from '../agent/prepareAgentWorkspace.ts';
+import { UNSENT_UPLOAD_MAX_AGE_MS, readUploadRetentionMs, removeOldUploads } from '../attachments/cleanUploads.ts';
 import { describeAttachments, readTurnImages } from '../attachments/attachmentPrompt.ts';
 import { readMaxUploadBytes, removeFiles, saveFiles } from '../attachments/saveUpload.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
@@ -36,6 +37,8 @@ interface ChatServiceOptions {
     agentUser?: string | undefined;
     // Caps the bytes a bot's next message may hold. Defaults to CLOUDBOT_MAX_UPLOAD_MB.
     maxUploadBytes?: number | undefined;
+    // How long used files stay. Defaults to CLOUDBOT_UPLOAD_RETENTION_DAYS, or 30 days.
+    uploadRetentionMs?: number | undefined;
 }
 
 interface SessionOption {
@@ -158,6 +161,25 @@ function pickAvatarColor(botId: string): string {
     return AVATAR_COLORS[paletteIndex] ?? FALLBACK_AVATAR_COLOR;
 }
 
+// Files that were uploaded and never sent. The age comes from the modification time.
+async function findExpiredUploadIds(uploads: SavedUpload[], nowMs: number): Promise<Set<string>> {
+    const checkUpload = async (upload: SavedUpload): Promise<string | undefined> => {
+        try {
+            const fileStats = await stat(upload.absolutePath);
+
+            return nowMs - fileStats.mtimeMs > UNSENT_UPLOAD_MAX_AGE_MS ? upload.id : undefined;
+        } catch {
+            return upload.id;
+        }
+    };
+    const checkResults = uploads.map(checkUpload);
+    const checks = await Promise.all(checkResults);
+
+    const expiredIds = checks.filter((id): id is string => id !== undefined);
+
+    return new Set(expiredIds);
+}
+
 // The next message may hold at most MAX_PENDING_FILES files and maxBytes bytes.
 function isOverPendingLimit(uploads: SavedUpload[], maxBytes: number): boolean {
     const totalBytes = uploads.reduce((sum, upload) => sum + upload.sizeBytes, 0);
@@ -252,6 +274,7 @@ class ChatService {
     private readonly dataDir: string;
     private readonly agentUser: string | undefined;
     private readonly maxPendingBytes: number;
+    private readonly uploadRetentionMs: number;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
     private setup: SetupConversation | undefined;
@@ -269,6 +292,7 @@ class ChatService {
         this.dataDir = options.dataDir;
         this.agentUser = options.agentUser;
         this.maxPendingBytes = options.maxUploadBytes ?? readMaxUploadBytes(process.env);
+        this.uploadRetentionMs = options.uploadRetentionMs ?? readUploadRetentionMs(process.env);
     }
 
     // Uploads live outside the agent's writable workspace. The agent reads them and cannot change them.
@@ -278,6 +302,10 @@ class ChatService {
         }
 
         return join(this.dataDir, 'uploads', botId);
+    }
+
+    private uploadRoot(): string {
+        return this.agentUser ? AGENT_UPLOAD_ROOT : join(this.dataDir, 'uploads');
     }
 
     // Every path the bot uses starts here, so turns and uploads share one folder.
@@ -369,6 +397,36 @@ class ChatService {
         await removeFiles([removedUpload]);
 
         return true;
+    }
+
+    // Removes old files from the upload folders. Used files go after the retention time.
+    // Files that were never sent go after one day, and queued messages keep their files.
+    // Returns the removed paths. A file left from before a restart counts as used.
+    async cleanUploads(nowMs: number = Date.now()): Promise<string[]> {
+        const waitingLists = [...this.pendingUploads.values()];
+        const waitingUploads = waitingLists.flat();
+        const expiredIds = await findExpiredUploadIds(waitingUploads, nowMs);
+        // The pending lists are read again after the checks. A turn that took files meanwhile keeps them.
+        const expiredUploads = [...this.pendingUploads.entries()].flatMap(([botId, uploads]) => {
+            const botExpired = this.isBusy(botId) ? [] : uploads.filter(upload => expiredIds.has(upload.id));
+            const keptUploads = uploads.filter(upload => !botExpired.includes(upload));
+
+            this.pendingUploads.set(botId, keptUploads);
+
+            return botExpired;
+        });
+
+        await removeFiles(expiredUploads);
+
+        // A bot with a running, queued or waiting turn keeps every file. A pending file is not old by now.
+        const isProtected = (botId: string, path: string): boolean => this.isBusy(botId)
+            || (this.pendingUploads.get(botId) ?? []).some(upload => upload.absolutePath === path);
+        const removedOldPaths = await removeOldUploads({
+            uploadRoot: this.uploadRoot(), isProtected, maxAgeMs: this.uploadRetentionMs, nowMs,
+        });
+        const expiredPaths = expiredUploads.map(upload => upload.absolutePath);
+
+        return [...expiredPaths, ...removedOldPaths];
     }
 
     // Puts uploads back in front of the pending ones, so the files of earlier turns stay first.
