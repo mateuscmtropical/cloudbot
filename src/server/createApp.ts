@@ -74,13 +74,35 @@ const SESSION_COOKIE_OPTIONS = {
     maxAge: SESSION_MAX_AGE_SECONDS,
 } as const;
 
+// Vite names every file under assets after a hash of its content, so a browser may keep those for good.
+// Every other file, such as index.html, is checked again on each visit, so a new build shows at once.
+const HASHED_ASSET_PREFIX = '/assets/';
+const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
+const REVALIDATE_CACHE = 'no-cache';
+const NO_STORE = 'no-store';
+
 function skipApiRoutes(serve: MiddlewareHandler): MiddlewareHandler {
     return (context, next) => {
         if (context.req.path.startsWith(API_PREFIX)) {
             return next();
         }
 
-        return serve(context, next);
+        if (!context.req.path.startsWith(HASHED_ASSET_PREFIX)) {
+            context.header('Cache-Control', REVALIDATE_CACHE);
+
+            return serve(context, next);
+        }
+
+        context.header('Cache-Control', IMMUTABLE_CACHE);
+
+        // A missing asset, such as a chunk of an older build, never falls back to index.html.
+        // That page would be kept for a year under the asset's name.
+        return serve(context, () => {
+            context.header('Cache-Control', NO_STORE);
+            context.res = context.body(null, 404);
+
+            return Promise.resolve();
+        });
     };
 }
 

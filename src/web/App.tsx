@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatEvent, ChatMessage, ChatWebhookUrlEvent } from '../shared/chatTypes.ts';
 import { BotList } from './components/BotList.tsx';
+import type { MessageActions } from './components/MessageItem.tsx';
 import { deriveMascotState } from './mascotState.ts';
 import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
@@ -196,6 +197,48 @@ function App(): ReactElement {
         }
 
         let isCurrent = true;
+        // Deltas can arrive faster than the screen draws. They are joined and drawn once per frame,
+        // so a fast stream does not render the whole chat for every few characters.
+        let pendingDraftText = '';
+        let pendingDraftBotId = '';
+        let draftFrame: number | undefined;
+
+        const cancelDraftFrame = (): void => {
+            if (draftFrame !== undefined) {
+                window.cancelAnimationFrame(draftFrame);
+                draftFrame = undefined;
+            }
+        };
+
+        const flushPendingDraft = (): void => {
+            cancelDraftFrame();
+
+            if (pendingDraftText === '') {
+                return;
+            }
+
+            const deltaText = pendingDraftText;
+            const deltaBotId = pendingDraftBotId;
+            const knownSequences = messagesRef.current.map(message => message.sequence);
+            const knownSequence = Math.max(0, ...knownSequences);
+
+            pendingDraftText = '';
+            setDraft((previousDraft) => {
+                const isNewDraft = previousDraft.botId !== deltaBotId;
+
+                return {
+                    botId: deltaBotId,
+                    text: (isNewDraft ? '' : previousDraft.text) + deltaText,
+                    afterSequence: isNewDraft ? knownSequence : previousDraft.afterSequence,
+                };
+            });
+        };
+
+        // A stored message or a turn change ends the block. Its buffered text is part of that block, so it goes too.
+        const dropPendingDraft = (): void => {
+            cancelDraftFrame();
+            pendingDraftText = '';
+        };
 
         // Files waiting for the next message come back on connect and after every change to them.
         loadPendingUploads(selectedBotId);
@@ -228,6 +271,9 @@ function App(): ReactElement {
                     }
 
                     const replies = loadedMessages.filter(message => message.role === 'assistant' && message.body.kind === 'text');
+
+                    // The check below must see every delta that came before this answer.
+                    flushPendingDraft();
 
                     // A reply stored after the draft started means the draft is already written, as a message event would.
                     setDraft((previousDraft) => {
@@ -275,17 +321,15 @@ function App(): ReactElement {
 
         const unsubscribe = subscribeToEvents(selectedBotId, (event: ChatEvent) => {
             if (event.type === 'textDelta') {
-                const knownSequences = messagesRef.current.map(message => message.sequence);
-                const knownSequence = Math.max(0, ...knownSequences);
+                if (pendingDraftText !== '' && pendingDraftBotId !== event.botId) {
+                    flushPendingDraft();
+                }
 
-                setDraft((previousDraft) => {
-                    const isNewDraft = previousDraft.botId !== event.botId;
-
-                    return {
-                        botId: event.botId,
-                        text: (isNewDraft ? '' : previousDraft.text) + event.text,
-                        afterSequence: isNewDraft ? knownSequence : previousDraft.afterSequence,
-                    };
+                pendingDraftBotId = event.botId;
+                pendingDraftText += event.text;
+                draftFrame ??= window.requestAnimationFrame(() => {
+                    draftFrame = undefined;
+                    flushPendingDraft();
                 });
 
                 return;
@@ -324,6 +368,7 @@ function App(): ReactElement {
 
             // A stored message ends the block being written, so its draft goes away.
             if (event.type === 'message') {
+                dropPendingDraft();
                 setDraft(emptyDraft);
                 setChatState(previousState => ({
                     ...previousState,
@@ -338,6 +383,7 @@ function App(): ReactElement {
                 return;
             }
 
+            dropPendingDraft();
             setDraft(emptyDraft);
             const wasRunning = runningBotIdRef.current === event.botId;
             const wasStopped = stoppedBotIdRef.current === event.botId;
@@ -378,11 +424,13 @@ function App(): ReactElement {
 
         return () => {
             isCurrent = false;
+            // The waiting text belongs to the bot that is left, so it is written to its draft and not lost.
+            flushPendingDraft();
             unsubscribe();
         };
     }, [selectedBotId, loadPendingUploads]);
 
-    function showMessageResult(resultPromise: Promise<ChatMessage>): void {
+    const showMessageResult = useCallback((resultPromise: Promise<ChatMessage>): void => {
         resultPromise
             .then((savedMessage) => {
                 setErrorText(undefined);
@@ -396,7 +444,7 @@ function App(): ReactElement {
 
                 setErrorText(serverMessage ?? 'The request failed. Try again.');
             });
-    }
+    }, []);
 
     function updateOlderPaging(botId: string, changes: Partial<OlderPagingState>): void {
         setChatState(previousState => ({
@@ -606,40 +654,44 @@ function App(): ReactElement {
         });
     }
 
-    function handleChoose(messageId: string, choiceId: string): Promise<void> {
-        if (selectedBotId === undefined) {
-            return Promise.resolve();
-        }
+    // One object per bot, so the memoized messages do not render again on every streamed delta.
+    const messageActions = useMemo((): MessageActions => ({
+        onChoose: (messageId, choiceId) => {
+            if (selectedBotId === undefined) {
+                return Promise.resolve();
+            }
 
-        const choicePromise = submitChoice(selectedBotId, messageId, choiceId);
+            const choicePromise = submitChoice(selectedBotId, messageId, choiceId);
 
-        showMessageResult(choicePromise);
+            showMessageResult(choicePromise);
 
-        return choicePromise.then(() => undefined, () => undefined);
-    }
+            return choicePromise.then(() => undefined, () => undefined);
+        },
+        onSubmitCode: (messageId, code) => {
+            if (selectedBotId === undefined) {
+                return;
+            }
 
-    function handleSubmitCode(messageId: string, code: string): void {
-        if (selectedBotId === undefined) {
-            return;
-        }
+            const codePromise = submitCode(selectedBotId, messageId, code);
 
-        const codePromise = submitCode(selectedBotId, messageId, code);
+            showMessageResult(codePromise);
+        },
+        // Settles when the server answered, so the form can show that the key is being checked.
+        onSubmitSecret: (messageId, value) => {
+            if (selectedBotId === undefined) {
+                return Promise.resolve();
+            }
 
-        showMessageResult(codePromise);
-    }
+            const secretPromise = submitSecret(selectedBotId, messageId, value);
 
-    // Settles when the server answered, so the form can show that the key is being checked.
-    function handleSubmitSecret(messageId: string, value: string): Promise<void> {
-        if (selectedBotId === undefined) {
-            return Promise.resolve();
-        }
+            showMessageResult(secretPromise);
 
-        const secretPromise = submitSecret(selectedBotId, messageId, value);
-
-        showMessageResult(secretPromise);
-
-        return secretPromise.then(() => undefined, () => undefined);
-    }
+            return secretPromise.then(() => undefined, () => undefined);
+        },
+        onOpenScreen: () => {
+            setScreenRequestId(current => current + 1);
+        },
+    }), [selectedBotId, showMessageResult]);
 
     const selectedBot = bots.find(bot => bot.id === selectedBotId);
     const visibleMessages = messages.filter(message => message.botId === selectedBotId);
@@ -704,14 +756,7 @@ function App(): ReactElement {
                     attachments={botAttachments}
                     isUploading={isUploading}
                     onRemoveAttachment={handleRemoveAttachment}
-                    actions={{
-                        onChoose: handleChoose,
-                        onSubmitCode: handleSubmitCode,
-                        onSubmitSecret: handleSubmitSecret,
-                        onOpenScreen: () => {
-                            setScreenRequestId(current => current + 1);
-                        },
-                    }}
+                    actions={messageActions}
                     hasOlderMessages={hasOlderMessages}
                     isLoadingOlder={isLoadingOlder}
                     onLoadOlder={handleLoadOlder}

@@ -355,6 +355,70 @@ describe('App mascot', () => {
 });
 
 describe('App draft', () => {
+    async function renderWithStream(): Promise<{ container: HTMLElement; emit: (event: ChatEvent) => void }> {
+        const stream: { onEvent?: (event: ChatEvent) => void } = {};
+
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(subscribeToEvents)
+            .mockImplementation((_botId, onEvent) => {
+                stream.onEvent = onEvent;
+
+                return () => {};
+            });
+
+        const { container } = render(<App />);
+
+        await waitFor(() => {
+            expect(stream.onEvent)
+                .toBeDefined();
+        });
+
+        return {
+            container,
+            emit: (event) => {
+                act(() => {
+                    stream.onEvent?.(event);
+                });
+            },
+        };
+    }
+
+    it('joins the deltas of one frame into the draft', async () => {
+        const { container, emit } = await renderWithStream();
+
+        emit({ type: 'textDelta', botId: 'bot-1', text: 'Hello ' });
+        emit({ type: 'textDelta', botId: 'bot-1', text: 'there' });
+
+        await waitFor(() => {
+            expect(container.querySelector('.is-draft')?.textContent
+                .trim())
+                .toBe('Hello there');
+        });
+    });
+
+    it('drops deltas still waiting for a frame when the stored message arrives', async () => {
+        const { container, emit } = await renderWithStream();
+        const stored: ChatMessage = { id: 'r1', botId: 'bot-1', role: 'assistant', createdAt: 1, sequence: 1, body: { kind: 'text', text: 'Stored reply' } };
+
+        emit({ type: 'textDelta', botId: 'bot-1', text: 'Stored' });
+        emit({ type: 'message', message: stored });
+
+        await waitFor(() => {
+            expect(container.textContent)
+                .toContain('Stored reply');
+        });
+        // Two frames pass, so a delta drawn late would show by now.
+        await new Promise((resolve) => {
+            window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(resolve);
+            });
+        });
+
+        expect(container.querySelector('.is-draft'))
+            .toBeNull();
+    });
+
     it('drops the draft when a reply missed during a dropout shows up in the reload', async () => {
         const stream: { onEvent?: (event: ChatEvent) => void; onOpen?: () => void } = {};
         const reply: ChatMessage = {
@@ -394,8 +458,11 @@ describe('App draft', () => {
             stream.onEvent?.({ type: 'textDelta', botId: 'bot-1', text: 'Partial' });
         });
 
-        expect(container.querySelector('.is-draft'))
-            .not.toBeNull();
+        // Deltas are drawn on the next animation frame.
+        await waitFor(() => {
+            expect(container.querySelector('.is-draft'))
+                .not.toBeNull();
+        });
 
         act(() => {
             stream.onOpen?.();

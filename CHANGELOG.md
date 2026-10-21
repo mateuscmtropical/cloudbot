@@ -6,6 +6,14 @@ All notable changes to this project are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A streamed reply stays smooth in a long chat. Stored messages no longer render again on every new word, and the words that arrive within one screen frame are drawn together. On a phone class CPU with 200 messages on screen, a fast reply went from about 11 to about 49 frames per second.
+- Mascots that are off screen stop following the pointer and stop blinking, so a long chat does no work for them.
+- The mascot's eyes move much further toward the pointer and the caret, and the whole cloud leans a little the same way, so the look reads on a small mascot too. Under reduced motion the eyes and the lean still move, without the glide.
+- New messages, the streamed reply and panels move in with short transform and opacity animations, and the bot list slides over more softly on a phone. Buttons give a little when pressed. Reduced motion turns these off.
+- The server lets the browser keep the built web app files, whose names change with each build, for a year. The page itself is checked on every visit, so a new version still shows at once. A repeat visit no longer downloads the app again.
+
 ### Fixed
 
 - The plus in the new bot and attach buttons sits exactly in the center of the round button.

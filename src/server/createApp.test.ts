@@ -329,6 +329,34 @@ describe('createApp', () => {
             .toContain('<div id="root"></div>');
     });
 
+    it('lets the browser keep hashed assets for good, and checks the page again on every visit', async () => {
+        const webRoot = await createWebRoot();
+        const app = createApp({ version: '1.2.3', access, webRoot });
+        const assetResponse = await app.request('/assets/app.js');
+        const pageResponse = await app.request('/');
+        const routeResponse = await app.request('/chats/42');
+
+        expect(assetResponse.headers.get('cache-control'))
+            .toBe('public, max-age=31536000, immutable');
+        expect(pageResponse.headers.get('cache-control'))
+            .toBe('no-cache');
+        expect(routeResponse.headers.get('cache-control'))
+            .toBe('no-cache');
+    });
+
+    it('answers a missing asset with 404 and no-store, not with index.html', async () => {
+        const webRoot = await createWebRoot();
+        const app = createApp({ version: '1.2.3', access, webRoot });
+        const response = await app.request('/assets/missing.js');
+
+        expect(response.status)
+            .toBe(404);
+        expect(response.headers.get('cache-control'))
+            .toBe('no-store');
+        expect(await response.text())
+            .not.toContain('<div id="root"></div>');
+    });
+
     it('does not answer unknown api routes with index.html', async () => {
         const webRoot = await createWebRoot();
         const app = createApp({ version: '1.2.3', access, webRoot });

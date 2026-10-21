@@ -175,6 +175,13 @@ svg {
     transition: transform 160ms ease-out;
 }
 
+/* The whole cloud leans toward the look. It turns around its bottom middle, so it seems to sit in place. */
+.cloud-mascot .cloud-look {
+    transform-box: fill-box;
+    transform-origin: 50% 90%;
+    transition: transform 220ms ease-out;
+}
+
 /* Keeps the space of a mascot that is not shown, so the bubbles above line up with the last one. */
 .mascot-gap {
     flex-shrink: 0;
@@ -200,7 +207,8 @@ svg {
     }
 
     .cloud-mascot .cloud-eyes,
-    .cloud-mascot .cloud-face > g {
+    .cloud-mascot .cloud-face > g,
+    .cloud-mascot .cloud-look {
         transition: none !important;
     }
 }
@@ -597,6 +605,107 @@ svg {
     .setup-card,
     .text-message {
         max-width: 92%;
+    }
+}
+
+/* Motion. Only transform and opacity move, so the browser animates them without new layout.
+   Reduced motion turns all of this off. The mascot keeps its looks and blinks, see above. */
+@keyframes rise-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+}
+
+@keyframes drop-in {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+}
+
+@keyframes fade-in {
+    from {
+        opacity: 0;
+    }
+}
+
+/* The connected apps panel is centered with a transform, so its entry keeps that shift. */
+@keyframes centered-drop-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -6px);
+    }
+}
+
+/* A new message rises into place. The streamed reply rises once, when its first words come in.
+   ConversationView marks live messages only, so a loaded page of history does not move. */
+.message-list > .is-entering,
+.message.is-draft {
+    animation: rise-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.desktop-panel,
+.webhook-created {
+    animation: drop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.connect-apps-panel {
+    animation: centered-drop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* A short press gives the tap some weight. */
+.icon-button,
+.send-button,
+.choice-button,
+.connect-apps-button,
+.link-card {
+    transition: transform 120ms ease-out, background-color 120ms ease-out;
+}
+
+.icon-button:active,
+.send-button:active,
+.choice-button:active,
+.connect-apps-button:active,
+.link-card:active {
+    transform: scale(0.95);
+}
+
+@media (max-width: 720px) {
+    .bot-list {
+        transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .scrim {
+        animation: fade-in 200ms ease-out;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .message-list > .is-entering,
+    .message.is-draft,
+    .desktop-panel,
+    .webhook-created,
+    .connect-apps-panel,
+    .scrim {
+        animation: none;
+    }
+
+    .icon-button,
+    .send-button,
+    .choice-button,
+    .connect-apps-button,
+    .link-card,
+    .bot-list {
+        transition: none;
+    }
+
+    .icon-button:active,
+    .send-button:active,
+    .choice-button:active,
+    .connect-apps-button:active,
+    .link-card:active {
+        transform: none;
     }
 }
 

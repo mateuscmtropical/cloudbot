@@ -47,10 +47,13 @@ const EYE_BULGE = 10;
 const EYE_RADIUS = 7;
 const FACE_STROKE_WIDTH = 7;
 const SPARKLE_RADIUS = 11;
-// How far the eyes may move toward the pointer, in viewBox units.
-const EYE_MAX_OFFSET = 3;
+// How far the eyes may move toward the pointer, in viewBox units. Nine keeps the eyes inside the face of every body.
+const EYE_MAX_OFFSET = 9;
 // While the owner types, the eyes look down at the text box. The mascots sit above it.
-const TYPING_LOOK_DOWN = 2;
+const TYPING_LOOK_DOWN = 6;
+// The whole cloud leans and shifts a little toward the look, so the look still reads on a small mascot.
+const LOOK_TILT_DEG_PER_UNIT = 0.8;
+const LOOK_SHIFT_PER_UNIT = 0.3;
 const DEFAULT_SIZE = 40;
 const NO_EYE_OFFSET: Point = { x: 0, y: 0 };
 // The pause between two blinks is random between these two delays.
@@ -172,16 +175,41 @@ function CloudMascot({ color, shape, state, size = DEFAULT_SIZE }: CloudMascotPr
     const svgRef = useRef<SVGSVGElement>(null);
     const [eyeOffset, setEyeOffset] = useState<Point>({ x: 0, y: 0 });
     const [isBlinking, setIsBlinking] = useState(false);
+    // A long chat holds many mascots. Only the ones on screen listen to the pointer and run a blink timer.
+    const [isOnScreen, setIsOnScreen] = useState(true);
     // The eyes move and blink under reduced motion too. The stylesheet only drops the easing there.
     const hasMovingEyes = isPointerFace(state);
+    const isLooking = hasMovingEyes && isOnScreen;
     const isBlinkShown = hasMovingEyes && isBlinking;
     const body = BODY_SPECS[shape];
     const fill = MASCOT_COLORS[color];
 
+    useEffect(() => {
+        const element = svgRef.current;
+
+        if (element === null || typeof IntersectionObserver === 'undefined') {
+            return undefined;
+        }
+
+        const observer = new IntersectionObserver((entries) => {
+            const latestEntry = entries.at(-1);
+
+            if (latestEntry !== undefined) {
+                setIsOnScreen(latestEntry.isIntersecting);
+            }
+        });
+
+        observer.observe(element);
+
+        return () => {
+            observer.disconnect();
+        };
+    }, []);
+
     // One shared listener serves every mascot. Each one turns the pointer into its own eye offset.
     // While the owner types, the eyes follow the caret along the text box, through the shared typing listener.
     useEffect(() => {
-        if (!hasMovingEyes) {
+        if (!isLooking) {
             return undefined;
         }
 
@@ -223,11 +251,11 @@ function CloudMascot({ color, shape, state, size = DEFAULT_SIZE }: CloudMascotPr
             // Leaving the look resets the eyes to the middle, so they do not stay turned after the owner stops typing.
             setEyeOffset(previous => (previous.x === 0 && previous.y === 0 ? previous : NO_EYE_OFFSET));
         };
-    }, [hasMovingEyes, state]);
+    }, [isLooking, state]);
 
     // A blink after a random pause. No timer runs while the tab is hidden, and the next blink waits until it shows again.
     useEffect(() => {
-        if (!hasMovingEyes) {
+        if (!isLooking) {
             return undefined;
         }
 
@@ -272,26 +300,34 @@ function CloudMascot({ color, shape, state, size = DEFAULT_SIZE }: CloudMascotPr
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             stopBlinking();
         };
-    }, [hasMovingEyes]);
+    }, [isLooking]);
 
     const eyeTransform = hasMovingEyes
         ? `translate(${String(eyeOffset.x)}px, ${String(eyeOffset.y)}px)`
+        : undefined;
+    const lookShiftX = roundOffset(eyeOffset.x * LOOK_SHIFT_PER_UNIT);
+    const lookShiftY = roundOffset(eyeOffset.y * LOOK_SHIFT_PER_UNIT);
+    const lookTilt = roundOffset(eyeOffset.x * LOOK_TILT_DEG_PER_UNIT);
+    const lookTransform = hasMovingEyes
+        ? `translate(${String(lookShiftX)}px, ${String(lookShiftY)}px) rotate(${String(lookTilt)}deg)`
         : undefined;
 
     return (
         <span className={`cloud-mascot is-${state}`} data-state={state} data-shape={shape} style={{ width: size, height: size }}>
             <svg ref={svgRef} viewBox={VIEW_BOX} aria-hidden="true" focusable="false">
-                <g className="cloud-body" fill={fill} stroke="none">
-                    {body.circles.map(circle => (
-                        <circle key={`${String(circle.cx)}-${String(circle.cy)}`} cx={circle.cx} cy={circle.cy} r={circle.r} />
-                    ))}
-                    <rect x={body.base.x} y={body.base.y} width={body.base.width} height={body.base.height} rx={body.base.rx} />
-                    {body.dot === undefined ? null : <circle cx={body.dot.cx} cy={body.dot.cy} r={body.dot.r} />}
-                </g>
-                <g className="cloud-face" data-face={state} data-tracks-pointer={hasMovingEyes ? 'true' : undefined}>
-                    <g style={{ transform: eyeTransform }}>
-                        <g className="cloud-eyes" data-blinking={isBlinkShown ? 'true' : undefined}>
-                            {renderFace(state)}
+                <g className="cloud-look" style={{ transform: lookTransform }}>
+                    <g className="cloud-body" fill={fill} stroke="none">
+                        {body.circles.map(circle => (
+                            <circle key={`${String(circle.cx)}-${String(circle.cy)}`} cx={circle.cx} cy={circle.cy} r={circle.r} />
+                        ))}
+                        <rect x={body.base.x} y={body.base.y} width={body.base.width} height={body.base.height} rx={body.base.rx} />
+                        {body.dot === undefined ? null : <circle cx={body.dot.cx} cy={body.dot.cy} r={body.dot.r} />}
+                    </g>
+                    <g className="cloud-face" data-face={state} data-tracks-pointer={hasMovingEyes ? 'true' : undefined}>
+                        <g style={{ transform: eyeTransform }}>
+                            <g className="cloud-eyes" data-blinking={isBlinkShown ? 'true' : undefined}>
+                                {renderFace(state)}
+                            </g>
                         </g>
                     </g>
                 </g>
