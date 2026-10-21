@@ -56,6 +56,11 @@ const DEVTOOLS_HTTP_TIMEOUT_MS = 5_000;
 // Page.enable does not answer while a dialog is open, so a short wait tells the two apart.
 const PAGE_ENABLE_TIMEOUT_MS = 3_000;
 const MAX_DIALOG_TEXT_LENGTH = 300;
+// The browser's proxy refuses private addresses, so a failed load may be one of them.
+const PRIVATE_ADDRESS_HINT = 'If the address is private, the browser refuses it. Use browser_allow_host only when the owner asks.';
+// Chromium reports a refusal by the gate with this code. The address is private, or nothing answered on it.
+const GATE_REFUSED_ERROR = 'ERR_SOCKS_CONNECTION_FAILED';
+const GATE_REFUSED_HINT = 'The browser refused this address because it is private or could not be reached. Ask the owner before using browser_allow_host.';
 const DIALOG_BLOCKED_MESSAGE = 'The page is showing a dialog or does not answer. Use browser_open to load a page again.';
 // A page that replaces itself while it loads destroys the context of the next evaluate. That is not a failure.
 const CONTEXT_GONE_PATTERN = /context was destroyed|cannot find context|execution context/i;
@@ -203,7 +208,9 @@ class BrowserControl {
 
             // A failed load answers with errorText, not with an error, and leaves the old page or an error page.
             if (errorText !== '') {
-                throw new BrowserError(`The page could not be opened: ${errorText}`);
+                const hint = errorText.includes(GATE_REFUSED_ERROR) ? GATE_REFUSED_HINT : PRIVATE_ADDRESS_HINT;
+
+                throw new BrowserError(`The page could not be opened: ${errorText}. ${hint}`);
             }
 
             await this.waitForLoad(page);

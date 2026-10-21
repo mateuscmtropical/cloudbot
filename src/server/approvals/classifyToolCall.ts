@@ -23,6 +23,13 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__request_secret',
     'mcp__cloudbot__share_file',
     'mcp__cloudbot__update_profile',
+    'mcp__cloudbot__browser_allowed_hosts',
+    'mcp__cloudbot__browser_remove_host',
+]);
+
+// Letting the browser reach a private host always needs the owner's approval, whatever the rules say.
+const ALWAYS_ASK_TOOL_NAMES = new Set([
+    'mcp__cloudbot__browser_allow_host',
 ]);
 
 // The tools of the bot itself have fixed names. Any other tool is an outside connector.
@@ -96,6 +103,10 @@ function isSensitiveWord(word: string): boolean {
 }
 
 function classifyToolCall(call: ToolCall): ToolCallClass {
+    if (ALWAYS_ASK_TOOL_NAMES.has(call.toolName)) {
+        return 'always-ask';
+    }
+
     if (SKIP_TOOL_NAMES.has(call.toolName)) {
         return 'skip';
     }

@@ -31,6 +31,20 @@ describe('page watch tools', () => {
     });
 });
 
+describe('browser allow tools', () => {
+    it('always asks the owner before the browser may reach a private host', () => {
+        expect(classify('mcp__cloudbot__browser_allow_host'))
+            .toBe('always-ask');
+    });
+
+    it('skips the list and the removal', () => {
+        expect(classify('mcp__cloudbot__browser_allowed_hosts'))
+            .toBe('skip');
+        expect(classify('mcp__cloudbot__browser_remove_host'))
+            .toBe('skip');
+    });
+});
+
 describe('webhook tools', () => {
     it('skips the list, and reviews create and delete', () => {
         expect(classify('mcp__cloudbot__webhook_list'))

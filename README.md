@@ -30,7 +30,8 @@ comes back when the job is done or when it needs you.
 - **Set itself up in the chat.** The first conversation asks how you want to
   connect Claude, signs you in and tells you when it is ready.
 - **Work on its own computer.** A browser, a terminal and files of its own.
-  It shows you screenshots as it works.
+  It shows you screenshots as it works. Its browser cannot reach private or
+  local addresses unless you allow a host.
 - **Hand the screen to you.** When a site asks for something only a person can
   do, such as a CAPTCHA or a 2FA code, it opens the screen for you and takes
   over again when you say so.

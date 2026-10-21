@@ -23,6 +23,8 @@ import { readMaxUploadBytes, removeFiles, saveFiles } from '../attachments/saveU
 import { readMaxShareBytes, shareWorkspaceFile } from '../files/shareFile.ts';
 import type { BrowserControl } from '../desktop/BrowserControl.ts';
 import { BROWSER_TOOL_FULL_NAMES, createBrowserTools } from '../desktop/createBrowserTools.ts';
+import { BROWSER_ALLOW_TOOL_FULL_NAMES, createBrowserAllowTools } from '../desktop/createBrowserAllowTools.ts';
+import type { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
 import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import { ROUTINE_TOOL_FULL_NAMES, createRoutineTools } from '../routines/createRoutineTools.ts';
@@ -96,6 +98,8 @@ interface ChatServiceOptions {
     limitStore?: LimitStore | undefined;
     // Page watches the bot can create, list and delete. Without it the bot has no watch tools.
     watchStore?: WatchStore | undefined;
+    // The private hosts the owner let the browser reach. Without it the bot has no browser allow tools.
+    browserAllowStore?: BrowserAllowStore | undefined;
     // Webhooks the bot can list, create and remove. Without it the bot has no webhook tools.
     webhookStore?: WebhookStore | undefined;
     // The address a new webhook URL starts with. Without it the bot cannot create webhooks.
@@ -385,6 +389,7 @@ class ChatService {
     private readonly modelStore: ModelStore | undefined;
     private readonly limitStore: LimitStore | undefined;
     private readonly watchStore: WatchStore | undefined;
+    private readonly browserAllowStore: BrowserAllowStore | undefined;
     private readonly webhookStore: WebhookStore | undefined;
     private readonly webhookBaseUrl: string | undefined;
     private readonly approvals: ApprovalGate | undefined;
@@ -424,6 +429,7 @@ class ChatService {
         this.modelStore = options.modelStore;
         this.limitStore = options.limitStore;
         this.watchStore = options.watchStore;
+        this.browserAllowStore = options.browserAllowStore;
         this.webhookStore = options.webhookStore;
         this.webhookBaseUrl = options.webhookBaseUrl;
         this.approvals = options.toolCallReviewer === undefined
@@ -1368,11 +1374,12 @@ class ChatService {
             const limitTools = this.limitStore === undefined ? [] : createLimitTools(this.limitStore, botId);
             const webhookTools = this.webhookTools(botId);
             const watchTools = this.watchStore === undefined ? [] : createWatchTools(this.watchStore, botId);
+            const browserAllowTools = this.browserAllowStore === undefined || this.browser === undefined ? [] : createBrowserAllowTools(this.browserAllowStore);
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools],
             );
             const prompt = uploads.length === 0 ? text : `${text}\n\n${describeAttachments(uploads)}`;
             const images = readTurnImages(uploads);
@@ -1498,6 +1505,7 @@ class ChatService {
     // Headless turns cannot answer a permission prompt, so the cloudbot tools the bot has are allowed up front.
     private allowedToolNames(): string[] {
         const browserToolNames = this.browser === undefined ? [] : BROWSER_TOOL_FULL_NAMES;
+        const browserAllowToolNames = this.browserAllowStore === undefined || this.browser === undefined ? [] : BROWSER_ALLOW_TOOL_FULL_NAMES;
         const typeSecretToolNames = this.browser === undefined ? [] : [TYPE_SECRET_TOOL_FULL_NAME];
         const secretToolNames = this.botSecrets === undefined ? [] : [REQUEST_SECRET_TOOL_FULL_NAME, ...typeSecretToolNames];
 
@@ -1509,7 +1517,7 @@ class ChatService {
         const webhookToolNames = this.webhookStore === undefined ? [] : WEBHOOK_TOOL_FULL_NAMES;
         const watchToolNames = this.watchStore === undefined ? [] : WATCH_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames];
     }
 
     private webhookTools(botId: string): CloudbotTool[] {

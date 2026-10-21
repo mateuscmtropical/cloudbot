@@ -285,6 +285,19 @@ describe('BrowserControl', () => {
             .rejects.toThrow('The page could not be opened: net::ERR_NAME_NOT_RESOLVED');
     });
 
+    it('tells the model to ask the owner when the gate refused the address', async () => {
+        const { browser } = createBrowser((call) => {
+            if (call.method === 'Page.navigate') {
+                return { result: { frameId: 'main', errorText: 'net::ERR_SOCKS_CONNECTION_FAILED' } };
+            }
+
+            return pageAnswer({ title: 'Old', url: 'https://old.example/', text: '' })(call);
+        });
+
+        await expect(browser.open('https://intranet.test'))
+            .rejects.toThrow('Ask the owner before using browser_allow_host.');
+    });
+
     it('keeps waiting when the page replaces itself while it loads', async () => {
         const readyStates = ['gone', 'complete'];
         const { browser } = createBrowser((call) => {

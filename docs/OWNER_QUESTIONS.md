@@ -85,15 +85,17 @@ Status: **open** means the default is in use and waits for the owner.
   accepted, so unsaved changes on that page are lost.
 - Other options: let the bot answer a dialog with a tool.
 
-### Web pages and services on localhost
+### Web pages and services on localhost (#99)
 
-- Status: open
-- Default: the browser shares the container's network, like the bot's shell.
-  A page the bot opens could send requests to services on `127.0.0.1`, such as
-  the key proxy in API key mode. Chromium's private network rules limit this,
-  but it is not tested here.
-- Other options: run Chromium in its own network namespace, or block
-  loopback addresses for web pages with a proxy rule.
+- Status: decided, #99.
+- Decision: Chromium sends all its traffic through a SOCKS5 gate in the server,
+  on port 9224. The gate connects only to public addresses, checked at the
+  address it connects to, so loopback, private, metadata and the key proxy are
+  out of reach for web pages. The owner can allow one private host with
+  `browser_allow_host`, which always asks for approval. See "Network gate" in
+  [ARCHITECTURE.md](ARCHITECTURE.md).
+- Not covered: the bot's shell is not behind the gate, so a command the bot runs
+  can still reach private addresses.
 
 ### Screen handoff (#65)
 

@@ -1,4 +1,5 @@
 import { BlockList, isIP } from 'node:net';
+import { networkInterfaces } from 'node:os';
 
 // Addresses a watched page may never be fetched from: loopback, private, link-local, shared (CGNAT),
 // multicast, reserved, benchmarking and broadcast ranges, plus the cloud metadata address over IPv6.
@@ -157,4 +158,60 @@ function isPublicAddress(address: string, localAddresses: string[] = []): boolea
     return globalUnicast.check(address, 'ipv6') && !blockedAddresses.check(address, 'ipv6');
 }
 
-export { embeddedIpv4, expandIpv6, isPublicAddress };
+// The private ranges an owner may allow the browser to reach. Loopback, unspecified, link-local, multicast and the
+// metadata addresses are not in these lists, so they are never allowable.
+const ALLOWABLE_PRIVATE_IPV4_SUBNETS: [string, number][] = [
+    ['10.0.0.0', 8],
+    ['100.64.0.0', 10],
+    ['172.16.0.0', 12],
+    ['192.168.0.0', 16],
+];
+const allowablePrivateIpv4 = new BlockList();
+const allowablePrivateIpv6 = new BlockList();
+// Cloud metadata addresses. Alibaba Cloud serves its metadata on 100.100.100.200, which sits inside 100.64/10.
+const METADATA_IPV4_ADDRESSES = new Set(['169.254.169.254', '100.100.100.200']);
+
+ALLOWABLE_PRIVATE_IPV4_SUBNETS.forEach(([network, prefix]) => {
+    allowablePrivateIpv4.addSubnet(network, prefix, 'ipv4');
+});
+
+allowablePrivateIpv6.addSubnet('fc00::', 7, 'ipv6');
+
+// True for a private address an owner may allow: 10/8, 100.64/10, 172.16/12, 192.168/16 and fc00::/7. Mapped and
+// NAT64 addresses are checked by their IPv4 address. Loopback, this machine's own addresses, unspecified, link-local
+// and the metadata addresses are never allowable, even when the owner allowed their host.
+function isAllowablePrivateAddress(address: string, localAddresses: string[] = []): boolean {
+    const family = isIP(address);
+
+    if (family === 0 || localAddresses.includes(address)) {
+        return false;
+    }
+
+    if (family === 4) {
+        return !METADATA_IPV4_ADDRESSES.has(address) && allowablePrivateIpv4.check(address, 'ipv4');
+    }
+
+    const groups = expandIpv6(address);
+
+    if (groups === undefined) {
+        return false;
+    }
+
+    const innerIpv4 = embeddedIpv4(groups);
+
+    if (innerIpv4 !== undefined) {
+        return isAllowablePrivateAddress(innerIpv4, localAddresses);
+    }
+
+    return allowablePrivateIpv6.check(address, 'ipv6') && !blockedAddresses.check(address, 'ipv6');
+}
+
+// The addresses this machine answers on. Its own addresses are never public, even when they look public.
+function readLocalAddresses(): string[] {
+    const networkTable = networkInterfaces();
+    const interfaceLists = Object.values(networkTable);
+
+    return interfaceLists.flatMap(entries => (entries ?? []).map(entry => entry.address));
+}
+
+export { embeddedIpv4, expandIpv6, isAllowablePrivateAddress, isPublicAddress, readLocalAddresses };

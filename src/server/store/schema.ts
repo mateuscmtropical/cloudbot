@@ -1,4 +1,4 @@
-import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 import type { RoutineSchedule } from '../routines/schedule.ts';
 
@@ -218,5 +218,21 @@ const botLimits = sqliteTable('bot_limits', {
     routineSteps: integer('routine_steps'),
 });
 
-export { botLimits, botModels, botRules, bots, messages, routines, settings, turnQueue, turnWaits, watches, webhooks };
+// Hosts the owner allowed the browser to reach although they are private. The browser is shared, so the list is too.
+// A port of 0 allows every port of the host.
+const browserAllowedHosts = sqliteTable('browser_allowed_hosts', {
+    id: text('id')
+        .primaryKey(),
+    host: text('host')
+        .notNull(),
+    port: integer('port')
+        .notNull(),
+    createdAt: integer('created_at')
+        .notNull(),
+}, table => [
+    uniqueIndex('browser_allowed_hosts_host_port')
+        .on(table.host, table.port),
+]);
+
+export { botLimits, botModels, botRules, bots, browserAllowedHosts, messages, routines, settings, turnQueue, turnWaits, watches, webhooks };
 export type { StoredUploadRecord };

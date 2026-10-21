@@ -3,6 +3,13 @@ import { checkCommandFloor } from './commandFloor.ts';
 import { classifyToolCall } from './classifyToolCall.ts';
 import type { EffortLevel } from '../models/modelChoices.ts';
 import type { ToolCallReviewer, ToolCallVerdict } from './ApprovalGate.ts';
+import { normalizeHost } from '../desktop/browserHost.ts';
+
+// The input of browser_allow_host, as the card reads it. Both fields come from the model, so they are checked.
+interface AllowHostInput {
+    host?: unknown;
+    port?: unknown;
+}
 
 // Sends one prompt to a model without tools and returns its text answer. The model and effort are the owner's review choices.
 // onCost gets the estimated cost of the call, so the turn's spending limit can count the review.
@@ -41,6 +48,7 @@ interface ModelAnswer {
     reason: string;
 }
 
+const ALLOW_HOST_TOOL_NAME = 'mcp__cloudbot__browser_allow_host';
 const MAX_INPUT_LENGTH = 10_000;
 const MAX_LINE_LENGTH = 400;
 const DEFAULT_DENY_REASON = 'The review agent refused this action.';
@@ -134,6 +142,20 @@ function toVerdict(answer: ModelAnswer, call: ToolCall): ToolCallVerdict {
     return { decision: 'allow' };
 }
 
+// The line the owner reads on the approval card. Opening a private host names the host, the other kinds name the risk.
+function describeAlwaysAsk(call: ToolCall): string {
+    if (call.toolName !== ALLOW_HOST_TOOL_NAME) {
+        return `Run ${call.toolName}, which can send a message, buy or book.`;
+    }
+
+    const input = call.input as AllowHostInput | null;
+    const rawHost = typeof input?.host === 'string' ? input.host : '';
+    const host = normalizeHost(rawHost) ?? '(unknown)';
+    const portText = typeof input?.port === 'number' ? `port ${String(input.port)}` : 'any port';
+
+    return `Let the browser reach the private host ${host}, ${portText}.`;
+}
+
 // Skips harmless calls, always asks for connector tools that send, buy or book, and lets a model judge the rest.
 // A model that fails or answers badly throws, and the approval gate then asks the owner.
 function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallReviewer {
@@ -152,7 +174,7 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
         }
 
         if (callClass === 'always-ask') {
-            return { decision: 'ask', summary: `Run ${call.toolName}, which can send a message, buy or book.` };
+            return { decision: 'ask', summary: describeAlwaysAsk(call) };
         }
 
         // The reviewer must see the whole input. A long one could hide its end behind a harmless start.
