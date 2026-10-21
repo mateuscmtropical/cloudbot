@@ -1,4 +1,5 @@
 import type { ToolCall } from '../agent/AgentRunner.ts';
+import { checkCommandFloor } from './commandFloor.ts';
 import { classifyToolCall } from './classifyToolCall.ts';
 import type { EffortLevel } from '../models/modelChoices.ts';
 import type { ToolCallReviewer, ToolCallVerdict } from './ApprovalGate.ts';
@@ -137,6 +138,13 @@ function toVerdict(answer: ModelAnswer, call: ToolCall): ToolCallVerdict {
 // A model that fails or answers badly throws, and the approval gate then asks the owner.
 function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallReviewer {
     return async (botId, call, signal) => {
+        // The floor runs before anything else. No rule, approval or model choice can lift it.
+        const floorReason = checkCommandFloor(call);
+
+        if (floorReason !== undefined) {
+            return { decision: 'deny', reason: floorReason };
+        }
+
         const callClass = classifyToolCall(call);
 
         if (callClass === 'skip') {
