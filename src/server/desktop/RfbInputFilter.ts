@@ -27,6 +27,8 @@ type InputAllowed = () => boolean;
 class RfbInputFilter {
     private readonly isInputAllowed: InputAllowed;
     private pending: Buffer = Buffer.alloc(0);
+    // The buttons x11vnc holds down, from the last pointer message that was forwarded.
+    private forwardedButtons = 0;
     private isVersionRead = false;
     private handshakeBytesLeft = AFTER_VERSION_BYTES;
 
@@ -98,9 +100,17 @@ class RfbInputFilter {
         // A key release always passes, so a key held when the screen changes hands does not stay down.
         const isKeyRelease = type === KEY_EVENT && this.pending[1] === 0;
         const isInput = type === KEY_EVENT || type === POINTER_EVENT || type === CLIENT_CUT_TEXT;
+        const buttons = type === POINTER_EVENT ? this.pending[1] ?? 0 : 0;
         const bytes = this.consume(size);
+        // A pointer message that only lets go of buttons passes too, so a button held when the screen changes hands does not stay down.
+        const isButtonRelease = type === POINTER_EVENT && buttons !== this.forwardedButtons && (buttons & ~this.forwardedButtons) === 0;
+        const isForwarded = !isInput || isKeyRelease || isButtonRelease || this.isInputAllowed();
 
-        return { bytes, isForwarded: !isInput || isKeyRelease || this.isInputAllowed() };
+        if (isForwarded && type === POINTER_EVENT) {
+            this.forwardedButtons = buttons;
+        }
+
+        return { bytes, isForwarded };
     }
 
     private consume(size: number): Buffer {

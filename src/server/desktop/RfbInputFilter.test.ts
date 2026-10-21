@@ -89,6 +89,25 @@ describe('RfbInputFilter', () => {
             .toEqual(keyUp);
     });
 
+    it('passes a pointer message that releases a held button but not one that presses', () => {
+        let isAllowed = true;
+        const filter = startedFilter(() => isAllowed);
+        const press = Buffer.from([5, 1, 0, 10, 0, 10]);
+        const release = Buffer.from([5, 0, 0, 12, 0, 12]);
+
+        expect(filter.filter(press))
+            .toEqual(press);
+
+        isAllowed = false;
+
+        expect(filter.filter(release))
+            .toEqual(release);
+        expect(filter.filter(press))
+            .toHaveLength(0);
+        expect(filter.filter(release))
+            .toHaveLength(0);
+    });
+
     it('refuses a client version other than 3.8', () => {
         const filter = new RfbInputFilter(() => false);
 

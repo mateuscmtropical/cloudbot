@@ -1001,6 +1001,17 @@ describe('ChatService', () => {
             .toBe('bot');
     });
 
+    it('does not take the screen from the owner when a second request fails', async () => {
+        const screen = new ScreenHolder();
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, screen });
+
+        screen.giveToPerson();
+
+        await expect(service.requestScreen('missing-bot', 'Reason')).rejects.toThrow();
+        expect(screen.holder)
+            .toBe('person');
+    });
+
     it('allows request_screen only with a browser and a screen', async () => {
         const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:1' });
         const withBoth = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);

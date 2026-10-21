@@ -107,9 +107,9 @@ Status: **open** means the default is in use and waits for the owner.
 - Limits: the guard covers the `browser_` tools and the live view. The bot's
   shell shares the container, so it could still reach x11vnc on `127.0.0.1:5900`
   or the DevTools port directly, as the localhost entry above says. A browser
-  action that is already running when the owner takes the screen finishes. A
-  pointer move from the owner that arrives after the screen goes back is
-  dropped, and key releases always pass. The live view accepts only RFB 3.8 and
+  action that is already running when the owner takes the screen finishes. Pointer
+  moves from the owner that arrive after the screen goes back are dropped.
+  Key releases and button releases always pass. The live view accepts only RFB 3.8 and
   closes on message types it does not know, such as desktop resize.
 - Other options: one holder for each bot, which matters when v0.5 adds bots
   that share one browser.

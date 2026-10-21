@@ -677,12 +677,16 @@ class ChatService {
         const body: TextBody = { kind: 'text', text: `I need you on my screen. ${reason}\n\nOpen the Screen panel, do what is needed, then give the screen back and send me a message.` };
 
         // The holder changes first, so a browser tool called in the same moment is already refused.
+        const wasHeldByPerson = this.screen?.isPersonHolding === true;
+
         this.screen?.giveToPerson();
 
         try {
             await this.saveAndPublish(botId, 'assistant', body);
         } catch (error: unknown) {
-            this.screen?.giveToBot();
+            if (!wasHeldByPerson) {
+                this.screen?.giveToBot();
+            }
 
             throw error;
         }
