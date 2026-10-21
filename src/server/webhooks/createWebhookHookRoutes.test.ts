@@ -2,7 +2,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SetupAccess } from '../access/SetupAccess.ts';
@@ -43,7 +42,7 @@ describe('createWebhookHookRoutes', () => {
     let webhook: WebhookRecord;
     let sentTexts: string[];
     let isReady: boolean;
-    let app: Hono;
+    let app: ReturnType<typeof createWebhookHookRoutes>;
 
     beforeEach(async () => {
         opened = await openDatabase(':memory:');
@@ -125,9 +124,14 @@ describe('createWebhookHookRoutes', () => {
 
         await store.add(botId, 'Build', hashWebhookToken(otherToken));
 
-        const calls = Array.from({ length: RATE_LIMIT_PER_BOT }, (_unused, index) => post(index % 2 === 0 ? TOKEN : otherToken, 'ping'));
+        // The calls go one after another, so the queue cap does not answer first: only the rate limit is tested here.
+        const sendInOrder = Array.from({ length: RATE_LIMIT_PER_BOT }, (_unused, index) => index)
+            .reduce(async (previous, index) => {
+                await previous;
+                await post(index % 2 === 0 ? TOKEN : otherToken, 'ping');
+            }, Promise.resolve());
 
-        await Promise.all(calls.map(call => Promise.resolve(call)));
+        await sendInOrder;
 
         const response = await post(otherToken, 'one more');
 

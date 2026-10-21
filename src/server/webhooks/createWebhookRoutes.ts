@@ -1,21 +1,12 @@
 import { Hono } from 'hono';
 
 import type { WebhookRecord, WebhookStore } from '../store/WebhookStore.ts';
+import type { BotWebhook, CreatedBotWebhook, WebhookRefusal } from '../../shared/webhookTypes.ts';
+import { DeliveryMemory, WebhookRefusalLog } from './webhookMemory.ts';
 import { buildWebhookUrl, createWebhookToken, hashWebhookToken } from './webhookToken.ts';
 
 interface WebhookErrorResponse {
     error: string;
-}
-
-interface BotWebhook {
-    id: string;
-    name: string;
-    createdAt: number;
-}
-
-// The URL is returned only by the create route, once. It is never stored or listed again.
-interface CreatedBotWebhook extends BotWebhook {
-    url: string;
 }
 
 // Webhooks are created, listed and removed here by the owner. The token and its hash are never listed.
@@ -24,6 +15,10 @@ interface WebhookRoutesOptions {
     hasBot: (botId: string) => Promise<boolean>;
     // The address the owner reaches the server at. A new webhook URL starts with it.
     publicBaseUrl: string;
+    // The refused calls shown with each webhook in the list.
+    refusals?: WebhookRefusalLog;
+    // The delivery ids of each webhook. They are dropped when the webhook is deleted.
+    deliveries?: DeliveryMemory;
 }
 
 const MAX_WEBHOOKS_PER_BOT = 10;
@@ -34,11 +29,12 @@ const WEBHOOK_NOT_FOUND: WebhookErrorResponse = { error: 'This bot has no webhoo
 const INVALID_NAME: WebhookErrorResponse = { error: `Send a name of 1 to ${String(MAX_NAME_LENGTH)} characters on one line.` };
 const TOO_MANY: WebhookErrorResponse = { error: `This bot has ${String(MAX_WEBHOOKS_PER_BOT)} webhooks. Delete one first.` };
 
-function toBotWebhook(record: WebhookRecord): BotWebhook {
+function toBotWebhook(record: WebhookRecord, refusals: WebhookRefusal[] = []): BotWebhook {
     return {
         id: record.id,
         name: record.name,
         createdAt: record.createdAt,
+        refusals,
     };
 }
 
@@ -92,6 +88,8 @@ async function addBotWebhook(webhookStore: WebhookStore, botId: string, payload:
 // These routes sit behind the session check.
 function createWebhookRoutes(options: WebhookRoutesOptions): Hono {
     const routes = new Hono();
+    const refusals = options.refusals ?? new WebhookRefusalLog();
+    const deliveries = options.deliveries ?? new DeliveryMemory();
 
     routes.get('/api/bots/:id/webhooks', async (context) => {
         const botId = context.req.param('id');
@@ -102,7 +100,11 @@ function createWebhookRoutes(options: WebhookRoutesOptions): Hono {
         }
 
         const records = await options.webhookStore.list(botId);
-        const botWebhooks = records.map(toBotWebhook);
+        const botWebhooks = records.map((record) => {
+            const recordRefusals = refusals.list(record.id);
+
+            return toBotWebhook(record, recordRefusals);
+        });
 
         return context.json(botWebhooks);
     });
@@ -134,6 +136,9 @@ function createWebhookRoutes(options: WebhookRoutesOptions): Hono {
         if (!isRemoved) {
             return context.json(WEBHOOK_NOT_FOUND, 404);
         }
+
+        refusals.forget(webhookId);
+        deliveries.forget(webhookId);
 
         return context.body(null, 204);
     });

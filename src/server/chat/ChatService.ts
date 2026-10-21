@@ -37,6 +37,7 @@ import type { TurnLimit } from '../../shared/limitTypes.ts';
 import type { LimitStore } from '../store/LimitStore.ts';
 import { WEBHOOK_TOOL_FULL_NAMES, createWebhookTools } from '../webhooks/createWebhookTools.ts';
 import type { WebhookCreation } from '../webhooks/createWebhookTools.ts';
+import type { DeliveryMemory, WebhookRefusalLog } from '../webhooks/webhookMemory.ts';
 import { WATCH_TOOL_FULL_NAMES, createWatchTools } from '../watches/createWatchTools.ts';
 import type { WatchStore } from '../store/WatchStore.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
@@ -104,6 +105,10 @@ interface ChatServiceOptions {
     webhookStore?: WebhookStore | undefined;
     // The address a new webhook URL starts with. Without it the bot cannot create webhooks.
     webhookBaseUrl?: string | undefined;
+    // The refused webhook calls the bot can see in webhook_list. Without it the list shows no refusals.
+    webhookRefusals?: WebhookRefusalLog | undefined;
+    // The delivery ids that webhook_delete forgets with the webhook. Without it the ids of a deleted webhook stay.
+    webhookDeliveries?: DeliveryMemory | undefined;
     // Decides which tool calls wait for the owner. Without it no call waits.
     toolCallReviewer?: ToolCallReviewer | undefined;
 }
@@ -391,6 +396,8 @@ class ChatService {
     private readonly watchStore: WatchStore | undefined;
     private readonly browserAllowStore: BrowserAllowStore | undefined;
     private readonly webhookStore: WebhookStore | undefined;
+    private readonly webhookRefusals: WebhookRefusalLog | undefined;
+    private readonly webhookDeliveries: DeliveryMemory | undefined;
     private readonly webhookBaseUrl: string | undefined;
     private readonly approvals: ApprovalGate | undefined;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
@@ -432,6 +439,8 @@ class ChatService {
         this.browserAllowStore = options.browserAllowStore;
         this.webhookStore = options.webhookStore;
         this.webhookBaseUrl = options.webhookBaseUrl;
+        this.webhookRefusals = options.webhookRefusals;
+        this.webhookDeliveries = options.webhookDeliveries;
         this.approvals = options.toolCallReviewer === undefined
             ? undefined
             : new ApprovalGate({
@@ -580,6 +589,14 @@ class ChatService {
         const waitingTurns = this.queuedTurns.get(botId) ?? [];
 
         return this.runningTurns.has(botId) || this.usageWaitTimers.has(botId) || waitingTurns.length > 0;
+    }
+
+    // The webhook messages waiting in the bot's queue, not counting the one running. Webhook calls are refused past a cap.
+    countQueuedWebhookTurns(botId: string): number {
+        const waitingTurns = this.queuedTurns.get(botId) ?? [];
+        const webhookTurns = waitingTurns.filter(turn => turn.source === 'webhook');
+
+        return webhookTurns.length;
     }
 
     // Saves uploaded files for the bot's next message. Returns undefined for an unknown bot.
@@ -1531,7 +1548,7 @@ class ChatService {
             announce: (event) => { this.publish(event.botId, event); },
         };
 
-        return createWebhookTools(this.webhookStore, botId, creation);
+        return createWebhookTools(this.webhookStore, botId, creation, this.webhookRefusals, this.webhookDeliveries);
     }
 
     // With a session to resume, a failure before the session starts is held back

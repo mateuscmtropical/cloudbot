@@ -630,6 +630,28 @@ svg {
     font-size: 0.85em;
 }
 
+/* The refused calls of a webhook take a full row under its Created line, in the same muted small text. */
+.webhook-refusals {
+    flex-basis: 100%;
+    min-width: 0;
+    color: var(--color-text-muted);
+    font-size: 0.85em;
+}
+
+.webhook-refusals summary {
+    cursor: pointer;
+}
+
+.webhook-refusals ul {
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.webhook-refusals li {
+    overflow-wrap: anywhere;
+}
+
 .rules-form {
     display: flex;
     flex-wrap: wrap;

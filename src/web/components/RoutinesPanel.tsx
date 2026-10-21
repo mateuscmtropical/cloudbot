@@ -168,7 +168,7 @@ function WebhookSection({ botId }: BotSectionProps): ReactElement {
 
         createWebhook(botId, name)
             .then((createdWebhook) => {
-                const listedWebhook: BotWebhook = { id: createdWebhook.id, name: createdWebhook.name, createdAt: createdWebhook.createdAt };
+                const listedWebhook: BotWebhook = { id: createdWebhook.id, name: createdWebhook.name, createdAt: createdWebhook.createdAt, refusals: [] };
 
                 setCreated(createdWebhook);
                 setNameDraft('');
@@ -228,6 +228,20 @@ function WebhookSection({ botId }: BotSectionProps): ReactElement {
                     <li key={webhook.id} className="rule-item">
                         <span className="rule-kind">{webhook.name}</span>
                         <span className="rule-tools">{`Created: ${formatRunTime(webhook.createdAt)}`}</span>
+                        {webhook.refusals.length === 0
+                            ? null
+                            : (
+                                    <details className="webhook-refusals">
+                                        <summary>{`Refused calls: ${String(webhook.refusals.length)}`}</summary>
+                                        <ul aria-label={`Refused calls for ${webhook.name}`}>
+                                            {webhook.refusals.map((refusal, index) => (
+                                                <li key={`${String(refusal.time)}-${String(index)}`}>
+                                                    {`${formatRunTime(refusal.time)}: ${refusal.reason}`}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </details>
+                                )}
                         <button
                             type="button"
                             disabled={removingIds.includes(webhook.id)}
