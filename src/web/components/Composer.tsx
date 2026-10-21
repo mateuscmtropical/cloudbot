@@ -16,9 +16,11 @@ interface ComposerProps {
     onStop: () => void;
     onAttach: (files: File[]) => void;
     onRemoveAttachment: (attachmentId: string) => void;
+    // Reports whether the draft has text, so the bot's mascot can look at the message box.
+    onTypingChange?: ((isTyping: boolean) => void) | undefined;
 }
 
-function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop, onAttach, onRemoveAttachment }: ComposerProps): ReactElement {
+function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop, onAttach, onRemoveAttachment, onTypingChange }: ComposerProps): ReactElement {
     const [draft, setDraft] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const trimmedDraft = draft.trim();
@@ -34,6 +36,7 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
 
         onSend(trimmedDraft);
         setDraft('');
+        onTypingChange?.(false);
     }
 
     function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -96,6 +99,7 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
                     value={draft}
                     onChange={(event) => {
                         setDraft(event.target.value);
+                        onTypingChange?.(event.target.value.trim().length > 0);
                     }}
                     onKeyDown={handleKeyDown}
                 />

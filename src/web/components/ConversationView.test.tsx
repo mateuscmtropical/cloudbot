@@ -451,7 +451,7 @@ describe('ConversationView older messages', () => {
     });
 
     it('does not restore a position across a bot switch, even with a load pending for the first bot', () => {
-        const botOne: BotSummary = { id: 'bot-1', name: 'CloudBot', title: 'Coworker', avatarColor: '#336699', lastMessagePreview: '', hasUnread: false };
+        const botOne: BotSummary = { id: 'bot-1', name: 'CloudBot', title: 'Coworker', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false };
         const botTwo: BotSummary = { ...botOne, id: 'bot-2', name: 'Ana' };
         const messages = [createSequencedMessage(3), createSequencedMessage(4)];
         const view = render(historyElement(messages, { hasOlderMessages: true, onLoadOlder: vi.fn() }, botOne));
@@ -504,7 +504,7 @@ describe('ConversationView rules button', () => {
     });
 
     it('closes the rules panel when another bot is shown and keeps it closed on return', () => {
-        const firstBot: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', avatarColor: '#3b82f6', lastMessagePreview: '', hasUnread: false };
+        const firstBot: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false };
         const secondBot: BotSummary = { ...firstBot, id: 'bot-b', name: 'Bia' };
 
         vi.stubGlobal('fetch', () => Promise.resolve(Response.json([])));
@@ -530,7 +530,7 @@ describe('ConversationView screen button', () => {
     });
 
     it('opens the bot screen panel and closes it again', async () => {
-        const bot: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', avatarColor: '#3b82f6', lastMessagePreview: '', hasUnread: false };
+        const bot: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false };
 
         render(historyElement([], {}, bot));
         fireEvent.click(screen.getByRole('button', { name: 'Screen' }));

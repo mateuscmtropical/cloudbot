@@ -1,3 +1,5 @@
+import type { MascotColorName, MascotShape } from './mascot.ts';
+
 type ChatRole = 'user' | 'assistant' | 'system';
 
 type ToolStatus = 'running' | 'done' | 'error';
@@ -91,7 +93,8 @@ interface BotSummary {
     id: string;
     name: string;
     title: string;
-    avatarColor: string;
+    mascotColor: MascotColorName;
+    mascotShape: MascotShape;
     lastMessagePreview: string;
     hasUnread: boolean;
 }

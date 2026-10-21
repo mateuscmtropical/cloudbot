@@ -2,6 +2,7 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import type { McpSdkServerConfigWithInstance, SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod/v4';
 
+import { MASCOT_COLOR_NAMES, MASCOT_SHAPES } from '../../shared/mascot.ts';
 import type { BotStore } from '../store/BotStore.ts';
 import { ShareFileError } from '../files/shareFile.ts';
 import type { BotProfile } from '../store/types.ts';
@@ -9,6 +10,16 @@ import type { BotProfile } from '../store/types.ts';
 // The server name is also the key in mcpServers, so the full tool name below depends on it.
 const PROFILE_SERVER_NAME = 'cloudbot';
 const UPDATE_PROFILE_TOOL_NAME = 'update_profile';
+const SET_MASCOT_TOOL_NAME = 'profile_set_mascot';
+const SET_MASCOT_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${SET_MASCOT_TOOL_NAME}`;
+const SET_MASCOT_DESCRIPTION = `Change this bot's mascot, the cloud the owner sees next to its name. Pass a color, one of ${MASCOT_COLOR_NAMES.join(', ')}, or a shape, one of ${MASCOT_SHAPES.join(', ')}. Only the fields you pass change.`;
+
+const SET_MASCOT_TOOL_SHAPE = {
+    color: z.enum(MASCOT_COLOR_NAMES)
+        .optional(),
+    shape: z.enum(MASCOT_SHAPES)
+        .optional(),
+};
 // The model calls the tool by this full name, and allowedTools needs it too.
 const UPDATE_PROFILE_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${UPDATE_PROFILE_TOOL_NAME}`;
 const SHARE_FILE_TOOL_NAME = 'share_file';
@@ -100,6 +111,28 @@ function createUpdateProfileTool(botStore: BotStore, botId: string): SdkMcpToolD
     );
 }
 
+// The bot id is fixed when the tool is built, as for update_profile. Only the mascot fields change.
+function createSetMascotTool(botStore: BotStore, botId: string): SdkMcpToolDefinition<typeof SET_MASCOT_TOOL_SHAPE> {
+    return tool(
+        SET_MASCOT_TOOL_NAME,
+        SET_MASCOT_DESCRIPTION,
+        SET_MASCOT_TOOL_SHAPE,
+        async (args): Promise<ProfileToolResult> => {
+            if (args.color === undefined && args.shape === undefined) {
+                return textResult('Pass a color, a shape or both. Nothing changed.', true);
+            }
+
+            const updatedBot = await botStore.updateMascot(botId, { color: args.color, shape: args.shape });
+
+            if (updatedBot === undefined) {
+                return textResult('This bot no longer exists, so its mascot cannot change.', true);
+            }
+
+            return textResult(`Mascot updated. Color: ${updatedBot.mascotColor}. Shape: ${updatedBot.mascotShape}.`, false);
+        },
+    );
+}
+
 function createShareFileTool(shareFile: ShareFileHandler): SdkMcpToolDefinition<typeof SHARE_FILE_TOOL_SHAPE> {
     return tool(
         SHARE_FILE_TOOL_NAME,
@@ -133,22 +166,26 @@ function createProfileToolServer(
     extraTools: CloudbotTool[] = [],
 ): McpSdkServerConfigWithInstance {
     const updateProfileTool = createUpdateProfileTool(botStore, botId);
+    const setMascotTool = createSetMascotTool(botStore, botId);
     const shareTools = shareFile === undefined ? [] : [createShareFileTool(shareFile)];
 
     return createSdkMcpServer({
         name: PROFILE_SERVER_NAME,
         version: '1.0.0',
-        tools: [updateProfileTool, ...shareTools, ...extraTools],
+        tools: [updateProfileTool, setMascotTool, ...shareTools, ...extraTools],
     });
 }
 
 export {
     PROFILE_SERVER_NAME,
     PROFILE_TOOL_SHAPE,
+    SET_MASCOT_TOOL_FULL_NAME,
+    SET_MASCOT_TOOL_SHAPE,
     SHARE_FILE_TOOL_FULL_NAME,
     SHARE_FILE_TOOL_SHAPE,
     UPDATE_PROFILE_TOOL_FULL_NAME,
     createProfileToolServer,
+    createSetMascotTool,
     createShareFileTool,
     createUpdateProfileTool,
 };

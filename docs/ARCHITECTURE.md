@@ -786,6 +786,24 @@ mentions a refused command, such as a commit message, is refused too. A
 Known gaps: a shell reading a file through a pipe, such as `cat script.sh | sh`,
 is not read. Commands built at run time, listed above, are not seen.
 
+## Bot mascot
+
+Each bot has a mascot: a cloud body in one of ten colors and one of four shapes, drawn
+in SVG by `src/web/components/CloudMascot.tsx`, with a white face. The color and shape are
+columns of `bots` (`mascot_color`, `mascot_shape`, migration 0011), chosen at random by
+`BotStore.create` and changed by the `profile_set_mascot` tool. `src/shared/mascot.ts` holds the palette.
+
+The face comes from `deriveMascotState` (`src/web/mascotState.ts`), from what the app already
+knows, in this order: a pending approval card (waiting), a running turn (thinking), composer text
+(typing), a turn that just ended (done, for two seconds), a usage limit note (sleepy), and a known
+error note (error). The error note is matched by its exact text: a limit stop, the stall stop, and
+the two fixed turn errors. Any other note leaves the face idle. A turn the owner stopped gets no
+done face. The web app has no event for a usage wait or a routine wait, so the usage limit note is
+matched by its text. Only the selected bot shows the live face. The others show idle. Mascots beside
+messages are always idle and do not track the pointer. On the sidebar and header mascots, the eyes of the
+idle and typing faces follow the pointer through one shared window listener (`src/web/mascotPointer.ts`),
+batched per animation frame.
+
 ## Setup conversation
 
 `SetupConversation` in `src/server/setup/` writes scripted messages through

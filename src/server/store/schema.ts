@@ -1,5 +1,6 @@
 import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
+import { MASCOT_COLOR_NAMES, MASCOT_SHAPES } from '../../shared/mascot.ts';
 import type { RoutineSchedule } from '../routines/schedule.ts';
 
 import { MESSAGE_ROLES } from './messageRoles.ts';
@@ -25,6 +26,13 @@ const bots = sqliteTable('bots', {
     sessionId: text('session_id'),
     createdAt: integer('created_at')
         .notNull(),
+    // The mascot look. Existing bots get the defaults, new bots get a random look in BotStore.create.
+    mascotColor: text('mascot_color', { enum: MASCOT_COLOR_NAMES })
+        .notNull()
+        .default('blue'),
+    mascotShape: text('mascot_shape', { enum: MASCOT_SHAPES })
+        .notNull()
+        .default('puff'),
 });
 
 // `sequence` is the insertion order and the paging cursor. AUTOINCREMENT keeps

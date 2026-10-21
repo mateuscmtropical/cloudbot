@@ -1,23 +1,19 @@
 import type { ReactElement } from 'react';
 
 import type { BotSummary } from '../../shared/chatTypes.ts';
-import { pickAvatarTextColor } from '../pickAvatarTextColor.ts';
+import type { MascotState } from '../mascotState.ts';
+import { CloudMascot } from './CloudMascot.tsx';
 
 interface BotListProps {
     bots: BotSummary[];
     selectedBotId: string | undefined;
+    // The face of the selected bot, which is the live one. The other bots show the idle face.
+    selectedMascotState: MascotState;
     isOpen: boolean;
     onSelectBot: (botId: string) => void;
 }
 
-function getInitial(name: string): string {
-    const trimmedName = name.trim();
-
-    return trimmedName.charAt(0)
-        .toUpperCase();
-}
-
-function BotList({ bots, selectedBotId, isOpen, onSelectBot }: BotListProps): ReactElement {
+function BotList({ bots, selectedBotId, selectedMascotState, isOpen, onSelectBot }: BotListProps): ReactElement {
     const className = isOpen ? 'bot-list is-open' : 'bot-list';
 
     return (
@@ -35,7 +31,7 @@ function BotList({ bots, selectedBotId, isOpen, onSelectBot }: BotListProps): Re
                 {bots.map((bot) => {
                     const isSelected = bot.id === selectedBotId;
                     const itemClassName = isSelected ? 'bot-item is-selected' : 'bot-item';
-                    const avatarTextColor = pickAvatarTextColor(bot.avatarColor);
+                    const mascotState = isSelected ? selectedMascotState : 'idle';
 
                     return (
                         <button
@@ -47,9 +43,7 @@ function BotList({ bots, selectedBotId, isOpen, onSelectBot }: BotListProps): Re
                                 onSelectBot(bot.id);
                             }}
                         >
-                            <span className="avatar" style={{ backgroundColor: bot.avatarColor, color: avatarTextColor }}>
-                                {getInitial(bot.name)}
-                            </span>
+                            <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={40} />
                             <span className="bot-text">
                                 <span className="bot-name">{bot.name}</span>
                                 <span className="bot-preview">{bot.lastMessagePreview}</span>

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { asc, eq } from 'drizzle-orm';
 
+import { randomMascot } from '../../shared/mascot.ts';
+import type { MascotChoice } from '../../shared/mascot.ts';
 import { bots, turnQueue, turnWaits } from './schema.ts';
 import type { StoredUploadRecord } from './schema.ts';
 import type { AppDatabase, Bot, BotProfile, StoreOptions } from './types.ts';
@@ -32,6 +34,7 @@ class BotStore {
     }
 
     async create(profile: BotProfile): Promise<Bot> {
+        const mascot = randomMascot();
         const newBot = {
             id: randomUUID(),
             name: profile.name,
@@ -39,6 +42,8 @@ class BotStore {
             description: profile.description,
             sessionId: null,
             createdAt: this.now(),
+            mascotColor: mascot.color,
+            mascotShape: mascot.shape,
         };
         const insertedRows = await this.database.insert(bots)
             .values(newBot)
@@ -79,6 +84,23 @@ class BotStore {
         if (hasChanges) {
             await this.database.update(bots)
                 .set(changes)
+                .where(botCondition);
+        }
+
+        return this.getById(botId);
+    }
+
+    // Only the mascot fields present in `changes` are written.
+    async updateMascot(botId: string, changes: { color?: MascotChoice['color'] | undefined; shape?: MascotChoice['shape'] | undefined }): Promise<Bot | undefined> {
+        const botCondition = eq(bots.id, botId);
+        const mascotChanges = {
+            ...(changes.color === undefined ? {} : { mascotColor: changes.color }),
+            ...(changes.shape === undefined ? {} : { mascotShape: changes.shape }),
+        };
+
+        if (Object.keys(mascotChanges).length > 0) {
+            await this.database.update(bots)
+                .set(mascotChanges)
                 .where(botCondition);
         }
 

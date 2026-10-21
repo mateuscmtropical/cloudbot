@@ -3,6 +3,8 @@ import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatMessage, ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
 import { renderMarkdown } from '../markdown.ts';
+import type { MascotState } from '../mascotState.ts';
+import { CloudMascot } from './CloudMascot.tsx';
 import { Composer } from './Composer.tsx';
 import type { DraftAttachment } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
@@ -26,9 +28,12 @@ const lazyDesktopPanel = lazy(async () => {
 
 interface ConversationViewProps {
     bot: BotSummary | undefined;
+    // The face of the bot's mascot while it is the live bot. Idle when not given.
+    mascotState?: MascotState | undefined;
     messages: ChatMessage[];
     draftText: string;
     isRunning: boolean;
+    onTypingChange?: ((isTyping: boolean) => void) | undefined;
     attachments: DraftAttachment[];
     isUploading: boolean;
     onRemoveAttachment: (attachmentId: string) => void;
@@ -74,9 +79,11 @@ function topVisibleAnchor(messageListElement: HTMLElement): OlderAnchor | undefi
 
 function ConversationView({
     bot,
+    mascotState = 'idle',
     messages,
     draftText,
     isRunning,
+    onTypingChange,
     attachments,
     isUploading,
     onRemoveAttachment,
@@ -202,6 +209,7 @@ function ConversationView({
                 <button type="button" className="icon-button menu-button" aria-label="Show bots" onClick={onOpenBotList}>
                     &#9776;
                 </button>
+                {bot === undefined ? null : <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={28} />}
                 <span className="bot-pill">{botName}</span>
                 {bot === undefined
                     ? null
@@ -310,7 +318,7 @@ function ConversationView({
                     : null}
                 {messages.map(message => (
                     <div key={message.id} data-message-id={message.id}>
-                        <MessageItem message={message} actions={actions} />
+                        <MessageItem message={message} actions={actions} mascot={message.role === 'assistant' ? bot : undefined} />
                     </div>
                 ))}
                 {draftText === ''
@@ -327,6 +335,7 @@ function ConversationView({
                 attachments={attachments}
                 isUploading={isUploading}
                 onRemoveAttachment={onRemoveAttachment}
+                onTypingChange={onTypingChange}
                 onSend={onSend}
                 onStop={onStop}
                 onAttach={onAttach}
