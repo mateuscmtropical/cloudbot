@@ -153,6 +153,22 @@ describe('DesktopPanel', () => {
             .toBe(false);
     });
 
+    it('connects again with input enabled when the owner holds the screen', async () => {
+        vi.mocked(apiClient.getScreenHolder)
+            .mockResolvedValue('person');
+        render(<DesktopPanel onClose={() => undefined} />);
+        await screen.findByText('You have the screen. The bot is paused.');
+        act(() => {
+            fireClientEvent(0, 'disconnect');
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+        expect(clients)
+            .toHaveLength(2);
+        expect(clientAt(1).viewOnly)
+            .toBe(false);
+    });
+
     it('keeps the screen and closes the panel on I will keep it', async () => {
         vi.mocked(apiClient.getScreenHolder)
             .mockResolvedValue('person');

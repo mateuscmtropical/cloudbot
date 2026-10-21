@@ -30,15 +30,22 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
     const [connectAttempt, setConnectAttempt] = useState(0);
     const clientRef = useRef<RFB | null>(null);
     const [holder, setHolder] = useState<ScreenHolderName>('bot');
+    // The connect effect reads the holder from here, so a new client starts with the right mode.
+    const holderRef = useRef<ScreenHolderName>('bot');
+    // Counts the owner's handoff clicks. A poll that started before a click must not override the click's result.
+    const handoffCountRef = useRef(0);
     const [handoffProblem, setHandoffProblem] = useState('');
 
     useEffect(() => {
         let isCurrent = true;
 
         function refreshHolder(): void {
+            const handoffCountAtStart = handoffCountRef.current;
+
             getScreenHolder()
                 .then((current) => {
-                    if (isCurrent) {
+                    if (isCurrent && handoffCountRef.current === handoffCountAtStart) {
+                        holderRef.current = current;
                         setHolder(current);
                     }
                 })
@@ -63,8 +70,12 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
 
     function changeHolder(change: () => Promise<ScreenHolderName>): void {
         setHandoffProblem('');
+        handoffCountRef.current += 1;
         change()
-            .then(setHolder)
+            .then((current) => {
+                holderRef.current = current;
+                setHolder(current);
+            })
             .catch(() => {
                 setHandoffProblem('The screen could not change hands. Try again.');
             });
@@ -80,7 +91,7 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
         const vncUrl = buildVncUrl(window.location);
         const client = new RFB(screenElement, vncUrl);
 
-        client.viewOnly = true;
+        client.viewOnly = holderRef.current !== 'person';
         client.scaleViewport = true;
         clientRef.current = client;
         // A client that was cleaned up still reports its close. That must not change the state of its successor.
