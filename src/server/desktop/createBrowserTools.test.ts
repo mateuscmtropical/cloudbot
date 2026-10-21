@@ -160,7 +160,7 @@ describe('createBrowserTools', () => {
         expect(JSON.stringify(focused.content))
             .toContain('A field has the focus.');
         expect(JSON.stringify(notFocused.content))
-            .toContain('No field has the focus. To type, click the field again.');
+            .toContain('No field has the focus. To type, click a field.');
     });
 
     it('hides unexpected errors behind a generic message', async () => {

@@ -174,7 +174,7 @@ function createBrowserTools(browser: BrowserControl, shareScreenshot?: Screensho
         POINT_SHAPE,
         args => runBrowserAction(browser, async () => {
             const { hasFocusedField } = await browser.click(args.x, args.y);
-            const focusNote = hasFocusedField ? 'A field has the focus.' : 'No field has the focus. To type, click the field again.';
+            const focusNote = hasFocusedField ? 'A field has the focus.' : 'No field has the focus. To type, click a field.';
 
             return textResult(`Clicked at ${String(args.x)}, ${String(args.y)}. ${focusNote}`);
         }),
