@@ -2,6 +2,7 @@ import type { RuleStore } from '../store/RuleStore.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
 import type { ReviewContext } from './createToolCallReviewer.ts';
+import { isWebhookMessage } from '../webhooks/webhookMessage.ts';
 
 interface ReviewContextSources {
     ruleStore: Pick<RuleStore, 'list'>;
@@ -12,6 +13,7 @@ interface ReviewContextSources {
 
 const DEFAULT_MESSAGE_COUNT = 6;
 const ROLE_LABELS = { user: 'Owner', assistant: 'Bot', system: 'System' };
+const WEBHOOK_LABEL = 'Webhook (outside data)';
 
 interface StoredMessage {
     role: keyof typeof ROLE_LABELS;
@@ -19,6 +21,7 @@ interface StoredMessage {
 }
 
 // Only plain text counts. Cards, files and tool activity say little about what the owner wants.
+// A webhook message is saved as a user message, so it gets its own label. It is outside data, not the owner.
 function toChatLine(message: StoredMessage): string[] {
     const content = message.content as { kind?: unknown; text?: unknown } | null;
 
@@ -26,7 +29,14 @@ function toChatLine(message: StoredMessage): string[] {
         return [];
     }
 
-    return [`${ROLE_LABELS[message.role]}: ${content.text}`];
+    // One line per message, so a message cannot start a line that looks like another entry.
+    const oneLineText = content.text.replace(/\s+/g, ' ');
+
+    if (message.role === 'user' && isWebhookMessage(content.text)) {
+        return [`${WEBHOOK_LABEL}: ${oneLineText}`];
+    }
+
+    return [`${ROLE_LABELS[message.role]}: ${oneLineText}`];
 }
 
 function createReviewContextReader(sources: ReviewContextSources): (botId: string) => Promise<ReviewContext> {

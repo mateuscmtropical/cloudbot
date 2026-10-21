@@ -8,14 +8,18 @@ function readServerPort(environment: NodeJS.ProcessEnv): number {
     return Number.isNaN(parsedPort) ? DEFAULT_PORT : parsedPort;
 }
 
-function buildSetupLink(setupCode: string, environment: NodeJS.ProcessEnv): string {
+// The address the owner reaches the server at, without a trailing slash.
+function readPublicBaseUrl(environment: NodeJS.ProcessEnv): string {
     const configuredBase = environment.CLOUDBOT_PUBLIC_URL ?? '';
     const serverPort = readServerPort(environment);
-    const baseUrl = configuredBase === ''
+
+    return configuredBase === ''
         ? `http://localhost:${String(serverPort)}`
         : configuredBase.replace(/\/+$/, '');
-
-    return `${baseUrl}/setup?code=${setupCode}`;
 }
 
-export { buildSetupLink, readServerPort };
+function buildSetupLink(setupCode: string, environment: NodeJS.ProcessEnv): string {
+    return `${readPublicBaseUrl(environment)}/setup?code=${setupCode}`;
+}
+
+export { buildSetupLink, readPublicBaseUrl, readServerPort };

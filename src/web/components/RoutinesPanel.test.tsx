@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotRoutine } from '../../shared/routineTypes.ts';
+import type { BotWebhook, CreatedBotWebhook } from '../../shared/webhookTypes.ts';
 import { RoutinesPanel } from './RoutinesPanel.tsx';
 
 interface FetchCall {
@@ -20,7 +21,11 @@ const DAILY_ROUTINE: BotRoutine = {
     lastRunAt: Date.UTC(2026, 9, 21, 9, 5),
 };
 
-function stubRoutinesApi(initialRoutines: BotRoutine[]): FetchCall[] {
+const DEPLOY_WEBHOOK: BotWebhook = { id: 'w1', name: 'Deploy', createdAt: Date.UTC(2026, 9, 21, 11, 0) };
+const CREATED_URL = 'https://bot.example.com/hooks/fresh-token';
+
+// Routes each request by its method and path. Routines and webhooks are separate lists.
+function stubPanelApi(options: { routines: BotRoutine[]; webhooks: BotWebhook[] }): FetchCall[] {
     const calls: FetchCall[] = [];
 
     vi.stubGlobal('fetch', (input: string, init: RequestInit = {}) => {
@@ -28,8 +33,18 @@ function stubRoutinesApi(initialRoutines: BotRoutine[]): FetchCall[] {
 
         calls.push({ url: input, method });
 
+        if (method === 'GET' && input.endsWith('/webhooks')) {
+            return Promise.resolve(Response.json(options.webhooks));
+        }
+
         if (method === 'GET') {
-            return Promise.resolve(Response.json(initialRoutines));
+            return Promise.resolve(Response.json(options.routines));
+        }
+
+        if (method === 'POST' && input.endsWith('/webhooks')) {
+            const created: CreatedBotWebhook = { id: 'w2', name: 'Build', createdAt: Date.UTC(2026, 9, 21, 12, 0), url: CREATED_URL };
+
+            return Promise.resolve(Response.json(created, { status: 201 }));
         }
 
         return Promise.resolve(new Response(null, { status: 204 }));
@@ -49,7 +64,7 @@ describe('RoutinesPanel', () => {
     });
 
     it('says there are no routines and how the bot makes one', async () => {
-        stubRoutinesApi([]);
+        stubPanelApi({ routines: [], webhooks: [] });
 
         render(<RoutinesPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
 
@@ -60,7 +75,7 @@ describe('RoutinesPanel', () => {
     });
 
     it('lists each routine with its schedule and UTC run times', async () => {
-        stubRoutinesApi([DAILY_ROUTINE]);
+        stubPanelApi({ routines: [DAILY_ROUTINE], webhooks: [] });
 
         render(<RoutinesPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
 
@@ -77,9 +92,13 @@ describe('RoutinesPanel', () => {
     });
 
     it('drops a routine that the server no longer has', async () => {
-        vi.stubGlobal('fetch', (_input: string, init: RequestInit = {}) => {
+        vi.stubGlobal('fetch', (input: string, init: RequestInit = {}) => {
             if (init.method === 'DELETE') {
                 return Promise.resolve(Response.json({ error: 'This bot has no routine with this id.' }, { status: 404 }));
+            }
+
+            if (input.endsWith('/webhooks')) {
+                return Promise.resolve(Response.json([]));
             }
 
             return Promise.resolve(Response.json([DAILY_ROUTINE]));
@@ -101,7 +120,7 @@ describe('RoutinesPanel', () => {
     it('marks a routine that is turned off', async () => {
         const pausedRoutine: BotRoutine = { ...DAILY_ROUTINE, isEnabled: false };
 
-        stubRoutinesApi([pausedRoutine]);
+        stubPanelApi({ routines: [pausedRoutine], webhooks: [] });
 
         render(<RoutinesPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
 
@@ -110,7 +129,7 @@ describe('RoutinesPanel', () => {
     });
 
     it('removes a routine from the list after the server deletes it', async () => {
-        const calls = stubRoutinesApi([DAILY_ROUTINE]);
+        const calls = stubPanelApi({ routines: [DAILY_ROUTINE], webhooks: [] });
 
         render(<RoutinesPanel botId="bot 1" botName="Ana" onClose={vi.fn()} />);
         await screen.findByText('Check my inbox.');
@@ -123,5 +142,62 @@ describe('RoutinesPanel', () => {
         });
         expect(calls.at(-1))
             .toEqual({ url: '/api/bots/bot%201/routines/r1', method: 'DELETE' });
+    });
+
+    it('lists the webhooks by name, without any URL', async () => {
+        stubPanelApi({ routines: [], webhooks: [DEPLOY_WEBHOOK] });
+
+        render(<RoutinesPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
+
+        expect(await screen.findByText('Deploy'))
+            .toBeTruthy();
+        expect(screen.queryByRole('textbox', { name: 'Webhook URL' }))
+            .toBeNull();
+        expect(screen.getByRole('button', { name: 'Remove webhook: Deploy' }))
+            .toBeTruthy();
+    });
+
+    it('creates a webhook and shows its URL once, with a warning to keep it secret', async () => {
+        const calls = stubPanelApi({ routines: [], webhooks: [] });
+
+        render(<RoutinesPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
+        await screen.findByText('No webhooks yet.');
+
+        fireEvent.change(screen.getByLabelText('Webhook name'), { target: { value: 'Build' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+        const urlField = await screen.findByRole('textbox', { name: 'Webhook URL' });
+
+        expect((urlField as HTMLInputElement).value)
+            .toBe(CREATED_URL);
+        expect((urlField as HTMLInputElement).readOnly)
+            .toBe(true);
+        expect(screen.getByText('shown only now', { exact: false }))
+            .toBeTruthy();
+        expect(calls.at(-1))
+            .toEqual({ url: '/api/bots/bot/webhooks', method: 'POST' });
+        expect(screen.getByText('Build'))
+            .toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Hide URL' }));
+
+        expect(screen.queryByRole('textbox', { name: 'Webhook URL' }))
+            .toBeNull();
+    });
+
+    it('removes a webhook from the list', async () => {
+        const calls = stubPanelApi({ routines: [], webhooks: [DEPLOY_WEBHOOK] });
+
+        render(<RoutinesPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
+        await screen.findByText('Deploy');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Remove webhook: Deploy' }));
+
+        await waitFor(() => {
+            expect(screen.queryByText('Deploy'))
+                .toBeNull();
+        });
+        expect(calls.at(-1))
+            .toEqual({ url: '/api/bots/bot/webhooks/w1', method: 'DELETE' });
     });
 });

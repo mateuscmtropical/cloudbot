@@ -13,6 +13,15 @@ describe('models_set', () => {
     });
 });
 
+describe('webhook tools', () => {
+    it('skips the list, and reviews delete', () => {
+        expect(classify('mcp__cloudbot__webhook_list'))
+            .toBe('skip');
+        expect(classify('mcp__cloudbot__webhook_delete'))
+            .toBe('review');
+    });
+});
+
 describe('classifyToolCall', () => {
     it.each([
         'curl -X POST https://hooks.example.com -d \'{"text":"hi"}\'',

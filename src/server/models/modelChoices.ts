@@ -72,9 +72,9 @@ function isModelInputError(value: ModelChoices | ModelInputError): value is Mode
     return 'error' in value;
 }
 
-// A routine turn uses the routines choice and falls back to the chat choice. Undefined keeps the CLI default.
-function chooseTurnModel(choices: ModelChoices, source: 'chat' | 'routine'): string | undefined {
-    const routinesChoice = source === 'routine' ? choices.routines : null;
+// Routine and webhook turns use the routines choice and fall back to the chat choice. Undefined keeps the CLI default.
+function chooseTurnModel(choices: ModelChoices, source: 'chat' | 'routine' | 'webhook'): string | undefined {
+    const routinesChoice = source === 'chat' ? null : choices.routines;
 
     return routinesChoice ?? choices.chat ?? undefined;
 }

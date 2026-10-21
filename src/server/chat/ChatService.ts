@@ -27,6 +27,7 @@ import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import { ROUTINE_TOOL_FULL_NAMES, createRoutineTools } from '../routines/createRoutineTools.ts';
 import { MODELS_SET_TOOL_FULL_NAME, createModelTools } from '../models/createModelTools.ts';
+import { WEBHOOK_TOOL_FULL_NAMES, createWebhookTools } from '../webhooks/createWebhookTools.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
 import { REQUEST_SCREEN_TOOL_FULL_NAME, createRequestScreenTool } from '../desktop/createScreenTools.ts';
 import type { ScreenHolder } from '../desktop/ScreenHolder.ts';
@@ -36,6 +37,7 @@ import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
 import type { RuleStore } from '../store/RuleStore.ts';
 import type { RoutineStore } from '../store/RoutineStore.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
+import type { WebhookStore } from '../store/WebhookStore.ts';
 import { chooseTurnModel } from '../models/modelChoices.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
 import type { SetupAction, SetupConversation } from '../setup/SetupConversation.ts';
@@ -80,6 +82,8 @@ interface ChatServiceOptions {
     routineStore?: RoutineStore | undefined;
     // The model the owner chose for chat and routine turns. Without it turns use the CLI default.
     modelStore?: ModelStore | undefined;
+    // Webhooks the bot can list and remove. Without it the bot has no webhook tools.
+    webhookStore?: WebhookStore | undefined;
     // Decides which tool calls wait for the owner. Without it no call waits.
     toolCallReviewer?: ToolCallReviewer | undefined;
 }
@@ -114,7 +118,7 @@ interface UsageLimitState {
 }
 
 // Who started a turn. A routine turn uses the routines model choice.
-type TurnSource = 'chat' | 'routine';
+type TurnSource = 'chat' | 'routine' | 'webhook';
 
 // One message's turn: what to send, its files, and the stored message it answers.
 interface TurnInput {
@@ -359,6 +363,7 @@ class ChatService {
     private readonly ruleStore: RuleStore | undefined;
     private readonly routineStore: RoutineStore | undefined;
     private readonly modelStore: ModelStore | undefined;
+    private readonly webhookStore: WebhookStore | undefined;
     private readonly approvals: ApprovalGate | undefined;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
@@ -385,6 +390,7 @@ class ChatService {
         this.ruleStore = options.ruleStore;
         this.routineStore = options.routineStore;
         this.modelStore = options.modelStore;
+        this.webhookStore = options.webhookStore;
         this.approvals = options.toolCallReviewer === undefined
             ? undefined
             : new ApprovalGate({
@@ -1205,11 +1211,12 @@ class ChatService {
             const secretTools = this.createSecretTools(botId);
             const routineTools = this.routineStore === undefined ? [] : createRoutineTools(this.routineStore, botId);
             const modelTools = this.modelStore === undefined ? [] : createModelTools(this.modelStore, botId);
+            const webhookTools = this.webhookTools(botId);
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools],
+                [...browserTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...webhookTools],
             );
             const prompt = uploads.length === 0 ? text : `${text}\n\n${describeAttachments(uploads)}`;
             const images = readTurnImages(uploads);
@@ -1242,6 +1249,7 @@ class ChatService {
                     hasBrowser: this.browser !== undefined,
                     hasRoutines: this.routineStore !== undefined,
                     hasModels: this.modelStore !== undefined,
+                    hasWebhooks: this.webhookStore !== undefined,
                     ownerRules,
                     helpers: helperKinds,
                 }),
@@ -1330,8 +1338,17 @@ class ChatService {
 
         const routineToolNames = this.routineStore === undefined ? [] : ROUTINE_TOOL_FULL_NAMES;
         const modelToolNames = this.modelStore === undefined ? [] : [MODELS_SET_TOOL_FULL_NAME];
+        const webhookToolNames = this.webhookStore === undefined ? [] : WEBHOOK_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...webhookToolNames];
+    }
+
+    private webhookTools(botId: string): CloudbotTool[] {
+        if (this.webhookStore === undefined) {
+            return [];
+        }
+
+        return createWebhookTools(this.webhookStore, botId);
     }
 
     // With a session to resume, a failure before the session starts is held back

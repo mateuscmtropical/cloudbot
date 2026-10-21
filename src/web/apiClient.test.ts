@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getModelSettings, listBots, listMessages, listRoutines, removeRoutine, RequestFailedError, saveModelSettings, stopTurn, uploadAttachments } from './apiClient.ts';
+import { createWebhook, getModelSettings, listBots, listMessages, listRoutines, listWebhooks, removeRoutine, removeWebhook, RequestFailedError, saveModelSettings, stopTurn, uploadAttachments } from './apiClient.ts';
 
 function stubFetch(response: Response): ReturnType<typeof vi.fn> {
     const fetchMock = vi.fn(() => Promise.resolve(response));
@@ -26,6 +26,51 @@ describe('uploadAttachments', () => {
             .toBeInstanceOf(RequestFailedError);
         expect(failure instanceof RequestFailedError ? failure.serverMessage : undefined)
             .toBe('Send at most 10 files at once.');
+    });
+});
+
+describe('webhook calls', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('lists the webhooks of a bot', async () => {
+        const fetchMock = stubFetch(Response.json([{ id: 'w1', name: 'Deploy', createdAt: 5 }]));
+
+        expect(await listWebhooks('bot-1'))
+            .toEqual([{ id: 'w1', name: 'Deploy', createdAt: 5 }]);
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/bots/bot-1/webhooks', {});
+    });
+
+    it('creates a webhook with its name and returns the URL the server gave once', async () => {
+        const fetchMock = stubFetch(Response.json({ id: 'w1', name: 'Deploy', createdAt: 5, url: 'https://bot.example.com/hooks/t' }, { status: 201 }));
+
+        const created = await createWebhook('bot-1', 'Deploy');
+
+        expect(created.url)
+            .toBe('https://bot.example.com/hooks/t');
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/bots/bot-1/webhooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Deploy' }) });
+    });
+
+    it('carries the error text the server sent when a webhook cannot be created', async () => {
+        stubFetch(Response.json({ error: 'This bot has 10 webhooks. Delete one first.' }, { status: 400 }));
+
+        const failure = await createWebhook('bot-1', 'Deploy')
+            .catch((error: unknown) => error);
+
+        expect(failure instanceof RequestFailedError ? failure.serverMessage : undefined)
+            .toBe('This bot has 10 webhooks. Delete one first.');
+    });
+
+    it('removes a webhook by its id', async () => {
+        const fetchMock = stubFetch(new Response(null, { status: 204 }));
+
+        await removeWebhook('bot 1', 'w/1');
+
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/bots/bot%201/webhooks/w%2F1', { method: 'DELETE' });
     });
 });
 

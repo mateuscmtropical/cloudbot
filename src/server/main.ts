@@ -21,6 +21,7 @@ import { RoutineScheduler } from './routines/RoutineScheduler.ts';
 import { RoutineStore } from './store/RoutineStore.ts';
 import { RuleStore } from './store/RuleStore.ts';
 import { ModelStore } from './store/ModelStore.ts';
+import { WebhookStore } from './store/WebhookStore.ts';
 import { ensureDefaultBot } from './store/ensureDefaultBot.ts';
 import { openDatabase } from './store/openDatabase.ts';
 import { databasePath, resolveDataDir } from './store/resolveDataDir.ts';
@@ -72,6 +73,7 @@ const botSecrets = new BotSecrets(vault);
 const ruleStore = new RuleStore(opened.db);
 const routineStore = new RoutineStore(opened.db);
 const modelStore = new ModelStore(opened.db);
+const webhookStore = new WebhookStore(opened.db);
 // The review model has no tools, so it runs as the server user. The environment object is shared, so a change of sign-in reaches it.
 const askReviewModel = createClaudeReviewModel({
     pathToClaudeCodeExecutable: claudePath, environment, workingDirectory: dataDir,
@@ -82,6 +84,7 @@ const toolCallReviewer = createToolCallReviewer({
 });
 const chatService = new ChatService({
     botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore, routineStore, modelStore, screen,
+    webhookStore,
     toolCallReviewer,
 });
 const bots = await botStore.list();
@@ -135,7 +138,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ version, access, chatService, ruleStore, routineStore, modelStore, screen });
+const app = createApp({ version, access, chatService, ruleStore, routineStore, modelStore, webhookStore, isReady: () => setup.isDone(), screen });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.
