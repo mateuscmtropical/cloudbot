@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { AgentEvent } from '../agent/AgentEvent.ts';
@@ -328,7 +328,13 @@ class ChatService {
 
     // Copies of the files the bot shared. They stay in the server's private data, out of the bot's reach.
     shareDirFor(botId: string): string {
-        return join(this.dataDir, 'shared', botId);
+        const shareRoot = this.shareRoot();
+
+        return join(shareRoot, botId);
+    }
+
+    private shareRoot(): string {
+        return join(this.dataDir, 'shared');
     }
 
     // The stored copy behind a file message. Returns undefined when the message is not a file of this bot.
@@ -371,7 +377,16 @@ class ChatService {
         });
         const body: FileBody = { kind: 'file', name: copy.name, mimeType: copy.mimeType, sizeBytes: copy.sizeBytes, fileId: copy.id };
 
-        await this.saveAndPublish(botId, 'assistant', body);
+        try {
+            await this.saveAndPublish(botId, 'assistant', body);
+        } catch (error: unknown) {
+            // Without its message nothing points to the copy, so it would stay on the disk for good.
+            const copyPath = join(shareDir, copy.id);
+
+            await rm(copyPath, { force: true });
+
+            throw error;
+        }
 
         return { name: copy.name, sizeBytes: copy.sizeBytes };
     }
@@ -471,7 +486,7 @@ class ChatService {
         return true;
     }
 
-    // Removes old files from the upload folders. Used files go after the retention time.
+    // Removes old files from the upload folders and old shared copies. Used files go after the retention time.
     // Files that were never sent go after one day, and queued messages keep their files.
     // Returns the removed paths. A file left from before a restart counts as used.
     async cleanUploads(nowMs: number = Date.now()): Promise<string[]> {
@@ -498,7 +513,12 @@ class ChatService {
         });
         const expiredPaths = expiredUploads.map(upload => upload.absolutePath);
 
-        return [...expiredPaths, ...removedOldPaths];
+        // Shared copies are not read by the bot, so no turn needs them. Their age counts from the copy.
+        const removedSharedPaths = await removeOldUploads({
+            uploadRoot: this.shareRoot(), isProtected: () => false, maxAgeMs: this.uploadRetentionMs, nowMs,
+        });
+
+        return [...expiredPaths, ...removedOldPaths, ...removedSharedPaths];
     }
 
     // Puts uploads back in front of the pending ones, so the files of earlier turns stay first.

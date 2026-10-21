@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -1099,6 +1099,74 @@ describe('ChatService', () => {
         expect(await service.cleanUploads(Date.now() + dayMs * 31))
             .toHaveLength(1);
         expect(await readdir(uploadDir))
+            .toEqual([]);
+    });
+
+    it('removes shared copies after the retention time and keeps recent ones', async () => {
+        const { service } = buildSetup([]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const dayMs = 24 * 60 * 60 * 1000;
+        const workspace = service.workspaceFor(bot.id);
+
+        await mkdir(workspace, { recursive: true });
+        await writeFile(join(workspace, 'report.txt'), 'report');
+        await service.shareFile(bot.id, 'report.txt');
+
+        const shareDir = service.shareDirFor(bot.id);
+
+        expect(await service.cleanUploads(Date.now() + dayMs * 10))
+            .toEqual([]);
+        expect(await readdir(shareDir))
+            .toHaveLength(1);
+
+        const removed = await service.cleanUploads(Date.now() + dayMs * 31);
+
+        expect(removed)
+            .toHaveLength(1);
+        expect(await readdir(shareDir))
+            .toEqual([]);
+    });
+
+    it('keeps a shared copy that is newer than the retention time even when an older one goes', async () => {
+        const { service } = buildSetup([]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const dayMs = 24 * 60 * 60 * 1000;
+        const workspace = service.workspaceFor(bot.id);
+
+        await mkdir(workspace, { recursive: true });
+        await writeFile(join(workspace, 'a.txt'), 'a');
+        await writeFile(join(workspace, 'b.txt'), 'b');
+        await service.shareFile(bot.id, 'a.txt');
+        await service.shareFile(bot.id, 'b.txt');
+
+        const shareDir = service.shareDirFor(bot.id);
+        const [oldName] = await readdir(shareDir);
+        const oldTime = new Date(Date.now() - dayMs * 40);
+
+        await utimes(join(shareDir, oldName ?? ''), oldTime, oldTime);
+        await service.cleanUploads();
+
+        const remaining = await readdir(shareDir);
+
+        expect(remaining)
+            .toHaveLength(1);
+        expect(remaining)
+            .not.toContain(oldName);
+    });
+
+    it('leaves no copy when the message of a shared file cannot be saved', async () => {
+        const { service } = buildSetup([]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const workspace = service.workspaceFor(bot.id);
+
+        await mkdir(workspace, { recursive: true });
+        await writeFile(join(workspace, 'report.txt'), 'report');
+        vi.spyOn(messageStore, 'add')
+            .mockRejectedValueOnce(new Error('disk full'));
+
+        await expect(service.shareFile(bot.id, 'report.txt'))
+            .rejects.toThrow('disk full');
+        expect(await readdir(service.shareDirFor(bot.id)))
             .toEqual([]);
     });
 
