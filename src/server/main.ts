@@ -6,6 +6,9 @@ import { CLEANUP_INTERVAL_MS } from './attachments/cleanUploads.ts';
 import { SdkAgentRunner } from './agent/SdkAgentRunner.ts';
 import { SetupAccess } from './access/SetupAccess.ts';
 import { buildSetupLink, readServerPort } from './access/setupLinkUrl.ts';
+import { createClaudeReviewModel } from './approvals/createClaudeReviewModel.ts';
+import { createReviewContextReader } from './approvals/createReviewContextReader.ts';
+import { createToolCallReviewer } from './approvals/createToolCallReviewer.ts';
 import { ChatService } from './chat/ChatService.ts';
 import { createApp } from './createApp.ts';
 import { ScreenHolder } from './desktop/ScreenHolder.ts';
@@ -64,8 +67,17 @@ const screen = new ScreenHolder();
 const vault = new Vault(dataDir);
 const botSecrets = new BotSecrets(vault);
 const ruleStore = new RuleStore(opened.db);
+// The review model has no tools, so it runs as the server user. The environment object is shared, so a change of sign-in reaches it.
+const askReviewModel = createClaudeReviewModel({
+    pathToClaudeCodeExecutable: claudePath, environment, workingDirectory: dataDir,
+});
+const toolCallReviewer = createToolCallReviewer({
+    askModel: askReviewModel,
+    readContext: createReviewContextReader({ ruleStore, messageStore }),
+});
 const chatService = new ChatService({
     botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore, screen,
+    toolCallReviewer,
 });
 const bots = await botStore.list();
 const firstBot = bots[0];
