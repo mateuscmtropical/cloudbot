@@ -66,12 +66,34 @@ starts.
 - Teach a task by recording the screen.
 - Voice input.
 
+## v0.7: any AI
+
+- Use any AI provider, with a subscription or an API key. Each provider's own
+  official SDK is the default. opencode is an option for free models, for
+  providers without an official agent SDK, or when the owner asks for it.
+
+## v0.8: reach the owner anywhere
+
+- Installable app with push notifications.
+- Telegram, and WhatsApp for receiving instructions only.
+- A sign-in with a passkey.
+- A morning brief and quiet check-ins that message the owner only when needed.
+
+## v0.9: work like a colleague
+
+- An email address for the bot.
+- Joining meetings and writing transcripts.
+- Signing in to sites with the owner's password manager, without the bot
+  seeing the password.
+- Purchases with a virtual card, each one approved. Never trading securities
+  or moving money between accounts.
+- A guard for sensitive data in replies and actions.
+- Skills added from the chat.
+- A security policy and a threat model.
+
 ## Later
 
-- A real sign-in (passkey or similar).
-- Installable PWA, Telegram, WhatsApp (receiving instructions only) and Claude
-  Remote Control.
-- An email inbox for the bot and joining meetings with transcripts.
+- Claude Remote Control.
 
 ## Not planned
 
