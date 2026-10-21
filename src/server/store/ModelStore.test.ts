@@ -24,35 +24,35 @@ describe('ModelStore', () => {
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
 
         expect(await store.get(bot.id))
-            .toEqual({ chat: null, routines: null, review: null });
+            .toEqual({ chat: null, routines: null, review: null, browsing: null, documents: null });
     });
 
     it('keeps the choices that were set for the bot', async () => {
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
 
-        await store.set(bot.id, { chat: 'haiku', routines: 'claude-sonnet-4-5', review: null });
+        await store.set(bot.id, { chat: 'haiku', routines: 'claude-sonnet-4-5', review: null, browsing: null, documents: null });
 
         expect(await store.get(bot.id))
-            .toEqual({ chat: 'haiku', routines: 'claude-sonnet-4-5', review: null });
+            .toEqual({ chat: 'haiku', routines: 'claude-sonnet-4-5', review: null, browsing: null, documents: null });
     });
 
     it('replaces every choice on a second set, and clears one set to null', async () => {
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
 
-        await store.set(bot.id, { chat: 'haiku', routines: 'opus', review: 'fable' });
-        await store.set(bot.id, { chat: 'sonnet', routines: null, review: null });
+        await store.set(bot.id, { chat: 'haiku', routines: 'opus', review: 'fable', browsing: null, documents: null });
+        await store.set(bot.id, { chat: 'sonnet', routines: null, review: null, browsing: null, documents: null });
 
         expect(await store.get(bot.id))
-            .toEqual({ chat: 'sonnet', routines: null, review: null });
+            .toEqual({ chat: 'sonnet', routines: null, review: null, browsing: null, documents: null });
     });
 
     it('keeps the choices of each bot apart', async () => {
         const ana = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
         const ben = await botStore.create({ name: 'Ben', title: 'Assistant', description: '' });
 
-        await store.set(ana.id, { chat: 'haiku', routines: null, review: null });
+        await store.set(ana.id, { chat: 'haiku', routines: null, review: null, browsing: null, documents: null });
 
         expect(await store.get(ben.id))
-            .toEqual({ chat: null, routines: null, review: null });
+            .toEqual({ chat: null, routines: null, review: null, browsing: null, documents: null });
     });
 });

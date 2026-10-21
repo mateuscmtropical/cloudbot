@@ -5,7 +5,7 @@ import { botModels } from './schema.ts';
 import type { AppDatabase } from './types.ts';
 
 // A bot with no row has no choices, so every kind uses the CLI default.
-const NO_CHOICES: ModelChoices = { chat: null, routines: null, review: null };
+const NO_CHOICES: ModelChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
 
 class ModelStore {
     private readonly database: AppDatabase;
@@ -29,15 +29,19 @@ class ModelStore {
             chat: foundRow.chatModel,
             routines: foundRow.routinesModel,
             review: foundRow.reviewModel,
+            browsing: foundRow.browsingModel,
+            documents: foundRow.documentsModel,
         };
     }
 
-    // Replaces all three choices. The caller validates them first.
+    // Replaces all choices. The caller validates them first.
     async set(botId: string, choices: ModelChoices): Promise<void> {
         const changes = {
             chatModel: choices.chat,
             routinesModel: choices.routines,
             reviewModel: choices.review,
+            browsingModel: choices.browsing,
+            documentsModel: choices.documents,
         };
 
         await this.database.insert(botModels)

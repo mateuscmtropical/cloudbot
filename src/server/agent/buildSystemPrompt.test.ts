@@ -3,6 +3,22 @@ import { describe, expect, it } from 'vitest';
 import { buildSystemPrompt } from './buildSystemPrompt.ts';
 
 describe('buildSystemPrompt', () => {
+    it('tells the main agent to hand the work of each active helper to it', () => {
+        const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' }, { helpers: ['browsing'] });
+
+        expect(prompt)
+            .toContain('Hand web browsing to the browsing helper');
+        expect(prompt)
+            .not.toContain('documents helper');
+    });
+
+    it('says nothing about helpers when none is active', () => {
+        const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' });
+
+        expect(prompt)
+            .not.toContain('helper');
+    });
+
     it('includes the bot name, title and description', () => {
         const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: 'Helps with mail' });
 

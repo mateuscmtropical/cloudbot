@@ -10,6 +10,8 @@ const SKIP_TOOL_NAMES = new Set([
     'LS',
     'TodoWrite',
     'WebSearch',
+    // Handing work to a helper does nothing by itself. Each tool call the helper makes is reviewed on its own.
+    'Agent',
     'mcp__cloudbot__browser_open',
     'mcp__cloudbot__browser_read',
     'mcp__cloudbot__browser_screenshot',

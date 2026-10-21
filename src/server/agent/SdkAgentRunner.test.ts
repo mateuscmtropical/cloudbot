@@ -452,6 +452,55 @@ describe('SdkAgentRunner tool call review', () => {
             .toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny' } });
     });
 
+    it('reviews a helper tool call and refuses it when the review refuses it', async () => {
+        const queryFunction = vi.fn<SdkQueryFunction>(() => streamSdkMessages([]));
+        const runner = new SdkAgentRunner({ queryFunction });
+        const browsingAgent = {
+            description: 'Browses',
+            prompt: 'Browse.',
+            model: 'haiku',
+            tools: ['mcp__cloudbot__browser_open', 'mcp__cloudbot__browser_click'],
+            disallowedTools: ['mcp__cloudbot__browser_click'],
+        };
+
+        await collectRunTurnEvents(runner, {
+            ...buildRunTurnRequest(new AbortController()),
+            agents: { browsing: browsingAgent },
+            reviewToolCall: () => Promise.resolve({ isAllowed: false, reason: 'Blocked.' }),
+        });
+
+        const options = queryFunction.mock.calls[0]?.[0].options;
+        const helperCallInput = { ...buildHookInput(), tool_name: 'mcp__cloudbot__browser_click', agent_id: 'helper-1', agent_type: 'browsing' } as HookInput;
+        const output = await getReviewHook(options)(helperCallInput, 'tool-2', { signal: new AbortController().signal });
+
+        expect(options?.agents)
+            .toEqual({ browsing: browsingAgent });
+        expect(output)
+            .toEqual({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Blocked.' } });
+    });
+
+    it('refuses a blocked tool in a helper even without a reviewer', async () => {
+        const queryFunction = vi.fn<SdkQueryFunction>(() => streamSdkMessages([]));
+        const runner = new SdkAgentRunner({ queryFunction });
+        const browsingAgent = { description: 'Browses', prompt: 'Browse.', model: 'haiku', tools: ['mcp__cloudbot__browser_click'] };
+
+        await collectRunTurnEvents(runner, {
+            ...buildRunTurnRequest(new AbortController()),
+            agents: { browsing: browsingAgent },
+            disallowedTools: ['mcp__cloudbot__browser_click'],
+        });
+
+        const hook = getReviewHook(queryFunction.mock.calls[0]?.[0].options);
+        const blockedInput = { ...buildHookInput(), tool_name: 'mcp__cloudbot__browser_click', agent_id: 'helper-1', agent_type: 'browsing' } as HookInput;
+        const blockedOutput = await hook(blockedInput, 'tool-2', { signal: new AbortController().signal });
+        const otherOutput = await hook(buildHookInput(), 'tool-3', { signal: new AbortController().signal });
+
+        expect(blockedOutput)
+            .toEqual({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'The owner blocked this tool.' } });
+        expect(otherOutput)
+            .toEqual({});
+    });
+
     it('gives the reviewer a signal that fires when the turn stops', async () => {
         let reviewSignal: AbortSignal | undefined;
         const abortController = new AbortController();

@@ -1768,7 +1768,7 @@ describe('ChatService model choices', () => {
         const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
         const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore });
 
-        await modelStore.set(bot.id, { chat: 'haiku', routines: 'opus', review: null });
+        await modelStore.set(bot.id, { chat: 'haiku', routines: 'opus', review: null, browsing: null, documents: null });
 
         expect(await runOneTurn(service, runner, bot.id, 'routine'))
             .toBe('opus');
@@ -1779,7 +1779,7 @@ describe('ChatService model choices', () => {
         const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
         const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore });
 
-        await modelStore.set(bot.id, { chat: 'haiku', routines: 'opus', review: null });
+        await modelStore.set(bot.id, { chat: 'haiku', routines: 'opus', review: null, browsing: null, documents: null });
 
         expect(await runOneTurn(service, runner, bot.id, 'chat'))
             .toBe('haiku');
@@ -1790,10 +1790,73 @@ describe('ChatService model choices', () => {
         const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
         const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore });
 
-        await modelStore.set(bot.id, { chat: 'sonnet', routines: null, review: null });
+        await modelStore.set(bot.id, { chat: 'sonnet', routines: null, review: null, browsing: null, documents: null });
 
         expect(await runOneTurn(service, runner, bot.id, 'routine'))
             .toBe('sonnet');
+    });
+
+    it('gives a browsing helper its own model and the browser tools, and allows the Agent tool', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
+        const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:9' });
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore, browser });
+
+        await modelStore.set(bot.id, { chat: null, routines: null, review: null, browsing: 'haiku', documents: null });
+
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const request = runner.receivedRequests[0];
+
+        expect(request?.agents)
+            .toMatchObject({ browsing: { model: 'haiku', tools: BROWSER_TOOL_FULL_NAMES } });
+        expect(request?.allowedTools)
+            .toContain('Agent');
+        expect(request?.systemPrompt)
+            .toContain('browsing helper');
+    });
+
+    it('passes the owner blocked tools to every helper', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
+        const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:9' });
+        const ruleStore = new RuleStore(opened.db);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore, browser, ruleStore });
+        // The fourth browser tool is browser_click.
+        const blockedTool = BROWSER_TOOL_FULL_NAMES[3] ?? '';
+
+        await ruleStore.add(bot.id, { kind: 'block', text: 'Never click.', blockedTools: [blockedTool] });
+        await modelStore.set(bot.id, { chat: null, routines: null, review: null, browsing: 'haiku', documents: 'sonnet' });
+
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const agents = runner.receivedRequests[0]?.agents ?? {};
+
+        expect(agents.browsing?.disallowedTools)
+            .toEqual([blockedTool]);
+        expect(agents.documents?.disallowedTools)
+            .toEqual([blockedTool]);
+    });
+
+    it('sends no helper and no Agent tool when no helper is chosen', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        expect(runner.receivedRequests[0]?.agents)
+            .toBeUndefined();
+        expect(runner.receivedRequests[0]?.allowedTools)
+            .not.toContain('Agent');
     });
 
     it('leaves the model to the CLI default when nothing is chosen', async () => {

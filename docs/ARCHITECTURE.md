@@ -402,18 +402,36 @@ wins over `allowedTools`.
 ## Model choices
 
 `ModelStore` keeps one row per bot in the `bot_models` table, with a choice for
-each kind of work: `chat`, `routines` and `review`. A null choice keeps the CLI
-default. A choice is an alias the SDK accepts (`fable`, `opus`, `sonnet` or
-`haiku`, listed in `MODEL_ALIASES`) or a full id that matches
+each kind of work: `chat`, `routines`, `review`, `browsing` and `documents`. A
+null choice keeps the CLI default. For `browsing` and `documents` a null choice
+means no helper agent. A choice is an alias the SDK accepts (`fable`, `opus`,
+`sonnet` or `haiku`, listed in `MODEL_ALIASES`) or a full id that matches
 `^claude-[a-z0-9.-]+$`. `parseModelInput` checks both. The routes `GET` and
 `PUT /api/bots/:id/models` sit behind the session cookie. `PUT` replaces all
-three choices, and a missing field clears its choice.
+choices, and a missing field clears its choice.
 
 A turn sends its choice to the SDK `model` option. A routine turn uses the
 `routines` choice and falls back to `chat`. The `source` of a turn (`chat` or
 `routine`) is stored with the queued turn, so a routine that waits keeps its
 choice after a restart. The review model is read with the owner rules on each
 review call.
+
+## Helper agents
+
+A helper is an SDK subagent with its own model. `browsing` gets the browser
+tools (`BROWSER_TOOL_FULL_NAMES`) and exists only when the bot has a browser.
+`documents` gets `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep` and
+`share_file`. `buildHelperAgents` builds the `agents` option for the turn. A
+helper exists only when its model choice is set. The main turn then also gets
+the `Agent` tool in `allowedTools`, and one line of the system prompt per
+helper tells it to hand that work over.
+
+Safety for helper calls rests on three things. The owner's blocked tools go to
+each helper as its `disallowedTools`, which the SDK documents as the list that
+disallows tools for that agent. The `PreToolUse` review hook is installed for
+the whole query. The SDK types say the hook input has `agent_id` "when the hook
+fires from within a subagent", so helper calls are reviewed too. Not checked
+against a live CLI: that the SDK enforces `disallowedTools` inside a helper.
 
 ## Tool call approval
 

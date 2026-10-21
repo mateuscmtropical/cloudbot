@@ -139,7 +139,8 @@ const routines = sqliteTable('routines', {
         .on(table.botId),
 ]);
 
-// The model the owner chose for each kind of work. A null column means the CLI default.
+// The model the owner chose for each kind of work. A null column means the CLI default,
+// or no helper agent for browsing and documents.
 const botModels = sqliteTable('bot_models', {
     botId: text('bot_id')
         .primaryKey()
@@ -147,6 +148,8 @@ const botModels = sqliteTable('bot_models', {
     chatModel: text('chat_model'),
     routinesModel: text('routines_model'),
     reviewModel: text('review_model'),
+    browsingModel: text('browsing_model'),
+    documentsModel: text('documents_model'),
 });
 
 export { botModels, botRules, bots, messages, routines, settings, turnQueue, turnWaits };
