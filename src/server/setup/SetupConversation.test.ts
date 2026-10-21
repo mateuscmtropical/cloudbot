@@ -725,6 +725,27 @@ describe('setup conversation', () => {
             .toBe('{"step":"login","mode":"subscription"}');
     });
 
+    it('does not adopt a secret form the bot asked for when it restores the API key step', async () => {
+        const context = await fixture(false);
+        const botForm = await context.messages.add({
+            botId: context.botId,
+            role: 'assistant',
+            kind: 'secureForm',
+            content: { kind: 'secureForm', prompt: 'Sign in to GitHub', secretName: 'GITHUB_PASSWORD', site: 'https://github.com', submitted: false },
+        });
+
+        await context.settings.set('claude.setup', JSON.stringify({ step: 'secret', mode: 'apiKey' }));
+        await context.setup.start();
+
+        await vi.waitFor(async () => {
+            const history = (await context.chat.listMessages(context.botId)) ?? [];
+            const setupForm = history.find(message => message.body.kind === 'secureForm' && message.id !== botForm.id);
+
+            expect(setupForm?.body)
+                .toMatchObject({ secretName: 'ANTHROPIC_API_KEY', submitted: false });
+        });
+    });
+
     it('allows switching from the secure form to subscription after a restart', async () => {
         const context = await fixture();
         const choice = await active(context, 'choice');

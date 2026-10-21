@@ -493,3 +493,8 @@ svg {
     border-radius: 6px;
     object-fit: contain;
 }
+
+.secret-site {
+    font-size: 0.9em;
+    opacity: 0.8;
+}

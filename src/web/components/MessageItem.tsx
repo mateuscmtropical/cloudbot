@@ -85,8 +85,9 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
                         prompt={body.prompt}
                         secretName={body.secretName}
                         submitted={body.submitted}
+                        site={body.site}
                         onSubmit={value => actions.onSubmitSecret(message.id, value)}
-                        alternative={body.secretName === 'ANTHROPIC_API_KEY'
+                        alternative={body.secretName === 'ANTHROPIC_API_KEY' && body.site === undefined
                             ? { label: 'Use subscription instead', onSelect: () => actions.onChoose(message.id, 'subscription') }
                             : undefined}
                     />

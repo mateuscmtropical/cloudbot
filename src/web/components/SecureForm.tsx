@@ -17,9 +17,11 @@ interface SecureFormProps {
     // Settles when the server answered. The key check can take a few seconds.
     onSubmit: (value: string) => Promise<void>;
     alternative?: SecureFormAlternative | undefined;
+    // Set when the bot asked for the secret. The value is used only on this site.
+    site?: string | undefined;
 }
 
-function SecureForm({ prompt, secretName, submitted, onSubmit, alternative }: SecureFormProps): ReactElement {
+function SecureForm({ prompt, secretName, submitted, onSubmit, alternative, site }: SecureFormProps): ReactElement {
     const [value, setValue] = useState('');
     const [pendingAnswer, setPendingAnswer] = useState<PendingAnswer | undefined>(undefined);
     const inputId = useId();
@@ -75,6 +77,9 @@ function SecureForm({ prompt, secretName, submitted, onSubmit, alternative }: Se
     return (
         <div className="setup-card">
             <p>{prompt}</p>
+            {site === undefined
+                ? null
+                : <p className="secret-site">{`The bot asks for this. It is for ${site}, and the bot never sees the value.`}</p>}
             <form className="setup-form" onSubmit={handleSubmit}>
                 <label htmlFor={inputId}>{secretName}</label>
                 <input

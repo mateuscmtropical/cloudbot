@@ -142,7 +142,8 @@ class SetupConversation {
                 const body = message.content as MessageBody;
 
                 return (this.state.step === 'choice' && body.kind === 'choice' && body.chosenId === undefined)
-                    || (this.state.step === 'secret' && body.kind === 'secureForm' && !body.submitted);
+                    // A form with a site belongs to the bot, not to the setup.
+                    || (this.state.step === 'secret' && body.kind === 'secureForm' && !body.submitted && body.site === undefined);
             });
 
             if (active !== undefined) {
