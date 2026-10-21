@@ -144,7 +144,7 @@ describe('runIntegrationProcess', () => {
         const script = 'console.log(process.env.STORE_API_KEY)';
         const result = await runIntegrationProcess(request('', {
             command: 'bash',
-            args: ['-c', INTEGRATION_WRAPPER, 'cloudbot-integration', 'unlimited', 'STORE_API_KEY', 'node', '-'],
+            args: ['-c', INTEGRATION_WRAPPER, 'cloudbot-integration', '', 'STORE_API_KEY', 'node', '-'],
             env: { PATH: process.env['PATH'] ?? '' },
             input: composeInput(SECRET_VALUE, Buffer.from(script)),
         }));

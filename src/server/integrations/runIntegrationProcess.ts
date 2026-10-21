@@ -72,7 +72,8 @@ const INTEGRATION_WRAPPER = [
     'shift 3',
     // Bounds a fork bomb and a full disk. If a limit cannot be set, the process does not start.
     // The process limit counts threads of the whole user, and node alone starts about ten.
-    'ulimit -u "$PROCESS_LIMIT" || exit 1',
+    // An empty limit is only for tests, which share a user with the test runner. The server always passes one.
+    'if [ -n "$PROCESS_LIMIT" ]; then ulimit -u "$PROCESS_LIMIT" || exit 1; fi',
     'ulimit -f 65536 || exit 1',
     'exec "$COMMAND" "$@"',
 ].join('\n');
