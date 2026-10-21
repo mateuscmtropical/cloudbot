@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-10 -10 160 130" width="160" height="130" role="img" aria-label="CloudBot mascot">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 122 96" width="122" height="96" role="img" aria-label="CloudBot mascot">
   <style>
     .eyes {
       animation: blink 4s ease-in-out infinite;
