@@ -31,7 +31,7 @@ function createFakeBrowser(): { browser: BrowserControl; calls: FakeBrowserCalls
         click: (pointX: number, pointY: number) => {
             calls.clicks.push([pointX, pointY]);
 
-            return Promise.resolve();
+            return Promise.resolve({ hasFocusedField: pointX !== 0 });
         },
         typeText: (text: string) => {
             calls.typed.push(text);
@@ -150,6 +150,17 @@ describe('createBrowserTools', () => {
 
         expect(calls)
             .toEqual({ clicks: [[5, 6]], typed: ['hello'], keys: ['Tab'], scrolls: [[640, 400, 200]] });
+    });
+
+    it('tells the model whether a field has the focus after a click', async () => {
+        const { browser } = createFakeBrowser();
+        const focused = await findHandler(browser, 'browser_click')({ x: 5, y: 6 }, {});
+        const notFocused = await findHandler(browser, 'browser_click')({ x: 0, y: 6 }, {});
+
+        expect(JSON.stringify(focused.content))
+            .toContain('A field has the focus.');
+        expect(JSON.stringify(notFocused.content))
+            .toContain('No field has the focus. To type, click a field.');
     });
 
     it('hides unexpected errors behind a generic message', async () => {
