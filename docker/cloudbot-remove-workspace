@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Removes one bot's workspace as the bot user. The agent creates its files with umask 022, so only the bot user
+# can delete inside them. The server runs this through sudo, with the bot id as the only argument.
+#
+# The id must match the pattern the server checks, so no other path can be named. A link at the workspace path
+# is removed, not followed, and --one-file-system keeps the removal on the workspace's disk.
+#
+# Processes of this user that run inside the workspace are stopped first, and then the Claude Code folder of the
+# workspace under the home of this user is removed. The Claude Code folder name is the workspace path with every
+# character that is not a letter or a digit turned into a dash, so the "_" of an id becomes "-".
+
+set -euo pipefail
+
+WORKSPACE_ROOT=/var/lib/cloudbot-workspaces
+
+if [ "$#" -ne 1 ]; then
+    echo "Give one bot id." >&2
+    exit 2
+fi
+
+bot_id="$1"
+
+if [[ ! "$bot_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Invalid bot id." >&2
+    exit 2
+fi
+
+workspace="$WORKSPACE_ROOT/$bot_id"
+
+# Best effort: a process that cannot be stopped does not stop the removal. This script skips its own process.
+for proc in /proc/[0-9]*; do
+    pid="${proc#/proc/}"
+    cwd="$(readlink "$proc/cwd" 2>/dev/null || true)"
+
+    if [[ "$pid" != "$$" && ("$cwd" == "$workspace" || "$cwd" == "$workspace/"*) ]]; then
+        kill -KILL "$pid" 2>/dev/null || true
+    fi
+done
+
+rm -rf --one-file-system -- "${WORKSPACE_ROOT:?}/$bot_id"
+
+encoded_path="-var-lib-cloudbot-workspaces-${bot_id//_/-}"
+
+rm -rf --one-file-system -- "${HOME:?}/.claude/projects/$encoded_path"

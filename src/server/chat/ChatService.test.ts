@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -15,6 +15,7 @@ import { REQUEST_SCREEN_TOOL_FULL_NAME } from '../desktop/createScreenTools.ts';
 import { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import { RuleStore } from '../store/RuleStore.ts';
 import { ModelStore } from '../store/ModelStore.ts';
+import { BOT_CREATE_TOOL_FULL_NAME } from '../bots/createBotTool.ts';
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
 import { BROWSER_ALLOW_TOOL_FULL_NAMES } from '../desktop/createBrowserAllowTools.ts';
 import { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
@@ -916,6 +917,70 @@ describe('ChatService', () => {
             .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME]);
         expect(turnRequest?.systemPrompt)
             .toBe(buildSystemPrompt(bot));
+    });
+
+    it('offers bot_create to the bot only when the approval gate exists', async () => {
+        const toolCallReviewer = vi.fn(() => Promise.resolve({ decision: 'ask' as const, summary: 'Create a new bot.' }));
+        const withGate = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const withGateService = new ChatService({ botStore, messageStore, runner: withGate, dataDir, toolCallReviewer, ruleStore: new RuleStore(opened.db) });
+        const withoutGate = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const withoutGateService = new ChatService({ botStore, messageStore, runner: withoutGate, dataDir, ruleStore: new RuleStore(opened.db) });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(withGateService, bot.id);
+
+        await withGateService.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const finishedWithout = waitForTurnFinish(withoutGateService, bot.id);
+
+        await withoutGateService.sendMessage(bot.id, 'Hi');
+        await finishedWithout;
+
+        expect(withGate.receivedRequests[0]?.allowedTools)
+            .toContain(BOT_CREATE_TOOL_FULL_NAME);
+        expect(withoutGate.receivedRequests[0]?.allowedTools)
+            .not.toContain(BOT_CREATE_TOOL_FULL_NAME);
+    });
+
+    it('writes the instructions of a new bot to its CLAUDE.md and adds no rule', async () => {
+        const ruleStore = new RuleStore(opened.db);
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, ruleStore });
+        const creator = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const created = await service.createBotFromTool(creator.id, { name: 'Ben', title: 'Grant tracker', instructions: 'Track grants.' });
+        const memory = await readFile(join(dataDir, 'workspaces', created.id, 'CLAUDE.md'), 'utf8');
+
+        expect(memory)
+            .toBe('Instructions from Ana when this bot was made:\n\nTrack grants.\n');
+        expect(await ruleStore.list(created.id))
+            .toEqual([]);
+    });
+
+    it.skipIf(process.platform === 'win32')('makes the memory file group-writable even under a strict umask', async () => {
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir });
+        const creator = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const previousUmask = process.umask(0o077);
+
+        try {
+            const created = await service.createBotFromTool(creator.id, { name: 'Ben', title: 'Grant tracker', instructions: 'Track grants.' });
+            const memoryStat = await stat(join(dataDir, 'workspaces', created.id, 'CLAUDE.md'));
+
+            expect(memoryStat.mode & 0o777)
+                .toBe(0o660);
+        } finally {
+            process.umask(previousUmask);
+        }
+    });
+
+    it('removes the new bot again when its memory file cannot be written', async () => {
+        // A file where the workspaces folder should be makes the memory write fail.
+        await writeFile(join(dataDir, 'workspaces'), 'not a folder');
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir });
+        const creator = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await expect(service.createBotFromTool(creator.id, { name: 'Ben', title: 'Grant tracker', instructions: 'Track grants.' }))
+            .rejects.toThrow();
+        expect((await botStore.list()).map(bot => bot.id))
+            .toEqual([creator.id]);
     });
 
     it('adds the browser tools and the browser paragraph when the bot has a browser', async () => {

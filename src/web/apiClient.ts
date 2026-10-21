@@ -79,6 +79,18 @@ function listBots(): Promise<BotSummary[]> {
     return requestJson<BotSummary[]>(path, {});
 }
 
+// The "+" button. The server makes the bot and opens its chat with the question about its name and job.
+function createBot(): Promise<BotSummary> {
+    return postJson<BotSummary>(`${API_ROOT}/bots`, {});
+}
+
+// Deletes the bot and everything of it. A refusal carries the server's reason, such as the last bot.
+async function deleteBot(botId: string): Promise<void> {
+    const path = botPath(botId, '');
+
+    await requestJson<unknown>(path, { method: 'DELETE' });
+}
+
 interface MessagePageRequest {
     beforeSequence?: number;
     limit?: number;
@@ -386,6 +398,8 @@ export {
     RequestFailedError,
     listConnectedApps,
     removeConnectedApp,
+    createBot,
+    deleteBot,
     listBots,
     listMessages,
     sendMessage,

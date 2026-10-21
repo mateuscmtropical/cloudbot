@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -63,6 +63,7 @@ function conversationElement(messages: ChatMessage[], draftText: string): ReactE
             onRemoveAttachment={vi.fn()}
             actions={noopActions}
             onOpenBotList={vi.fn()}
+            onDeleteBot={vi.fn()}
             onSend={vi.fn()}
             onStop={vi.fn()}
             onAttach={vi.fn()}
@@ -177,6 +178,7 @@ function historyElement(messages: ChatMessage[], historyProps: HistoryProps, bot
             isRunning={false}
             actions={noopActions}
             onOpenBotList={vi.fn()}
+            onDeleteBot={vi.fn()}
             onSend={vi.fn()}
             onStop={vi.fn()}
             onAttach={vi.fn()}
@@ -268,6 +270,7 @@ describe('ConversationView older messages', () => {
                 actions={noopActions}
                 hasOlderMessages
                 onOpenBotList={vi.fn()}
+                onDeleteBot={vi.fn()}
                 onSend={vi.fn()}
                 onStop={vi.fn()}
                 onAttach={vi.fn()}
@@ -297,6 +300,7 @@ describe('ConversationView older messages', () => {
                 actions={noopActions}
                 hasOlderMessages
                 onOpenBotList={vi.fn()}
+                onDeleteBot={vi.fn()}
                 onSend={vi.fn()}
                 onStop={vi.fn()}
                 onAttach={vi.fn()}
@@ -541,6 +545,91 @@ describe('ConversationView screen button', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
         expect(screen.queryByRole('region', { name: 'Bot screen' }))
+            .toBeNull();
+    });
+});
+
+describe('ConversationView delete confirmation', () => {
+    afterEach(() => {
+        cleanup();
+    });
+
+    const ana: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false };
+
+    function renderWithBot(bot: BotSummary, onDeleteBot: () => void): ReturnType<typeof render> {
+        return render(
+            <ConversationView
+                bot={bot}
+                messages={[]}
+                draftText=""
+                isRunning={false}
+                actions={noopActions}
+                onOpenBotList={vi.fn()}
+                onDeleteBot={onDeleteBot}
+                onSend={vi.fn()}
+                onStop={vi.fn()}
+                onAttach={vi.fn()}
+                attachments={[]}
+                isUploading={false}
+                onRemoveAttachment={vi.fn()}
+            />,
+        );
+    }
+
+    it('asks in the view before deleting, and Cancel keeps the bot', () => {
+        const onDeleteBot = vi.fn();
+
+        renderWithBot(ana, onDeleteBot);
+        fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+        expect(screen.getByRole('group', { name: 'Confirm delete' }).textContent)
+            .toContain('Delete Ana?');
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+        expect(screen.queryByRole('group', { name: 'Confirm delete' }))
+            .toBeNull();
+        expect(onDeleteBot)
+            .not.toHaveBeenCalled();
+    });
+
+    it('hides the Delete button when the bot is the only one', () => {
+        render(
+            <ConversationView
+                bot={ana}
+                messages={[]}
+                draftText=""
+                isRunning={false}
+                actions={noopActions}
+                onOpenBotList={vi.fn()}
+                onDeleteBot={vi.fn()}
+                canDeleteBot={false}
+                onSend={vi.fn()}
+                onStop={vi.fn()}
+                onAttach={vi.fn()}
+                attachments={[]}
+                isUploading={false}
+                onRemoveAttachment={vi.fn()}
+            />,
+        );
+
+        expect(screen.queryByRole('button', { name: 'Delete' }))
+            .toBeNull();
+    });
+
+    it('deletes only after the owner confirms in the view', () => {
+        const onDeleteBot = vi.fn();
+
+        renderWithBot(ana, onDeleteBot);
+        fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+        const confirmBar = screen.getByRole('group', { name: 'Confirm delete' });
+        const confirmButton = within(confirmBar)
+            .getByRole('button', { name: 'Delete' });
+
+        fireEvent.click(confirmButton);
+
+        expect(onDeleteBot)
+            .toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole('group', { name: 'Confirm delete' }))
             .toBeNull();
     });
 });

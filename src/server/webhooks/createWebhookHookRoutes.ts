@@ -5,6 +5,9 @@ import type { WebhookRecord, WebhookStore } from '../store/WebhookStore.ts';
 import { buildWebhookMessage } from './webhookMessage.ts';
 import { DeliveryMemory, WebhookRefusalLog } from './webhookMemory.ts';
 import { hashWebhookToken } from './webhookToken.ts';
+import { BotDeletingError } from '../bots/BotDeletingError.ts';
+
+const BOT_DELETING: WebhookHookErrorResponse = { error: 'This bot is being deleted.' };
 
 interface WebhookHookErrorResponse {
     error: string;
@@ -166,7 +169,17 @@ function createWebhookHookRoutes(options: WebhookHookRoutesOptions): Hono<Webhoo
             try {
                 const body = await context.req.text();
                 const message = buildWebhookMessage(webhook.name, body);
-                const sent = await options.sendMessage(webhook.botId, message);
+                let sent: unknown;
+
+                try {
+                    sent = await options.sendMessage(webhook.botId, message);
+                } catch (error: unknown) {
+                    if (error instanceof BotDeletingError) {
+                        return context.json(BOT_DELETING, 409);
+                    }
+
+                    throw error;
+                }
 
                 if (sent === undefined) {
                     return context.json(BOT_MISSING, 404);

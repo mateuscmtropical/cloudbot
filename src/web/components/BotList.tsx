@@ -11,10 +11,11 @@ interface BotListProps {
     selectedMascotState: MascotState;
     isOpen: boolean;
     onSelectBot: (botId: string) => void;
+    onNewBot: () => void;
     onConnectApps: () => void;
 }
 
-function BotList({ bots, selectedBotId, selectedMascotState, isOpen, onSelectBot, onConnectApps }: BotListProps): ReactElement {
+function BotList({ bots, selectedBotId, selectedMascotState, isOpen, onSelectBot, onNewBot, onConnectApps }: BotListProps): ReactElement {
     const className = isOpen ? 'bot-list is-open' : 'bot-list';
 
     return (
@@ -26,7 +27,7 @@ function BotList({ bots, selectedBotId, selectedMascotState, isOpen, onSelectBot
                         <path d="M20 20l-4.5-4.5" />
                     </svg>
                 </button>
-                <button type="button" className="icon-button" aria-label="New bot">+</button>
+                <button type="button" className="icon-button new-bot-button" aria-label="New bot" onClick={onNewBot}>+</button>
             </div>
             <div className="bot-items">
                 {bots.map((bot) => {

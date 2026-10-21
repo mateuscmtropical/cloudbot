@@ -7,7 +7,7 @@ import { deriveMascotState } from './mascotState.ts';
 import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
-import { listBots, listMessages, RequestFailedError, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload } from './apiClient.ts';
+import { createBot, deleteBot, listBots, listMessages, RequestFailedError, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload } from './apiClient.ts';
 import { mergeLoadedUploads } from './attachmentChips.ts';
 import { MESSAGE_PAGE_SIZE, mergeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
 
@@ -396,6 +396,44 @@ function App(): ReactElement {
         setIsBotListOpen(false);
     }
 
+    // The new bot's chat opens at once. Its question about its name and job is the first message there.
+    function handleNewBot(): void {
+        createBot()
+            .then((newBot) => {
+                setBots(previousBots => [...previousBots, newBot]);
+                handleSelectBot(newBot.id);
+            })
+            .catch(() => {
+                setErrorText('Could not create a bot.');
+            });
+    }
+
+    // The conversation view asks the owner to confirm first. The server answers with the reason when it refuses, such as the last bot.
+    function handleDeleteBot(): void {
+        const doomedBot = bots.find(bot => bot.id === selectedBotId);
+
+        if (doomedBot === undefined) {
+            return;
+        }
+
+        const doomedBotId = doomedBot.id;
+
+        deleteBot(doomedBotId)
+            .then(() => {
+                const nextBotId = bots.find(bot => bot.id !== doomedBotId)?.id;
+
+                setBots(previousBots => previousBots.filter(bot => bot.id !== doomedBotId));
+                // The owner may have switched bots while the delete ran, so the selection moves only when it is still the deleted bot.
+                setSelectedBotId(currentBotId => (currentBotId === doomedBotId ? nextBotId : currentBotId));
+                setErrorText(undefined);
+            })
+            .catch((error: unknown) => {
+                const reason = error instanceof RequestFailedError ? error.serverMessage : undefined;
+
+                setErrorText(reason ?? 'Could not delete this bot.');
+            });
+    }
+
     const nextAttachmentNumber = useRef(0);
 
     function updateAttachments(botId: string, update: (chips: DraftAttachment[]) => DraftAttachment[]): void {
@@ -569,6 +607,7 @@ function App(): ReactElement {
                 selectedMascotState={liveMascotState}
                 isOpen={isBotListOpen}
                 onSelectBot={handleSelectBot}
+                onNewBot={handleNewBot}
                 onConnectApps={() => {
                     setIsConnectAppsOpen(true);
                 }}
@@ -617,6 +656,8 @@ function App(): ReactElement {
                     onOpenBotList={() => {
                         setIsBotListOpen(true);
                     }}
+                    onDeleteBot={handleDeleteBot}
+                    canDeleteBot={bots.length > 1}
                     webhookUrls={botWebhookUrls}
                     onHideWebhookUrl={(hidden) => {
                         setWebhookUrls(current => current.filter(notice => notice !== hidden));

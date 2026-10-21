@@ -279,6 +279,24 @@ svg {
     display: none;
 }
 
+/* The sidebar buttons are the ones the owner taps most often to start a bot, so they are larger than the default. */
+.bot-list-header .icon-button {
+    width: 40px;
+    height: 40px;
+}
+
+.bot-list-header .new-bot-button {
+    font-size: 1.75rem;
+    line-height: 1;
+}
+
+@media (max-width: 720px) {
+    .bot-list-header .icon-button {
+        width: 44px;
+        height: 44px;
+    }
+}
+
 /* Conversation */
 
 .main-column {
@@ -426,6 +444,30 @@ svg {
 
 .setup-alternative {
     margin-top: 8px;
+}
+
+/* The delete confirmation is a card under the header. Its text takes a full line, so the buttons wrap below it on a phone. */
+.delete-confirm {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin: 8px 16px;
+    padding: 12px 14px;
+    border-radius: var(--radius-bubble);
+    background: var(--color-surface);
+}
+
+.delete-confirm p {
+    flex: 1 1 100%;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.choice-button.is-danger {
+    border-color: var(--color-danger);
+    background: var(--color-danger);
+    color: #fff;
 }
 
 .choice-button.is-selected {
@@ -584,6 +626,7 @@ svg {
 
     .header-actions {
         flex-basis: 100%;
+        flex-wrap: wrap;
         justify-content: flex-end;
         gap: 4px;
     }

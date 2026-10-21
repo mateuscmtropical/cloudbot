@@ -42,6 +42,10 @@ interface ConversationViewProps {
     isLoadingOlder?: boolean;
     onLoadOlder?: () => void;
     onOpenBotList: () => void;
+    // Deletes the bot after the owner confirms in this view. The app shows the outcome.
+    onDeleteBot: () => void;
+    // False when the bot is the only one, since its delete is always refused. The Delete button is hidden then.
+    canDeleteBot?: boolean;
     onSend: (text: string) => void;
     onStop: () => void;
     onAttach: (files: File[]) => void;
@@ -92,6 +96,8 @@ function ConversationView({
     isLoadingOlder = false,
     onLoadOlder,
     onOpenBotList,
+    onDeleteBot,
+    canDeleteBot = true,
     onSend,
     onStop,
     onAttach,
@@ -112,6 +118,8 @@ function ConversationView({
     const [routinesBotId, setRoutinesBotId] = useState<string | undefined>(undefined);
     // The id of the bot whose models are open. Switching to another bot closes the panel.
     const [modelsBotId, setModelsBotId] = useState<string | undefined>(undefined);
+    // The id of the bot whose delete confirmation is showing. Switching to another bot hides it.
+    const [confirmDeleteBotId, setConfirmDeleteBotId] = useState<string | undefined>(undefined);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
     const [shownBotId, setShownBotId] = useState(bot?.id);
 
@@ -121,10 +129,12 @@ function ConversationView({
         setRulesBotId(undefined);
         setRoutinesBotId(undefined);
         setModelsBotId(undefined);
+        setConfirmDeleteBotId(undefined);
     }
     const isRulesOpen = bot !== undefined && rulesBotId === bot.id;
     const isRoutinesOpen = bot !== undefined && routinesBotId === bot.id;
     const isModelsOpen = bot !== undefined && modelsBotId === bot.id;
+    const isConfirmingDelete = bot !== undefined && confirmDeleteBotId === bot.id;
     const botId = bot?.id;
 
     // Older messages are added above the ones on screen. The anchor message is kept at the same
@@ -251,9 +261,48 @@ function ConversationView({
                                 >
                                     Models
                                 </button>
+                                {canDeleteBot
+                                    ? (
+                                            <button
+                                                type="button"
+                                                className="header-button"
+                                                onClick={() => {
+                                                    setConfirmDeleteBotId(bot.id);
+                                                }}
+                                            >
+                                                Delete
+                                            </button>
+                                        )
+                                    : null}
                             </div>
                         )}
             </header>
+            {isConfirmingDelete
+                ? (
+                        <div className="delete-confirm" role="group" aria-label="Confirm delete">
+                            <p>{`Delete ${botName}? Its chats, rules, routines, watches, webhooks, secrets, workspace and shared files are removed for good.`}</p>
+                            <button
+                                type="button"
+                                className="choice-button is-danger"
+                                onClick={() => {
+                                    setConfirmDeleteBotId(undefined);
+                                    onDeleteBot();
+                                }}
+                            >
+                                Delete
+                            </button>
+                            <button
+                                type="button"
+                                className="choice-button"
+                                onClick={() => {
+                                    setConfirmDeleteBotId(undefined);
+                                }}
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    )
+                : null}
             {onHideWebhookUrl === undefined
                 ? null
                 : webhookUrls.map(notice => (

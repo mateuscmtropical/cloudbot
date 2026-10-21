@@ -52,14 +52,18 @@ function parseSecretSite(rawSite: string): string {
 }
 
 // The vault takes names in capital letters. A hash of the bot id keeps each bot's secrets apart.
-function buildVaultName(botId: string, name: string): string {
+function botVaultPrefix(botId: string): string {
     const botHash = createHash('sha256')
         .update(botId)
         .digest('hex');
     const botTag = botHash.slice(0, BOT_TAG_LENGTH)
         .toUpperCase();
 
-    return `${VAULT_PREFIX}_${botTag}_${name}`;
+    return `${VAULT_PREFIX}_${botTag}_`;
+}
+
+function buildVaultName(botId: string, name: string): string {
+    return `${botVaultPrefix(botId)}${name}`;
 }
 
 function parseStoredSecret(stored: string): BotSecret | undefined {
@@ -108,6 +112,17 @@ class BotSecrets {
         const vaultName = buildVaultName(botId, name);
 
         this.vault.delete(vaultName);
+    }
+
+    // Removes every secret of the bot. Used when the bot is deleted.
+    removeAll(botId: string): void {
+        const prefix = botVaultPrefix(botId);
+
+        this.vault.listNames()
+            .filter(vaultName => vaultName.startsWith(prefix))
+            .forEach((vaultName) => {
+                this.vault.delete(vaultName);
+            });
     }
 
     read(botId: string, name: string): BotSecret | undefined {

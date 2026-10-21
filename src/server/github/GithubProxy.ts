@@ -61,6 +61,15 @@ function isRedirect(statusCode: number): boolean {
     return statusCode >= MIN_REDIRECT_STATUS && statusCode <= MAX_REDIRECT_STATUS;
 }
 
+function closeServer(server: Server): Promise<void> {
+    return new Promise<void>((resolve) => {
+        server.close(() => {
+            resolve();
+        });
+        server.closeAllConnections();
+    });
+}
+
 // Each bot gets its own listener and port. The port is the bot's address, so one bot's shell has no other bot's address in its environment.
 class GithubProxy {
     private readonly readToken: (botId: string) => string | undefined;
@@ -72,7 +81,7 @@ class GithubProxy {
     private readonly fetchFunction: GithubFetch;
     private readonly portsByBot = new Map<string, Promise<number>>();
     private readonly botsWithPendingApproval = new Set<string>();
-    private readonly servers: Server[] = [];
+    private readonly serversByBot = new Map<string, Server>();
 
     constructor(options: GithubProxyOptions) {
         this.readToken = options.readToken;
@@ -91,13 +100,29 @@ class GithubProxy {
         return buildGithubEnvironment({ port, caFile: this.caFile, bundleFile: this.bundleFile });
     }
 
+    // Stops the listener of a deleted bot, so its port stops answering.
+    async forget(botId: string): Promise<void> {
+        const pendingListen = this.portsByBot.get(botId);
+
+        this.portsByBot.delete(botId);
+
+        // A listener still starting would register its server after this call, so the start is awaited first.
+        // Its error is ignored here, since there is then no server to close.
+        if (pendingListen !== undefined) {
+            await pendingListen.catch(() => undefined);
+        }
+
+        const server = this.serversByBot.get(botId);
+
+        this.serversByBot.delete(botId);
+
+        if (server !== undefined) {
+            await closeServer(server);
+        }
+    }
+
     async close(): Promise<void> {
-        const closing = this.servers.map(server => new Promise<void>((resolve) => {
-            server.close(() => {
-                resolve();
-            });
-            server.closeAllConnections();
-        }));
+        const closing = [...this.serversByBot.values()].map(closeServer);
 
         await Promise.all(closing);
     }
@@ -144,7 +169,7 @@ class GithubProxy {
 
         const address = server.address() as AddressInfo;
 
-        this.servers.push(server);
+        this.serversByBot.set(botId, server);
 
         return address.port;
     }
