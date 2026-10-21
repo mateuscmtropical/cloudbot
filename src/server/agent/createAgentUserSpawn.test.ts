@@ -132,4 +132,13 @@ describe('createAgentUserSpawn', () => {
                 HOME: '/home/bot', PATH: '/usr/local/bin:/usr/bin:/bin',
             });
     });
+
+    it('adds the turn extra variables to the agent environment', () => {
+        const environment = buildAgentEnvironment('bot', {}, { GH_HOST: '127.0.0.1:40123' });
+
+        expect(environment.GH_HOST)
+            .toBe('127.0.0.1:40123');
+        expect(environment.HOME)
+            .toBe('/home/bot');
+    });
 });

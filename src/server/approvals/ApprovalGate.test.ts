@@ -312,4 +312,37 @@ describe('ApprovalGate', () => {
         expect(onOwnerWait)
             .not.toHaveBeenCalled();
     });
+
+    it('asks the owner about a plain action and resolves true only on approve', async () => {
+        const { gate, chat, posted } = createGate(() => Promise.resolve({ decision: 'allow' }));
+        const pending = gate.ask('bot-1', 'Push commits to owner/repo on GitHub.', 'Detail line', new AbortController().signal);
+
+        await vi.waitFor(() => {
+            expect(posted)
+                .toHaveLength(1);
+        });
+
+        expect(posted[0]?.prompt)
+            .toBe('The bot wants your approval. Push commits to owner/repo on GitHub.\n\nDetail line');
+        await gate.answer('bot-1', 'message-1', 'approve');
+
+        await expect(pending)
+            .resolves.toBe(true);
+        expect(chat.close)
+            .toHaveBeenCalledTimes(1);
+    });
+
+    it('resolves false when the owner denies a plain action', async () => {
+        const { gate, posted } = createGate(() => Promise.resolve({ decision: 'allow' }));
+        const pending = gate.ask('bot-1', 'Push commits to owner/repo on GitHub.', undefined, new AbortController().signal);
+
+        await vi.waitFor(() => {
+            expect(posted)
+                .toHaveLength(1);
+        });
+        await gate.answer('bot-1', 'message-1', 'deny');
+
+        await expect(pending)
+            .resolves.toBe(false);
+    });
 });

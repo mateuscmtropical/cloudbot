@@ -119,6 +119,8 @@ interface ChatServiceOptions {
     webhookDeliveries?: DeliveryMemory | undefined;
     // Decides which tool calls wait for the owner. Without it no call waits.
     toolCallReviewer?: ToolCallReviewer | undefined;
+    // The variables a bot's turn adds for GitHub, such as the proxy address. Without it git and gh are not routed.
+    githubEnvironment?: ((botId: string) => Promise<Record<string, string>>) | undefined;
 }
 
 interface SharedFileDownload {
@@ -399,6 +401,7 @@ class ChatService {
     private readonly webhookDeliveries: DeliveryMemory | undefined;
     private readonly webhookBaseUrl: string | undefined;
     private readonly approvals: ApprovalGate | undefined;
+    private readonly githubEnvironment: ((botId: string) => Promise<Record<string, string>>) | undefined;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
     // The limits and the clock of the running turn of each bot. They are set when the turn starts and cleared when it ends.
@@ -442,6 +445,7 @@ class ChatService {
         this.webhookBaseUrl = options.webhookBaseUrl;
         this.webhookRefusals = options.webhookRefusals;
         this.webhookDeliveries = options.webhookDeliveries;
+        this.githubEnvironment = options.githubEnvironment;
         this.approvals = options.toolCallReviewer === undefined
             ? undefined
             : new ApprovalGate({
@@ -1444,6 +1448,7 @@ class ChatService {
                     hasModels: this.modelStore !== undefined,
                     hasWebhooks: this.webhookStore !== undefined,
                     hasWatches: this.watchStore !== undefined,
+                    hasGithub: this.githubEnvironment !== undefined,
                     hasLimits: this.limitStore !== undefined,
                     ownerRules,
                     helpers: helperKinds,
@@ -1498,6 +1503,18 @@ class ChatService {
         }
 
         return (call, signal) => approvals.review(botId, call, signal);
+    }
+
+    // Asks the owner in the chat about an action the proxy holds, such as a push. Only a running turn can be asked, so without one the action is refused.
+    async requestOwnerApproval(botId: string, summary: string, detail: string | undefined): Promise<boolean> {
+        const approvals = this.approvals;
+        const runningTurn = this.runningTurns.get(botId);
+
+        if (approvals === undefined || runningTurn === undefined) {
+            return false;
+        }
+
+        return approvals.ask(botId, summary, detail, runningTurn.signal);
     }
 
     // request_secret needs the vault. browser_type_secret also needs the browser.
@@ -1570,6 +1587,7 @@ class ChatService {
         const remoteServerNames = Object.keys(turnContext.mcpServers)
             .filter(name => name !== PROFILE_SERVER_NAME);
         const remoteToolPatterns = remoteServerNames.map(name => `mcp__${name}__*`);
+        const githubEnvironment = this.githubEnvironment === undefined ? undefined : await this.githubEnvironment(botId);
         const turnRequest: TurnRequest = {
             botId,
             workspaceDir: turnContext.workspaceDir,
@@ -1589,6 +1607,7 @@ class ChatService {
             ...(turnContext.limit.steps === null ? {} : { maxSteps: turnContext.limit.steps }),
             ...(turnContext.limit.usd === null ? {} : { maxSpendUsd: turnContext.limit.usd }),
             ...(turnContext.reviewToolCall === undefined ? {} : { reviewToolCall: turnContext.reviewToolCall }),
+            ...(githubEnvironment === undefined ? {} : { extraEnvironment: githubEnvironment }),
             ...sessionOption,
         };
         const isResumeAttempt = sessionId !== null;

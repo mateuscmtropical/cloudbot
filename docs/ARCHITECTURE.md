@@ -442,6 +442,53 @@ The bot writes a script in its workspace and registers it as an integration. An 
 Setup. The Docker image creates the user `cloudbot-integrations` with the home `/var/lib/cloudbot-integrations`, sets `CLOUDBOT_INTEGRATION_USER`, and sudoers allows the server user to start processes as that user with `/usr/bin/env -i` only, with no password (`docker/cloudbot-agent.sudoers`). The image has `procps` for `pkill` and `util-linux` for `ipcs` and `ipcrm`. Outside Docker, create the same user, install those packages, and add the same sudoers line.
 
 Limits. The sudoers line allows any program that starts with `/usr/bin/env -i`. The cleanup commands run through that line too. So the server user can run any command as `cloudbot-integrations`. The wrapper limits what the bot asks for, not what the server runs. An approved script can still send its secret to any address it can reach. The server reads the entry file to check its hash, so the server user needs read access to the workspace. The sudo path has not yet been run end to end on a real host.
+## GitHub
+
+The bot's `git` and `gh` reach GitHub only through `GithubProxy`. The bot's shell never holds the
+token. The owner saves it as the bot secret `GITHUB_TOKEN` in the secure form, with the site
+`https://github.com`. A token saved for another site is never sent.
+
+Each bot gets its own HTTPS listener on 127.0.0.1 with a random port. The port is the bot's address,
+and the turn adds it to the agent environment. `gh` gets `GH_HOST` with that address, and
+`GH_ENTERPRISE_TOKEN` as a dummy, because `GH_TOKEN` only works for github.com. `git` gets
+`insteadOf` for `https://github.com/`, so clones and pushes go through the proxy. The listener uses a
+self-signed certificate for 127.0.0.1 that is made at start. The key is made in Node and lives in the server's
+memory. For the moment openssl reads it, it sits in a folder only the server user can open, and that folder is
+removed right after. Two public files are
+written to a folder the bot can read: the certificate, which `http.<proxy>.sslCAInfo` trusts for the proxy
+address, and a bundle of the system roots plus that certificate, which `SSL_CERT_FILE` points to, so curl,
+pip and other tools in the shell keep their usual trust. Without openssl, GitHub routing is off and the
+server logs one line.
+
+The proxy forwards only three kinds of address: git smart HTTP for `github.com`, the REST API under
+`/api/v3/` and GraphQL under `/api/graphql`, both to `api.github.com`. The upstream host comes from
+constants, so a request path cannot pick another host. It replaces any `Authorization` header with the
+token, as Basic auth for git and as Bearer for the API. Redirects are not followed.
+
+Reads pass without a card: clones, fetches, GET requests and GraphQL queries. A push (`POST` to
+`git-receive-pack`), a REST `POST`, `PUT`, `PATCH` or `DELETE`, and a GraphQL mutation wait for the
+owner in the chat. The card names the change. A push lists each ref as "create", "update" (with the old
+and new short hashes, since a force push cannot be told apart) or "delete", read from the ref commands at
+the start of the push. A REST write shows its method and path on the first line, then the whole body. A
+GraphQL mutation shows the whole query and the other request fields, pretty printed. The card never cuts
+text. A change whose card is over 6000 characters, or that has a control, bidi or zero-width character,
+gets a 403 and is not sent. A denied request gets a 403 with `{"error": "..."}`. Only one card is open per
+bot. A write while one is open gets a 429 that says so. A push or a write with no token saved gets a 401
+that names `GITHUB_TOKEN`, and the owner is not asked. Git prints only "could not read Username" for that
+case, so the bot should read the message of `gh` or ask the owner to save the token.
+
+`gh` inside a clone must name the repository, with `--repo owner/repo` or `GH_REPO=owner/repo`.
+Without it `gh` fails with "none of the git remotes ... correspond to the GH_HOST environment
+variable". It does not reach GitHub on another route. The remote shows the proxy address, but gh
+compares the remote host with `GH_HOST` and the port breaks that match.
+
+Each bot has its own port, but all bots run as the same Linux user. Any process of that user can read
+the environment of another bot's shell, and so learn its port. A read then reaches GitHub with the
+token. The approval only covers writes. A proxy key cannot fix this, because `gh` cannot send one.
+
+The Docker image installs `git` and `openssl`, and `gh` from GitHub's apt repository. The
+sudoers file keeps the `GH_*`, `GIT_*` and `SSL_CERT_FILE` names, because sudo drops every other name
+from the agent's environment.
 
 ## Secrets
 

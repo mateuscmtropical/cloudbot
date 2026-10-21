@@ -7,6 +7,7 @@ interface AgentUserSpawnOptions {
     user: string;
     executable: string;
     environment?: Record<string, string> | undefined;
+    extraEnvironment?: Record<string, string> | undefined;
     onStderrTail?: ((tail: string) => void) | undefined;
     spawnFunction?: (command: string, args: string[], options: AgentSpawnProcessOptions) => AgentSpawnedProcess;
 }
@@ -33,18 +34,19 @@ function validateAgentUser(user: string): void {
     }
 }
 
-function buildAgentEnvironment(user: string, environment?: Record<string, string>): Record<string, string> {
+// The extra variables come last. sudo keeps only the names listed in its env_keep, so a new name needs one there too.
+function buildAgentEnvironment(user: string, environment?: Record<string, string>, extraEnvironment?: Record<string, string>): Record<string, string> {
     const proxyUrl = environment?.ANTHROPIC_BASE_URL;
     const proxyEnvironment = proxyUrl
         ? { ANTHROPIC_BASE_URL: proxyUrl, ANTHROPIC_API_KEY: DUMMY_API_KEY }
         : {};
 
-    return { HOME: `/home/${user}`, PATH: AGENT_PATH, ...proxyEnvironment };
+    return { HOME: `/home/${user}`, PATH: AGENT_PATH, ...proxyEnvironment, ...extraEnvironment };
 }
 
 function createAgentUserSpawn(options: AgentUserSpawnOptions): NonNullable<Options['spawnClaudeCodeProcess']> {
     const spawnFunction = options.spawnFunction ?? spawnAgentProcess;
-    const environment = buildAgentEnvironment(options.user, options.environment);
+    const environment = buildAgentEnvironment(options.user, options.environment, options.extraEnvironment);
 
     validateAgentUser(options.user);
     if (!options.executable.startsWith('/')) {
