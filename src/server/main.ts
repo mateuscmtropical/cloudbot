@@ -1,6 +1,7 @@
 import type { Server } from 'node:http';
+import { chmodSync, mkdirSync } from 'node:fs';
 import { serve } from '@hono/node-server';
-import { validateAgentIsolation } from './agent/buildClaudeCommand.ts';
+import { filterOwnerEnvironment, localClaudeConfigDir, validateAgentIsolation } from './agent/buildClaudeCommand.ts';
 
 import { CLEANUP_INTERVAL_MS } from './attachments/cleanUploads.ts';
 import { SdkAgentRunner } from './agent/SdkAgentRunner.ts';
@@ -41,6 +42,7 @@ import { checkApiKey } from './setup/checkApiKey.ts';
 import { SetupConversation, API_KEY_NAME } from './setup/SetupConversation.ts';
 import { startClaudeLogin } from './claudeAuth/startClaudeLogin.ts';
 import { getClaudeAuthStatus } from './claudeAuth/getClaudeAuthStatus.ts';
+import { signOutClaude } from './claudeAuth/signOutClaude.ts';
 import { BotSecrets } from './secrets/BotSecrets.ts';
 import { Vault } from './vault/Vault.ts';
 import { startKeyProxy } from './vault/KeyProxy.ts';
@@ -81,11 +83,26 @@ if (!agentUser) {
     console.warn('Local mode: the bot runs as you, on this computer. It can read your files and run commands with your account. Use Docker or CLOUDBOT_AGENT_USER to keep it apart.');
 }
 
-const authOptions = { claudePath: claudePath ?? 'claude', ...(agentUser ? { agentUser } : {}) };
-const environmentEntries = Object.entries(process.env)
-    .filter((entry): entry is [string, string] => entry[1] !== undefined
-        && !entry[0].startsWith('ANTHROPIC_') && entry[0] !== 'CLAUDE_CODE_OAUTH_TOKEN');
-const environment = Object.fromEntries(environmentEntries);
+// Local mode keeps CloudBot's CLI login in its own folder under the data dir, never in the owner's ~/.claude.
+// Docker already runs the CLI as the bot user, whose home is separate, so it keeps that location.
+const claudeConfigDir = agentUser ? undefined : localClaudeConfigDir(dataDir);
+
+if (claudeConfigDir !== undefined) {
+    mkdirSync(claudeConfigDir, { recursive: true, mode: 0o700 });
+    // The mode of mkdirSync applies only when the folder is created, so an existing folder is tightened here.
+    chmodSync(claudeConfigDir, 0o700);
+}
+
+const authOptions = {
+    claudePath: claudePath ?? 'claude',
+    ...(agentUser ? { agentUser } : {}),
+    ...(claudeConfigDir === undefined ? {} : { configDir: claudeConfigDir }),
+};
+const environment = filterOwnerEnvironment(process.env);
+
+if (claudeConfigDir !== undefined) {
+    environment.CLAUDE_CONFIG_DIR = claudeConfigDir;
+}
 const connection: RuntimeConnection = {};
 const runner = new SdkAgentRunner({ pathToClaudeCodeExecutable: claudePath, environment });
 // The image sets CLOUDBOT_DESKTOP_COMMAND. Local development leaves it unset and has no desktop or browser tools.
@@ -198,7 +215,7 @@ const githubProxy: GithubProxy | undefined = githubCertificate === undefined
             bundleFile: githubCertificate.bundleFile,
         });
 const chatService: ChatService = new ChatService({
-    botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore, routineStore, modelStore, limitStore, screen,
+    botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, ruleStore, routineStore, modelStore, limitStore, screen,
     webhookStore,
     watchStore,
     connectedApps,
@@ -222,6 +239,8 @@ const setup = new SetupConversation({
     startLogin: () => startClaudeLogin(authOptions),
     authStatus: () => getClaudeAuthStatus(authOptions),
     checkKey: checkApiKey,
+    // Local sign-out is refused on macOS, so setup does not offer it there.
+    ...(!agentUser && process.platform === 'darwin' ? {} : { signOut: () => signOutClaude(authOptions) }),
     localMode: !agentUser,
     connect: async (mode) => {
         if (mode === 'apiKey') {

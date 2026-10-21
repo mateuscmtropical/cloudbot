@@ -24,6 +24,7 @@ type SpawnLoginProcess = (command: string, commandArguments: string[], options?:
 interface ClaudeLoginOptions {
     claudePath: string;
     agentUser?: string;
+    configDir?: string;
     spawnProcess?: SpawnLoginProcess;
     timeoutMs?: number;
 }
@@ -37,7 +38,7 @@ interface ClaudeLoginSession {
 
 function startClaudeLogin(options: ClaudeLoginOptions): ClaudeLoginSession {
     const spawnProcess = options.spawnProcess ?? spawn;
-    const invocation = buildClaudeCommand(options.claudePath, ['auth', 'login', '--claudeai'], options.agentUser);
+    const invocation = buildClaudeCommand(options.claudePath, ['auth', 'login', '--claudeai'], options.agentUser, options.configDir);
     const escapedPath = invocation.command.replaceAll('\'', '\'"\'"\'');
     const quotedArguments = invocation.args.map(argument => `'${argument.replaceAll('\'', '\'"\'"\'')}'`);
     const argumentsText = invocation.env ? quotedArguments.join(' ') : 'auth login --claudeai';

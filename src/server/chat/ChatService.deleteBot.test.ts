@@ -10,6 +10,7 @@ import type { ConnectedApps } from '../apps/ConnectedApps.ts';
 import { FakeAgentRunner } from '../agent/FakeAgentRunner.ts';
 import type { ScriptedAgentStep } from '../agent/FakeAgentRunner.ts';
 import { BotDeletingError } from '../bots/BotDeletingError.ts';
+import { encodeProjectPath } from '../bots/claudeProjectFolder.ts';
 import { BotSecrets } from '../secrets/BotSecrets.ts';
 import { BotStore } from '../store/BotStore.ts';
 import { MessageStore } from '../store/MessageStore.ts';
@@ -122,6 +123,31 @@ describe('ChatService.deleteBot', () => {
             ruleStore: new RuleStore(opened.db),
         });
     }
+
+    it('removes the bot\'s Claude Code transcripts from CloudBot\'s own config folder', async () => {
+        const configDir = join(dataDir, 'claude-config');
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await botStore.create({ name: 'Ben', title: 'Assistant', description: '' });
+        const service = new ChatService({
+            botStore,
+            messageStore,
+            runner: new FakeAgentRunner([]),
+            dataDir,
+            botSecrets: secrets,
+            claudeConfigDir: configDir,
+            ruleStore: new RuleStore(opened.db),
+        });
+        const projectFolder = join(configDir, 'projects', encodeProjectPath(join(dataDir, 'workspaces', bot.id)));
+
+        await mkdir(projectFolder, { recursive: true });
+        await writeFile(join(projectFolder, 'transcript.jsonl'), 'data');
+
+        await service.deleteBot(bot.id);
+
+        expect(await pathExists(projectFolder))
+            .toBe(false);
+    });
 
     it('removes every row, folder and secret of the bot, and keeps the other bot', async () => {
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });

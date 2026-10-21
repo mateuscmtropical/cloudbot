@@ -20,6 +20,16 @@ describe('getClaudeAuthStatus', () => {
         }
     });
 
+    it('checks the status with CloudBot\'s own config folder in local mode', async () => {
+        const runCommand = vi.fn()
+            .mockResolvedValue('{"loggedIn":false}');
+
+        await getClaudeAuthStatus({ claudePath: 'claude', configDir: '/data/claude-config', runCommand });
+
+        expect(runCommand.mock.calls[0]?.[2])
+            .toMatchObject({ CLAUDE_CONFIG_DIR: '/data/claude-config' });
+    });
+
     it('maps the real CLI status shape and excludes account details', async () => {
         const runCommand = vi.fn()
             .mockResolvedValue(JSON.stringify({

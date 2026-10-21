@@ -26,6 +26,8 @@ interface SetupConversationOptions {
     authStatus: () => Promise<ClaudeAuthStatus>;
     connect: (mode: SetupMode) => Promise<void>;
     checkKey: (key: string) => Promise<number>;
+    // Runs the CLI's own logout for CloudBot's login only.
+    signOut?: () => Promise<void>;
     // True when no agent user is set, so the bot runs as the owner's account.
     localMode: boolean;
 }
@@ -223,10 +225,11 @@ class SetupConversation {
     private async accept(botId: string, messageId: string, action: SetupAction, value: string): Promise<ChatMessage> {
         const message = await this.options.messages.getById(messageId);
         const switching = this.state.step === 'secret' && action === 'choice' && value === 'subscription';
+        const signingOut = this.state.step === 'done' && action === 'choice' && value === 'signOut';
         const expectedKind = action === 'code' ? 'codeField' : action === 'secret' || switching ? 'secureForm' : 'choice';
 
         if (this.closed || botId !== this.options.botId || message?.botId !== botId || message.kind !== expectedKind
-            || (!switching && this.state.step !== action) || this.state.messageId !== messageId) {
+            || (!switching && !signingOut && this.state.step !== action) || this.state.messageId !== messageId) {
             throw new SetupAnswerError('This setup question is no longer active.');
         }
 
@@ -234,7 +237,11 @@ class SetupConversation {
             throw new SetupAnswerError('Enter a valid value.');
         }
 
-        if (action === 'choice' && value !== 'subscription' && value !== 'apiKey') {
+        if (action === 'choice' && value === 'signOut' && !signingOut) {
+            throw new SetupAnswerError('Choose subscription or API key.');
+        }
+
+        if (action === 'choice' && value !== 'subscription' && value !== 'apiKey' && !signingOut) {
             throw new SetupAnswerError('Choose subscription or API key.');
         }
 
@@ -273,7 +280,9 @@ class SetupConversation {
         const answered = await this.options.chat.updateSetupMessage(messageId, answeredBody);
 
         try {
-            if (action === 'choice') {
+            if (signingOut) {
+                await this.signOutOfClaude();
+            } else if (action === 'choice') {
                 if (value === 'subscription') {
                     await this.beginLogin();
                 } else {
@@ -420,12 +429,47 @@ class SetupConversation {
         await this.options.connect(mode);
         await this.retireActive();
         this.session = undefined;
+        const previousMessageId = this.state.messageId;
+
         this.state = { step: 'done', mode };
+        if (wasDone && previousMessageId !== undefined) {
+            this.state.messageId = previousMessageId;
+        }
         await this.persist();
 
         if (!wasDone) {
             await this.say('Claude is ready. What would you like to do?');
         }
+
+        if (mode === 'subscription' && this.options.signOut !== undefined && this.state.messageId === undefined) {
+            await this.askSignOut();
+        }
+    }
+
+    private async askSignOut(): Promise<void> {
+        await this.ask({
+            kind: 'choice', prompt: 'This signs out only CloudBot\'s Claude login. Your own Claude Code login is not touched.',
+            options: [{ id: 'signOut', label: 'Sign out' }],
+        });
+    }
+
+    private async signOutOfClaude(): Promise<void> {
+        const { signOut } = this.options;
+
+        if (signOut === undefined) {
+            return;
+        }
+
+        try {
+            await signOut();
+        } catch {
+            await this.say('Could not sign out of Claude. Try again.');
+            await this.askSignOut();
+
+            return;
+        }
+
+        await this.askMode();
     }
 
     private async fail(text: string): Promise<void> {

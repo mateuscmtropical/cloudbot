@@ -37,6 +37,7 @@ interface Fixture {
     authStatus: Mock<() => Promise<ClaudeAuthStatus>>;
     runner: FakeAgentRunner;
     checkKey: Mock<(_: string) => Promise<number>>;
+    signOut: Mock<() => Promise<void>>;
 }
 
 describe('setup conversation', () => {
@@ -55,7 +56,7 @@ describe('setup conversation', () => {
         await rm(dataDir, { recursive: true, force: true });
     });
 
-    async function fixture(start = true, localMode = false): Promise<Fixture> {
+    async function fixture(start = true, localMode = false, canSignOut = true): Promise<Fixture> {
         const bots = new BotStore(opened.db);
         const bot = await bots.create({ name: 'CloudBot', title: 'Assistant', description: '' });
         const messages = new MessageStore(opened.db);
@@ -70,6 +71,8 @@ describe('setup conversation', () => {
             .mockResolvedValue({ isLoggedIn: false });
         const checkKey = vi.fn<(_: string) => Promise<number>>()
             .mockResolvedValue(200);
+        const signOut = vi.fn<() => Promise<void>>()
+            .mockResolvedValue(undefined);
         const finished = Promise.withResolvers<{ ok: true }>();
         const session: ClaudeLoginSession = {
             signInUrl: Promise.resolve('https://claude.ai/login'),
@@ -89,6 +92,7 @@ describe('setup conversation', () => {
                 vault.delete(name);
             }, has: name => vault.has(name), set: (name, value) => { vault.set(name, value); } },
             checkKey, connect, authStatus, startLogin, localMode,
+            ...(canSignOut ? { signOut } : {}),
         });
         const app = createApp({ version: 'test', access, chatService: chat, webRoot: 'missing-web-root' });
 
@@ -97,7 +101,7 @@ describe('setup conversation', () => {
             await setup.start();
         }
 
-        return { app, chat, setup, messages, settings, botId: bot.id, cookie: `cloudbot_session=${cookie ?? ''}`, vault, session, connect, authStatus, runner, checkKey, startLogin };
+        return { app, chat, setup, messages, settings, botId: bot.id, cookie: `cloudbot_session=${cookie ?? ''}`, vault, session, connect, authStatus, runner, checkKey, startLogin, signOut };
     }
 
     async function active(context: Fixture, kind: string): Promise<ChatMessage> {
@@ -146,6 +150,84 @@ describe('setup conversation', () => {
             .toMatchObject({ body: { submitted: true } });
         expect(JSON.stringify(stored)).not.toContain(SECRET);
         expect(await context.settings.get('claude.setup')).not.toContain(SECRET);
+    });
+
+    it('signs out only through the CLI logout callback and then offers the choice again', async () => {
+        const context = await fixture();
+        const choice = await active(context, 'choice');
+
+        await answer(context, choice.id, 'choice', { choiceId: 'subscription' });
+        const field = await active(context, 'codeField');
+
+        await answer(context, field.id, 'code', { code: CODE });
+        await vi.waitFor(() => {
+            expect(context.setup.isDone())
+                .toBe(true);
+        });
+
+        const signOutChoice = await active(context, 'choice');
+
+        await answer(context, signOutChoice.id, 'choice', { choiceId: 'signOut' });
+
+        await vi.waitFor(() => {
+            expect(context.setup.isDone())
+                .toBe(false);
+        });
+        expect(context.signOut)
+            .toHaveBeenCalledOnce();
+
+        const stored = await context.chat.listMessages(context.botId);
+        const serialized = JSON.stringify(stored);
+
+        expect(serialized).not.toContain(CODE);
+    });
+
+    it('does not offer sign-out when it cannot run', async () => {
+        const context = await fixture(true, true, false);
+        const choice = await active(context, 'choice');
+
+        await answer(context, choice.id, 'choice', { choiceId: 'subscription' });
+        const field = await active(context, 'codeField');
+
+        await answer(context, field.id, 'code', { code: CODE });
+        await vi.waitFor(() => {
+            expect(context.setup.isDone())
+                .toBe(true);
+        });
+        const stored = await context.chat.listMessages(context.botId);
+        const serialized = JSON.stringify(stored);
+
+        expect(serialized).not.toContain('signOut');
+    });
+
+    it('keeps the sign-out choice after a restart, so it can still be used', async () => {
+        const context = await fixture();
+        const choice = await active(context, 'choice');
+
+        await answer(context, choice.id, 'choice', { choiceId: 'subscription' });
+        const field = await active(context, 'codeField');
+
+        await answer(context, field.id, 'code', { code: CODE });
+        await vi.waitFor(() => {
+            expect(context.setup.isDone())
+                .toBe(true);
+        });
+
+        const setup = await restart(context);
+
+        await vi.waitFor(() => {
+            expect(setup.isDone())
+                .toBe(true);
+        });
+        const history = await context.chat.listMessages(context.botId) ?? [];
+        const signOutChoices = history.filter((message) => {
+            const serialized = JSON.stringify(message.body);
+
+            return serialized.includes('signOut');
+        });
+
+        expect(signOutChoices)
+            .toHaveLength(1);
     });
 
     it('passes the code only to the CLI and verifies sign-in before becoming ready', async () => {
@@ -252,7 +334,7 @@ describe('setup conversation', () => {
             vault: { delete: (name) => {
                 context.vault.delete(name);
             }, has: name => context.vault.has(name), set: (name, value) => { context.vault.set(name, value); } },
-            checkKey: context.checkKey, localMode: false, startLogin: () => context.session, authStatus: context.authStatus, connect: context.connect,
+            checkKey: context.checkKey, localMode: false, signOut: context.signOut, startLogin: () => context.session, authStatus: context.authStatus, connect: context.connect,
         });
         const access = new SetupAccess(context.settings);
 
