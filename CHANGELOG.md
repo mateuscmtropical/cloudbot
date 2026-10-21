@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Routine storage: a `routines` table keeps a prompt, a schedule (every N minutes with a 5 minute minimum, daily, or weekly, in UTC) and the next run time for a bot. Nothing runs them yet.
 - Review agent: before a tool call runs, a separate model call with no tools reads the call, the owner rules and the last chat lines. It answers allow, ask or deny. Reading and looking tools skip the review. Sending a message, a purchase and a booking always ask the owner. A review that fails asks the owner too.
 - Approval gate: a tool call can wait for the owner. The chat shows a question with Approve and Deny. Deny, Stop, a restart and one hour without an answer all refuse the call.
 - Document tools: the image has Python 3 with openpyxl, python-docx, python-pptx, reportlab, pypdf and matplotlib, plus pdftotext from poppler-utils. The bot builds spreadsheets, documents, slides, PDFs and charts in its workspace and sends them with `share_file`. The system prompt names the tools. The container check imports every library as the bot user.
