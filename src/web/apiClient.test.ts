@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { listBots, listMessages, RequestFailedError, stopTurn, uploadAttachments } from './apiClient.ts';
+import { listBots, listMessages, listRoutines, removeRoutine, RequestFailedError, stopTurn, uploadAttachments } from './apiClient.ts';
 
 function stubFetch(response: Response): ReturnType<typeof vi.fn> {
     const fetchMock = vi.fn(() => Promise.resolve(response));
@@ -78,5 +78,25 @@ describe('apiClient', () => {
 
         expect(fetchMock)
             .toHaveBeenCalledWith('/api/bots/bot-1/messages', {});
+    });
+
+    it('lists the routines of a bot', async () => {
+        const fetchMock = stubFetch(Response.json([{ id: 'routine-1' }]));
+
+        const routines = await listRoutines('bot-1');
+
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/bots/bot-1/routines', {});
+        expect(routines)
+            .toEqual([{ id: 'routine-1' }]);
+    });
+
+    it('deletes a routine by its bot and routine id', async () => {
+        const fetchMock = stubFetch(new Response(null, { status: 204 }));
+
+        await removeRoutine('bot/1', 'routine-1');
+
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/bots/bot%2F1/routines/routine-1', { method: 'DELETE' });
     });
 });

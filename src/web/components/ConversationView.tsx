@@ -6,6 +6,7 @@ import { renderMarkdown } from '../markdown.ts';
 import { Composer } from './Composer.tsx';
 import type { DraftAttachment } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
+import { RoutinesPanel } from './RoutinesPanel.tsx';
 import { RulesPanel } from './RulesPanel.tsx';
 import type { MessageActions } from './MessageItem.tsx';
 
@@ -93,6 +94,8 @@ function ConversationView({
     const botName = bot?.name ?? 'CloudBot';
     // The id of the bot whose rules are open. Switching to another bot closes the panel.
     const [rulesBotId, setRulesBotId] = useState<string | undefined>(undefined);
+    // The id of the bot whose routines are open. Switching to another bot closes the panel.
+    const [routinesBotId, setRoutinesBotId] = useState<string | undefined>(undefined);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
     const [shownBotId, setShownBotId] = useState(bot?.id);
 
@@ -100,8 +103,10 @@ function ConversationView({
     if (shownBotId !== bot?.id) {
         setShownBotId(bot?.id);
         setRulesBotId(undefined);
+        setRoutinesBotId(undefined);
     }
     const isRulesOpen = bot !== undefined && rulesBotId === bot.id;
+    const isRoutinesOpen = bot !== undefined && routinesBotId === bot.id;
     const botId = bot?.id;
 
     // Older messages are added above the ones on screen. The anchor message is kept at the same
@@ -190,28 +195,35 @@ function ConversationView({
                 {bot === undefined
                     ? null
                     : (
-                            <button
-                                type="button"
-                                className="screen-button"
-                                onClick={() => {
-                                    setIsDesktopOpen(!isDesktopOpen);
-                                }}
-                            >
-                                Screen
-                            </button>
-                        )}
-                {bot === undefined
-                    ? null
-                    : (
-                            <button
-                                type="button"
-                                className="rules-button"
-                                onClick={() => {
-                                    setRulesBotId(isRulesOpen ? undefined : bot.id);
-                                }}
-                            >
-                                Rules
-                            </button>
+                            <div className="header-actions">
+                                <button
+                                    type="button"
+                                    className="header-button"
+                                    onClick={() => {
+                                        setIsDesktopOpen(!isDesktopOpen);
+                                    }}
+                                >
+                                    Screen
+                                </button>
+                                <button
+                                    type="button"
+                                    className="header-button"
+                                    onClick={() => {
+                                        setRulesBotId(isRulesOpen ? undefined : bot.id);
+                                    }}
+                                >
+                                    Rules
+                                </button>
+                                <button
+                                    type="button"
+                                    className="header-button"
+                                    onClick={() => {
+                                        setRoutinesBotId(isRoutinesOpen ? undefined : bot.id);
+                                    }}
+                                >
+                                    Routines
+                                </button>
+                            </div>
                         )}
             </header>
             {isDesktopOpen
@@ -232,6 +244,17 @@ function ConversationView({
                             botName={botName}
                             onClose={() => {
                                 setRulesBotId(undefined);
+                            }}
+                        />
+                    )
+                : null}
+            {isRoutinesOpen
+                ? (
+                        <RoutinesPanel
+                            botId={bot.id}
+                            botName={botName}
+                            onClose={() => {
+                                setRoutinesBotId(undefined);
                             }}
                         />
                     )

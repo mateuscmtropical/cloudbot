@@ -1,4 +1,5 @@
 import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName } from '../shared/chatTypes.ts';
+import type { BotRoutine } from '../shared/routineTypes.ts';
 
 const API_ROOT = '/api';
 
@@ -220,6 +221,23 @@ async function removeRule(botId: string, ruleId: string): Promise<void> {
     }
 }
 
+function listRoutines(botId: string): Promise<BotRoutine[]> {
+    const path = botPath(botId, '/routines');
+
+    return requestJson<BotRoutine[]>(path, {});
+}
+
+async function removeRoutine(botId: string, routineId: string): Promise<void> {
+    const path = botPath(botId, `/routines/${encodeURIComponent(routineId)}`);
+    const response = await fetch(path, { method: 'DELETE' });
+
+    if (!response.ok) {
+        const serverMessage = await readServerMessage(response);
+
+        throw new RequestFailedError(path, response.status, serverMessage);
+    }
+}
+
 // onOpen runs on the first connection and on every reconnect. Events missed while
 // the stream was down are lost, so the caller reloads the conversation there.
 function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void, onOpen: () => void): () => void {
@@ -261,4 +279,6 @@ export {
     listRules,
     addRule,
     removeRule,
+    listRoutines,
+    removeRoutine,
 };

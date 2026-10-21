@@ -8,10 +8,13 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- The buttons inside the Rules panel had no background and their text could not be read.
+- The header buttons are one group now. On windows up to 1000px wide they sit in a row after the bot name instead of covering it.
 - `browser_click` checks the focus after a click. A click on a field that did not take the focus is repeated once, and the result tells the model whether a field has the focus.
 
 ### Added
 
+- Routines panel: the Routines button in the conversation header lists the bot's routines with their prompt, their schedule in UTC, the next run and the last run. Remove deletes a routine from the list. The panel says the bot creates routines when asked in the chat and marks routines that are off.
 - Routines from the chat: the bot has `routine_create`, `routine_list`, `routine_delete` and `routine_set_enabled`, up to 20 routines per bot, with schedules in UTC. The owner can read and remove routines with `GET /api/bots/:id/routines` and `DELETE /api/bots/:id/routines/:routineId`. Creating, deleting and changing a routine go through the review agent. Listing does not.
 - Routine scheduler: every 30 seconds the server checks for due routines and sends each prompt to its bot as a chat message, so the queue, usage waits and approvals apply. A routine missed while the server was off runs once. There is no way to create a routine from the chat yet.
 - Routine storage: a `routines` table keeps a prompt, a schedule (every N minutes with a 5 minute minimum, daily, or weekly, in UTC) and the next run time for a bot. Nothing runs them yet.
