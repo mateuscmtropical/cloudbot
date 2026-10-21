@@ -219,7 +219,7 @@ time, so a pending file lost in a restart is treated as used.
 Images up to 5 MB go to the SDK as image blocks, built from the bytes in memory.
 The disk is never read back for them. Images are detected from their first bytes,
 not from the client type. Before an image becomes a block, `readImageSize` reads
-its pixel size from the header and checks that the file ends where its format
+its pixel size from the header and checks that the file has the end marker its format
 says, so a truncated file or one that only starts like an image is refused. A
 side over 8000 pixels is refused too, as in the
 [vision docs](https://platform.claude.com/docs/build-with-claude/vision). The

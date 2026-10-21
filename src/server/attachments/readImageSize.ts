@@ -4,18 +4,22 @@ interface ImageSize {
 }
 
 const PNG_HEADER_LENGTH = 33;
-const PNG_END_CHUNK = Buffer.from([0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82]);
+// The type and the fixed checksum of the empty IEND chunk.
+const PNG_END_CHUNK = Buffer.from([0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82]);
 const GIF_HEADER_LENGTH = 13;
 const GIF_TRAILER = 0x3B;
 const WEBP_HEADER_LENGTH = 30;
+const JPEG_END_MARKER = Buffer.from([0xFF, 0xD9]);
+const MAX_JPEG_SEGMENTS = 1000;
 const JPEG_NON_FRAME_MARKERS = new Set([0xC4, 0xC8, 0xCC]);
 
 function readPngSize(bytes: Buffer): ImageSize | undefined {
     const chunkType = bytes.toString('latin1', 12, 16);
-    const endChunk = bytes.subarray(bytes.length - PNG_END_CHUNK.length);
+    const afterHeader = bytes.subarray(PNG_HEADER_LENGTH);
 
-    // The first chunk must be IHDR and the last one IEND, or the file was cut short.
-    if (bytes.length < PNG_HEADER_LENGTH + PNG_END_CHUNK.length || chunkType !== 'IHDR' || !endChunk.equals(PNG_END_CHUNK)) {
+    // The first chunk must be IHDR and an IEND chunk must follow, or the file was cut short.
+    // Bytes after IEND are allowed.
+    if (bytes.length < PNG_HEADER_LENGTH || chunkType !== 'IHDR' || !afterHeader.includes(PNG_END_CHUNK)) {
         return undefined;
     }
 
@@ -23,37 +27,43 @@ function readPngSize(bytes: Buffer): ImageSize | undefined {
 }
 
 // Finds the frame header by walking the marker segments, one recursion per segment.
-function findJpegFrame(bytes: Buffer, offset: number, end: number): ImageSize | undefined {
-    if (offset + 4 > end || bytes[offset] !== 0xFF) {
+// A real file has a few dozen segments before the frame header. The depth limit stops hostile files.
+function findJpegFrame(bytes: Buffer, offset: number, end: number, depth: number): ImageSize | undefined {
+    if (offset + 4 > end || bytes[offset] !== 0xFF || depth > MAX_JPEG_SEGMENTS) {
         return undefined;
     }
 
-    const marker = bytes[offset + 1] ?? 0;
+    // Fill bytes before a marker are skipped in one step.
+    const fillLength = bytes.subarray(offset, end)
+        .findIndex(byte => byte !== 0xFF);
+    const markerOffset = offset + fillLength - 1;
+    const marker = bytes[markerOffset + 1] ?? 0;
 
-    if (marker === 0xFF) {
-        return findJpegFrame(bytes, offset + 1, end);
+    if (fillLength < 1 || markerOffset + 4 > end) {
+        return undefined;
     }
 
-    const isFrameHeader = marker >= 0xC0 && marker <= 0xCF && !JPEG_NON_FRAME_MARKERS.has(marker);
-
-    if (isFrameHeader) {
-        return offset + 9 <= end
-            ? { height: bytes.readUInt16BE(offset + 5), width: bytes.readUInt16BE(offset + 7) }
+    if (marker >= 0xC0 && marker <= 0xCF && !JPEG_NON_FRAME_MARKERS.has(marker)) {
+        return markerOffset + 9 <= end
+            ? { height: bytes.readUInt16BE(markerOffset + 5), width: bytes.readUInt16BE(markerOffset + 7) }
             : undefined;
     }
 
-    return findJpegFrame(bytes, offset + 2 + bytes.readUInt16BE(offset + 2), end);
+    const nextOffset = markerOffset + 2 + bytes.readUInt16BE(markerOffset + 2);
+
+    return findJpegFrame(bytes, nextOffset, end, depth + 1);
 }
 
-// The file must end with the end-of-image marker. Zero padding after it is allowed.
+// The end-of-image marker must be present, or the file was cut short. Bytes after it are allowed.
+// Inside the image data an FF byte is always followed by 00, so FF D9 only appears as the end.
 function readJpegSize(bytes: Buffer): ImageSize | undefined {
-    const end = bytes.findLastIndex(byte => byte !== 0x00) + 1;
+    const endOfImage = bytes.lastIndexOf(JPEG_END_MARKER);
 
-    if (bytes[end - 2] !== 0xFF || bytes[end - 1] !== 0xD9) {
+    if (endOfImage < 0) {
         return undefined;
     }
 
-    return findJpegFrame(bytes, 2, end);
+    return findJpegFrame(bytes, 2, endOfImage + 2, 0);
 }
 
 function readGifSize(bytes: Buffer): ImageSize | undefined {

@@ -42,6 +42,30 @@ describe('readImageSize', () => {
             .toBeUndefined();
     });
 
+    it('accepts bytes after the end of a PNG or a JPEG', () => {
+        const padding = Buffer.from([0x0A, 0x0A, 0x0A]);
+
+        expect(readImageSize(Buffer.concat([buildPng(7, 9), padding]), 'image/png'))
+            .toEqual({ width: 7, height: 9 });
+        expect(readImageSize(Buffer.concat([buildJpeg(7, 9), padding]), 'image/jpeg'))
+            .toEqual({ width: 7, height: 9 });
+    });
+
+    it('handles hostile JPEG segments without a stack overflow', () => {
+        const fillBytes = Buffer.concat([Buffer.from([0xFF, 0xD8]), Buffer.alloc(100_000, 0xFF), Buffer.from([0xD9])]);
+        const emptySegments = Buffer.concat([
+            Buffer.from([0xFF, 0xD8]),
+            Buffer.from(Array.from({ length: 30_000 }, () => [0xFF, 0xE0, 0x00, 0x02])
+                .flat()),
+            Buffer.from([0xFF, 0xD9]),
+        ]);
+
+        expect(readImageSize(fillBytes, 'image/jpeg'))
+            .toBeUndefined();
+        expect(readImageSize(emptySegments, 'image/jpeg'))
+            .toBeUndefined();
+    });
+
     it('returns nothing for a type that is not an image', () => {
         expect(readImageSize(buildPng(1, 1), 'text/plain'))
             .toBeUndefined();
