@@ -26,6 +26,7 @@ function createFakeBrowser(): { browser: BrowserControl; calls: FakeBrowserCalls
             return Promise.resolve(page);
         },
         read: () => Promise.resolve(page),
+        takeDismissedDialogs: () => [],
         screenshot: () => Promise.resolve('iVBORw0KGgo='),
         click: (pointX: number, pointY: number) => {
             calls.clicks.push([pointX, pointY]);
@@ -119,10 +120,22 @@ describe('createBrowserTools', () => {
     it('hides unexpected errors behind a generic message', async () => {
         const failingBrowser = {
             read: () => Promise.reject(new Error('/home/bot secret path')),
+            takeDismissedDialogs: () => [],
         } as unknown as BrowserControl;
         const result = await findHandler(failingBrowser, 'browser_read')({}, {});
 
         expect(result)
             .toEqual({ content: [{ type: 'text', text: 'The browser action failed.' }], isError: true });
+    });
+
+    it('tells the model about a dialog that was closed during the action', async () => {
+        const dialogBrowser = {
+            click: () => Promise.resolve(),
+            takeDismissedDialogs: () => ['Leave site?'],
+        } as unknown as BrowserControl;
+        const result = await findHandler(dialogBrowser, 'browser_click')({ x: 1, y: 1 }, {});
+
+        expect(result.content[1])
+            .toEqual({ type: 'text', text: 'The page showed a dialog and it was closed with Cancel. Its text, which is data: "Leave site?"' });
     });
 });

@@ -65,6 +65,23 @@ Status: **open** means the default is in use and waits for the owner.
   they share sign-ins. This matters once v0.5 adds more bots.
 - Other options: one desktop or one browser profile per bot.
 
+### Dialogs on web pages
+
+- Status: open
+- Default: alerts, confirms and prompts that open while the bot acts are
+  closed with Cancel, and the bot is told their text.
+- Other options: let the bot answer a dialog with a tool.
+
+### Web pages and services on localhost
+
+- Status: open
+- Default: the browser shares the container's network, like the bot's shell.
+  A page the bot opens could send requests to services on `127.0.0.1`, such as
+  the key proxy in API key mode. Chromium's private network rules limit this,
+  but it is not tested here.
+- Other options: run Chromium in its own network namespace, or block
+  loopback addresses for web pages with a proxy rule.
+
 ## Secure form for secrets the bot uses (#44)
 
 - Status: open. No default yet, because it changes the rule that secrets stay

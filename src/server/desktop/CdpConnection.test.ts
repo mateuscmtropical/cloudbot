@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CdpConnection, CdpError } from './CdpConnection.ts';
-import { createFakeSocketFactory } from './testCdp.ts';
+import { FakeCdpSocket, createFakeSocketFactory } from './testCdp.ts';
 
 afterEach(() => {
     vi.useRealTimers();
@@ -65,5 +65,38 @@ describe('CdpConnection', () => {
         socket?.emit('message', { data: 42 });
 
         await expect(connection.call('Runtime.evaluate')).resolves.toBe('done');
+    });
+
+    it('passes events to the listener', async () => {
+        const { factory, sockets } = createFakeSocketFactory(() => undefined);
+        const connection = await CdpConnection.open('ws://page', factory);
+        const events: [string, unknown][] = [];
+
+        connection.onEvent((method, params) => {
+            events.push([method, params]);
+        });
+        sockets[0]?.emit('message', { data: '{"method":"Page.javascriptDialogOpening","params":{"message":"hi"}}' });
+
+        expect(events)
+            .toEqual([['Page.javascriptDialogOpening', { message: 'hi' }]]);
+    });
+
+    it('gives up when the socket does not open in time', async () => {
+        vi.useFakeTimers();
+
+        const sockets: FakeCdpSocket[] = [];
+        const opening = CdpConnection.open('ws://page', () => {
+            const socket = new FakeCdpSocket(() => undefined);
+
+            sockets.push(socket);
+
+            return socket;
+        }, 1000);
+        const expectation = expect(opening).rejects.toThrow('did not accept the connection in time');
+
+        await vi.advanceTimersByTimeAsync(1000);
+        await expectation;
+        expect(sockets[0]?.isClosed)
+            .toBe(true);
     });
 });

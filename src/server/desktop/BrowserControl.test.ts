@@ -1,12 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { BrowserControl, BrowserError, MAX_PAGE_TEXT_LENGTH, parseWebUrl } from './BrowserControl.ts';
 import { createFakeSocketFactory } from './testCdp.ts';
+import type { FakeCdpSocket } from './testCdp.ts';
 import type { CdpAnswer, SentCall } from './testCdp.ts';
 
 interface FetchCall {
     url: string;
     method: string;
+}
+
+// Every action enables the Page domain first, to see dialogs. The tests look at the calls after it.
+function actionCalls(socket: FakeCdpSocket | undefined): SentCall[] {
+    return (socket?.sent ?? []).filter(call => call.method !== 'Page.enable');
 }
 
 const PAGE_SOCKET_URL = 'ws://127.0.0.1:9222/devtools/page/one';
@@ -97,7 +103,7 @@ describe('BrowserControl', () => {
             .toEqual({ url: 'http://127.0.0.1:9222/json/list', method: 'GET' });
         expect(sockets.urls)
             .toEqual([PAGE_SOCKET_URL]);
-        expect(sockets.sockets[0]?.sent[0])
+        expect(actionCalls(sockets.sockets[0])[0])
             .toMatchObject({ method: 'Page.navigate', params: { url: 'https://example.com/' } });
         expect(sockets.sockets[0]?.isClosed)
             .toBe(true);
@@ -122,9 +128,10 @@ describe('BrowserControl', () => {
 
         await expect(browser.open('https://slow.example')).resolves.toMatchObject({ title: 'Slow' });
 
-        const readyStateCalls = sockets.sockets[0]?.sent.filter(call => call.params.expression === 'document.readyState');
+        const readyStateCalls = actionCalls(sockets.sockets[0])
+            .filter(call => call.params.expression === 'document.readyState');
 
-        expect(readyStateCalls?.length)
+        expect(readyStateCalls.length)
             .toBe(60);
     });
 
@@ -143,8 +150,8 @@ describe('BrowserControl', () => {
         const { browser, sockets } = createBrowser(pageAnswer({}));
 
         await expect(browser.screenshot()).resolves.toBe('iVBORw0KGgo=');
-        expect(sockets.sockets[0]?.sent[0])
-            .toEqual({ id: 1, method: 'Page.captureScreenshot', params: { format: 'png' } });
+        expect(actionCalls(sockets.sockets[0])[0])
+            .toEqual({ id: 2, method: 'Page.captureScreenshot', params: { format: 'png' } });
     });
 
     it('clicks with a move, a press and a release at the point', async () => {
@@ -152,7 +159,8 @@ describe('BrowserControl', () => {
 
         await browser.click(10, 20);
 
-        const sentTypes = sockets.sockets[0]?.sent.map(call => [call.params.type, call.params.x, call.params.y]);
+        const sentTypes = actionCalls(sockets.sockets[0])
+            .map(call => [call.params.type, call.params.x, call.params.y]);
 
         expect(sentTypes)
             .toEqual([['mouseMoved', 10, 20], ['mousePressed', 10, 20], ['mouseReleased', 10, 20]]);
@@ -164,14 +172,14 @@ describe('BrowserControl', () => {
         await browser.typeText('hello');
         await browser.pressKey('Enter');
 
-        expect(sockets.sockets[0]?.sent[0])
+        expect(actionCalls(sockets.sockets[0])[0])
             .toMatchObject({ method: 'Input.insertText', params: { text: 'hello' } });
-        expect(sockets.sockets[1]?.sent[0])
+        expect(actionCalls(sockets.sockets[1])[0])
             .toMatchObject({
                 method: 'Input.dispatchKeyEvent',
                 params: { type: 'keyDown', key: 'Enter', windowsVirtualKeyCode: 13, text: '\r' },
             });
-        expect(sockets.sockets[1]?.sent[1]?.params)
+        expect(actionCalls(sockets.sockets[1])[1]?.params)
             .toEqual({ type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
     });
 
@@ -180,7 +188,7 @@ describe('BrowserControl', () => {
 
         await browser.scroll(640, 400, -300);
 
-        expect(sockets.sockets[0]?.sent[0]?.params)
+        expect(actionCalls(sockets.sockets[0])[0]?.params)
             .toEqual({ type: 'mouseWheel', x: 640, y: 400, deltaX: 0, deltaY: -300 });
     });
 
@@ -210,5 +218,84 @@ describe('BrowserControl', () => {
         await expect(browser.click(1, 1)).rejects.toBeInstanceOf(BrowserError);
         expect(sockets.sockets[0]?.isClosed)
             .toBe(true);
+    });
+
+    it('reports a page that could not be opened instead of the old page', async () => {
+        const { browser } = createBrowser((call) => {
+            if (call.method === 'Page.navigate') {
+                return { result: { frameId: 'main', errorText: 'net::ERR_NAME_NOT_RESOLVED' } };
+            }
+
+            return pageAnswer({ title: 'Old', url: 'https://old.example/', text: '' })(call);
+        });
+
+        await expect(browser.open('https://no-such-host.invalid'))
+            .rejects.toThrow('The page could not be opened: net::ERR_NAME_NOT_RESOLVED');
+    });
+
+    it('keeps waiting when the page replaces itself while it loads', async () => {
+        const readyStates = ['gone', 'complete'];
+        const { browser } = createBrowser((call) => {
+            if (call.params.expression === 'document.readyState') {
+                const next = readyStates.shift();
+
+                return next === 'gone'
+                    ? { error: { message: 'Execution context was destroyed.' } }
+                    : { result: { result: { value: next } } };
+            }
+
+            return pageAnswer({ title: 'After redirect', url: 'https://new.example/', text: '' })(call);
+        });
+
+        await expect(browser.open('https://short.example'))
+            .resolves.toMatchObject({ title: 'After redirect' });
+    });
+
+    it('closes a dialog that opens during an action and keeps its text', async () => {
+        const { browser, sockets } = createBrowser((call) => {
+            if (call.method === 'Input.dispatchMouseEvent' && call.params.type === 'mouseReleased') {
+                queueMicrotask(() => {
+                    sockets.sockets[0]?.emit('message', {
+                        data: JSON.stringify({ method: 'Page.javascriptDialogOpening', params: { message: 'Delete everything?', type: 'confirm' } }),
+                    });
+                });
+            }
+
+            return { result: {} };
+        });
+
+        await browser.click(5, 5);
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(browser.takeDismissedDialogs())
+            .toEqual(['Delete everything?']);
+        expect(browser.takeDismissedDialogs())
+            .toEqual([]);
+        expect(sockets.sockets[0]?.sent.some(call => call.method === 'Page.handleJavaScriptDialog' && call.params.accept === false))
+            .toBe(true);
+    });
+
+    it('says a dialog blocks the page when Page.enable does not answer, and still lets open navigate', async () => {
+        vi.useFakeTimers();
+
+        const blockedAnswer: CdpAnswer = (call) => {
+            if (call.method === 'Page.enable') {
+                return undefined;
+            }
+
+            return pageAnswer({ title: 'Fresh', url: 'https://fresh.example/', text: '' })(call);
+        };
+        const { browser } = createBrowser(blockedAnswer);
+        const reading = browser.read();
+        const readExpectation = expect(reading).rejects.toThrow('The page is showing a dialog');
+
+        await vi.advanceTimersByTimeAsync(3_000);
+        await readExpectation;
+
+        const opening = browser.open('https://fresh.example');
+
+        await vi.advanceTimersByTimeAsync(3_000);
+        await expect(opening).resolves.toMatchObject({ title: 'Fresh' });
+        vi.useRealTimers();
     });
 });

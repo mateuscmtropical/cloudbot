@@ -3,6 +3,8 @@
 
 interface CdpResponse {
     id?: number;
+    method?: string;
+    params?: unknown;
     result?: unknown;
     error?: { message?: string };
 }
@@ -22,7 +24,10 @@ interface CdpSocket {
 
 type CdpSocketFactory = (url: string) => CdpSocket;
 
+type CdpEventListener = (method: string, params: unknown) => void;
+
 const CALL_TIMEOUT_MS = 30_000;
+const OPEN_TIMEOUT_MS = 5_000;
 const SOCKET_OPEN = 1;
 
 class CdpError extends Error {
@@ -39,6 +44,7 @@ function createWebSocket(url: string): CdpSocket {
 class CdpConnection {
     private readonly socket: CdpSocket;
     private readonly pending = new Map<number, PendingCall>();
+    private eventListener: CdpEventListener | undefined;
     private nextId = 1;
 
     private constructor(socket: CdpSocket) {
@@ -51,19 +57,33 @@ class CdpConnection {
         });
     }
 
-    static async open(url: string, socketFactory: CdpSocketFactory = createWebSocket): Promise<CdpConnection> {
+    static async open(url: string, socketFactory: CdpSocketFactory = createWebSocket, timeoutMs = OPEN_TIMEOUT_MS): Promise<CdpConnection> {
         const socket = socketFactory(url);
+        let timer: NodeJS.Timeout | undefined;
 
-        await new Promise<void>((resolve, reject) => {
-            socket.addEventListener('open', () => {
-                resolve();
-            }, { once: true });
-            socket.addEventListener('error', () => {
-                reject(new CdpError('Could not connect to the browser.'));
-            }, { once: true });
-        });
+        try {
+            await new Promise<void>((resolve, reject) => {
+                timer = setTimeout(() => {
+                    socket.close();
+                    reject(new CdpError('The browser did not accept the connection in time.'));
+                }, timeoutMs);
+                socket.addEventListener('open', () => {
+                    resolve();
+                }, { once: true });
+                socket.addEventListener('error', () => {
+                    reject(new CdpError('Could not connect to the browser.'));
+                }, { once: true });
+            });
+        } finally {
+            clearTimeout(timer);
+        }
 
         return new CdpConnection(socket);
+    }
+
+    // One listener for the events of the page, such as a dialog that opens.
+    onEvent(listener: CdpEventListener): void {
+        this.eventListener = listener;
     }
 
     call(method: string, params: Record<string, unknown> = {}, timeoutMs = CALL_TIMEOUT_MS): Promise<unknown> {
@@ -107,8 +127,12 @@ class CdpConnection {
             return;
         }
 
-        // Events have no id. The tools do not listen to events.
+        // Events have a method and no id.
         if (response.id === undefined) {
+            if (typeof response.method === 'string') {
+                this.eventListener?.(response.method, response.params);
+            }
+
             return;
         }
 
@@ -140,4 +164,4 @@ class CdpConnection {
 }
 
 export { CdpConnection, CdpError };
-export type { CdpSocket, CdpSocketFactory };
+export type { CdpEventListener, CdpSocket, CdpSocketFactory };

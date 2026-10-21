@@ -47,6 +47,13 @@ const BROWSER_KEYS = Object.keys(KEY_DEFINITIONS) as BrowserKey[];
 const DESKTOP_DEVTOOLS_URL = 'http://127.0.0.1:9222';
 const MAX_PAGE_TEXT_LENGTH = 20_000;
 const LOAD_WAIT_MS = 15_000;
+const DEVTOOLS_HTTP_TIMEOUT_MS = 5_000;
+// Page.enable does not answer while a dialog is open, so a short wait tells the two apart.
+const PAGE_ENABLE_TIMEOUT_MS = 3_000;
+const MAX_DIALOG_TEXT_LENGTH = 300;
+const DIALOG_BLOCKED_MESSAGE = 'The page is showing a dialog or does not answer. Use browser_open to load a page again.';
+// A page that replaces itself while it loads destroys the context of the next evaluate. That is not a failure.
+const CONTEXT_GONE_PATTERN = /context was destroyed|cannot find context|execution context/i;
 const LOAD_POLL_MS = 250;
 const READ_PAGE_EXPRESSION = '({ title: document.title, url: location.href, text: document.body ? document.body.innerText : "" })';
 const READY_STATE_EXPRESSION = 'document.readyState';
@@ -88,6 +95,25 @@ function readStringField(value: unknown, field: string): string {
     return typeof fieldValue === 'string' ? fieldValue : '';
 }
 
+interface WithPageOptions {
+    // Only a navigation can get past a dialog that was already open.
+    canRecoverFromDialog?: boolean;
+}
+
+async function readReadyState(page: CdpConnection): Promise<unknown> {
+    try {
+        const result = await page.call('Runtime.evaluate', { expression: READY_STATE_EXPRESSION, returnByValue: true });
+
+        return readEvaluatedValue(result);
+    } catch (error: unknown) {
+        if (error instanceof CdpError && CONTEXT_GONE_PATTERN.test(error.message)) {
+            return 'loading';
+        }
+
+        throw error;
+    }
+}
+
 // Only web pages. file:, chrome: and javascript: URLs could read the bot's files or the browser's settings pages.
 function parseWebUrl(rawUrl: string): string {
     let parsedUrl: URL;
@@ -112,6 +138,7 @@ class BrowserControl {
     private readonly fetchFunction: typeof fetch;
     private readonly socketFactory: CdpSocketFactory | undefined;
     private readonly sleep: (delayMs: number) => Promise<void>;
+    private dismissedDialogs: string[] = [];
 
     constructor(options: BrowserControlOptions) {
         this.devtoolsUrl = options.devtoolsUrl;
@@ -124,11 +151,27 @@ class BrowserControl {
         const url = parseWebUrl(rawUrl);
 
         return this.withPage(async (page) => {
-            await page.call('Page.navigate', { url });
+            const result = await page.call('Page.navigate', { url });
+            const errorText = readStringField(result, 'errorText');
+
+            // A failed load answers with errorText, not with an error, and leaves the old page or an error page.
+            if (errorText !== '') {
+                throw new BrowserError(`The page could not be opened: ${errorText}`);
+            }
+
             await this.waitForLoad(page);
 
             return this.readPage(page);
-        });
+        }, { canRecoverFromDialog: true });
+    }
+
+    // The text of the dialogs closed since the last call, so a tool can tell the model.
+    takeDismissedDialogs(): string[] {
+        const dialogs = this.dismissedDialogs;
+
+        this.dismissedDialogs = [];
+
+        return dialogs;
     }
 
     screenshot(): Promise<string> {
@@ -203,9 +246,9 @@ class BrowserControl {
         // Each poll waits for the one before it, so an array method does not fit.
         // eslint-disable-next-line no-restricted-syntax
         for (let attempt = 0; attempt < attempts; attempt += 1) {
-            const result = await page.call('Runtime.evaluate', { expression: READY_STATE_EXPRESSION, returnByValue: true });
+            const readyState = await readReadyState(page);
 
-            if (readEvaluatedValue(result) === 'complete') {
+            if (readyState === 'complete') {
                 return;
             }
 
@@ -213,7 +256,7 @@ class BrowserControl {
         }
     }
 
-    private async withPage<T>(action: (page: CdpConnection) => Promise<T>): Promise<T> {
+    private async withPage<T>(action: (page: CdpConnection) => Promise<T>, options: WithPageOptions = {}): Promise<T> {
         const socketUrl = await this.findPageSocketUrl();
         let page: CdpConnection;
 
@@ -224,6 +267,8 @@ class BrowserControl {
         }
 
         try {
+            await this.watchDialogs(page, options.canRecoverFromDialog === true);
+
             return await action(page);
         } catch (error: unknown) {
             if (error instanceof CdpError) {
@@ -236,11 +281,40 @@ class BrowserControl {
         }
     }
 
+    // A dialog that opens during the action is closed with Cancel, and its text is kept for the model.
+    // A dialog that was already open blocks Page.enable. Only a navigation gets past it.
+    private async watchDialogs(page: CdpConnection, canRecoverFromDialog: boolean): Promise<void> {
+        page.onEvent((method, params) => {
+            if (method !== 'Page.javascriptDialogOpening') {
+                return;
+            }
+
+            const message = readStringField(params, 'message');
+
+            const shortMessage = message.slice(0, MAX_DIALOG_TEXT_LENGTH);
+
+            this.dismissedDialogs.push(shortMessage);
+            page.call('Page.handleJavaScriptDialog', { accept: false })
+                .catch(() => {
+                    // The dialog may already be gone, for example after a navigation.
+                });
+        });
+
+        try {
+            await page.call('Page.enable', {}, PAGE_ENABLE_TIMEOUT_MS);
+        } catch {
+            if (!canRecoverFromDialog) {
+                throw new BrowserError(DIALOG_BLOCKED_MESSAGE);
+            }
+        }
+    }
+
     private async findPageSocketUrl(): Promise<string> {
         let targets: unknown;
 
         try {
-            const response = await this.fetchFunction(`${this.devtoolsUrl}/json/list`);
+            const signal = AbortSignal.timeout(DEVTOOLS_HTTP_TIMEOUT_MS);
+            const response = await this.fetchFunction(`${this.devtoolsUrl}/json/list`, { signal });
 
             targets = await response.json();
         } catch {
@@ -260,7 +334,8 @@ class BrowserControl {
     // All tabs can be closed on the screen. Then a new blank tab is opened.
     private async openNewPage(): Promise<string> {
         try {
-            const response = await this.fetchFunction(`${this.devtoolsUrl}/json/new?about:blank`, { method: 'PUT' });
+            const signal = AbortSignal.timeout(DEVTOOLS_HTTP_TIMEOUT_MS);
+            const response = await this.fetchFunction(`${this.devtoolsUrl}/json/new?about:blank`, { method: 'PUT', signal });
             const target = await response.json() as PageTarget;
 
             if (target.webSocketDebuggerUrl !== undefined) {

@@ -163,6 +163,13 @@ is left.
 | `browser_key` | Presses Enter, Tab, Escape, Backspace, an arrow key, PageUp or PageDown |
 | `browser_scroll` | Scrolls the page by a number of pixels |
 
+A load that fails, such as an unknown host, is an error and does not return
+the old page. Each action enables the Page domain first. A dialog that opens
+during an action is closed with Cancel, and its text goes back to the model.
+A dialog that was already open blocks every call but a navigation, so the
+tools then answer within 3 seconds and tell the model to use `browser_open`.
+DevTools requests and the WebSocket connection give up after 5 seconds.
+
 Page text is cut at 20000 characters and is framed as data, not instructions.
 The system prompt says the same. Other schemes such as `file:` and
 `javascript:` are refused. Unexpected errors reach the model as a short
