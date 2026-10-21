@@ -22,6 +22,8 @@ const DEFAULT_VNC_PORT = 5900;
 // A slow browser must not make the server queue screen updates without limit.
 const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 const RESUME_CHECK_MS = 50;
+// RFB input messages are tiny. The ws default of 100 MB would let a client make the server buffer a lot.
+const MAX_CLIENT_MESSAGE_BYTES = 1024 * 1024;
 
 function readCookie(request: IncomingMessage, cookieName: string): string | undefined {
     const cookieHeader = request.headers.cookie ?? '';
@@ -55,7 +57,7 @@ function bridgeToVnc(webSocket: WebSocket, vncPort: number): void {
     vncSocket.on('data', (chunk: Buffer) => {
         webSocket.send(chunk);
 
-        if (webSocket.bufferedAmount > MAX_BUFFERED_BYTES) {
+        if (webSocket.bufferedAmount > MAX_BUFFERED_BYTES && !vncSocket.isPaused()) {
             vncSocket.pause();
             resumeWhenDrained(webSocket, vncSocket);
         }
@@ -80,7 +82,7 @@ function bridgeToVnc(webSocket: WebSocket, vncPort: number): void {
 
 function attachVncProxy(options: VncProxyOptions): void {
     const vncPort = options.vncPort ?? DEFAULT_VNC_PORT;
-    const webSocketServer = new WebSocketServer({ noServer: true });
+    const webSocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_CLIENT_MESSAGE_BYTES });
 
     options.server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
         // Node removes its own error listener before this event. A reset during the session lookup would crash the server.
