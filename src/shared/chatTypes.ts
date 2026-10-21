@@ -115,8 +115,17 @@ interface ChatTextDeltaEvent {
 
 type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent;
 
+// A rule the owner set for a bot. Block rules may name tools the bot cannot use.
+interface BotRule {
+    id: string;
+    kind: 'allow' | 'block';
+    text: string;
+    blockedTools: string[];
+}
+
 export type {
     AttachmentSummary,
+    BotRule,
     PendingUpload,
     BotSummary,
     ChatEvent,

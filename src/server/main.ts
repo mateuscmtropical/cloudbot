@@ -12,6 +12,7 @@ import { BrowserControl, DESKTOP_DEVTOOLS_URL } from './desktop/BrowserControl.t
 import { DesktopSupervisor, buildDesktopCommand } from './desktop/DesktopSupervisor.ts';
 import { BotStore } from './store/BotStore.ts';
 import { MessageStore } from './store/MessageStore.ts';
+import { RuleStore } from './store/RuleStore.ts';
 import { ensureDefaultBot } from './store/ensureDefaultBot.ts';
 import { openDatabase } from './store/openDatabase.ts';
 import { databasePath, resolveDataDir } from './store/resolveDataDir.ts';
@@ -59,8 +60,9 @@ const desktop = desktopCommand === undefined ? undefined : new DesktopSupervisor
 const browser = desktop === undefined ? undefined : new BrowserControl({ devtoolsUrl: DESKTOP_DEVTOOLS_URL });
 const vault = new Vault(dataDir);
 const botSecrets = new BotSecrets(vault);
+const ruleStore = new RuleStore(opened.db);
 const chatService = new ChatService({
-    botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets,
+    botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore,
 });
 const bots = await botStore.list();
 const firstBot = bots[0];
@@ -106,7 +108,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ version, access, chatService });
+const app = createApp({ version, access, chatService, ruleStore });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

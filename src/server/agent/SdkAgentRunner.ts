@@ -207,6 +207,9 @@ function buildQueryOptions(
     const mcpServersOption = request.mcpServers ? { mcpServers: request.mcpServers } : {};
     // Headless turns cannot answer a permission prompt, so the bot's own tools are allowed up front.
     const allowedToolsOption = request.allowedTools ? { allowedTools: request.allowedTools } : {};
+    const disallowedToolsOption = request.disallowedTools && request.disallowedTools.length > 0
+        ? { disallowedTools: request.disallowedTools }
+        : {};
     // Extra folders the agent may read, such as the upload folder of the bot.
     const additionalDirectoriesOption = request.additionalDirectories ? { additionalDirectories: request.additionalDirectories } : {};
 
@@ -221,6 +224,7 @@ function buildQueryOptions(
         ...systemPromptOption,
         ...mcpServersOption,
         ...allowedToolsOption,
+        ...disallowedToolsOption,
         ...additionalDirectoriesOption,
     };
 }

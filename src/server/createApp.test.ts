@@ -9,6 +9,8 @@ import { SetupAccess } from './access/SetupAccess.ts';
 import { FakeAgentRunner } from './agent/FakeAgentRunner.ts';
 import { ChatService } from './chat/ChatService.ts';
 import { createApp } from './createApp.ts';
+import { MAX_RULES_PER_BOT } from './rules/createRuleRoutes.ts';
+import { RuleStore } from './store/RuleStore.ts';
 import { BotStore } from './store/BotStore.ts';
 import { MessageStore } from './store/MessageStore.ts';
 import type { OpenedDatabase } from './store/openDatabase.ts';
@@ -130,6 +132,68 @@ describe('createApp', () => {
 
         expect(response.status)
             .toBe(200);
+    });
+
+    it('lets the owner list, add and remove a bot\'s rules, and refuses them without the cookie', async () => {
+        const chatService = buildChatService(opened);
+        const ruleStore = new RuleStore(opened.db);
+        const bot = await new BotStore(opened.db)
+            .create({ name: 'Ana', title: 'Assistant', description: '' });
+        const app = createApp({ version: '1.2.3', access, chatService, ruleStore });
+        const sessionToken = await signIn(app, access);
+        const cookie = `cloudbot_session=${sessionToken}`;
+        const withoutCookie = await app.request(`/api/bots/${bot.id}/rules`);
+        const added = await app.request(`/api/bots/${bot.id}/rules`, {
+            method: 'POST',
+            headers: { cookie, 'content-type': 'application/json' },
+            body: JSON.stringify({ kind: 'block', text: 'Never delete files.', blockedTools: ['Bash(rm:*)'] }),
+        });
+        const addedRule = await added.json() as { id: string };
+        const listed = await requestWithSession(app, `/api/bots/${bot.id}/rules`, sessionToken);
+        const invalid = await app.request(`/api/bots/${bot.id}/rules`, {
+            method: 'POST',
+            headers: { cookie, 'content-type': 'application/json' },
+            body: JSON.stringify({ kind: 'allow', text: 'x', blockedTools: ['Bash'] }),
+        });
+        const unknownBot = await requestWithSession(app, '/api/bots/missing/rules', sessionToken);
+        const removed = await app.request(`/api/bots/${bot.id}/rules/${addedRule.id}`, { method: 'DELETE', headers: { cookie } });
+        const removedAgain = await app.request(`/api/bots/${bot.id}/rules/${addedRule.id}`, { method: 'DELETE', headers: { cookie } });
+
+        expect(withoutCookie.status)
+            .toBe(401);
+        expect(added.status)
+            .toBe(201);
+        expect(await listed.json())
+            .toEqual([{ id: addedRule.id, kind: 'block', text: 'Never delete files.', blockedTools: ['Bash(rm:*)'] }]);
+        expect(invalid.status)
+            .toBe(400);
+        expect(unknownBot.status)
+            .toBe(404);
+        expect(removed.status)
+            .toBe(204);
+        expect(removedAgain.status)
+            .toBe(404);
+    });
+
+    it('refuses a rule past the limit for one bot', async () => {
+        const chatService = buildChatService(opened);
+        const ruleStore = new RuleStore(opened.db);
+        const bot = await new BotStore(opened.db)
+            .create({ name: 'Ana', title: 'Assistant', description: '' });
+        const app = createApp({ version: '1.2.3', access, chatService, ruleStore });
+        const sessionToken = await signIn(app, access);
+        const ruleIndexes = Array.from({ length: MAX_RULES_PER_BOT }, (_unused, index) => index);
+
+        await Promise.all(ruleIndexes.map(index => ruleStore.add(bot.id, { kind: 'allow', text: `Rule ${String(index)}.`, blockedTools: [] })));
+
+        const response = await app.request(`/api/bots/${bot.id}/rules`, {
+            method: 'POST',
+            headers: { 'cookie': `cloudbot_session=${sessionToken}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ kind: 'allow', text: 'One more.' }),
+        });
+
+        expect(response.status)
+            .toBe(400);
     });
 
     it('rejects an api request with a cookie that was never issued', async () => {

@@ -86,5 +86,26 @@ const turnWaits = sqliteTable('turn_waits', {
         .notNull(),
 });
 
-export { bots, messages, settings, turnQueue, turnWaits };
+// Rules the owner sets for a bot. Block rules may also name tools the SDK must refuse.
+const botRules = sqliteTable('bot_rules', {
+    id: text('id')
+        .primaryKey(),
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: ['allow', 'block'] })
+        .notNull(),
+    text: text('text')
+        .notNull(),
+    blockedTools: text('blocked_tools', { mode: 'json' })
+        .$type<string[]>()
+        .notNull(),
+    createdAt: integer('created_at')
+        .notNull(),
+}, table => [
+    index('bot_rules_bot_id')
+        .on(table.botId),
+]);
+
+export { botRules, bots, messages, settings, turnQueue, turnWaits };
 export type { StoredUploadRecord };

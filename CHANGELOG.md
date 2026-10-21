@@ -8,6 +8,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Owner rules: each bot has allow and block rules in plain words, stored on the server and read for every turn. The sentences go into the system prompt, and block rules can name tools that the SDK then refuses. Routes: `GET`, `POST /api/bots/:id/rules` and `DELETE /api/bots/:id/rules/:ruleId`.
 - `browser_type_secret`: the server types a saved secret into the focused password, one-time code or card field, only on the site saved with it. The bot never sees the value.
 - Screenshots in the chat: `browser_screenshot` takes `showOwner`, and the screenshot then also appears in the chat. The chat shows a preview of PNG, JPEG, GIF and WEBP files up to 5 MB above the download link.
 - Browser tools: the bot can open web pages, read them, take screenshots, click, type, press keys and scroll in the Chromium on its desktop. Only http and https addresses can be opened, and page content is framed as data for the model.

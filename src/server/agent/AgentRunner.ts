@@ -17,6 +17,8 @@ interface TurnRequest {
     systemPrompt?: string;
     mcpServers?: Record<string, McpServerConfig>;
     allowedTools?: string[];
+    // Tools the owner blocked. The SDK refuses them even when allowedTools names them.
+    disallowedTools?: string[];
     images?: TurnImage[];
     additionalDirectories?: string[];
     abortSignal: AbortSignal;
