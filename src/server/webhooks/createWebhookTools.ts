@@ -4,8 +4,10 @@ import { z } from 'zod/v4';
 import type { CloudbotTool } from '../agent/createProfileToolServer.ts';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
 import type { ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
+import type { WebhookRefusal } from '../../shared/webhookTypes.ts';
 import type { WebhookStore } from '../store/WebhookStore.ts';
 import { addBotWebhook } from './createWebhookRoutes.ts';
+import { DeliveryMemory, WebhookRefusalLog } from './webhookMemory.ts';
 
 interface WebhookToolResult {
     [key: string]: unknown;
@@ -49,7 +51,17 @@ function textResult(text: string, isError = false): WebhookToolResult {
     return isError ? { content: [content], isError: true } : { content: [content] };
 }
 
-function createWebhookTools(store: WebhookStore, botId: string, creation: WebhookCreation): CloudbotTool[] {
+function describeRefusals(refusalList: WebhookRefusal[]): string {
+    if (refusalList.length === 0) {
+        return '';
+    }
+
+    const reasons = refusalList.map(refusal => refusal.reason);
+
+    return `, refused recently: ${reasons.join(', ')}`;
+}
+
+function createWebhookTools(store: WebhookStore, botId: string, creation: WebhookCreation, refusals: WebhookRefusalLog = new WebhookRefusalLog(), deliveries: DeliveryMemory = new DeliveryMemory()): CloudbotTool[] {
     const listTool = tool(
         WEBHOOK_LIST_TOOL_NAME,
         LIST_DESCRIPTION,
@@ -61,7 +73,12 @@ function createWebhookTools(store: WebhookStore, botId: string, creation: Webhoo
                 return textResult('You have no webhooks.');
             }
 
-            const lines = webhooks.map(webhook => `- ${webhook.id}: "${webhook.name}"`);
+            // The refusals name only the reason, never the body, the token or the delivery id.
+            const lines = webhooks.map((webhook) => {
+                const refusalList = refusals.list(webhook.id);
+
+                return `- ${webhook.id}: "${webhook.name}"${describeRefusals(refusalList)}`;
+            });
             const listText = lines.join('\n');
 
             return textResult(listText);
@@ -103,7 +120,15 @@ function createWebhookTools(store: WebhookStore, botId: string, creation: Webhoo
         async (args): Promise<WebhookToolResult> => {
             const isRemoved = await store.remove(botId, args.id);
 
-            return isRemoved ? textResult('The webhook is deleted.') : textResult('You have no webhook with this id.', true);
+            if (!isRemoved) {
+                return textResult('You have no webhook with this id.', true);
+            }
+
+            // The deleted webhook keeps no refused calls or delivery ids, as the owner's delete route does.
+            refusals.forget(args.id);
+            deliveries.forget(args.id);
+
+            return textResult('The webhook is deleted.');
         },
     );
 

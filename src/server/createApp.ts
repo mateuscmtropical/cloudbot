@@ -27,6 +27,7 @@ import type { WatchStore } from './store/WatchStore.ts';
 import { createWatchRoutes } from './watches/createWatchRoutes.ts';
 import { createWebhookHookRoutes } from './webhooks/createWebhookHookRoutes.ts';
 import { createWebhookRoutes } from './webhooks/createWebhookRoutes.ts';
+import { DeliveryMemory, WebhookRefusalLog } from './webhooks/webhookMemory.ts';
 
 interface HealthResponse {
     status: 'ok';
@@ -43,6 +44,10 @@ interface AppOptions {
     modelStore?: ModelStore;
     limitStore?: LimitStore;
     webhookStore?: WebhookStore;
+    // The refused webhook calls, shared with the ChatService so the bot sees them too. Without it a new log is used.
+    webhookRefusals?: WebhookRefusalLog;
+    // The delivery ids of each webhook, shared by the call route and the owner routes. Without it a new memory is used.
+    webhookDeliveries?: DeliveryMemory;
     watchStore?: WatchStore;
     // The address new webhook URLs start with. Without it the server's own address is used.
     publicBaseUrl?: string;
@@ -75,6 +80,8 @@ function skipApiRoutes(serve: MiddlewareHandler): MiddlewareHandler {
 function createApp(options: AppOptions): Hono {
     const app = new Hono();
     const webRoot = options.webRoot ?? DEFAULT_WEB_ROOT;
+    const webhookRefusals = options.webhookRefusals ?? new WebhookRefusalLog();
+    const webhookDeliveries = options.webhookDeliveries ?? new DeliveryMemory();
 
     // Health is registered before the session check, so it answers without a cookie.
     app.get('/api/health', (context) => {
@@ -90,6 +97,9 @@ function createApp(options: AppOptions): Hono {
             webhookStore: options.webhookStore,
             isReady: options.isReady ?? (() => true),
             sendMessage: (botId, text) => chatService.sendMessage(botId, text, 'webhook'),
+            queuedWebhookTurns: botId => chatService.countQueuedWebhookTurns(botId),
+            refusals: webhookRefusals,
+            deliveries: webhookDeliveries,
         });
 
         app.route('/', webhookHookRoutes);
@@ -123,7 +133,7 @@ function createApp(options: AppOptions): Hono {
     if (options.chatService !== undefined && options.webhookStore !== undefined) {
         const chatService = options.chatService;
         const publicBaseUrl = options.publicBaseUrl ?? readPublicBaseUrl(process.env);
-        const webhookRoutes = createWebhookRoutes({ webhookStore: options.webhookStore, hasBot: botId => chatService.hasBot(botId), publicBaseUrl });
+        const webhookRoutes = createWebhookRoutes({ webhookStore: options.webhookStore, hasBot: botId => chatService.hasBot(botId), publicBaseUrl, refusals: webhookRefusals, deliveries: webhookDeliveries });
 
         app.route('/', webhookRoutes);
     }

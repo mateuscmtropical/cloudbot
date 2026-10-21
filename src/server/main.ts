@@ -25,6 +25,7 @@ import { RuleStore } from './store/RuleStore.ts';
 import { LimitStore } from './store/LimitStore.ts';
 import { ModelStore } from './store/ModelStore.ts';
 import { WebhookStore } from './store/WebhookStore.ts';
+import { DeliveryMemory, WebhookRefusalLog } from './webhooks/webhookMemory.ts';
 import { WatchStore } from './store/WatchStore.ts';
 import { WatchScheduler } from './watches/WatchScheduler.ts';
 import { fetchWatchedPage } from './watches/fetchWatchedPage.ts';
@@ -81,6 +82,10 @@ const routineStore = new RoutineStore(opened.db);
 const modelStore = new ModelStore(opened.db);
 const limitStore = new LimitStore(opened.db);
 const webhookStore = new WebhookStore(opened.db);
+// One log for the whole process, so the bot and the owner see the same refused calls. It is kept in memory only.
+const webhookRefusals = new WebhookRefusalLog();
+// The delivery ids, shared by the call route and the owner routes, so a deleted webhook drops its ids.
+const webhookDeliveries = new DeliveryMemory();
 const watchStore = new WatchStore(opened.db);
 const browserAllowStore = new BrowserAllowStore(opened.db);
 // The gate is the browser's only way out. It starts before the desktop, so Chromium never runs without it.
@@ -107,6 +112,8 @@ const chatService = new ChatService({
     watchStore,
     browserAllowStore,
     webhookBaseUrl: readPublicBaseUrl(process.env),
+    webhookRefusals,
+    webhookDeliveries,
     toolCallReviewer,
 });
 const bots = await botStore.list();
@@ -170,7 +177,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ version, access, chatService, ruleStore, routineStore, modelStore, limitStore, webhookStore, watchStore, isReady: () => setup.isDone(), screen });
+const app = createApp({ version, access, chatService, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, isReady: () => setup.isDone(), screen });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

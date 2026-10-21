@@ -22,7 +22,7 @@ const DAILY_ROUTINE: BotRoutine = {
     lastRunAt: Date.UTC(2026, 9, 21, 9, 5),
 };
 
-const DEPLOY_WEBHOOK: BotWebhook = { id: 'w1', name: 'Deploy', createdAt: Date.UTC(2026, 9, 21, 11, 0) };
+const DEPLOY_WEBHOOK: BotWebhook = { id: 'w1', name: 'Deploy', createdAt: Date.UTC(2026, 9, 21, 11, 0), refusals: [] };
 const CREATED_URL = 'https://bot.example.com/hooks/fresh-token';
 
 // Routes each request by its method and path. Routines and webhooks are separate lists.
@@ -47,7 +47,7 @@ function stubPanelApi(options: { routines: BotRoutine[]; webhooks: BotWebhook[] 
         }
 
         if (method === 'POST' && input.endsWith('/webhooks')) {
-            const created: CreatedBotWebhook = { id: 'w2', name: 'Build', createdAt: Date.UTC(2026, 9, 21, 12, 0), url: CREATED_URL };
+            const created: CreatedBotWebhook = { id: 'w2', name: 'Build', createdAt: Date.UTC(2026, 9, 21, 12, 0), refusals: [], url: CREATED_URL };
 
             return Promise.resolve(Response.json(created, { status: 201 }));
         }
@@ -160,6 +160,22 @@ describe('RoutinesPanel', () => {
             .toBeNull();
         expect(screen.getByRole('button', { name: 'Remove webhook: Deploy' }))
             .toBeTruthy();
+    });
+
+    it('shows the refused calls of a webhook, with only the reason', async () => {
+        const refusedWebhook: BotWebhook = {
+            ...DEPLOY_WEBHOOK,
+            refusals: [{ time: Date.UTC(2026, 9, 21, 11, 30), reason: 'queue full' }],
+        };
+
+        stubPanelApi({ routines: [], webhooks: [refusedWebhook] });
+
+        render(<RoutinesPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
+
+        expect(await screen.findByText('Refused calls: 1'))
+            .toBeTruthy();
+        expect(screen.getByRole('list', { name: 'Refused calls for Deploy' }).textContent)
+            .toContain('queue full');
     });
 
     it('creates a webhook and shows its URL once, with a warning to keep it secret', async () => {

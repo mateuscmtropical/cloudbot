@@ -9,6 +9,7 @@ import { WebhookStore } from '../store/WebhookStore.ts';
 import { MAX_WEBHOOKS_PER_BOT } from './createWebhookRoutes.ts';
 import { createWebhookTools } from './createWebhookTools.ts';
 import type { WebhookCreation, WebhookToolResult } from './createWebhookTools.ts';
+import { DeliveryMemory, WebhookRefusalLog } from './webhookMemory.ts';
 
 type ToolHandler = (args: Record<string, unknown>, extra: unknown) => Promise<WebhookToolResult>;
 
@@ -84,6 +85,22 @@ describe('createWebhookTools', () => {
             .not.toContain('hooks/');
     });
 
+    it('shows the recent refusal reasons of a webhook in the list, without the body or the token', async () => {
+        await store.add(botId, 'Deploy', 'hash-one');
+        const webhookId = (await store.list(botId))[0]?.id ?? '';
+        const refusals = new WebhookRefusalLog();
+
+        refusals.record(webhookId, 'queue full');
+        refusals.record(webhookId, 'rate limit');
+
+        const tools = createWebhookTools(store, botId, createFakeCreation(), refusals) as unknown as { name: string; handler: unknown }[];
+        const listTool = tools.find(candidate => candidate.name === 'webhook_list');
+        const listed = await (listTool?.handler as ToolHandler)({}, {});
+
+        expect(listed.content[0]?.text)
+            .toBe(`- ${webhookId}: "Deploy", refused recently: rate limit, queue full`);
+    });
+
     it('says when there are no webhooks', async () => {
         const listed = await findHandler(botId, 'webhook_list')({}, {});
 
@@ -103,6 +120,27 @@ describe('createWebhookTools', () => {
             .toBeUndefined();
         await expect(store.list(botId))
             .resolves.toEqual([]);
+    });
+
+    it('forgets the refusals and delivery ids of a webhook the bot deletes', async () => {
+        await store.add(botId, 'Deploy', 'hash-one');
+        const webhookId = (await store.list(botId))[0]?.id ?? '';
+        const refusals = new WebhookRefusalLog();
+        const deliveries = new DeliveryMemory();
+
+        refusals.record(webhookId, 'rate limit');
+        deliveries.remember(webhookId, 'delivery-one');
+
+        const tools = createWebhookTools(store, botId, createFakeCreation(), refusals, deliveries) as unknown as { name: string; handler: unknown }[];
+        const deleteTool = tools.find(candidate => candidate.name === 'webhook_delete');
+        const deleted = await (deleteTool?.handler as ToolHandler)({ id: webhookId }, {});
+
+        expect(deleted.isError)
+            .toBeUndefined();
+        expect(refusals.list(webhookId))
+            .toEqual([]);
+        expect(deliveries.isRemembered(webhookId, 'delivery-one'))
+            .toBe(false);
     });
 
     it('creates a webhook, sends its URL once as an event, and answers without the URL or token', async () => {

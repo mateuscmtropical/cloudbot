@@ -575,6 +575,29 @@ An accepted call sends a chat message with source `webhook`. The message starts
 with `Webhook <name>` and marks the body as text from outside. The turn waits in
 the queue like any message, and it uses the `routines` model choice.
 
+A call may send an `X-Delivery-Id` header. The id is trimmed, and an id longer
+than 200 characters counts as no id. An id whose message was queued less than
+24 hours ago gets `200 {"status":"duplicate"}` and is not queued again. The ids
+are kept per webhook, at most 1000 of them, and the oldest go first. They live
+in memory only, so a restart forgets them. An id is taken as soon as the call
+starts, so a second call with the same id that arrives meanwhile is a duplicate.
+If the call is then refused, the id is given back, so the same id can be sent
+again. A deleted webhook drops its ids and its refused calls.
+
+Each bot may have 10 webhook messages waiting in its queue (`MAX_QUEUED_WEBHOOK_TURNS`).
+A call past that gets a `429` with a queue-full text, which is not the rate limit
+text. The running turn does not count. The count is the messages waiting plus the
+calls still being handled, so a burst cannot pass the cap while the queue is
+still empty.
+
+Each webhook keeps its last 20 refused calls in memory. Each entry holds a time
+and one of four fixed reasons: `rate limit`, `queue full`, `body too large` or
+`not ready`. The body, the token and the delivery id are never stored. The owner
+sees the list in `GET /api/bots/:id/webhooks`, as `refusals` with the newest
+first, and in the Routines panel. The bot sees the reasons in `webhook_list`.
+The webhook is looked up before the body limit, so a 413 is recorded too. A call
+with an unknown token matches no webhook, so it is not recorded.
+
 The owner lists, creates and removes webhooks with `GET`, `POST` and `DELETE
 /api/bots/:id/webhooks`, behind the session cookie. The Routines panel shows
 them at the bottom. The bot has `webhook_list` (on the skip list of
