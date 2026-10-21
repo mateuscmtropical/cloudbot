@@ -11,6 +11,8 @@ import { createClaudeReviewModel } from './approvals/createClaudeReviewModel.ts'
 import { createReviewContextReader } from './approvals/createReviewContextReader.ts';
 import { createToolCallReviewer } from './approvals/createToolCallReviewer.ts';
 import { ChatService } from './chat/ChatService.ts';
+import { describeRuleChange } from './rules/describeRuleChange.ts';
+import { describeLimitChange } from './limits/createLimitTools.ts';
 import { createApp } from './createApp.ts';
 import { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { attachVncProxy } from './desktop/attachVncProxy.ts';
@@ -218,6 +220,10 @@ const toolCallReviewer = createToolCallReviewer({
     readContext: createReviewContextReader({ ruleStore, messageStore, modelStore }),
     // The card of an integration change shows its script, so the owner approves what runs. Set only with integrations.
     describeChange: integrationService === undefined ? undefined : (botId, mode, input) => integrationService.describeChange(botId, mode, input),
+    // The rule card and the bot delete check read the stores and the chat service, which is defined below. The calls happen later, in a turn.
+    describeRuleChange: (botId, input) => describeRuleChange(ruleStore, botId, input),
+    describeLimitChange: (botId, input) => describeLimitChange(limitStore, botId, input),
+    describeBotDelete: botId => chatService.describeBotDelete(botId),
     // The review cost counts against the spending limit of the turn that asked for the review.
     reportCost: (botId, costUsd, turnSignal) => {
         chatService.recordReviewCost(botId, costUsd, turnSignal);

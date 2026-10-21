@@ -14,8 +14,13 @@ describe('models_set', () => {
 });
 
 describe('limits_set', () => {
-    it('is reviewed, so the review agent sees a change of limits', () => {
+    it('always asks the owner, with the old and new limits on the card', () => {
         expect(classify('mcp__cloudbot__limits_set'))
+            .toBe('always-ask');
+    });
+
+    it('is reviewed, so the review agent sees a change of models', () => {
+        expect(classify('mcp__cloudbot__models_set'))
             .toBe('review');
     });
 });

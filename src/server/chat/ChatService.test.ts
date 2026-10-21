@@ -62,6 +62,14 @@ function describeEvent(event: ChatEvent): string {
         return 'webhookUrl';
     }
 
+    if (event.type === 'screen') {
+        return 'screen';
+    }
+
+    if (event.type === 'botDeleted') {
+        return 'botDeleted';
+    }
+
     return `message:${event.message.role}:${event.message.body.kind}`;
 }
 
@@ -1059,7 +1067,7 @@ describe('ChatService', () => {
         expect(lastMessage?.role)
             .toBe('assistant');
         expect(lastMessage?.body)
-            .toMatchObject({ kind: 'text' });
+            .toMatchObject({ kind: 'screenLink' });
         expect(JSON.stringify(lastMessage?.body))
             .toContain('GitHub shows a check I cannot pass.');
     });

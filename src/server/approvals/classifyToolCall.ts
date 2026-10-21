@@ -29,6 +29,8 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__app_list',
     'mcp__cloudbot__app_remove',
     'mcp__cloudbot__integration_list',
+    'mcp__cloudbot__rule_list',
+    'mcp__cloudbot__screen_show',
 ]);
 
 // Letting the browser reach a private host always needs the owner's approval, whatever the rules say.
@@ -41,6 +43,11 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
     // A new or changed script runs with a secret, so the owner approves the file that is registered.
     'mcp__cloudbot__integration_create',
     'mcp__cloudbot__integration_update',
+    // Rules are permissions, and a deleted bot is gone for good, so the owner approves both in the chat.
+    'mcp__cloudbot__rule_change',
+    'mcp__cloudbot__bot_delete',
+    // Limits decide how much a turn may spend, so the owner approves each change with its old and new values.
+    'mcp__cloudbot__limits_set',
 ]);
 
 // The tools of the bot itself have fixed names. Any other tool is an outside connector.

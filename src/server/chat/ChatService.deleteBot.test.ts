@@ -211,6 +211,37 @@ describe('ChatService.deleteBot', () => {
             .toBeDefined();
     });
 
+    it('tells the listeners the bot is gone before they are dropped', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await botStore.create({ name: 'Ben', title: 'Assistant', description: '' });
+
+        const service = buildService();
+        const listener = vi.fn();
+
+        service.subscribe(bot.id, listener);
+
+        expect(await service.deleteBot(bot.id))
+            .toBe('deleted');
+        expect(listener)
+            .toHaveBeenCalledWith({ type: 'botDeleted', botId: bot.id });
+    });
+
+    it('gives the approval card the same refusals as the delete, and the name when the delete is allowed', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const service = buildService();
+
+        expect(await service.describeBotDelete(bot.id))
+            .toEqual({ ok: false, reason: 'This is the last bot, so it cannot be deleted.' });
+
+        await botStore.create({ name: 'Ben', title: 'Assistant', description: '' });
+
+        expect(await service.describeBotDelete(bot.id))
+            .toEqual({ ok: true, name: 'Ana' });
+        expect(await service.describeBotDelete('no-such-bot'))
+            .toEqual({ ok: false, reason: 'This bot no longer exists.' });
+    });
+
     it('answers missing for a bot that does not exist', async () => {
         await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
 

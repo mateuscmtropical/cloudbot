@@ -45,7 +45,25 @@ interface ToolCallReviewerOptions {
     // Builds the approval card of an integration create or update: the whole script, the secret's site and the hash.
     // A change whose card cannot be built is refused, so the owner never approves a change without its script.
     describeChange?: ((botId: string, mode: ChangeMode, input: unknown) => Promise<ChangeCard>) | undefined;
+    // Builds the verdict of a rule change: the card with the rule text, or a refusal. Rules are permissions, so the owner approves each one.
+    describeRuleChange?: ((botId: string, input: unknown) => Promise<ToolCallVerdict>) | undefined;
+    // Checks a bot deletion: the name for the card, or the reason the delete is refused, such as the last bot.
+    describeBotDelete?: ((botId: string) => Promise<BotDeleteCheck>) | undefined;
+    // Builds the card of a limit change, with the old and new value of each limit.
+    describeLimitChange?: ((botId: string, input: unknown) => Promise<ToolCallVerdict>) | undefined;
 }
+
+interface BotDeleteAllowed {
+    ok: true;
+    name: string;
+}
+
+interface BotDeleteRefused {
+    ok: false;
+    reason: string;
+}
+
+type BotDeleteCheck = BotDeleteAllowed | BotDeleteRefused;
 
 type ReviewCategory = 'send_message' | 'purchase' | 'booking' | 'other';
 
@@ -57,6 +75,12 @@ interface ModelAnswer {
 }
 
 const ALLOW_HOST_TOOL_NAME = 'mcp__cloudbot__browser_allow_host';
+const RULE_CHANGE_TOOL_NAME = 'mcp__cloudbot__rule_change';
+const BOT_DELETE_TOOL_NAME = 'mcp__cloudbot__bot_delete';
+const LIMITS_SET_TOOL_NAME = 'mcp__cloudbot__limits_set';
+const BOT_DELETE_DETAIL = 'Its chats, rules, routines, watches, webhooks, secrets, workspace and shared files are removed for good.';
+const CHECK_MISSING_VERDICT: ToolCallVerdict = { decision: 'deny', reason: 'This change could not be checked, so it was not approved.' };
+const HIDDEN_NAME_REASON = 'The bot name has hidden characters, so the card cannot show it whole.';
 
 interface IntegrationChange {
     mode: ChangeMode;
@@ -138,6 +162,18 @@ function describeBotCreate(input: unknown): ToolCallVerdict {
     const detail = `Name: ${JSON.stringify(name)}\nTitle: ${JSON.stringify(title)}\nInstructions:\n${instructions}`;
 
     return { decision: 'ask', summary: 'Create a new bot.', detail };
+}
+
+function describeBotDelete(check: BotDeleteCheck): ToolCallVerdict {
+    if (!check.ok) {
+        return { decision: 'deny', reason: check.reason };
+    }
+
+    if (hasHiddenCode(check.name)) {
+        return { decision: 'deny', reason: HIDDEN_NAME_REASON };
+    }
+
+    return { decision: 'ask', summary: `Delete the bot ${JSON.stringify(check.name)}.`, detail: BOT_DELETE_DETAIL };
 }
 
 function parseModelAnswer(answerText: string): ModelAnswer {
@@ -246,6 +282,25 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
                 return describeBotCreate(call.input);
             }
 
+            // These cards are built by the owner's stores. Without the builder the change is refused, never asked with a generic card.
+            if (call.toolName === RULE_CHANGE_TOOL_NAME) {
+                return options.describeRuleChange === undefined ? CHECK_MISSING_VERDICT : options.describeRuleChange(botId, call.input);
+            }
+
+            if (call.toolName === LIMITS_SET_TOOL_NAME) {
+                return options.describeLimitChange === undefined ? CHECK_MISSING_VERDICT : options.describeLimitChange(botId, call.input);
+            }
+
+            if (call.toolName === BOT_DELETE_TOOL_NAME) {
+                if (options.describeBotDelete === undefined) {
+                    return CHECK_MISSING_VERDICT;
+                }
+
+                const check = await options.describeBotDelete(botId);
+
+                return describeBotDelete(check);
+            }
+
             const change = INTEGRATION_CHANGES.get(call.toolName);
 
             if (change !== undefined && options.describeChange !== undefined) {
@@ -275,4 +330,4 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
 }
 
 export { buildReviewPrompt, createToolCallReviewer, parseModelAnswer };
-export type { ReviewContext, ReviewModel, ToolCallReviewerOptions };
+export type { BotDeleteCheck, ReviewContext, ReviewModel, ToolCallReviewerOptions };

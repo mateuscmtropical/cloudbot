@@ -21,6 +21,8 @@ interface MessageActions {
     onChoose: (messageId: string, choiceId: string) => Promise<void>;
     onSubmitCode: (messageId: string, code: string) => void;
     onSubmitSecret: (messageId: string, value: string) => Promise<void>;
+    // Opens the Screen panel again, for the link on a screen request.
+    onOpenScreen: () => void;
 }
 
 interface MessageItemProps {
@@ -75,6 +77,21 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
                 <div className="setup-card">
                     <p>{body.text}</p>
                     <LinkCard label={body.label} url={body.url} />
+                </div>
+            );
+        case 'screenLink':
+            return (
+                <div className="setup-card">
+                    <p>{body.text}</p>
+                    <button
+                        type="button"
+                        className="choice-button"
+                        onClick={() => {
+                            actions.onOpenScreen();
+                        }}
+                    >
+                        Open the screen
+                    </button>
                 </div>
             );
         case 'codeField':

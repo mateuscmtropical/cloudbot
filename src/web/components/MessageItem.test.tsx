@@ -12,7 +12,7 @@ describe('answered setup messages', () => {
         { kind: 'codeField', prompt: 'Paste code', placeholder: 'Code', submitted: true },
         { kind: 'secureForm', prompt: 'Paste key', secretName: 'ANTHROPIC_API_KEY', submitted: true },
     ])('disables an answered $kind message loaded from the server', (body) => {
-        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
         const message = { id: 'setup', botId: 'bot', role: 'assistant' as const, sequence: 1, createdAt: 1, body };
 
         render(<MessageItem message={message} actions={actions} />);
@@ -31,7 +31,7 @@ describe('answered setup messages', () => {
         expect(actions.onSubmitSecret).not.toHaveBeenCalled();
     });
     it('offers subscription from the API key form', () => {
-        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
         const body: MessageBody = { kind: 'secureForm', prompt: 'Add key', secretName: 'ANTHROPIC_API_KEY', submitted: false };
         const message = { id: 'key-form', botId: 'bot', role: 'assistant' as const, sequence: 1, createdAt: 1, body };
 
@@ -42,7 +42,7 @@ describe('answered setup messages', () => {
     });
 
     it('marks a user message sent during a turn as queued', () => {
-        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
         const body: MessageBody = { kind: 'text', text: 'and then this', isQueued: true };
         const message = { id: 'queued', botId: 'bot', role: 'user' as const, sequence: 2, createdAt: 2, body };
 
@@ -55,7 +55,7 @@ describe('answered setup messages', () => {
 describe('bot messages with a mascot', () => {
     afterEach(cleanup);
 
-    const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+    const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
     const message = { id: 'bot-reply', botId: 'bot', role: 'assistant' as const, sequence: 1, createdAt: 1, body: { kind: 'text' as const, text: 'Hello' } };
     const mascot = { mascotColor: 'blue' as const, mascotShape: 'puff' as const };
 
@@ -93,7 +93,7 @@ describe('file messages', () => {
     afterEach(cleanup);
 
     it('links to the download of the message with its name and size', () => {
-        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
         const body: MessageBody = { kind: 'file', name: 'report q1.pdf', mimeType: 'application/pdf', sizeBytes: 2048, fileId: 'f1' };
         const message = { id: 'm 1', botId: 'bot', role: 'assistant' as const, sequence: 3, createdAt: 3, body };
 
@@ -112,7 +112,7 @@ describe('file messages', () => {
     });
 
     it('shows a preview of an image file, such as a screenshot', () => {
-        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
         const body: MessageBody = { kind: 'file', name: 'screenshot-2026-10-21-03-15-42.png', mimeType: 'image/png', sizeBytes: 5000, fileId: 'f2' };
         const message = { id: 'm2', botId: 'bot', role: 'assistant' as const, sequence: 4, createdAt: 4, body };
 
@@ -127,7 +127,7 @@ describe('file messages', () => {
     });
 
     it('does not preview a large image', () => {
-        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
         const body: MessageBody = { kind: 'file', name: 'huge.png', mimeType: 'image/png', sizeBytes: 6 * 1024 * 1024, fileId: 'f4' };
         const message = { id: 'm4', botId: 'bot', role: 'assistant' as const, sequence: 6, createdAt: 6, body };
 
@@ -138,7 +138,7 @@ describe('file messages', () => {
     });
 
     it('does not preview an svg file', () => {
-        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
         const body: MessageBody = { kind: 'file', name: 'logo.svg', mimeType: 'image/svg+xml', sizeBytes: 100, fileId: 'f3' };
         const message = { id: 'm3', botId: 'bot', role: 'assistant' as const, sequence: 5, createdAt: 5, body };
 
@@ -153,7 +153,7 @@ describe('secret forms the bot asks for', () => {
     afterEach(cleanup);
 
     it('shows the site where the value will be used', () => {
-        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
         const body: MessageBody = { kind: 'secureForm', prompt: 'Sign in to GitHub', secretName: 'GITHUB_PASSWORD', site: 'https://github.com', submitted: false };
         const message = { id: 'm9', botId: 'bot', role: 'assistant' as const, sequence: 9, createdAt: 9, body };
 

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { ApprovalGate } from '../approvals/ApprovalGate.ts';
 import type { ToolCallReviewer } from '../approvals/ApprovalGate.ts';
+import type { BotDeleteCheck } from '../approvals/createToolCallReviewer.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnImage, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
@@ -46,7 +47,7 @@ import type { WatchStore } from '../store/WatchStore.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
 import type { ConnectedApps } from '../apps/ConnectedApps.ts';
 import { APP_TOOL_FULL_NAMES, createAppTools } from '../apps/createAppTools.ts';
-import { REQUEST_SCREEN_TOOL_FULL_NAME, createRequestScreenTool } from '../desktop/createScreenTools.ts';
+import { REQUEST_SCREEN_TOOL_FULL_NAME, SCREEN_SHOW_TOOL_FULL_NAME, createRequestScreenTool, createScreenShowTool } from '../desktop/createScreenTools.ts';
 import type { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import { TYPE_SECRET_TOOL_FULL_NAME, createTypeSecretTool } from '../secrets/createTypeSecretTool.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
@@ -64,6 +65,8 @@ import type { StoredUploadRecord } from '../store/schema.ts';
 import type { Bot, BotProfile, Message } from '../store/types.ts';
 import { BOT_CREATE_TOOL_FULL_NAME, createBotCreateTool } from '../bots/createBotTool.ts';
 import type { BotCreateInput } from '../bots/createBotTool.ts';
+import { BOT_DELETE_TOOL_FULL_NAME, createBotDeleteTool } from '../bots/createBotDeleteTool.ts';
+import { RULE_LIST_TOOL_FULL_NAME, RULE_TOOL_FULL_NAMES, createRuleTools } from '../rules/createRuleTools.ts';
 import { encodeProjectPath } from '../bots/claudeProjectFolder.ts';
 import { removeBotDirectory } from '../bots/removeBotDirectory.ts';
 import { prepareAgentWorkspace } from '../agent/prepareAgentWorkspace.ts';
@@ -79,6 +82,7 @@ import type {
     FileBody,
     MessageBody,
     PendingUpload,
+    ScreenLinkBody,
     SecureFormBody,
     TextBody,
 } from '../../shared/chatTypes.ts';
@@ -93,6 +97,16 @@ const MEMORY_FILE_MODE = 0o660;
 
 // Why a bot was not deleted. 'deleted' is the only success.
 type DeleteBotOutcome = 'deleted' | 'missing' | 'last' | 'setup' | 'stopping' | 'deleting';
+type RefusedDeleteOutcome = Exclude<DeleteBotOutcome, 'deleted'>;
+
+// The chat and the approval card say why a bot is not deleted, in the owner's words.
+const DELETE_REFUSAL_TEXT: Record<RefusedDeleteOutcome, string> = {
+    missing: 'This bot no longer exists.',
+    last: 'This is the last bot, so it cannot be deleted.',
+    setup: 'The Claude setup runs in this bot\'s chat, so this bot cannot be deleted until the setup is done.',
+    stopping: 'This bot did not stop in time, so it was not deleted. Try again in a moment.',
+    deleting: 'This bot is already being deleted.',
+};
 
 // Checks every poll interval until the test passes or the time runs out. Returns whether it passed.
 async function waitUntil(isDone: () => boolean, timeoutMs: number): Promise<boolean> {
@@ -287,6 +301,7 @@ function previewOf(body: MessageBody): string {
     switch (body.kind) {
         case 'text':
         case 'link':
+        case 'screenLink':
             return body.text.slice(0, PREVIEW_LENGTH);
         case 'toolActivity':
             return body.summary.slice(0, PREVIEW_LENGTH);
@@ -905,26 +920,51 @@ class ChatService {
         }
     }
 
-    // The delete itself. Its running turn stops first and its queue is dropped.
-    // The bot row goes last, so a failed file removal leaves the bot in place to delete again.
-    private async removeBot(botId: string): Promise<DeleteBotOutcome> {
+    // What the approval card of bot_delete shows: the name, or the reason the delete would be refused.
+    async describeBotDelete(botId: string): Promise<BotDeleteCheck> {
+        const isDeleting = this.deletingBots.has(botId);
+        const refusal = isDeleting ? 'deleting' : await this.deleteRefusal(botId);
+
+        if (refusal !== undefined) {
+            return { ok: false, reason: DELETE_REFUSAL_TEXT[refusal] };
+        }
+
         const bot = await this.botStore.getById(botId);
 
         if (bot === undefined) {
-            return 'missing';
+            return { ok: false, reason: DELETE_REFUSAL_TEXT.missing };
         }
 
-        // Bots that are being deleted do not count, so two parallel deletes cannot remove the last two bots.
-        const allBots = await this.botStore.list();
-        const survivors = allBots.filter(other => other.id !== botId && !this.deletingBots.has(other.id));
+        return { ok: true, name: bot.name };
+    }
 
-        if (survivors.length === 0) {
-            return 'last';
+    // The bot deletes itself from its own turn. The delete stops that turn, so it runs in the background and the tool answers first.
+    // A delete that is refused after the owner approved it is told to the owner in the chat.
+    async deleteBotFromTool(botId: string): Promise<string> {
+        const check = await this.describeBotDelete(botId);
+
+        if (!check.ok) {
+            return check.reason;
         }
 
-        // The Claude setup runs in the first bot's chat, so that bot stays until the setup is done.
-        if (this.setup !== undefined && this.setup.isSetupBot(botId) && !this.setup.isDone()) {
-            return 'setup';
+        this.deleteBot(botId)
+            .then(async (outcome) => {
+                if (outcome !== 'deleted') {
+                    await this.saveAndPublish(botId, 'system', { kind: 'text', text: DELETE_REFUSAL_TEXT[outcome] });
+                }
+            })
+            .catch(reportBackgroundError);
+
+        return `Deleting ${check.name} now. This chat ends with the delete.`;
+    }
+
+    // The delete itself. Its running turn stops first and its queue is dropped.
+    // The bot row goes last, so a failed file removal leaves the bot in place to delete again.
+    private async removeBot(botId: string): Promise<DeleteBotOutcome> {
+        const refusal = await this.deleteRefusal(botId);
+
+        if (refusal !== undefined) {
+            return refusal;
         }
 
         this.abortRunningTurn(botId);
@@ -944,11 +984,37 @@ class ChatService {
             this.webhookRefusals?.forget(webhook.id);
             this.webhookDeliveries?.forget(webhook.id);
         });
-        this.forgetBotState(botId);
         await this.botStore.delete(botId);
+        // The web app learns the bot is gone while the listeners still exist. Then they are dropped.
+        this.publish(botId, { type: 'botDeleted', botId });
+        this.forgetBotState(botId);
         await this.forgetGithub?.(botId);
 
         return 'deleted';
+    }
+
+    // The reasons a delete is refused before it starts. The approval card and the delete itself use the same checks.
+    private async deleteRefusal(botId: string): Promise<RefusedDeleteOutcome | undefined> {
+        const bot = await this.botStore.getById(botId);
+
+        if (bot === undefined) {
+            return 'missing';
+        }
+
+        // Bots that are being deleted do not count, so two parallel deletes cannot remove the last two bots.
+        const allBots = await this.botStore.list();
+        const survivors = allBots.filter(other => other.id !== botId && !this.deletingBots.has(other.id));
+
+        if (survivors.length === 0) {
+            return 'last';
+        }
+
+        // The Claude setup runs in the first bot's chat, so that bot stays until the setup is done.
+        if (this.setup !== undefined && this.setup.isSetupBot(botId) && !this.setup.isDone()) {
+            return 'setup';
+        }
+
+        return undefined;
     }
 
     // Aborts the running turn. The turn ends by itself after that, and the queue is left as it is.
@@ -1074,12 +1140,15 @@ class ChatService {
 
     // Gives the screen to the owner and posts a note in the chat. The browser tools stop until the owner gives it back.
     async requestScreen(botId: string, reason: string): Promise<void> {
-        const body: TextBody = { kind: 'text', text: `I need you on my screen. ${reason}\n\nOpen the Screen panel, do what is needed, then give the screen back and send me a message.` };
+        const body: ScreenLinkBody = { kind: 'screenLink', text: `I need you on my screen. ${reason}\n\nDo what is needed, then give the screen back and send me a message.` };
 
         // The holder changes first, so a browser tool called in the same moment is already refused.
         const wasHeldByPerson = this.screen?.isPersonHolding === true;
 
         this.screen?.giveToPerson();
+
+        // The web app opens the Screen panel for this bot, so the owner does not have to look for it.
+        this.publish(botId, { type: 'screen', botId });
 
         // The turn waits on the owner while the owner holds the screen. The wait ends when the screen is given back.
         if (this.screen !== undefined && !wasHeldByPerson && !this.screenWaitBots.has(botId)) {
@@ -1096,6 +1165,11 @@ class ChatService {
 
             throw error;
         }
+    }
+
+    // Opens the Screen panel for the owner, when the owner asks to see the bot's screen.
+    showScreen(botId: string): void {
+        this.publish(botId, { type: 'screen', botId });
     }
 
     // Posts a secure form the bot asked for. Throws BotSecretError with a message for the model.
@@ -1680,11 +1754,14 @@ class ChatService {
             const appTools = this.connectedApps === undefined ? [] : createAppTools(this.connectedApps, botId);
             // The tool asks the owner through the approval gate, so it is offered only when that gate exists.
             const botTools = this.approvals === undefined ? [] : [createBotCreateTool(input => this.createBotFromTool(botId, input))];
+            // The rule list is always offered. A rule change and a bot delete are offered only with the approval gate, since each waits for the owner.
+            const ruleTools = this.ruleStore === undefined ? [] : createRuleTools(this.ruleStore, botId, this.approvals !== undefined);
+            const botDeleteTools = this.approvals === undefined ? [] : [createBotDeleteTool(() => this.deleteBotFromTool(botId))];
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...ruleTools, ...botDeleteTools],
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
             const remoteServers = this.connectedApps === undefined ? {} : await this.connectedApps.serverConfigs();
@@ -1819,7 +1896,20 @@ class ChatService {
             return [];
         }
 
-        return [createRequestScreenTool(reason => this.requestScreen(botId, reason))];
+        return [
+            createRequestScreenTool(reason => this.requestScreen(botId, reason)),
+            createScreenShowTool(() => {
+                this.showScreen(botId);
+            }),
+        ];
+    }
+
+    private ruleToolNamesAllowed(): string[] {
+        if (this.ruleStore === undefined) {
+            return [];
+        }
+
+        return this.approvals === undefined ? [RULE_LIST_TOOL_FULL_NAME] : RULE_TOOL_FULL_NAMES;
     }
 
     // Headless turns cannot answer a permission prompt, so the cloudbot tools the bot has are allowed up front.
@@ -1829,7 +1919,7 @@ class ChatService {
         const typeSecretToolNames = this.browser === undefined ? [] : [TYPE_SECRET_TOOL_FULL_NAME];
         const secretToolNames = this.botSecrets === undefined ? [] : [REQUEST_SECRET_TOOL_FULL_NAME, ...typeSecretToolNames];
 
-        const screenToolNames = this.browser === undefined || this.screen === undefined ? [] : [REQUEST_SCREEN_TOOL_FULL_NAME];
+        const screenToolNames = this.browser === undefined || this.screen === undefined ? [] : [REQUEST_SCREEN_TOOL_FULL_NAME, SCREEN_SHOW_TOOL_FULL_NAME];
 
         const routineToolNames = this.routineStore === undefined ? [] : ROUTINE_TOOL_FULL_NAMES;
         const integrationToolNames = this.integrationService === undefined ? [] : INTEGRATION_TOOL_FULL_NAMES;
@@ -1840,8 +1930,11 @@ class ChatService {
         const appToolNames = this.connectedApps === undefined ? [] : APP_TOOL_FULL_NAMES;
         // bot_create is offered only with the approval gate, the same condition as the tool itself.
         const botCreateToolNames = this.approvals === undefined ? [] : [BOT_CREATE_TOOL_FULL_NAME];
+        // The rule list needs the rule store. A rule change needs the approval gate too, so without it only the list is allowed.
+        const ruleToolNames = this.ruleToolNamesAllowed();
+        const botDeleteToolNames = this.approvals === undefined ? [] : [BOT_DELETE_TOOL_FULL_NAME];
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...ruleToolNames, ...botDeleteToolNames];
     }
 
     private webhookTools(botId: string): CloudbotTool[] {
