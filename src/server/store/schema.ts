@@ -74,6 +74,10 @@ const turnQueue = sqliteTable('turn_queue', {
     uploads: text('uploads', { mode: 'json' })
         .$type<StoredUploadRecord[]>()
         .notNull(),
+    // Routine turns pick the routines model. Rows from before this column were chat turns.
+    source: text('source', { enum: ['chat', 'routine'] })
+        .notNull()
+        .default('chat'),
 }, table => [
     index('turn_queue_bot_id')
         .on(table.botId),
@@ -135,5 +139,15 @@ const routines = sqliteTable('routines', {
         .on(table.botId),
 ]);
 
-export { botRules, bots, messages, routines, settings, turnQueue, turnWaits };
+// The model the owner chose for each kind of work. A null column means the CLI default.
+const botModels = sqliteTable('bot_models', {
+    botId: text('bot_id')
+        .primaryKey()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    chatModel: text('chat_model'),
+    routinesModel: text('routines_model'),
+    reviewModel: text('review_model'),
+});
+
+export { botModels, botRules, bots, messages, routines, settings, turnQueue, turnWaits };
 export type { StoredUploadRecord };

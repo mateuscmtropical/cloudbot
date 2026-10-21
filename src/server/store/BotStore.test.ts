@@ -21,8 +21,8 @@ describe('BotStore', () => {
 
     it('lists queued turns in position order, including ones put in front', async () => {
         const bot = await store.create({ name: 'Ana', title: 'Assistant', description: '' });
-        const back = { id: 'back', botId: bot.id, position: 1, messageId: 'm2', text: 'second', uploads: [] };
-        const front = { id: 'front', botId: bot.id, position: 0, messageId: null, text: 'Continue.', uploads: [] };
+        const back = { id: 'back', botId: bot.id, position: 1, messageId: 'm2', text: 'second', uploads: [], source: 'chat' as const };
+        const front = { id: 'front', botId: bot.id, position: 0, messageId: null, text: 'Continue.', uploads: [], source: 'chat' as const };
 
         await store.insertQueuedTurn(back);
         await store.insertQueuedTurn(front);
@@ -31,10 +31,19 @@ describe('BotStore', () => {
             .toEqual(['front', 'back']);
     });
 
+    it('keeps whether a queued turn came from a routine', async () => {
+        const bot = await store.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await store.insertQueuedTurn({ id: 'routine-turn', botId: bot.id, position: 1, messageId: 'm1', text: 'Routine', uploads: [], source: 'routine' });
+
+        expect((await store.listQueuedTurns()).map(turn => turn.source))
+            .toEqual(['routine']);
+    });
+
     it('drops the queued turns of a bot when they are deleted for it', async () => {
         const bot = await store.create({ name: 'Ana', title: 'Assistant', description: '' });
 
-        await store.insertQueuedTurn({ id: 'turn-1', botId: bot.id, position: 1, messageId: 'm1', text: 'Hi', uploads: [] });
+        await store.insertQueuedTurn({ id: 'turn-1', botId: bot.id, position: 1, messageId: 'm1', text: 'Hi', uploads: [], source: 'chat' });
         await store.deleteQueuedTurnsOfBot(bot.id);
 
         expect(await store.listQueuedTurns())

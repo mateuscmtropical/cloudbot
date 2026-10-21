@@ -1,10 +1,12 @@
 import type { RuleStore } from '../store/RuleStore.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
+import type { ModelStore } from '../store/ModelStore.ts';
 import type { ReviewContext } from './createToolCallReviewer.ts';
 
 interface ReviewContextSources {
     ruleStore: Pick<RuleStore, 'list'>;
     messageStore: Pick<MessageStore, 'listByBot'>;
+    modelStore: Pick<ModelStore, 'get'>;
     messageCount?: number;
 }
 
@@ -31,14 +33,17 @@ function createReviewContextReader(sources: ReviewContextSources): (botId: strin
     const messageCount = sources.messageCount ?? DEFAULT_MESSAGE_COUNT;
 
     return async (botId) => {
-        const [rules, messages] = await Promise.all([
+        const [rules, messages, modelChoices] = await Promise.all([
             sources.ruleStore.list(botId),
             sources.messageStore.listByBot(botId, { limit: messageCount }),
+            sources.modelStore.get(botId),
         ]);
+        const reviewModelOption = modelChoices.review === null ? {} : { reviewModel: modelChoices.review };
 
         return {
             ownerRules: rules.map(rule => `${rule.kind === 'block' ? 'Block' : 'Allow'}: ${rule.text}`),
             recentMessages: messages.flatMap(toChatLine),
+            ...reviewModelOption,
         };
     };
 }

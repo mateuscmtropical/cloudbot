@@ -20,11 +20,12 @@ interface ClaudeReviewModelOptions {
 const DEFAULT_REVIEW_TIMEOUT_MS = 60_000;
 const REVIEW_SYSTEM_PROMPT = 'You are a careful reviewer of tool calls. You answer with one JSON object and nothing else.';
 
-function buildReviewOptions(options: ClaudeReviewModelOptions, abortController: AbortController): Options {
+function buildReviewOptions(options: ClaudeReviewModelOptions, abortController: AbortController, model: string | undefined): Options {
     const executableOption = options.pathToClaudeCodeExecutable
         ? { pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable }
         : {};
     const environmentOption = options.environment ? { env: options.environment } : {};
+    const modelOption = model === undefined ? {} : { model };
 
     return {
         cwd: options.workingDirectory,
@@ -37,6 +38,7 @@ function buildReviewOptions(options: ClaudeReviewModelOptions, abortController: 
         systemPrompt: REVIEW_SYSTEM_PROMPT,
         ...executableOption,
         ...environmentOption,
+        ...modelOption,
     };
 }
 
@@ -57,7 +59,7 @@ function createClaudeReviewModel(options: ClaudeReviewModelOptions): ReviewModel
     const queryFunction = options.queryFunction ?? query;
     const timeoutMs = options.timeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS;
 
-    return async (prompt, signal) => {
+    return async (prompt, signal, model) => {
         const abortController = new AbortController();
         const abort = (): void => {
             abortController.abort();
@@ -67,7 +69,7 @@ function createClaudeReviewModel(options: ClaudeReviewModelOptions): ReviewModel
         signal?.addEventListener('abort', abort, { once: true });
 
         try {
-            const queryOptions = buildReviewOptions(options, abortController);
+            const queryOptions = buildReviewOptions(options, abortController, model);
             const conversation = queryFunction({ prompt, options: queryOptions });
             let answer: string | undefined;
 

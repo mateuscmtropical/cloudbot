@@ -106,6 +106,7 @@ src/
     desktop/       Starts the bot's desktop and starts it again when it exits
     main.ts        Entry point
     claudeAuth/    CLI subscription login sessions and sign-in status
+    models/        Model choices per kind of work: validation and routes
     store/         SQLite storage: bots, messages, settings and migrations
     vault/         Encrypted secrets, secure form route and key proxy
   shared/          Types shared by the server and the web app
@@ -397,6 +398,22 @@ shows the server's error text when a rule is refused.
 Each turn reads the bot's rules. `buildSystemPrompt` lists the sentences as
 owner rules, and the blocked tools go to the SDK as `disallowedTools`, which
 wins over `allowedTools`.
+
+## Model choices
+
+`ModelStore` keeps one row per bot in the `bot_models` table, with a choice for
+each kind of work: `chat`, `routines` and `review`. A null choice keeps the CLI
+default. A choice is an alias the SDK accepts (`fable`, `opus`, `sonnet` or
+`haiku`, listed in `MODEL_ALIASES`) or a full id that matches
+`^claude-[a-z0-9.-]+$`. `parseModelInput` checks both. The routes `GET` and
+`PUT /api/bots/:id/models` sit behind the session cookie. `PUT` replaces all
+three choices, and a missing field clears its choice.
+
+A turn sends its choice to the SDK `model` option. A routine turn uses the
+`routines` choice and falls back to `chat`. The `source` of a turn (`chat` or
+`routine`) is stored with the queued turn, so a routine that waits keeps its
+choice after a restart. The review model is read with the owner rules on each
+review call.
 
 ## Tool call approval
 

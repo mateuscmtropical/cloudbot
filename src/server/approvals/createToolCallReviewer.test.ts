@@ -24,6 +24,17 @@ function createReviewer(modelText: string | Error): { reviewer: ToolCallReviewer
 }
 
 describe('createToolCallReviewer', () => {
+    it('asks the model with the review model choice of the bot', async () => {
+        const { reviewer, askModel, readContext } = createReviewer('{"category":"other","decision":"ask","summary":"","reason":""}');
+
+        readContext.mockResolvedValue({ ...CONTEXT, reviewModel: 'opus' });
+
+        await reviewer('bot-1', BASH_CALL);
+
+        expect(askModel)
+            .toHaveBeenCalledWith(expect.any(String), undefined, 'opus');
+    });
+
     it('allows a harmless call without asking the model', async () => {
         const { reviewer, askModel } = createReviewer('unused');
 

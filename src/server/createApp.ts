@@ -14,7 +14,9 @@ import type { ChatService } from './chat/ChatService.ts';
 import { createScreenRoutes } from './desktop/createScreenRoutes.ts';
 import type { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { createRuleRoutes } from './rules/createRuleRoutes.ts';
+import { createModelRoutes } from './models/createModelRoutes.ts';
 import { createRoutineRoutes } from './routines/createRoutineRoutes.ts';
+import type { ModelStore } from './store/ModelStore.ts';
 import type { RoutineStore } from './store/RoutineStore.ts';
 import type { RuleStore } from './store/RuleStore.ts';
 
@@ -30,6 +32,7 @@ interface AppOptions {
     chatService?: ChatService;
     ruleStore?: RuleStore;
     routineStore?: RoutineStore;
+    modelStore?: ModelStore;
     screen?: ScreenHolder;
 }
 
@@ -88,6 +91,13 @@ function createApp(options: AppOptions): Hono {
         const routineRoutes = createRoutineRoutes({ routineStore: options.routineStore, hasBot: botId => chatService.hasBot(botId) });
 
         app.route('/', routineRoutes);
+    }
+
+    if (options.chatService !== undefined && options.modelStore !== undefined) {
+        const chatService = options.chatService;
+        const modelRoutes = createModelRoutes({ modelStore: options.modelStore, hasBot: botId => chatService.hasBot(botId) });
+
+        app.route('/', modelRoutes);
     }
 
     if (options.screen !== undefined) {

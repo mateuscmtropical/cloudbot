@@ -22,6 +22,26 @@ function createQuery(messages: SDKMessage[]): { queryFunction: ReviewQueryFuncti
 }
 
 describe('createClaudeReviewModel', () => {
+    it('runs the review with the model the owner chose', async () => {
+        const { queryFunction, calls } = createQuery([resultMessage({ result: '{}' })]);
+        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
+
+        await askModel('prompt', undefined, 'haiku');
+
+        expect(calls[0]?.options)
+            .toMatchObject({ model: 'haiku' });
+    });
+
+    it('runs the review with the CLI default model when none is chosen', async () => {
+        const { queryFunction, calls } = createQuery([resultMessage({ result: '{}' })]);
+        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
+
+        await askModel('prompt');
+
+        expect(calls[0]?.options)
+            .not.toHaveProperty('model');
+    });
+
     it('returns the text of the result', async () => {
         const { queryFunction } = createQuery([{ type: 'system' } as unknown as SDKMessage, resultMessage({ result: 'answer' })]);
         const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });

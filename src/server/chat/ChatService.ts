@@ -32,6 +32,8 @@ import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
 import type { RuleStore } from '../store/RuleStore.ts';
 import type { RoutineStore } from '../store/RoutineStore.ts';
+import type { ModelStore } from '../store/ModelStore.ts';
+import { chooseTurnModel } from '../models/modelChoices.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
 import type { SetupAction, SetupConversation } from '../setup/SetupConversation.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
@@ -73,6 +75,8 @@ interface ChatServiceOptions {
     // The owner's rules for each bot. Without it turns run without rules.
     ruleStore?: RuleStore | undefined;
     routineStore?: RoutineStore | undefined;
+    // The model the owner chose for chat and routine turns. Without it turns use the CLI default.
+    modelStore?: ModelStore | undefined;
     // Decides which tool calls wait for the owner. Without it no call waits.
     toolCallReviewer?: ToolCallReviewer | undefined;
 }
@@ -106,12 +110,16 @@ interface UsageLimitState {
     resetsAt: number | undefined;
 }
 
+// Who started a turn. A routine turn uses the routines model choice.
+type TurnSource = 'chat' | 'routine';
+
 // One message's turn: what to send, its files, and the stored message it answers.
 interface TurnInput {
     botId: string;
     text: string;
     uploads: SavedUpload[];
     messageId: string | undefined;
+    source: TurnSource;
 }
 
 // A turn waiting in the queue. Its position orders the queue, so a retry can go in front.
@@ -131,6 +139,7 @@ interface TurnContext {
     disallowedTools: string[];
     reviewToolCall?: TurnRequest['reviewToolCall'];
     additionalDirectories: string[];
+    model?: string;
 }
 
 type ChatEventListener = (event: ChatEvent) => void;
@@ -272,6 +281,7 @@ function toQueuedTurnRecord(queuedTurn: QueuedTurn): QueuedTurnRecord {
         messageId: queuedTurn.messageId ?? null,
         text: queuedTurn.text,
         uploads: storedUploads,
+        source: queuedTurn.source,
     };
 }
 
@@ -298,6 +308,7 @@ async function restoreQueuedTurn(record: QueuedTurnRecord): Promise<QueuedTurn> 
         messageId: record.messageId ?? undefined,
         text: record.text,
         uploads,
+        source: record.source,
     };
 }
 
@@ -342,6 +353,7 @@ class ChatService {
     private readonly answeringForms = new Set<string>();
     private readonly ruleStore: RuleStore | undefined;
     private readonly routineStore: RoutineStore | undefined;
+    private readonly modelStore: ModelStore | undefined;
     private readonly approvals: ApprovalGate | undefined;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
@@ -367,6 +379,7 @@ class ChatService {
         this.screen = options.screen;
         this.ruleStore = options.ruleStore;
         this.routineStore = options.routineStore;
+        this.modelStore = options.modelStore;
         this.approvals = options.toolCallReviewer === undefined
             ? undefined
             : new ApprovalGate({
@@ -854,7 +867,8 @@ class ChatService {
     }
 
     // A message sent while the bot is busy is saved as queued and runs after the work ahead of it.
-    async sendMessage(botId: string, text: string): Promise<ChatMessage | undefined> {
+    // The source only picks the model of the turn. Routine messages pass 'routine'.
+    async sendMessage(botId: string, text: string, source: TurnSource = 'chat'): Promise<ChatMessage | undefined> {
         const bot = await this.botStore.getById(botId);
 
         if (bot === undefined) {
@@ -908,7 +922,7 @@ class ChatService {
         }
 
         if (isQueued) {
-            await this.enqueueTurn(botId, { botId, text, uploads: turnUploads, messageId: userMessage.id }, false);
+            await this.enqueueTurn(botId, { botId, text, uploads: turnUploads, messageId: userMessage.id, source }, false);
 
             // The turn that was running may have ended while the message was saved, so the queue is checked again.
             this.startNextQueuedTurn(botId)
@@ -918,7 +932,7 @@ class ChatService {
         }
 
         // The turn runs in the background. Its failures are reported to the chat.
-        this.runTurn({ botId, text, uploads: turnUploads, messageId: userMessage.id }, abortController)
+        this.runTurn({ botId, text, uploads: turnUploads, messageId: userMessage.id, source }, abortController)
             .catch((error: unknown) => {
                 console.error('The chat turn failed outside the conversation', error);
             });
@@ -1078,7 +1092,7 @@ class ChatService {
     // After a usage limit, the same message runs again when no session started. Otherwise "Continue." runs in the session.
     private async waitForUsageLimit(turn: TurnInput, agentStarted: boolean, resetsAt: number | undefined): Promise<void> {
         const resumeTurn: TurnInput = agentStarted
-            ? { botId: turn.botId, text: CONTINUE_PROMPT, uploads: [], messageId: undefined }
+            ? { botId: turn.botId, text: CONTINUE_PROMPT, uploads: [], messageId: undefined, source: turn.source }
             : turn;
 
         await this.enqueueTurn(turn.botId, resumeTurn, true);
@@ -1201,6 +1215,10 @@ class ChatService {
             const disallowedTools = [...new Set(blockedToolNames)];
             const toolCallReview = this.createToolCallReview(botId);
             const reviewOption = toolCallReview === undefined ? {} : { reviewToolCall: toolCallReview };
+            // The model choices are read for each turn, so a change in the web app applies to the next message.
+            const modelChoices = this.modelStore === undefined ? undefined : await this.modelStore.get(botId);
+            const chosenModel = modelChoices === undefined ? undefined : chooseTurnModel(modelChoices, turn.source);
+            const modelOption = chosenModel === undefined ? {} : { model: chosenModel };
             const turnContext: TurnContext = {
                 additionalDirectories,
                 botId,
@@ -1211,6 +1229,7 @@ class ChatService {
                 systemPrompt: buildSystemPrompt(bot, { hasBrowser: this.browser !== undefined, hasRoutines: this.routineStore !== undefined, ownerRules }),
                 disallowedTools,
                 ...reviewOption,
+                ...modelOption,
                 mcpServers: { [PROFILE_SERVER_NAME]: profileServer },
             };
             const firstAttempt = await this.runAttempt(turnContext, bot.sessionId, turnState);
@@ -1313,6 +1332,7 @@ class ChatService {
             allowedTools: this.allowedToolNames(),
             disallowedTools: turnContext.disallowedTools,
             additionalDirectories: turnContext.additionalDirectories,
+            ...(turnContext.model === undefined ? {} : { model: turnContext.model }),
             ...(turnContext.reviewToolCall === undefined ? {} : { reviewToolCall: turnContext.reviewToolCall }),
             ...sessionOption,
         };
@@ -1407,4 +1427,4 @@ class ChatService {
 }
 
 export { buildScreenshotName, ChatService, DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError };
-export type { ChatEventListener, ChatServiceOptions, MessagePageOptions, SharedFileDownload };
+export type { ChatEventListener, ChatServiceOptions, MessagePageOptions, SharedFileDownload, TurnSource };

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createReviewContextReader } from './createReviewContextReader.ts';
 
+const NO_CHOICES = { chat: null, routines: null, review: null };
+
 describe('createReviewContextReader', () => {
     it('lists the rules and the text of the latest messages', async () => {
         const listByBot = vi.fn()
@@ -15,7 +17,9 @@ describe('createReviewContextReader', () => {
                 { kind: 'block', text: 'Never email my boss.' },
                 { kind: 'allow', text: 'Edit files in the workspace.' },
             ]);
-        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot } });
+        const get = vi.fn()
+            .mockResolvedValue(NO_CHOICES);
+        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: { get } });
 
         const context = await readContext('bot-1');
 
@@ -26,12 +30,29 @@ describe('createReviewContextReader', () => {
             });
     });
 
+    it('carries the review model choice of the bot', async () => {
+        const listByBot = vi.fn()
+            .mockResolvedValue([]);
+        const list = vi.fn()
+            .mockResolvedValue([]);
+        const get = vi.fn()
+            .mockResolvedValue({ ...NO_CHOICES, review: 'haiku' });
+        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: { get } });
+
+        const context = await readContext('bot-1');
+
+        expect(context.reviewModel)
+            .toBe('haiku');
+    });
+
     it('asks for a few messages of the right bot', async () => {
         const listByBot = vi.fn()
             .mockResolvedValue([]);
         const list = vi.fn()
             .mockResolvedValue([]);
-        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, messageCount: 3 });
+        const get = vi.fn()
+            .mockResolvedValue(NO_CHOICES);
+        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: { get }, messageCount: 3 });
 
         await readContext('bot-9');
 

@@ -22,6 +22,8 @@ interface TurnRequest {
     workspaceDir: string;
     prompt: string;
     sessionId?: string;
+    // An alias or full model id from the owner's model choices. Unset keeps the CLI default.
+    model?: string;
     systemPrompt?: string;
     mcpServers?: Record<string, McpServerConfig>;
     allowedTools?: string[];
