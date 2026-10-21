@@ -227,6 +227,41 @@ svg {
     display: none;
 }
 
+/* The connected apps panel floats over the chat, and scrolls when the list is long. */
+.connect-apps-panel {
+    position: fixed;
+    top: 10vh;
+    left: 50%;
+    z-index: 20;
+    width: min(480px, calc(100vw - 32px));
+    max-height: 70vh;
+    padding: 16px;
+    overflow: auto;
+    border-radius: 12px;
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    transform: translateX(-50%);
+}
+
+.connect-apps-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.connect-apps-header h3 {
+    margin: 0;
+}
+
+/* The panel itself is raised, so its buttons use the plain surface to stand out. */
+.connect-apps-panel button:not(.icon-button) {
+    padding: 4px 12px;
+    border: none;
+    border-radius: 999px;
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
 /* Buttons */
 
 .icon-button {

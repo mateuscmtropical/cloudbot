@@ -4,6 +4,7 @@ import type { ReactElement } from 'react';
 import type { BotSummary, ChatEvent, ChatMessage, ChatWebhookUrlEvent } from '../shared/chatTypes.ts';
 import { BotList } from './components/BotList.tsx';
 import { deriveMascotState } from './mascotState.ts';
+import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
 import { listBots, listMessages, RequestFailedError, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload } from './apiClient.ts';
@@ -88,6 +89,8 @@ function App(): ReactElement {
     // Webhook URLs the bot made, kept in memory only, each until the owner hides it.
     const [webhookUrls, setWebhookUrls] = useState<ChatWebhookUrlEvent[]>([]);
     const [isBotListOpen, setIsBotListOpen] = useState(false);
+    // The connected remote MCP servers panel, opened from the sidebar.
+    const [isConnectAppsOpen, setIsConnectAppsOpen] = useState(false);
     const [errorText, setErrorText] = useState<string | undefined>(undefined);
     // Chips per bot: files still uploading, and the files the server holds for the next message.
     const [attachmentsByBot, setAttachmentsByBot] = useState<Record<string, DraftAttachment[]>>({});
@@ -566,7 +569,19 @@ function App(): ReactElement {
                 selectedMascotState={liveMascotState}
                 isOpen={isBotListOpen}
                 onSelectBot={handleSelectBot}
+                onConnectApps={() => {
+                    setIsConnectAppsOpen(true);
+                }}
             />
+            {isConnectAppsOpen
+                ? (
+                        <ConnectAppsPanel
+                            onClose={() => {
+                                setIsConnectAppsOpen(false);
+                            }}
+                        />
+                    )
+                : null}
             {isBotListOpen
                 ? (
                         <button

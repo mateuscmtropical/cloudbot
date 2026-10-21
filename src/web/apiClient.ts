@@ -1,4 +1,5 @@
 import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName } from '../shared/chatTypes.ts';
+import type { ConnectedAppSummary } from '../shared/connectedApps.ts';
 import type { BotRoutine } from '../shared/routineTypes.ts';
 import type { BotWatch } from '../shared/watchTypes.ts';
 import type { BotWebhook, CreatedBotWebhook } from '../shared/webhookTypes.ts';
@@ -364,9 +365,27 @@ function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void, o
     };
 }
 
+// The remote MCP servers the owner connected. The list never holds a token.
+function listConnectedApps(): Promise<ConnectedAppSummary[]> {
+    return requestJson<ConnectedAppSummary[]>('/api/apps', {});
+}
+
+async function removeConnectedApp(appId: string): Promise<void> {
+    const path = `/api/apps/${encodeURIComponent(appId)}`;
+    const response = await fetch(path, { method: 'DELETE' });
+
+    if (!response.ok) {
+        const serverMessage = await readServerMessage(response);
+
+        throw new RequestFailedError(path, response.status, serverMessage);
+    }
+}
+
 export type { EffortLevel, LimitBound, LimitsResponse, MessagePageRequest, ModelSettings, ModelSettingsResponse, NewRuleRequest };
 export {
     RequestFailedError,
+    listConnectedApps,
+    removeConnectedApp,
     listBots,
     listMessages,
     sendMessage,

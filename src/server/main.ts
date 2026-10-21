@@ -41,6 +41,11 @@ import { BotSecrets } from './secrets/BotSecrets.ts';
 import { Vault } from './vault/Vault.ts';
 import { startKeyProxy } from './vault/KeyProxy.ts';
 import type { KeyProxy } from './vault/KeyProxy.ts';
+import { AppProxy } from './apps/AppProxy.ts';
+import { ConnectedApps } from './apps/ConnectedApps.ts';
+import { checkAppUrl, defaultAppAddressDeps } from './apps/appAddress.ts';
+import type { AllowedPrivateHost } from './apps/appAddress.ts';
+import { ConnectedAppStore } from './store/ConnectedAppStore.ts';
 
 interface RuntimeConnection {
     proxy?: KeyProxy;
@@ -88,6 +93,25 @@ const webhookRefusals = new WebhookRefusalLog();
 const webhookDeliveries = new DeliveryMemory();
 const watchStore = new WatchStore(opened.db);
 const browserAllowStore = new BrowserAllowStore(opened.db);
+const connectedAppStore = new ConnectedAppStore(opened.db);
+
+// The hosts the owner allowed the browser to reach. Only those may be private for a connected app.
+async function allowedPrivateHosts(): Promise<AllowedPrivateHost[]> {
+    const records = await browserAllowStore.list();
+
+    return records.map(record => ({ host: record.host, port: record.port }));
+}
+// The proxy holds the tokens of the connected servers. The bot reaches them only through it, and each request is checked again.
+const appProxy = new AppProxy({
+    checkUpstream: async (url) => {
+        const hosts = await allowedPrivateHosts();
+        const addressDeps = defaultAppAddressDeps(hosts);
+        const checked = await checkAppUrl(url.href, addressDeps);
+
+        return checked.addresses;
+    },
+});
+const connectedApps = new ConnectedApps({ store: connectedAppStore, secrets: botSecrets, proxy: appProxy, allowedHosts: allowedPrivateHosts });
 // The gate is the browser's only way out. It starts before the desktop, so Chromium never runs without it.
 const browserGate = desktop === undefined
     ? undefined
@@ -110,6 +134,7 @@ const chatService = new ChatService({
     botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore, routineStore, modelStore, limitStore, screen,
     webhookStore,
     watchStore,
+    connectedApps,
     browserAllowStore,
     webhookBaseUrl: readPublicBaseUrl(process.env),
     webhookRefusals,
@@ -141,6 +166,8 @@ const setup = new SetupConversation({
 });
 
 chatService.setSetup(setup);
+await appProxy.start();
+await connectedApps.start();
 await browserGate?.start();
 desktop?.start();
 
@@ -177,7 +204,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ version, access, chatService, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, isReady: () => setup.isDone(), screen });
+const app = createApp({ version, access, chatService, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.
@@ -208,6 +235,7 @@ function shutdown(): void {
     routineScheduler.stop();
     desktop?.stop();
     void browserGate?.close();
+    void appProxy.close();
     setup.close();
     server.close();
     (server as Server).closeAllConnections();

@@ -1,6 +1,7 @@
 import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 import { MASCOT_COLOR_NAMES, MASCOT_SHAPES } from '../../shared/mascot.ts';
+import { CONNECTED_APP_STATUSES } from '../../shared/connectedApps.ts';
 import type { RoutineSchedule } from '../routines/schedule.ts';
 
 import { MESSAGE_ROLES } from './messageRoles.ts';
@@ -242,5 +243,28 @@ const browserAllowedHosts = sqliteTable('browser_allowed_hosts', {
         .on(table.host, table.port),
 ]);
 
-export { botLimits, botModels, botRules, bots, browserAllowedHosts, messages, routines, settings, turnQueue, turnWaits, watches, webhooks };
+// Remote MCP servers the owner connected by URL. A token is never stored here: it is a vault secret of the bot
+// that asked for it, named by secretName, and secretBotId is that bot.
+const connectedApps = sqliteTable('connected_apps', {
+    id: text('id')
+        .primaryKey(),
+    name: text('name')
+        .notNull(),
+    url: text('url')
+        .notNull(),
+    status: text('status', { enum: CONNECTED_APP_STATUSES })
+        .notNull(),
+    toolCount: integer('tool_count')
+        .notNull(),
+    problem: text('problem'),
+    secretName: text('secret_name'),
+    secretBotId: text('secret_bot_id'),
+    createdAt: integer('created_at')
+        .notNull(),
+}, table => [
+    uniqueIndex('connected_apps_name')
+        .on(table.name),
+]);
+
+export { botLimits, botModels, botRules, bots, browserAllowedHosts, connectedApps, messages, routines, settings, turnQueue, turnWaits, watches, webhooks };
 export type { StoredUploadRecord };

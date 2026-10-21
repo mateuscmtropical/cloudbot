@@ -394,6 +394,27 @@ whose modification time is older than `CLOUDBOT_UPLOAD_RETENTION_DAYS`. The age
 counts from the copy. A download after that gets 404. If the file message cannot
 be saved, `shareFile` removes the copy before it rethrows the error.
 
+## Connected apps
+
+`app_connect`, `app_list` and `app_remove` in `src/server/apps/` let the bot connect a remote MCP
+server by its address. `checkAppUrl` accepts only http and https, with no user name or password. It
+resolves the host and refuses any address that is not public, unless the host is on the browser
+allow list, which is the same guard as the browser gate. A token is a vault secret saved with the
+secure form, under the bot that asked for it. Its site must match the origin of the server, and a
+token goes only to an https address. `probeAppServer` runs the MCP handshake over plain JSON-RPC and
+counts the tools. The rows in `connected_apps` keep the name, address, status, tool count and the
+secret name, never the token.
+
+The turn does not give the agent the server address or the token. `AppProxy` listens on 127.0.0.1
+and forwards each request to the server with the token read from the vault. Each server has a random
+key in the proxy address. The proxy checks the address again on every request, so a DNS answer that
+changes cannot reach a private host. The address of a connected server is kept in memory, and
+`ConnectedApps.start` registers the stored servers again after a restart.
+
+The tools of a connected server are named `mcp__<name>__<tool>`, so they go through the approval
+path like other outside connectors. `app_connect` always asks the owner. The owner removes a server
+in the Connect apps panel through `GET /api/apps` and `DELETE /api/apps/:id`.
+
 ## Secrets
 
 

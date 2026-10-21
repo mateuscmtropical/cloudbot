@@ -85,6 +85,13 @@
       "when": 1792602334189,
       "tag": "0011_mascot",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792604487921,
+      "tag": "0012_connected_apps",
+      "breakpoints": true
     }
   ]
 }

@@ -50,6 +50,11 @@ vi.mock('./access/SetupAccess.ts', () => ({
 }));
 vi.mock('./store/openDatabase.ts', () => ({ openDatabase: () => Promise.resolve({ db: {} }) }));
 vi.mock('./store/ensureDefaultBot.ts', () => ({ ensureDefaultBot: vi.fn() }));
+vi.mock('./store/ConnectedAppStore.ts', () => ({ ConnectedAppStore: class {
+    list(): Promise<unknown[]> {
+        return Promise.resolve([]);
+    }
+} }));
 vi.mock('./store/SettingsStore.ts', () => ({
     SettingsStore: class {
         get(): Promise<string> {

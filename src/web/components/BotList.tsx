@@ -11,9 +11,10 @@ interface BotListProps {
     selectedMascotState: MascotState;
     isOpen: boolean;
     onSelectBot: (botId: string) => void;
+    onConnectApps: () => void;
 }
 
-function BotList({ bots, selectedBotId, selectedMascotState, isOpen, onSelectBot }: BotListProps): ReactElement {
+function BotList({ bots, selectedBotId, selectedMascotState, isOpen, onSelectBot, onConnectApps }: BotListProps): ReactElement {
     const className = isOpen ? 'bot-list is-open' : 'bot-list';
 
     return (
@@ -54,7 +55,7 @@ function BotList({ bots, selectedBotId, selectedMascotState, isOpen, onSelectBot
                 })}
             </div>
             <div className="bot-list-footer">
-                <button type="button" className="connect-apps-button">Connect apps</button>
+                <button type="button" className="connect-apps-button" onClick={onConnectApps}>Connect apps</button>
             </div>
         </aside>
     );

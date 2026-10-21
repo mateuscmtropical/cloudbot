@@ -15,6 +15,8 @@ import type { ChatService } from './chat/ChatService.ts';
 import { createScreenRoutes } from './desktop/createScreenRoutes.ts';
 import type { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { createRuleRoutes } from './rules/createRuleRoutes.ts';
+import { createAppRoutes } from './apps/createAppRoutes.ts';
+import type { ConnectedApps } from './apps/ConnectedApps.ts';
 import { createLimitRoutes } from './limits/createLimitRoutes.ts';
 import { createModelRoutes } from './models/createModelRoutes.ts';
 import { createRoutineRoutes } from './routines/createRoutineRoutes.ts';
@@ -49,6 +51,8 @@ interface AppOptions {
     // The delivery ids of each webhook, shared by the call route and the owner routes. Without it a new memory is used.
     webhookDeliveries?: DeliveryMemory;
     watchStore?: WatchStore;
+    // The remote MCP servers the owner connected. Without it the owner's app routes are not served.
+    connectedApps?: ConnectedApps;
     // The address new webhook URLs start with. Without it the server's own address is used.
     publicBaseUrl?: string;
     // Webhook calls wait for the setup to finish. Without it the server is always ready.
@@ -121,6 +125,12 @@ function createApp(options: AppOptions): Hono {
         const ruleRoutes = createRuleRoutes({ ruleStore: options.ruleStore, hasBot: botId => chatService.hasBot(botId) });
 
         app.route('/', ruleRoutes);
+    }
+
+    if (options.connectedApps !== undefined) {
+        const connectedAppRoutes = createAppRoutes({ connectedApps: options.connectedApps });
+
+        app.route('/', connectedAppRoutes);
     }
 
     if (options.chatService !== undefined && options.routineStore !== undefined) {
