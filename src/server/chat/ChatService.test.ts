@@ -1054,6 +1054,53 @@ describe('ChatService', () => {
             .toEqual([join(dataDir, 'uploads', bot.id)]);
     });
 
+    it('removes a file that was never sent after one day and keeps a newer one', async () => {
+        const { service } = buildSetup([]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const dayMs = 24 * 60 * 60 * 1000;
+
+        await service.saveUploads(bot.id, [new File(['hello'], 'notes.txt')]);
+
+        const keptEarly = await service.cleanUploads(Date.now() + dayMs / 2);
+        const uploadDir = join(dataDir, 'uploads', bot.id);
+
+        expect(keptEarly)
+            .toEqual([]);
+        expect(await readdir(uploadDir))
+            .toHaveLength(1);
+
+        const removed = await service.cleanUploads(Date.now() + dayMs * 2);
+
+        expect(removed)
+            .toHaveLength(1);
+        expect(await readdir(uploadDir))
+            .toEqual([]);
+        expect(await service.listPendingUploads(bot.id))
+            .toEqual([]);
+    });
+
+    it('removes a sent file after the retention time and not before', async () => {
+        const { service } = buildSetup([{ event: { type: 'session', sessionId: 'session-1' } }, { event: { type: 'text', text: 'Done' } }]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const dayMs = 24 * 60 * 60 * 1000;
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.saveUploads(bot.id, [new File(['hello'], 'notes.txt')]);
+        await service.sendMessage(bot.id, 'read it');
+        await finished;
+
+        const uploadDir = join(dataDir, 'uploads', bot.id);
+
+        expect(await service.cleanUploads(Date.now() + dayMs * 10))
+            .toEqual([]);
+        expect(await readdir(uploadDir))
+            .toHaveLength(1);
+        expect(await service.cleanUploads(Date.now() + dayMs * 31))
+            .toHaveLength(1);
+        expect(await readdir(uploadDir))
+            .toEqual([]);
+    });
+
     it('builds the image from the bytes kept in memory, even when the file is gone from disk', async () => {
         const { service, runner } = buildSetup([{ event: { type: 'text', text: 'A cat' } }]);
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });

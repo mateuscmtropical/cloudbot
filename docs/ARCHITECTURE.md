@@ -209,6 +209,12 @@ whatever the reason, such as a stop during startup or a failed start. A turn
 that got a session event keeps its files, so the agent never gets the same files
 twice.
 
+`ChatService.cleanUploads` runs on start and once a day. A pending file that was
+never sent is removed after one day. Any other file in the upload folders is
+removed when its modification time is older than `CLOUDBOT_UPLOAD_RETENTION_DAYS`
+(default 30). Files of queued messages are never removed. The age comes from the
+file time, so a pending file lost in a restart is treated as used.
+
 Images up to 5 MB go to the SDK as image blocks, built from the bytes in memory.
 The disk is never read back for them. Images are detected from their first bytes,
 not from the client type. The user message stores the file names for the web app.

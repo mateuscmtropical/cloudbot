@@ -8,6 +8,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Upload cleanup: files that were sent stay for `CLOUDBOT_UPLOAD_RETENTION_DAYS` days (default 30). Files that were never sent are removed after one day. Queued messages keep their files. The cleanup runs on start and once a day.
 - Messages sent while a bot answers are queued and run in order after the current turn. When Claude reports a usage limit, the turn waits for the reset time, then continues. The chat shows when it resumes. Queued messages and waits survive a restart, and Stop cancels the wait and the queue.
 - Scripted Claude setup in the first bot's chat, with subscription sign-in or
   an API key form, persisted progress, retry messages and guarded answer routes.
