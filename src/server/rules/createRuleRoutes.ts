@@ -14,6 +14,9 @@ interface RuleRoutesOptions {
     hasBot: (botId: string) => Promise<boolean>;
 }
 
+// Every rule goes into every prompt, so the list stays short.
+const MAX_RULES_PER_BOT = 50;
+const TOO_MANY_RULES: RuleErrorResponse = { error: `A bot can have at most ${String(MAX_RULES_PER_BOT)} rules. Remove one first.` };
 const BOT_NOT_FOUND: RuleErrorResponse = { error: 'No bot has this id.' };
 const RULE_NOT_FOUND: RuleErrorResponse = { error: 'This bot has no rule with this id.' };
 const INVALID_JSON: RuleErrorResponse = { error: 'Send a valid JSON body.' };
@@ -61,6 +64,12 @@ function createRuleRoutes(options: RuleRoutesOptions): Hono {
             return context.json(parsed, 400);
         }
 
+        const existingRules = await options.ruleStore.list(botId);
+
+        if (existingRules.length >= MAX_RULES_PER_BOT) {
+            return context.json(TOO_MANY_RULES, 400);
+        }
+
         const record = await options.ruleStore.add(botId, parsed);
         const rule = toBotRule(record);
 
@@ -82,5 +91,5 @@ function createRuleRoutes(options: RuleRoutesOptions): Hono {
     return routes;
 }
 
-export { createRuleRoutes, toBotRule };
+export { MAX_RULES_PER_BOT, createRuleRoutes, toBotRule };
 export type { RuleRoutesOptions };

@@ -1100,7 +1100,8 @@ class ChatService {
             const additionalDirectories = [this.uploadDirFor(botId)];
             // Rules are read for each turn, so a change in the web app applies to the next message.
             const ownerRules = this.ruleStore === undefined ? [] : await this.ruleStore.list(botId);
-            const disallowedTools = ownerRules.flatMap(rule => rule.blockedTools);
+            const blockedToolNames = ownerRules.flatMap(rule => rule.blockedTools);
+            const disallowedTools = [...new Set(blockedToolNames)];
             const turnContext: TurnContext = {
                 additionalDirectories,
                 botId,

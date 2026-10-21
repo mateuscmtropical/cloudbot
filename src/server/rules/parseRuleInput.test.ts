@@ -31,5 +31,7 @@ describe('parseRuleInput', () => {
             .toHaveProperty('error');
         expect(parseRuleInput({ kind: 'block', text: 'x', blockedTools: [42] }))
             .toHaveProperty('error');
+        expect(parseRuleInput({ kind: 'block', text: 'x', blockedTools: ['Bash(git push, rm:*)'] }))
+            .toHaveProperty('error');
     });
 });

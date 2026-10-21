@@ -9,6 +9,7 @@ import { SetupAccess } from './access/SetupAccess.ts';
 import { FakeAgentRunner } from './agent/FakeAgentRunner.ts';
 import { ChatService } from './chat/ChatService.ts';
 import { createApp } from './createApp.ts';
+import { MAX_RULES_PER_BOT } from './rules/createRuleRoutes.ts';
 import { RuleStore } from './store/RuleStore.ts';
 import { BotStore } from './store/BotStore.ts';
 import { MessageStore } from './store/MessageStore.ts';
@@ -172,6 +173,27 @@ describe('createApp', () => {
             .toBe(204);
         expect(removedAgain.status)
             .toBe(404);
+    });
+
+    it('refuses a rule past the limit for one bot', async () => {
+        const chatService = buildChatService(opened);
+        const ruleStore = new RuleStore(opened.db);
+        const bot = await new BotStore(opened.db)
+            .create({ name: 'Ana', title: 'Assistant', description: '' });
+        const app = createApp({ version: '1.2.3', access, chatService, ruleStore });
+        const sessionToken = await signIn(app, access);
+        const ruleIndexes = Array.from({ length: MAX_RULES_PER_BOT }, (_unused, index) => index);
+
+        await Promise.all(ruleIndexes.map(index => ruleStore.add(bot.id, { kind: 'allow', text: `Rule ${String(index)}.`, blockedTools: [] })));
+
+        const response = await app.request(`/api/bots/${bot.id}/rules`, {
+            method: 'POST',
+            headers: { 'cookie': `cloudbot_session=${sessionToken}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ kind: 'allow', text: 'One more.' }),
+        });
+
+        expect(response.status)
+            .toBe(400);
     });
 
     it('rejects an api request with a cookie that was never issued', async () => {

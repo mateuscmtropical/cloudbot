@@ -368,8 +368,10 @@ bot, a kind (`allow` or `block`), a sentence and a list of blocked tools. The
 routes `GET` and `POST /api/bots/:id/rules` and `DELETE
 /api/bots/:id/rules/:ruleId` sit behind the session cookie. `parseRuleInput`
 checks the input: a sentence of 1 to 300 characters, at most 20 tool names as
-the SDK spells them, optionally with a pattern such as `Bash(rm:*)`. Only a
-block rule can name tools. The bot has no tool to read or change rules.
+the SDK spells them, optionally with a pattern such as `Bash(rm:*)` without
+commas. Only a block rule can name tools, and a bot has at most 50 rules. The
+bot has no tool to read or change rules. A misspelled tool name blocks
+nothing, so the sentence carries the intent.
 
 Each turn reads the bot's rules. `buildSystemPrompt` lists the sentences as
 owner rules, and the blocked tools go to the SDK as `disallowedTools`, which

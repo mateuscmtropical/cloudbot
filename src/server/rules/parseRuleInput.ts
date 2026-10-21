@@ -8,7 +8,8 @@ const MAX_RULE_TEXT_LENGTH = 300;
 const MAX_BLOCKED_TOOLS = 20;
 // A tool name as the SDK spells it, such as Bash, WebFetch or mcp__cloudbot__browser_open,
 // optionally with a pattern in parentheses, such as Bash(rm:*).
-const TOOL_RULE_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,99}(\([^()\n]{1,200}\))?$/;
+// The SDK joins the list with commas, so a pattern cannot hold one.
+const TOOL_RULE_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,99}(\([^(),\n]{1,200}\))?$/;
 
 function readField(input: unknown, field: string): unknown {
     return typeof input === 'object' && input !== null ? Reflect.get(input, field) : undefined;
