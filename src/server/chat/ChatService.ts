@@ -29,6 +29,8 @@ import type { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
 import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import { ROUTINE_TOOL_FULL_NAMES, createRoutineTools } from '../routines/createRoutineTools.ts';
+import { INTEGRATION_TOOL_FULL_NAMES, createIntegrationTools } from '../integrations/createIntegrationTools.ts';
+import type { IntegrationService } from '../integrations/IntegrationService.ts';
 import { MODELS_SET_TOOL_FULL_NAME, createModelTools } from '../models/createModelTools.ts';
 import { LIMITS_SET_TOOL_FULL_NAME, createLimitTools } from '../limits/createLimitTools.ts';
 import { TurnDeadline } from '../limits/TurnDeadline.ts';
@@ -96,6 +98,7 @@ interface ChatServiceOptions {
     // The owner's rules for each bot. Without it turns run without rules.
     ruleStore?: RuleStore | undefined;
     routineStore?: RoutineStore | undefined;
+    integrationService?: IntegrationService | undefined;
     // The model the owner chose for chat and routine turns. Without it turns use the CLI default.
     modelStore?: ModelStore | undefined;
     // The time, spending and step limits per turn. Without it turns have no limits.
@@ -385,6 +388,7 @@ class ChatService {
     private readonly answeringForms = new Set<string>();
     private readonly ruleStore: RuleStore | undefined;
     private readonly routineStore: RoutineStore | undefined;
+    private readonly integrationService: IntegrationService | undefined;
     private readonly modelStore: ModelStore | undefined;
     private readonly limitStore: LimitStore | undefined;
     private readonly watchStore: WatchStore | undefined;
@@ -428,6 +432,7 @@ class ChatService {
         this.screen = options.screen;
         this.ruleStore = options.ruleStore;
         this.routineStore = options.routineStore;
+        this.integrationService = options.integrationService;
         this.modelStore = options.modelStore;
         this.limitStore = options.limitStore;
         this.watchStore = options.watchStore;
@@ -1384,6 +1389,7 @@ class ChatService {
             const screenTools = this.createScreenTools(botId);
             const secretTools = this.createSecretTools(botId);
             const routineTools = this.routineStore === undefined ? [] : createRoutineTools(this.routineStore, botId);
+            const integrationTools = this.integrationService === undefined ? [] : createIntegrationTools(this.integrationService, botId);
             const modelTools = this.modelStore === undefined ? [] : createModelTools(this.modelStore, botId);
             const limitTools = this.limitStore === undefined ? [] : createLimitTools(this.limitStore, botId);
             const webhookTools = this.webhookTools(botId);
@@ -1394,7 +1400,7 @@ class ChatService {
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools],
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
             const remoteServers = this.connectedApps === undefined ? {} : await this.connectedApps.serverConfigs();
@@ -1529,13 +1535,14 @@ class ChatService {
         const screenToolNames = this.browser === undefined || this.screen === undefined ? [] : [REQUEST_SCREEN_TOOL_FULL_NAME];
 
         const routineToolNames = this.routineStore === undefined ? [] : ROUTINE_TOOL_FULL_NAMES;
+        const integrationToolNames = this.integrationService === undefined ? [] : INTEGRATION_TOOL_FULL_NAMES;
         const modelToolNames = this.modelStore === undefined ? [] : [MODELS_SET_TOOL_FULL_NAME];
         const limitToolNames = this.limitStore === undefined ? [] : [LIMITS_SET_TOOL_FULL_NAME];
         const webhookToolNames = this.webhookStore === undefined ? [] : WEBHOOK_TOOL_FULL_NAMES;
         const watchToolNames = this.watchStore === undefined ? [] : WATCH_TOOL_FULL_NAMES;
         const appToolNames = this.connectedApps === undefined ? [] : APP_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames];
     }
 
     private webhookTools(botId: string): CloudbotTool[] {

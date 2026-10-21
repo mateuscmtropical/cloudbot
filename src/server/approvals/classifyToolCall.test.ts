@@ -165,3 +165,21 @@ describe('connected app tools', () => {
             .toBe('review');
     });
 });
+
+describe('integration tools', () => {
+    it('always asks the owner before a script is registered or changed', () => {
+        expect(classify('mcp__cloudbot__integration_create'))
+            .toBe('always-ask');
+        expect(classify('mcp__cloudbot__integration_update'))
+            .toBe('always-ask');
+    });
+
+    it('skips the list, and reviews the run and the removal like a shell command', () => {
+        expect(classify('mcp__cloudbot__integration_list'))
+            .toBe('skip');
+        expect(classify('mcp__cloudbot__integration_run'))
+            .toBe('review');
+        expect(classify('mcp__cloudbot__integration_remove'))
+            .toBe('review');
+    });
+});

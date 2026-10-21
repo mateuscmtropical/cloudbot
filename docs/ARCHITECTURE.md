@@ -415,6 +415,34 @@ The tools of a connected server are named `mcp__<name>__<tool>`, so they go thro
 path like other outside connectors. `app_connect` always asks the owner. The owner removes a server
 in the Connect apps panel through `GET /api/apps` and `DELETE /api/apps/:id`.
 
+## API integrations
+
+The bot writes a script in its workspace and registers it as an integration. An integration is a name, an entry file, a command and at most one secret.
+
+- The command is one of `node`, `python3` or `bash`. The script goes in on stdin, so the bytes that run are the bytes that were hashed.
+- The entry file must be a path inside the bot workspace. A path with `..`, an absolute path, or a link that leads out is refused. The file is opened without following links, and it must be a regular file.
+- The script is at most 8000 bytes. The approval card shows all of it, so a longer script is refused at create, update and run. The bot must keep scripts short.
+- A script with a control character, a bidi override, a zero-width or invisible character, or a line separator (U+2028, U+2029) is refused. Tabs and LF line breaks are allowed. Such characters could make the card show other text than the script.
+- A carriage return is refused too, including in CRLF files. A lone CR ends a `//` comment in JavaScript and Python, so the card would show a comment that the code does not have. Save the script with LF line endings.
+- `integration_create` and `integration_update` take the sha256 of the entry file, which the bot computes with `sha256sum`. The server refuses the call when the file has another hash.
+- The approval card shows the name, the entry file in JSON quotes, the command, the secret with the site it belongs to, the sha256 and the whole script. For an update, the card shows the values the change would save. A field that is not given keeps its stored value.
+- The server denies a create or update whose card cannot be built. That covers an unreadable file, a hash that does not match, a missing integration, and a script that fails the checks. The owner never sees an approve button for a card without its script.
+- The owner approves each change that passes. The run then checks the file against the stored hash. A changed file does not run until the owner approves the new version.
+- `integration_run` goes through the review like a shell command. `integration_list` needs no review. `integration_remove` goes through the review too.
+- The integration runs as `cloudbot-integrations`, its own system user. That user cannot read the vault, the workspaces or the bot's shell. The integrations are on only when both `CLOUDBOT_AGENT_USER` and `CLOUDBOT_INTEGRATION_USER` are set. The log says why they stay off otherwise.
+- Each run starts `sudo -n -u cloudbot-integrations -- /usr/bin/env -i PATH=... HOME=/var/lib/cloudbot-integrations /bin/bash -c <wrapper> cloudbot-integration <SECRET_NAME> <command> <args>`. The argv holds the name of the variable, never its value.
+- The secret goes in the first line of stdin, then the script. The wrapper reads that line, exports it under the variable name and execs the interpreter. The script stays on stdin after the first line, because bash reads a pipe one byte at a time. A secret with a line break is refused.
+- Before the command starts, the wrapper sets `ulimit -u 256` (processes and threads of the user, node alone starts about ten) and `ulimit -f 65536` (file size, 64 MB). If a limit cannot be set, the run does not start.
+- Names the environment or an interpreter reads are refused as secret names. Examples are `PATH`, `HOME`, `IFS`, `NODE_OPTIONS`, `BASH_ENV`, `PYTHONPATH`, and any name that starts with `LD_` or `BASH_FUNC`.
+- Runs go one at a time, because every run shares one user. Before each run and after it, the server kills that user's processes with `pkill -KILL -u`. Then it deletes the user's files in its home folder, in `/tmp`, `/var/tmp` and `/dev/shm`, and its SysV message queues, semaphores and shared memory. A process left by one run does not reach the next.
+- Each run has a timeout of 60 seconds and an output cap of 64 KB. At either limit sudo gets SIGTERM, and SIGKILL after 2 seconds if it has not exited. The output is read 0.5 seconds after sudo exits, so a process that keeps a pipe open cannot hang the run.
+- The secret is removed from the output before it reaches the model, the run log or the database. The removed forms are the plain value, hex in both cases, URL-encoded, and base64 and base64url at each of the three alignments. When the output was cut, or the run timed out, a partial match at the end is removed too. This is best effort. The approval card is the real control, because the owner reads the whole script before approving it.
+- The run log keeps the last 20 runs of each integration, with the time, the exit code and up to 2000 characters of output.
+
+Setup. The Docker image creates the user `cloudbot-integrations` with the home `/var/lib/cloudbot-integrations`, sets `CLOUDBOT_INTEGRATION_USER`, and sudoers allows the server user to start processes as that user with `/usr/bin/env -i` only, with no password (`docker/cloudbot-agent.sudoers`). The image has `procps` for `pkill` and `util-linux` for `ipcs` and `ipcrm`. Outside Docker, create the same user, install those packages, and add the same sudoers line.
+
+Limits. The sudoers line allows any program that starts with `/usr/bin/env -i`. The cleanup commands run through that line too. So the server user can run any command as `cloudbot-integrations`. The wrapper limits what the bot asks for, not what the server runs. An approved script can still send its secret to any address it can reach. The server reads the entry file to check its hash, so the server user needs read access to the workspace. The sudo path has not yet been run end to end on a real host.
+
 ## Secrets
 
 

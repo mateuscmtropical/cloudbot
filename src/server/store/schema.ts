@@ -2,6 +2,7 @@ import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-or
 
 import { MASCOT_COLOR_NAMES, MASCOT_SHAPES } from '../../shared/mascot.ts';
 import { CONNECTED_APP_STATUSES } from '../../shared/connectedApps.ts';
+import { INTEGRATION_COMMANDS } from '../../shared/integrations.ts';
 import type { RoutineSchedule } from '../routines/schedule.ts';
 
 import { MESSAGE_ROLES } from './messageRoles.ts';
@@ -266,5 +267,46 @@ const connectedApps = sqliteTable('connected_apps', {
         .on(table.name),
 ]);
 
-export { botLimits, botModels, botRules, bots, browserAllowedHosts, connectedApps, messages, routines, settings, turnQueue, turnWaits, watches, webhooks };
+// The scripts the owner's bot registers as integrations. The key is never a column: it stays in the vault.
+const integrations = sqliteTable('integrations', {
+    id: text('id')
+        .primaryKey(),
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    name: text('name')
+        .notNull(),
+    entryPath: text('entry_path')
+        .notNull(),
+    command: text('command', { enum: INTEGRATION_COMMANDS })
+        .notNull(),
+    secretName: text('secret_name'),
+    entryHash: text('entry_hash')
+        .notNull(),
+    createdAt: integer('created_at')
+        .notNull(),
+    updatedAt: integer('updated_at')
+        .notNull(),
+}, table => [
+    uniqueIndex('integrations_bot_name')
+        .on(table.botId, table.name),
+]);
+
+// The last runs of an integration. The output is redacted before it is stored.
+const integrationRuns = sqliteTable('integration_runs', {
+    id: text('id')
+        .primaryKey(),
+    integrationId: text('integration_id')
+        .notNull()
+        .references(() => integrations.id, { onDelete: 'cascade' }),
+    startedAt: integer('started_at')
+        .notNull(),
+    exitCode: integer('exit_code'),
+    timedOut: integer('timed_out', { mode: 'boolean' })
+        .notNull(),
+    output: text('output')
+        .notNull(),
+});
+
+export { botLimits, botModels, botRules, bots, browserAllowedHosts, connectedApps, integrationRuns, integrations, messages, routines, settings, turnQueue, turnWaits, watches, webhooks };
 export type { StoredUploadRecord };

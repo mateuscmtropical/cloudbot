@@ -42,6 +42,7 @@ comes back when the job is done or when it needs you.
 - **Run routines.** Scheduled tasks and tasks started by events.
 - **Wake it from outside.** Webhooks: a URL that another service calls to send the bot a message. A call with a delivery id is not queued twice within 24 hours, and the refused calls are listed for the owner.
 - **Set limits.** Optional time, spending and step limits per turn, one set for chat and one for routines. A stopped turn says which limit it hit. The agent and the review agent are each held to the spending limit, so a turn can spend up to twice the limit. The spending is an estimate, and a subscription is not billed by it.
+- **API integrations.** The bot writes a script that calls an outside API and runs it with your key from the vault. The key does not reach the model or the logs, and a changed script waits for your approval.
 - **Connect apps.** The bot adds a remote MCP server by its address when you ask in the chat. A token goes through the secure form and stays in the vault. The Connect apps panel lists the servers and removes one.
 - **Work as a team.** Several bots that pass work to each other, group chats
   and a manager bot.

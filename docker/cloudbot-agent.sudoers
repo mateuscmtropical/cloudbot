@@ -4,3 +4,7 @@ Defaults:cloudbot env_keep="ANTHROPIC_BASE_URL ANTHROPIC_API_KEY"
 cloudbot ALL=(bot) NOPASSWD: NOSETENV: /home/bot/.local/bin/claude
 # The empty string allows the desktop script only without arguments.
 cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-desktop ""
+# Integrations run as their own user, which cannot read the vault or the workspaces. The server starts a fixed
+# wrapper there, see src/server/integrations/runIntegrationProcess.ts. The secret goes through stdin, not argv.
+# The cleanup after each run (pkill and the wipe of the user's HOME and /tmp files) also runs through this line.
+cloudbot ALL=(cloudbot-integrations) NOPASSWD: NOSETENV: /usr/bin/env -i *

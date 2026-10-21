@@ -4,6 +4,7 @@ import { classifyToolCall } from './classifyToolCall.ts';
 import type { EffortLevel } from '../models/modelChoices.ts';
 import type { ToolCallReviewer, ToolCallVerdict } from './ApprovalGate.ts';
 import { normalizeHost } from '../desktop/browserHost.ts';
+import type { ChangeCard, ChangeMode } from '../integrations/IntegrationService.ts';
 
 // The input of browser_allow_host, as the card reads it. Both fields come from the model, so they are checked.
 interface AllowHostInput {
@@ -37,6 +38,9 @@ interface ToolCallReviewerOptions {
     readContext: (botId: string) => Promise<ReviewContext>;
     // Called with the estimated cost of each review call, the bot whose turn asked for it, and that turn's signal.
     reportCost?: (botId: string, costUsd: number, turnSignal?: AbortSignal) => void;
+    // Builds the approval card of an integration create or update: the whole script, the secret's site and the hash.
+    // A change whose card cannot be built is refused, so the owner never approves a change without its script.
+    describeChange?: ((botId: string, mode: ChangeMode, input: unknown) => Promise<ChangeCard>) | undefined;
 }
 
 type ReviewCategory = 'send_message' | 'purchase' | 'booking' | 'other';
@@ -49,6 +53,19 @@ interface ModelAnswer {
 }
 
 const ALLOW_HOST_TOOL_NAME = 'mcp__cloudbot__browser_allow_host';
+
+interface IntegrationChange {
+    mode: ChangeMode;
+    summary: string;
+}
+
+const INTEGRATION_CHANGES = new Map<string, IntegrationChange>([
+    ['mcp__cloudbot__integration_create', { mode: 'create', summary: 'Create an API integration.' }],
+    ['mcp__cloudbot__integration_update', { mode: 'update', summary: 'Change an API integration.' }],
+]);
+// The whole script fits in the card. A longer card is refused, since the gate never cuts the text the owner reads.
+const MAX_CARD_CHARS = 12000;
+const CHANGE_CHECK_FAILED_REASON = 'The integration change could not be checked, so it was not approved.';
 const MAX_INPUT_LENGTH = 10_000;
 const MAX_LINE_LENGTH = 400;
 const DEFAULT_DENY_REASON = 'The review agent refused this action.';
@@ -156,6 +173,32 @@ function describeAlwaysAsk(call: ToolCall): string {
     return `Let the browser reach the private host ${host}, ${portText}.`;
 }
 
+// The owner approves an integration change only with its card. A card that cannot be built, or is too long, is denied.
+async function checkIntegrationChange(
+    describe: (botId: string, mode: ChangeMode, input: unknown) => Promise<ChangeCard>,
+    botId: string,
+    change: IntegrationChange,
+    input: unknown,
+): Promise<ToolCallVerdict> {
+    let card: ChangeCard;
+
+    try {
+        card = await describe(botId, change.mode, input);
+    } catch {
+        return { decision: 'deny', reason: CHANGE_CHECK_FAILED_REASON };
+    }
+
+    if (!card.ok) {
+        return { decision: 'deny', reason: card.reason };
+    }
+
+    if (card.text.length > MAX_CARD_CHARS) {
+        return { decision: 'deny', reason: 'The script is too long to show the owner whole, so it was not approved.' };
+    }
+
+    return { decision: 'ask', summary: change.summary, detail: card.text };
+}
+
 // Skips harmless calls, always asks for connector tools that send, buy or book, and lets a model judge the rest.
 // A model that fails or answers badly throws, and the approval gate then asks the owner.
 function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallReviewer {
@@ -174,6 +217,12 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
         }
 
         if (callClass === 'always-ask') {
+            const change = INTEGRATION_CHANGES.get(call.toolName);
+
+            if (change !== undefined && options.describeChange !== undefined) {
+                return checkIntegrationChange(options.describeChange, botId, change, call.input);
+            }
+
             return { decision: 'ask', summary: describeAlwaysAsk(call) };
         }
 
