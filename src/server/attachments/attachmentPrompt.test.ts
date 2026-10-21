@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { SavedUpload } from './saveUpload.ts';
 import { describeAttachments, readTurnImages } from './attachmentPrompt.ts';
+import { buildPng } from './testImages.ts';
 
 function buildUpload(overrides: Partial<SavedUpload>): SavedUpload {
     return {
@@ -33,13 +34,36 @@ describe('describeAttachments', () => {
 
 describe('readTurnImages', () => {
     it('builds the image from the bytes kept at upload time, not from disk', () => {
-        const pngBytes = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        const pngBytes = buildPng(4, 4);
         const images = readTurnImages([
             buildUpload({ mimeType: 'image/png', absolutePath: '/missing/shot.png', sizeBytes: pngBytes.length, bytes: pngBytes }),
         ]);
 
         expect(images)
             .toEqual([{ mediaType: 'image/png', data: pngBytes.toString('base64') }]);
+    });
+
+    it('skips a truncated image, a fake image and an image over 8000 pixels', () => {
+        const wholePng = buildPng(4, 4);
+        const images = readTurnImages([
+            buildUpload({ mimeType: 'image/png', sizeBytes: 10, bytes: wholePng.subarray(0, 20) }),
+            buildUpload({ mimeType: 'image/png', sizeBytes: 5, bytes: Buffer.from('hello') }),
+            buildUpload({ mimeType: 'image/png', sizeBytes: 45, bytes: buildPng(8001, 10) }),
+            buildUpload({ mimeType: 'image/png', sizeBytes: 45, bytes: buildPng(10, 8001) }),
+        ]);
+
+        expect(images)
+            .toEqual([]);
+    });
+
+    it('keeps an image at exactly 8000 pixels', () => {
+        const pngBytes = buildPng(8000, 8000);
+        const images = readTurnImages([
+            buildUpload({ mimeType: 'image/png', sizeBytes: pngBytes.length, bytes: pngBytes }),
+        ]);
+
+        expect(images)
+            .toHaveLength(1);
     });
 
     it('skips files that are not images and images over 5 MB', () => {

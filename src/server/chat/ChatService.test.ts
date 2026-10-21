@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from '../agent/AgentRunner.ts';
+import { buildPng } from '../attachments/testImages.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
 import { PROFILE_SERVER_NAME, UPDATE_PROFILE_TOOL_FULL_NAME } from '../agent/createProfileToolServer.ts';
 import { FakeAgentRunner } from '../agent/FakeAgentRunner.ts';
@@ -980,7 +981,7 @@ describe('ChatService', () => {
     it('sends an uploaded image to the agent as image input', async () => {
         const { service, runner } = buildSetup([{ event: { type: 'text', text: 'A cat' } }]);
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
-        const pngBytes = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]);
+        const pngBytes = buildPng(4, 4);
         const files = [new File([pngBytes], 'photo.png')];
         const finished = waitForTurnFinish(service, bot.id);
 
@@ -1123,7 +1124,7 @@ describe('ChatService', () => {
     it('builds the image from the bytes kept in memory, even when the file is gone from disk', async () => {
         const { service, runner } = buildSetup([{ event: { type: 'text', text: 'A cat' } }]);
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
-        const pngBytes = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]);
+        const pngBytes = buildPng(4, 4);
 
         await service.saveUploads(bot.id, [new File([pngBytes], 'photo.png')]);
 
