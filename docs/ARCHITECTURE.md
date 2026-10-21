@@ -470,16 +470,35 @@ Each limit has its own mechanism:
   asked for it. A review that returns after its turn stopped is dropped, and
   stopping a turn also cancels its running review.
 
-When a limit stops a turn, `stopForLimit` aborts it and saves a system message
-built by `describeLimitStop`. The message names the limit and its value, and it
-says where to raise the limit. `reportOwnerWait` is the one place that reports
-waiting on or off for a turn, and `stopForLimit` is the one stop-with-reason
-path. Issue #101 reuses both.
+When a limit stops a turn, `stopTurnWithReason` aborts it and saves a system
+message. For a limit, `describeLimitStop` builds the message. It names the limit
+and its value, and it says where to raise the limit. `reportOwnerWait` is the one
+place that reports waiting on or off for a turn, and `stopTurnWithReason` is the
+one stop-with-reason path. The stall watch reuses both.
 
 Known gaps: secure input (`requestSecret`) returns at once and does not pause
 the clock. The SDK does not report the main-loop cost while a turn runs, so the
 two costs are never added together. The helper agents' cost is assumed to count toward
 `maxBudgetUsd`, as the SDK documents, and this is not checked at runtime.
+
+## Stalled turns
+
+A turn that sends no agent event for 10 minutes is stopped. The period is the
+constant `STALL_MS` in `src/server/chat/StallWatchdog.ts`, not a setting.
+`StallWatchdog` starts with the turn, and it starts again on each agent event of
+the turn. An `activity` event counts too. The runner sends it for an SDK message
+that maps to no other event, such as tool progress or a retry, and nothing shows
+it in the chat. The watch counts it as proof that the turn is alive. Time the
+owner is asked does not count. `reportOwnerWait` holds the
+watch while an approval card or a screen handoff waits on the owner, and the
+count starts again when the wait ends. When the watch fires, `stopTurnWithReason`
+aborts the turn, and the chat says that it sent nothing for 10 minutes. A turn
+that already stopped, by Stop or by a limit, gets no second message. The watch
+stops when the turn finishes, so no timer is left behind.
+
+Known gaps: a model review does not count as owner wait. It has a 60 second
+timeout, so it stays well under the stall period. A runner that ignores its abort
+signal still holds the queue, because the watch only aborts the turn.
 
 ## Webhooks
 

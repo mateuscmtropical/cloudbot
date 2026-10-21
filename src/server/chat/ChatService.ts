@@ -29,7 +29,7 @@ import { ROUTINE_TOOL_FULL_NAMES, createRoutineTools } from '../routines/createR
 import { MODELS_SET_TOOL_FULL_NAME, createModelTools } from '../models/createModelTools.ts';
 import { LIMITS_SET_TOOL_FULL_NAME, createLimitTools } from '../limits/createLimitTools.ts';
 import { TurnDeadline } from '../limits/TurnDeadline.ts';
-import type { TurnLimitStop } from '../limits/turnLimits.ts';
+import { STALL_MESSAGE, StallWatchdog } from './StallWatchdog.ts';
 import { NO_LIMIT, chooseTurnLimit, describeLimitStop } from '../limits/turnLimits.ts';
 import type { TurnLimit } from '../../shared/limitTypes.ts';
 import type { LimitStore } from '../store/LimitStore.ts';
@@ -393,6 +393,8 @@ class ChatService {
     // The limits and the clock of the running turn of each bot. They are set when the turn starts and cleared when it ends.
     private readonly runningLimits = new Map<string, TurnLimit>();
     private readonly turnDeadlines = new Map<string, TurnDeadline>();
+    // Stall watch of the running turn of each bot. It fires when the turn sends no agent event for a while.
+    private readonly stallWatches = new Map<string, StallWatchdog>();
     // Estimated spending of the review agent in the running turn of each bot.
     private readonly reviewSpend = new Map<string, number>();
     // Bots whose screen is held by the owner for a request of theirs. Their clock waits until the screen is back.
@@ -1029,6 +1031,8 @@ class ChatService {
     private reportOwnerWait(botId: string, isWaiting: boolean): void {
         this.turnDeadlines.get(botId)
             ?.setWaitingOnHuman(isWaiting);
+        this.stallWatches.get(botId)
+            ?.setWaitingOnOwner(isWaiting);
     }
 
     // The screen came back to the bot, so every bot that waited for it runs its clock again.
@@ -1039,9 +1043,9 @@ class ChatService {
         this.screenWaitBots.clear();
     }
 
-    // The one place that stops a turn because of a limit. The chat says which limit stopped it and its value.
-    // A turn that was already stopped, by Stop or by another limit, gets no second message.
-    private async stopForLimit(botId: string, stop: TurnLimitStop): Promise<void> {
+    // The one place that stops a turn with a reason. The chat shows the reason, such as the limit that was passed or the stall.
+    // A turn that was already stopped, by Stop or by another reason, gets no second message.
+    private async stopTurnWithReason(botId: string, reasonText: string): Promise<void> {
         const abortController = this.runningTurns.get(botId);
 
         if (abortController === undefined || abortController.signal.aborted) {
@@ -1050,7 +1054,7 @@ class ChatService {
 
         abortController.abort();
 
-        await this.saveAndPublish(botId, 'system', { kind: 'text', text: describeLimitStop(stop) });
+        await this.saveAndPublish(botId, 'system', { kind: 'text', text: reasonText });
     }
 
     // Counts the estimated cost of a review call in the running turn. The turn stops once the review spending passes its limit.
@@ -1069,7 +1073,9 @@ class ChatService {
         this.reviewSpend.set(botId, spent);
 
         if (spendLimit !== null && spent >= spendLimit) {
-            this.stopForLimit(botId, { kind: 'usd', value: spendLimit })
+            const limitText = describeLimitStop({ kind: 'usd', value: spendLimit });
+
+            this.stopTurnWithReason(botId, limitText)
                 .catch(reportBackgroundError);
         }
     }
@@ -1081,12 +1087,25 @@ class ChatService {
         }
 
         const deadline = new TurnDeadline(minutes * 60 * 1000, () => {
-            this.stopForLimit(botId, { kind: 'minutes', value: minutes })
+            const limitText = describeLimitStop({ kind: 'minutes', value: minutes });
+
+            this.stopTurnWithReason(botId, limitText)
                 .catch(reportBackgroundError);
         });
 
         this.turnDeadlines.set(botId, deadline);
         deadline.start();
+    }
+
+    // Starts the stall watch of a turn. A turn that sends no agent event for 10 minutes is stopped, and the chat says why.
+    private startStallWatch(botId: string): void {
+        const watch = new StallWatchdog(() => {
+            this.stopTurnWithReason(botId, STALL_MESSAGE)
+                .catch(reportBackgroundError);
+        });
+
+        this.stallWatches.set(botId, watch);
+        watch.start();
     }
 
     isTurnRunning(botId: string): boolean {
@@ -1143,6 +1162,9 @@ class ChatService {
         this.turnDeadlines.get(botId)
             ?.stop();
         this.turnDeadlines.delete(botId);
+        this.stallWatches.get(botId)
+            ?.stop();
+        this.stallWatches.delete(botId);
         this.runningLimits.delete(botId);
         this.reviewSpend.delete(botId);
         this.screenWaitBots.delete(botId);
@@ -1328,6 +1350,7 @@ class ChatService {
             this.runningLimits.set(botId, turnLimit);
             this.reviewSpend.set(botId, 0);
             this.startTurnClock(botId, turnLimit.minutes);
+            this.startStallWatch(botId);
 
             // The profile tool and prompt are built from the bot as it is now, so a
             // change made in the previous turn already applies.
@@ -1536,6 +1559,10 @@ class ChatService {
 
         try {
             for await (const agentEvent of this.runner.runTurn(turnRequest)) {
+                // Every agent event of the turn counts as activity for the stall watch.
+                this.stallWatches.get(botId)
+                    ?.touch();
+
                 if (agentEvent.type === 'session') {
                     hasSession = true;
                     turnState.agentStarted = true;
@@ -1623,10 +1650,13 @@ class ChatService {
                     return;
                 }
 
-                await this.stopForLimit(botId, { kind: isSteps ? 'steps' : 'usd', value });
+                const limitText = describeLimitStop({ kind: isSteps ? 'steps' : 'usd', value });
+
+                await this.stopTurnWithReason(botId, limitText);
 
                 return;
             }
+            case 'activity':
             case 'rate_limit':
             case 'turn_finished':
                 return;

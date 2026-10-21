@@ -52,6 +52,11 @@ interface TurnLimitEvent {
     limit: 'steps' | 'spending';
 }
 
+// The SDK sent a message that shows the turn is alive, such as tool progress or a retry. Nothing is shown or stored.
+interface ActivityEvent {
+    type: 'activity';
+}
+
 /**
  * Render either text_delta or text, never both. The text event arrives after
  * the text_delta events of the same block and repeats their content in full,
@@ -66,7 +71,8 @@ type AgentEvent
         | TurnFinishedEvent
         | TurnErrorEvent
         | RateLimitEvent
-        | TurnLimitEvent;
+        | TurnLimitEvent
+        | ActivityEvent;
 
 export type {
     AgentEvent,

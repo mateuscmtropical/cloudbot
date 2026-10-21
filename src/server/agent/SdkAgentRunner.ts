@@ -420,11 +420,14 @@ class SdkAgentRunner implements AgentRunner {
             for await (const sdkMessage of conversation) {
                 const agentEvents = mapSdkMessage(sdkMessage);
 
-                agentEvents.forEach((agentEvent) => {
+                // A message that maps to no event still shows the turn is alive, such as tool progress or a retry.
+                const mappedEvents: AgentEvent[] = agentEvents.length === 0 ? [{ type: 'activity' }] : agentEvents;
+
+                mappedEvents.forEach((agentEvent) => {
                     latestResetsAt = rememberResetsAt(agentEvent, latestResetsAt);
                 });
 
-                const turnEvents = agentEvents.map(agentEvent => withResetsAt(agentEvent, latestResetsAt));
+                const turnEvents = mappedEvents.map(agentEvent => withResetsAt(agentEvent, latestResetsAt));
 
                 yield* turnEvents;
             }
