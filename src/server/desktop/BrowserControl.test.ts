@@ -161,13 +161,50 @@ describe('BrowserControl', () => {
     it('clicks with a move, a press and a release at the point', async () => {
         const { browser, sockets } = createBrowser(pageAnswer({}));
 
-        await browser.click(10, 20);
+        await expect(browser.click(10, 20)).resolves.toEqual({ hasFocusedField: false });
 
         const sentTypes = actionCalls(sockets.sockets[0])
+            .filter(call => call.method === 'Input.dispatchMouseEvent')
             .map(call => [call.params.type, call.params.x, call.params.y]);
 
         expect(sentTypes)
             .toEqual([['mouseMoved', 10, 20], ['mousePressed', 10, 20], ['mouseReleased', 10, 20]]);
+    });
+
+    it('clicks a field again when the first click left it without the focus', async () => {
+        const focusStates = [
+            { targetIsField: true, focusedIsField: false },
+            { targetIsField: true, focusedIsField: true },
+        ];
+        const { browser, sockets } = createBrowser(call => (call.method === 'Runtime.evaluate'
+            ? { result: { result: { value: focusStates.shift() } } }
+            : { result: {} }));
+
+        await expect(browser.click(10, 20)).resolves.toEqual({ hasFocusedField: true });
+        expect(actionCalls(sockets.sockets[0])
+            .filter(call => call.params.type === 'mousePressed'))
+            .toHaveLength(2);
+    });
+
+    it('clicks a field only twice and then reports that nothing has the focus', async () => {
+        const { browser, sockets } = createBrowser(call => (call.method === 'Runtime.evaluate'
+            ? { result: { result: { value: { targetIsField: true, focusedIsField: false } } } }
+            : { result: {} }));
+
+        await expect(browser.click(10, 20)).resolves.toEqual({ hasFocusedField: false });
+        expect(actionCalls(sockets.sockets[0])
+            .filter(call => call.params.type === 'mousePressed'))
+            .toHaveLength(2);
+    });
+
+    it('does not repeat a click that landed on something that is not a field', async () => {
+        const { browser, sockets } = createBrowser(pageAnswer({ targetIsField: false, focusedIsField: false }));
+
+        await browser.click(10, 20);
+
+        expect(actionCalls(sockets.sockets[0])
+            .filter(call => call.params.type === 'mousePressed'))
+            .toHaveLength(1);
     });
 
     it('types text and presses Enter with its key code and text', async () => {

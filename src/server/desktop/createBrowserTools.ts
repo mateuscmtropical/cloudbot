@@ -173,9 +173,10 @@ function createBrowserTools(browser: BrowserControl, shareScreenshot?: Screensho
         'Click at a point of the page, in screenshot pixels. Take a screenshot first to find the point.',
         POINT_SHAPE,
         args => runBrowserAction(browser, async () => {
-            await browser.click(args.x, args.y);
+            const { hasFocusedField } = await browser.click(args.x, args.y);
+            const focusNote = hasFocusedField ? 'A field has the focus.' : 'No field has the focus. To type, click the field again.';
 
-            return textResult(`Clicked at ${String(args.x)}, ${String(args.y)}.`);
+            return textResult(`Clicked at ${String(args.x)}, ${String(args.y)}. ${focusNote}`);
         }),
     );
     const typeTool = tool(

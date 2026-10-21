@@ -6,6 +6,10 @@ All notable changes to this project are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `browser_click` checks the focus after a click. A click on a field that did not take the focus is repeated once, and the result tells the model whether a field has the focus.
+
 ### Added
 
 - Rules panel: a Rules button in the conversation header opens the owner rules of the bot. The owner can add allow and block rules, name blocked tools and remove rules there.

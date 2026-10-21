@@ -22,6 +22,11 @@ interface PageText {
     isTruncated: boolean;
 }
 
+interface ClickResult {
+    // True when an input, a text area, a select or an editable element has the focus after the click.
+    hasFocusedField: boolean;
+}
+
 interface KeyDefinition {
     code: string;
     keyCode: number;
@@ -55,10 +60,14 @@ const DIALOG_BLOCKED_MESSAGE = 'The page is showing a dialog or does not answer.
 // A page that replaces itself while it loads destroys the context of the next evaluate. That is not a failure.
 const CONTEXT_GONE_PATTERN = /context was destroyed|cannot find context|execution context/i;
 const LOAD_POLL_MS = 250;
+const CLICK_RETRY_DELAY_MS = 200;
 const READ_PAGE_EXPRESSION = '({ title: document.title, url: location.href, text: document.body ? document.body.innerText : "" })';
 const READY_STATE_EXPRESSION = 'document.readyState';
 // Runs in an isolated world, so the page's own scripts cannot change what it reads.
 const FOCUS_CHECK_EXPRESSION = '(() => { const field = document.activeElement; return { origin: location.origin, tag: field ? field.tagName : "", type: field && field.tagName === "INPUT" ? field.type : "", autocomplete: field && field.tagName === "INPUT" ? (field.autocomplete.trim().toLowerCase().split(/\\s+/).pop() || "") : "" }; })()';
+// Reads what is under the point and what has the focus. It only reads, so the page cannot be changed by it.
+const FIELD_TAGS = '["INPUT", "TEXTAREA", "SELECT"]';
+const CLICK_FOCUS_EXPRESSION = (pointX: number, pointY: number): string => `(() => { const isField = (element) => Boolean(element) && (${FIELD_TAGS}.includes(element.tagName) || element.isContentEditable) && !element.disabled; return { targetIsField: isField(document.elementFromPoint(${String(pointX)}, ${String(pointY)})), focusedIsField: isField(document.activeElement) }; })()`;
 const ISOLATED_WORLD_NAME = 'cloudbot-secret-check';
 // Fields that are not password inputs but still take a secret. The last token of their autocomplete value says so,
 // as in "billing cc-number".
@@ -208,13 +217,23 @@ class BrowserControl {
         });
     }
 
-    click(pointX: number, pointY: number): Promise<void> {
+    // The first mouse events after a page loads can be lost, and the field then gets no focus.
+    // So a click on a field that did not take the focus is repeated once, and the result tells the model.
+    click(pointX: number, pointY: number): Promise<ClickResult> {
         const point = { x: pointX, y: pointY };
 
         return this.withPage(async (page) => {
-            await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
-            await page.call('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
-            await page.call('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
+            await this.dispatchClick(page, point);
+
+            let focus = await this.readClickFocus(page, pointX, pointY);
+
+            if (focus.targetIsField && !focus.focusedIsField) {
+                await this.sleep(CLICK_RETRY_DELAY_MS);
+                await this.dispatchClick(page, point);
+                focus = await this.readClickFocus(page, pointX, pointY);
+            }
+
+            return { hasFocusedField: focus.focusedIsField };
         });
     }
 
@@ -276,6 +295,22 @@ class BrowserControl {
 
     read(): Promise<PageText> {
         return this.withPage(page => this.readPage(page));
+    }
+
+    private async dispatchClick(page: CdpConnection, point: { x: number; y: number }): Promise<void> {
+        await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
+        await page.call('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
+        await page.call('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
+    }
+
+    private async readClickFocus(page: CdpConnection, pointX: number, pointY: number): Promise<{ targetIsField: boolean; focusedIsField: boolean }> {
+        const result = await page.call('Runtime.evaluate', { expression: CLICK_FOCUS_EXPRESSION(pointX, pointY), returnByValue: true });
+        const value = readEvaluatedValue(result);
+
+        return {
+            targetIsField: typeof value === 'object' && value !== null && Reflect.get(value, 'targetIsField') === true,
+            focusedIsField: typeof value === 'object' && value !== null && Reflect.get(value, 'focusedIsField') === true,
+        };
     }
 
     private async readPage(page: CdpConnection): Promise<PageText> {
@@ -407,4 +442,4 @@ class BrowserControl {
 }
 
 export { BROWSER_KEYS, BrowserControl, BrowserError, DESKTOP_DEVTOOLS_URL, MAX_PAGE_TEXT_LENGTH, parseWebUrl };
-export type { BrowserControlOptions, BrowserKey, PageText };
+export type { BrowserControlOptions, BrowserKey, ClickResult, PageText };
