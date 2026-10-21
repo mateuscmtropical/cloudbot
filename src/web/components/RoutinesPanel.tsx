@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ChangeEvent, ReactElement, SyntheticEvent } from 'react';
 
 import type { BotRoutine } from '../../shared/routineTypes.ts';
-import { RequestFailedError, listRoutines, removeRoutine } from '../apiClient.ts';
+import type { BotWebhook, CreatedBotWebhook } from '../../shared/webhookTypes.ts';
+import { RequestFailedError, createWebhook, listRoutines, listWebhooks, removeRoutine, removeWebhook } from '../apiClient.ts';
 import { describeSchedule, formatRunTime } from '../routineText.ts';
 
 interface RoutinesPanelProps {
@@ -14,13 +15,170 @@ interface RoutinesPanelProps {
 type LoadState = 'loading' | 'ready' | 'failed';
 
 const NOT_FOUND_STATUS = 404;
+const MAX_WEBHOOK_NAME_LENGTH = 60;
 
-function describeFailure(error: unknown): string {
+function describeFailure(error: unknown, fallbackText: string): string {
     if (error instanceof RequestFailedError && error.serverMessage !== undefined) {
         return error.serverMessage;
     }
 
-    return 'The routine could not be removed. Try again.';
+    return fallbackText;
+}
+
+// The owner's webhooks for one bot. The URL of a new webhook is shown once, right after Create.
+function WebhookSection({ botId }: { botId: string }): ReactElement {
+    const [webhooks, setWebhooks] = useState<BotWebhook[]>([]);
+    const [loadState, setLoadState] = useState<LoadState>('loading');
+    const [nameDraft, setNameDraft] = useState('');
+    const [isCreating, setIsCreating] = useState(false);
+    // The new webhook with its URL. It is only in memory until the owner hides it or leaves the panel.
+    const [created, setCreated] = useState<CreatedBotWebhook | undefined>(undefined);
+    const [removingIds, setRemovingIds] = useState<string[]>([]);
+    const [problem, setProblem] = useState<string | undefined>(undefined);
+
+    useEffect(() => {
+        let isCurrent = true;
+
+        listWebhooks(botId)
+            .then((loadedWebhooks) => {
+                if (isCurrent) {
+                    setWebhooks(loadedWebhooks);
+                    setLoadState('ready');
+                }
+            })
+            .catch(() => {
+                if (isCurrent) {
+                    setLoadState('failed');
+                }
+            });
+
+        return () => {
+            isCurrent = false;
+        };
+    }, [botId]);
+
+    function handleCreate(event: SyntheticEvent<HTMLFormElement>): void {
+        event.preventDefault();
+
+        const name = nameDraft.trim();
+
+        if (name === '' || isCreating) {
+            return;
+        }
+
+        setIsCreating(true);
+        setProblem(undefined);
+
+        createWebhook(botId, name)
+            .then((createdWebhook) => {
+                const listedWebhook: BotWebhook = { id: createdWebhook.id, name: createdWebhook.name, createdAt: createdWebhook.createdAt };
+
+                setCreated(createdWebhook);
+                setNameDraft('');
+                setWebhooks(currentWebhooks => [...currentWebhooks, listedWebhook]);
+            })
+            .catch((error: unknown) => {
+                const failureText = describeFailure(error, 'The webhook could not be created. Try again.');
+
+                setProblem(failureText);
+            })
+            .finally(() => {
+                setIsCreating(false);
+            });
+    }
+
+    function handleRemove(webhookId: string): void {
+        if (removingIds.includes(webhookId)) {
+            return;
+        }
+
+        setProblem(undefined);
+        setRemovingIds(currentIds => [...currentIds, webhookId]);
+        const dropWebhook = (): void => {
+            setWebhooks(currentWebhooks => currentWebhooks.filter(webhook => webhook.id !== webhookId));
+        };
+
+        removeWebhook(botId, webhookId)
+            .then(dropWebhook)
+            .catch((error: unknown) => {
+                // The webhook may have been removed already, so it leaves the list.
+                if (error instanceof RequestFailedError && error.status === NOT_FOUND_STATUS) {
+                    dropWebhook();
+
+                    return;
+                }
+
+                const failureText = describeFailure(error, 'The webhook could not be removed. Try again.');
+
+                setProblem(failureText);
+            })
+            .finally(() => {
+                setRemovingIds(currentIds => currentIds.filter(currentId => currentId !== webhookId));
+            });
+    }
+
+    return (
+        <section aria-label="Webhooks" className="webhook-section">
+            <h3>Webhooks</h3>
+            <p className="rules-help">
+                An outside service calls a webhook URL to send the bot a message. Anyone with the URL can do that, so keep it private.
+            </p>
+            {loadState === 'loading' ? <p>Loading...</p> : null}
+            {loadState === 'failed' ? <p className="rules-problem">The webhooks could not be loaded.</p> : null}
+            {loadState === 'ready' && webhooks.length === 0 ? <p>No webhooks yet.</p> : null}
+            <ul className="rules-list">
+                {webhooks.map(webhook => (
+                    <li key={webhook.id} className="rule-item">
+                        <span className="rule-kind">{webhook.name}</span>
+                        <span className="rule-tools">{`Created: ${formatRunTime(webhook.createdAt)}`}</span>
+                        <button
+                            type="button"
+                            disabled={removingIds.includes(webhook.id)}
+                            aria-label={`Remove webhook: ${webhook.name}`}
+                            onClick={() => {
+                                handleRemove(webhook.id);
+                            }}
+                        >
+                            Remove
+                        </button>
+                    </li>
+                ))}
+            </ul>
+            {created === undefined
+                ? null
+                : (
+                        <div className="webhook-created" role="status">
+                            <p>
+                                {`The URL of "${created.name}" is shown only now. Keep it secret: anyone with this URL can send the bot messages.`}
+                            </p>
+                            <input
+                                type="text"
+                                readOnly
+                                aria-label="Webhook URL"
+                                value={created.url}
+                                onFocus={(event) => {
+                                    event.currentTarget.select();
+                                }}
+                            />
+                            <button type="button" onClick={() => { setCreated(undefined); }}>Hide URL</button>
+                        </div>
+                    )}
+            <form className="rule-form" onSubmit={handleCreate}>
+                <label htmlFor="webhook-name">Webhook name</label>
+                <input
+                    id="webhook-name"
+                    type="text"
+                    maxLength={MAX_WEBHOOK_NAME_LENGTH}
+                    value={nameDraft}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                        setNameDraft(event.target.value);
+                    }}
+                />
+                <button type="submit" disabled={isCreating || nameDraft.trim() === ''}>Create</button>
+            </form>
+            {problem === undefined ? null : <p className="rules-problem" role="alert">{problem}</p>}
+        </section>
+    );
 }
 
 // The owner's routines for one bot. The bot creates routines when asked in the chat.
@@ -76,7 +234,7 @@ function RoutinesPanel({ botId, botName, onClose }: RoutinesPanelProps): ReactEl
                     return;
                 }
 
-                const failureText = describeFailure(error);
+                const failureText = describeFailure(error, 'The routine could not be removed. Try again.');
 
                 setProblem(failureText);
             })
@@ -137,6 +295,7 @@ function RoutinesPanel({ botId, botName, onClose }: RoutinesPanelProps): ReactEl
                 ))}
             </ul>
             {problem === undefined ? null : <p className="rules-problem" role="alert">{problem}</p>}
+            <WebhookSection botId={botId} />
         </div>
     );
 }

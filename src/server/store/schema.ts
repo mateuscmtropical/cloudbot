@@ -75,7 +75,7 @@ const turnQueue = sqliteTable('turn_queue', {
         .$type<StoredUploadRecord[]>()
         .notNull(),
     // Routine turns pick the routines model. Rows from before this column were chat turns.
-    source: text('source', { enum: ['chat', 'routine'] })
+    source: text('source', { enum: ['chat', 'routine', 'webhook'] })
         .notNull()
         .default('chat'),
 }, table => [
@@ -139,6 +139,25 @@ const routines = sqliteTable('routines', {
         .on(table.botId),
 ]);
 
+// A URL that wakes a bot. Only the SHA-256 hash of the token is stored, so the URL is shown once, at creation.
+const webhooks = sqliteTable('webhooks', {
+    id: text('id')
+        .primaryKey(),
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    name: text('name')
+        .notNull(),
+    tokenHash: text('token_hash')
+        .notNull()
+        .unique(),
+    createdAt: integer('created_at')
+        .notNull(),
+}, table => [
+    index('webhooks_bot_id')
+        .on(table.botId),
+]);
+
 // The model the owner chose for each kind of work. A null column means the CLI default,
 // or no helper agent for browsing and documents.
 const botModels = sqliteTable('bot_models', {
@@ -152,5 +171,5 @@ const botModels = sqliteTable('bot_models', {
     documentsModel: text('documents_model'),
 });
 
-export { botModels, botRules, bots, messages, routines, settings, turnQueue, turnWaits };
+export { botModels, botRules, bots, messages, routines, settings, turnQueue, turnWaits, webhooks };
 export type { StoredUploadRecord };

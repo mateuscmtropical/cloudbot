@@ -8,6 +8,7 @@ import { setCookie } from 'hono/cookie';
 import { requireSession, SESSION_COOKIE_NAME } from './access/requireSession.ts';
 import type { AccessErrorResponse } from './access/requireSession.ts';
 import type { SetupAccess } from './access/SetupAccess.ts';
+import { readPublicBaseUrl } from './access/setupLinkUrl.ts';
 
 import { createChatRoutes } from './chat/createChatRoutes.ts';
 import type { ChatService } from './chat/ChatService.ts';
@@ -19,6 +20,9 @@ import { createRoutineRoutes } from './routines/createRoutineRoutes.ts';
 import type { ModelStore } from './store/ModelStore.ts';
 import type { RoutineStore } from './store/RoutineStore.ts';
 import type { RuleStore } from './store/RuleStore.ts';
+import type { WebhookStore } from './store/WebhookStore.ts';
+import { createWebhookHookRoutes } from './webhooks/createWebhookHookRoutes.ts';
+import { createWebhookRoutes } from './webhooks/createWebhookRoutes.ts';
 
 interface HealthResponse {
     status: 'ok';
@@ -33,6 +37,11 @@ interface AppOptions {
     ruleStore?: RuleStore;
     routineStore?: RoutineStore;
     modelStore?: ModelStore;
+    webhookStore?: WebhookStore;
+    // The address new webhook URLs start with. Without it the server's own address is used.
+    publicBaseUrl?: string;
+    // Webhook calls wait for the setup to finish. Without it the server is always ready.
+    isReady?: () => boolean;
     screen?: ScreenHolder;
 }
 
@@ -68,6 +77,18 @@ function createApp(options: AppOptions): Hono {
         return context.json(body);
     });
 
+    // A webhook call carries its own token in the URL, so this route is public. It sits outside the session check.
+    if (options.chatService !== undefined && options.webhookStore !== undefined) {
+        const chatService = options.chatService;
+        const webhookHookRoutes = createWebhookHookRoutes({
+            webhookStore: options.webhookStore,
+            isReady: options.isReady ?? (() => true),
+            sendMessage: (botId, text) => chatService.sendMessage(botId, text, 'webhook'),
+        });
+
+        app.route('/', webhookHookRoutes);
+    }
+
     const sessionCheck = requireSession(options.access);
 
     app.use('/api/*', sessionCheck);
@@ -91,6 +112,14 @@ function createApp(options: AppOptions): Hono {
         const routineRoutes = createRoutineRoutes({ routineStore: options.routineStore, hasBot: botId => chatService.hasBot(botId) });
 
         app.route('/', routineRoutes);
+    }
+
+    if (options.chatService !== undefined && options.webhookStore !== undefined) {
+        const chatService = options.chatService;
+        const publicBaseUrl = options.publicBaseUrl ?? readPublicBaseUrl(process.env);
+        const webhookRoutes = createWebhookRoutes({ webhookStore: options.webhookStore, hasBot: botId => chatService.hasBot(botId), publicBaseUrl });
+
+        app.route('/', webhookRoutes);
     }
 
     if (options.chatService !== undefined && options.modelStore !== undefined) {

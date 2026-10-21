@@ -43,6 +43,13 @@
       "when": 1792585221630,
       "tag": "0005_real_medusa",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792587809712,
+      "tag": "0006_webhooks",
+      "breakpoints": true
     }
   ]
 }

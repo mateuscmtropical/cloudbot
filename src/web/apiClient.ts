@@ -1,5 +1,6 @@
 import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName } from '../shared/chatTypes.ts';
 import type { BotRoutine } from '../shared/routineTypes.ts';
+import type { BotWebhook, CreatedBotWebhook } from '../shared/webhookTypes.ts';
 
 const API_ROOT = '/api';
 
@@ -238,6 +239,30 @@ async function removeRoutine(botId: string, routineId: string): Promise<void> {
     }
 }
 
+function listWebhooks(botId: string): Promise<BotWebhook[]> {
+    const path = botPath(botId, '/webhooks');
+
+    return requestJson<BotWebhook[]>(path, {});
+}
+
+// The response carries the URL. The caller shows it once and must not keep it.
+function createWebhook(botId: string, name: string): Promise<CreatedBotWebhook> {
+    const path = botPath(botId, '/webhooks');
+
+    return postJson<CreatedBotWebhook>(path, { name });
+}
+
+async function removeWebhook(botId: string, webhookId: string): Promise<void> {
+    const path = botPath(botId, `/webhooks/${encodeURIComponent(webhookId)}`);
+    const response = await fetch(path, { method: 'DELETE' });
+
+    if (!response.ok) {
+        const serverMessage = await readServerMessage(response);
+
+        throw new RequestFailedError(path, response.status, serverMessage);
+    }
+}
+
 // The model choice of each kind of work. A null choice is the default, or no helper for browsing and documents.
 interface ModelSettings {
     chat: string | null;
@@ -308,6 +333,9 @@ export {
     removeRule,
     listRoutines,
     removeRoutine,
+    listWebhooks,
+    createWebhook,
+    removeWebhook,
     getModelSettings,
     saveModelSettings,
 };

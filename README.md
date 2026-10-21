@@ -39,6 +39,7 @@ comes back when the job is done or when it needs you.
 - **Ask before it acts.** Rules written in plain language, and a review step
   before sensitive actions such as sending a message or paying.
 - **Run routines.** Scheduled tasks and tasks started by events.
+- **Wake it from outside.** Webhooks: a URL that another service calls to send the bot a message.
 - **Connect apps.** Claude connectors, remote MCP servers and APIs you give it
   a key for.
 - **Work as a team.** Several bots that pass work to each other, group chats

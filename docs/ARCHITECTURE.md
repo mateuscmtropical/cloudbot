@@ -109,6 +109,7 @@ src/
     models/        Model choices per kind of work: validation and routes
     store/         SQLite storage: bots, messages, settings and migrations
     vault/         Encrypted secrets, secure form route and key proxy
+    webhooks/      Webhook URLs: the public hook route, owner routes and bot tools
   shared/          Types shared by the server and the web app
     chatTypes.ts   Messages, bots and chat events
   web/             Chat interface in React, built with Vite to dist/web and served by the server
@@ -417,11 +418,35 @@ means no helper agent. A choice is an alias the SDK accepts (`fable`, `opus`,
 `PUT /api/bots/:id/models` sit behind the session cookie. `PUT` replaces all
 choices, and a missing field clears its choice.
 
-A turn sends its choice to the SDK `model` option. A routine turn uses the
-`routines` choice and falls back to `chat`. The `source` of a turn (`chat` or
-`routine`) is stored with the queued turn, so a routine that waits keeps its
-choice after a restart. The review model is read with the owner rules on each
-review call.
+A turn sends its choice to the SDK `model` option. A routine or webhook turn
+uses the `routines` choice and falls back to `chat`. The `source` of a turn
+(`chat`, `routine` or `webhook`) is stored with the queued turn, so a turn that
+waits keeps its choice after a restart. The review model is read with the owner
+rules on each review call.
+
+## Webhooks
+
+The owner creates a webhook in the Routines panel, with `POST
+/api/bots/:id/webhooks` and `{ name }`. The route makes a random token of 32
+bytes, encoded as base64url. The `webhooks` table keeps only its SHA-256 hash.
+The response carries the full URL, `<public address>/hooks/<token>`, once. The
+public address comes from `readPublicBaseUrl`, the same address as the setup
+link. The bot cannot create webhooks, so the URL never passes through the chat.
+A bot holds at most 10 webhooks.
+
+`POST /hooks/:token` is public, like the health route, so it sits outside the
+session check. It answers 404 for an unknown token, 413 for a body over 64 KB,
+429 after 30 calls a minute for all the webhooks of one bot, and 503 before the
+setup is done.
+An accepted call sends a chat message with source `webhook`. The message starts
+with `Webhook <name>` and marks the body as text from outside. The turn waits in
+the queue like any message, and it uses the `routines` model choice.
+
+The owner lists, creates and removes webhooks with `GET`, `POST` and `DELETE
+/api/bots/:id/webhooks`, behind the session cookie. The Routines panel shows
+them at the bottom. The bot has `webhook_list` (on the skip list of
+`classifyToolCall`) and `webhook_delete` (reviewed). The review agent reads a
+webhook message as `Webhook (outside data)`, not as the owner.
 
 ## Helper agents
 

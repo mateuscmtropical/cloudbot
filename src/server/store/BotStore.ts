@@ -14,7 +14,7 @@ interface QueuedTurnRecord {
     messageId: string | null;
     text: string;
     uploads: StoredUploadRecord[];
-    source: 'chat' | 'routine';
+    source: 'chat' | 'routine' | 'webhook';
 }
 
 interface UsageWaitRecord {

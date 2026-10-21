@@ -56,6 +56,11 @@ describe('chooseTurnModel', () => {
             .toBe('opus');
     });
 
+    it('uses the routines choice for a webhook turn', () => {
+        expect(chooseTurnModel(choices, 'webhook'))
+            .toBe('opus');
+    });
+
     it('uses the chat choice for a chat turn', () => {
         expect(chooseTurnModel(choices, 'chat'))
             .toBe('haiku');
