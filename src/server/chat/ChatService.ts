@@ -23,6 +23,7 @@ import type { BrowserControl } from '../desktop/BrowserControl.ts';
 import { BROWSER_TOOL_FULL_NAMES, createBrowserTools } from '../desktop/createBrowserTools.ts';
 import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
+import { ROUTINE_TOOL_FULL_NAMES, createRoutineTools } from '../routines/createRoutineTools.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
 import { REQUEST_SCREEN_TOOL_FULL_NAME, createRequestScreenTool } from '../desktop/createScreenTools.ts';
 import type { ScreenHolder } from '../desktop/ScreenHolder.ts';
@@ -30,6 +31,7 @@ import { TYPE_SECRET_TOOL_FULL_NAME, createTypeSecretTool } from '../secrets/cre
 import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
 import type { RuleStore } from '../store/RuleStore.ts';
+import type { RoutineStore } from '../store/RoutineStore.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
 import type { SetupAction, SetupConversation } from '../setup/SetupConversation.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
@@ -70,6 +72,7 @@ interface ChatServiceOptions {
     screen?: ScreenHolder | undefined;
     // The owner's rules for each bot. Without it turns run without rules.
     ruleStore?: RuleStore | undefined;
+    routineStore?: RoutineStore | undefined;
     // Decides which tool calls wait for the owner. Without it no call waits.
     toolCallReviewer?: ToolCallReviewer | undefined;
 }
@@ -338,6 +341,7 @@ class ChatService {
     // Bot secret forms with an answer in progress, by message id.
     private readonly answeringForms = new Set<string>();
     private readonly ruleStore: RuleStore | undefined;
+    private readonly routineStore: RoutineStore | undefined;
     private readonly approvals: ApprovalGate | undefined;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
@@ -362,6 +366,7 @@ class ChatService {
         this.botSecrets = options.botSecrets;
         this.screen = options.screen;
         this.ruleStore = options.ruleStore;
+        this.routineStore = options.routineStore;
         this.approvals = options.toolCallReviewer === undefined
             ? undefined
             : new ApprovalGate({
@@ -1179,11 +1184,12 @@ class ChatService {
                     );
             const screenTools = this.createScreenTools(botId);
             const secretTools = this.createSecretTools(botId);
+            const routineTools = this.routineStore === undefined ? [] : createRoutineTools(this.routineStore, botId);
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...secretTools, ...screenTools],
+                [...browserTools, ...secretTools, ...screenTools, ...routineTools],
             );
             const prompt = uploads.length === 0 ? text : `${text}\n\n${describeAttachments(uploads)}`;
             const images = readTurnImages(uploads);
@@ -1202,7 +1208,7 @@ class ChatService {
                 abortController,
                 workspaceDir,
                 images,
-                systemPrompt: buildSystemPrompt(bot, { hasBrowser: this.browser !== undefined, ownerRules }),
+                systemPrompt: buildSystemPrompt(bot, { hasBrowser: this.browser !== undefined, hasRoutines: this.routineStore !== undefined, ownerRules }),
                 disallowedTools,
                 ...reviewOption,
                 mcpServers: { [PROFILE_SERVER_NAME]: profileServer },
@@ -1285,7 +1291,9 @@ class ChatService {
 
         const screenToolNames = this.browser === undefined || this.screen === undefined ? [] : [REQUEST_SCREEN_TOOL_FULL_NAME];
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames, ...screenToolNames];
+        const routineToolNames = this.routineStore === undefined ? [] : ROUTINE_TOOL_FULL_NAMES;
+
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames];
     }
 
     // With a session to resume, a failure before the session starts is held back

@@ -69,6 +69,7 @@ const screen = new ScreenHolder();
 const vault = new Vault(dataDir);
 const botSecrets = new BotSecrets(vault);
 const ruleStore = new RuleStore(opened.db);
+const routineStore = new RoutineStore(opened.db);
 // The review model has no tools, so it runs as the server user. The environment object is shared, so a change of sign-in reaches it.
 const askReviewModel = createClaudeReviewModel({
     pathToClaudeCodeExecutable: claudePath, environment, workingDirectory: dataDir,
@@ -78,7 +79,7 @@ const toolCallReviewer = createToolCallReviewer({
     readContext: createReviewContextReader({ ruleStore, messageStore }),
 });
 const chatService = new ChatService({
-    botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore, screen,
+    botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore, routineStore, screen,
     toolCallReviewer,
 });
 const bots = await botStore.list();
@@ -109,7 +110,7 @@ chatService.setSetup(setup);
 desktop?.start();
 
 const routineScheduler = new RoutineScheduler({
-    routineStore: new RoutineStore(opened.db),
+    routineStore,
     sendMessage: (botId, text) => chatService.sendMessage(botId, text),
     isReady: () => setup.isDone(),
 });
@@ -132,7 +133,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ version, access, chatService, ruleStore, screen });
+const app = createApp({ version, access, chatService, ruleStore, routineStore, screen });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

@@ -96,4 +96,13 @@ describe('buildSystemPrompt', () => {
         expect(buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' }))
             .not.toContain('The owner set these rules');
     });
+
+    it('names the routine tools only when routines are available', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+
+        expect(buildSystemPrompt(profile, { hasRoutines: true }))
+            .toContain('routine_create');
+        expect(buildSystemPrompt(profile))
+            .not.toContain('routine_create');
+    });
 });
