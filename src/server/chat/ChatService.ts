@@ -28,6 +28,7 @@ import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import { ROUTINE_TOOL_FULL_NAMES, createRoutineTools } from '../routines/createRoutineTools.ts';
 import { MODELS_SET_TOOL_FULL_NAME, createModelTools } from '../models/createModelTools.ts';
 import { WEBHOOK_TOOL_FULL_NAMES, createWebhookTools } from '../webhooks/createWebhookTools.ts';
+import type { WebhookCreation } from '../webhooks/createWebhookTools.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
 import { REQUEST_SCREEN_TOOL_FULL_NAME, createRequestScreenTool } from '../desktop/createScreenTools.ts';
 import type { ScreenHolder } from '../desktop/ScreenHolder.ts';
@@ -83,8 +84,10 @@ interface ChatServiceOptions {
     routineStore?: RoutineStore | undefined;
     // The model the owner chose for chat and routine turns. Without it turns use the CLI default.
     modelStore?: ModelStore | undefined;
-    // Webhooks the bot can list and remove. Without it the bot has no webhook tools.
+    // Webhooks the bot can list, create and remove. Without it the bot has no webhook tools.
     webhookStore?: WebhookStore | undefined;
+    // The address a new webhook URL starts with. Without it the bot cannot create webhooks.
+    webhookBaseUrl?: string | undefined;
     // Decides which tool calls wait for the owner. Without it no call waits.
     toolCallReviewer?: ToolCallReviewer | undefined;
 }
@@ -367,6 +370,7 @@ class ChatService {
     private readonly routineStore: RoutineStore | undefined;
     private readonly modelStore: ModelStore | undefined;
     private readonly webhookStore: WebhookStore | undefined;
+    private readonly webhookBaseUrl: string | undefined;
     private readonly approvals: ApprovalGate | undefined;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
@@ -394,6 +398,7 @@ class ChatService {
         this.routineStore = options.routineStore;
         this.modelStore = options.modelStore;
         this.webhookStore = options.webhookStore;
+        this.webhookBaseUrl = options.webhookBaseUrl;
         this.approvals = options.toolCallReviewer === undefined
             ? undefined
             : new ApprovalGate({
@@ -984,6 +989,11 @@ class ChatService {
         return this.runningTurns.has(botId);
     }
 
+    // True while a web app is subscribed to the bot's events. A webhook URL may only go to such a listener.
+    hasListener(botId: string): boolean {
+        return (this.listenersByBot.get(botId)?.size ?? 0) > 0;
+    }
+
     subscribe(botId: string, listener: ChatEventListener): () => void {
         const listeners = this.listenersByBot.get(botId) ?? new Set<ChatEventListener>();
 
@@ -1355,11 +1365,17 @@ class ChatService {
     }
 
     private webhookTools(botId: string): CloudbotTool[] {
-        if (this.webhookStore === undefined) {
+        if (this.webhookStore === undefined || this.webhookBaseUrl === undefined) {
             return [];
         }
 
-        return createWebhookTools(this.webhookStore, botId);
+        const creation: WebhookCreation = {
+            publicBaseUrl: this.webhookBaseUrl,
+            isListening: listeningBotId => this.hasListener(listeningBotId),
+            announce: (event) => { this.publish(event.botId, event); },
+        };
+
+        return createWebhookTools(this.webhookStore, botId, creation);
     }
 
     // With a session to resume, a failure before the session starts is held back

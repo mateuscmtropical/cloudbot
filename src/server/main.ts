@@ -5,7 +5,7 @@ import { validateAgentIsolation } from './agent/buildClaudeCommand.ts';
 import { CLEANUP_INTERVAL_MS } from './attachments/cleanUploads.ts';
 import { SdkAgentRunner } from './agent/SdkAgentRunner.ts';
 import { SetupAccess } from './access/SetupAccess.ts';
-import { buildSetupLink, readServerPort } from './access/setupLinkUrl.ts';
+import { buildSetupLink, readPublicBaseUrl, readServerPort } from './access/setupLinkUrl.ts';
 import { createClaudeReviewModel } from './approvals/createClaudeReviewModel.ts';
 import { createReviewContextReader } from './approvals/createReviewContextReader.ts';
 import { createToolCallReviewer } from './approvals/createToolCallReviewer.ts';
@@ -85,6 +85,7 @@ const toolCallReviewer = createToolCallReviewer({
 const chatService = new ChatService({
     botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore, routineStore, modelStore, screen,
     webhookStore,
+    webhookBaseUrl: readPublicBaseUrl(process.env),
     toolCallReviewer,
 });
 const bots = await botStore.list();

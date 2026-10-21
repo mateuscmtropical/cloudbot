@@ -5,6 +5,7 @@ import type { BotRoutine } from '../../shared/routineTypes.ts';
 import type { BotWebhook, CreatedBotWebhook } from '../../shared/webhookTypes.ts';
 import { RequestFailedError, createWebhook, listRoutines, listWebhooks, removeRoutine, removeWebhook } from '../apiClient.ts';
 import { describeSchedule, formatRunTime } from '../routineText.ts';
+import { WebhookUrlNotice } from './WebhookUrlNotice.tsx';
 
 interface RoutinesPanelProps {
     botId: string;
@@ -147,23 +148,13 @@ function WebhookSection({ botId }: { botId: string }): ReactElement {
             {created === undefined
                 ? null
                 : (
-                        <div className="webhook-created" role="status">
-                            <p>
-                                {`The URL of "${created.name}" is shown only now. Keep it secret: anyone with this URL can send the bot messages.`}
-                            </p>
-                            <input
-                                type="text"
-                                readOnly
-                                aria-label="Webhook URL"
-                                value={created.url}
-                                onFocus={(event) => {
-                                    event.currentTarget.select();
-                                }}
-                            />
-                            <button type="button" onClick={() => { setCreated(undefined); }}>Hide URL</button>
-                        </div>
+                        <WebhookUrlNotice
+                            name={created.name}
+                            url={created.url}
+                            onHide={() => { setCreated(undefined); }}
+                        />
                     )}
-            <form className="rule-form" onSubmit={handleCreate}>
+            <form className="rules-form" onSubmit={handleCreate}>
                 <label htmlFor="webhook-name">Webhook name</label>
                 <input
                     id="webhook-name"

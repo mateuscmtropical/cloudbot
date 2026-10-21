@@ -448,8 +448,17 @@ The owner creates a webhook in the Routines panel, with `POST
 bytes, encoded as base64url. The `webhooks` table keeps only its SHA-256 hash.
 The response carries the full URL, `<public address>/hooks/<token>`, once. The
 public address comes from `readPublicBaseUrl`, the same address as the setup
-link. The bot cannot create webhooks, so the URL never passes through the chat.
-A bot holds at most 10 webhooks.
+link. The owner route and the bot's `webhook_create` tool share `addBotWebhook`,
+so both check the name and the limit of 10 webhooks in the same way.
+
+The bot creates one with `webhook_create`. The tool result tells the model only
+the name. The URL never reaches the model, the chat history or the log. The
+tool sends it as a `webhookUrl` event on the bot's SSE stream, to the web app
+that listens for that bot, and nothing is stored. The web app shows it once
+with the same keep-secret text and Hide button as the panel. When no web app
+listens for the bot, the tool creates nothing and tells the model to ask the
+owner to open the web app or use the Routines panel. If the listener leaves
+while the webhook is made, the tool removes that webhook again.
 
 `POST /hooks/:token` is public, like the health route, so it sits outside the
 session check. It answers 404 for an unknown token, 413 for a body over 64 KB,
@@ -462,7 +471,7 @@ the queue like any message, and it uses the `routines` model choice.
 The owner lists, creates and removes webhooks with `GET`, `POST` and `DELETE
 /api/bots/:id/webhooks`, behind the session cookie. The Routines panel shows
 them at the bottom. The bot has `webhook_list` (on the skip list of
-`classifyToolCall`) and `webhook_delete` (reviewed). The review agent reads a
+`classifyToolCall`), `webhook_create` and `webhook_delete` (both reviewed). The review agent reads a
 webhook message as `Webhook (outside data)`, not as the owner.
 
 ## Helper agents

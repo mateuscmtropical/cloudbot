@@ -14,9 +14,11 @@ describe('models_set', () => {
 });
 
 describe('webhook tools', () => {
-    it('skips the list, and reviews delete', () => {
+    it('skips the list, and reviews create and delete', () => {
         expect(classify('mcp__cloudbot__webhook_list'))
             .toBe('skip');
+        expect(classify('mcp__cloudbot__webhook_create'))
+            .toBe('review');
         expect(classify('mcp__cloudbot__webhook_delete'))
             .toBe('review');
     });

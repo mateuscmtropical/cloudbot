@@ -1007,4 +1007,79 @@ describe('App setup reminder', () => {
         });
         expect(document.body.textContent).not.toContain('private input');
     });
+
+    it('shows a webhook URL the bot made once, and Hide removes it', async () => {
+        const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
+
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('Ana')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(subscribeToEvents)
+            .mockImplementation((_botId, onEvent) => {
+                emitEvent.current = onEvent;
+
+                return () => {};
+            });
+
+        render(<App />);
+        await waitFor(() => {
+            expect(emitEvent.current)
+                .toBeDefined();
+        });
+
+        act(() => {
+            emitEvent.current?.({ type: 'webhookUrl', botId: 'bot-1', name: 'form tool', url: 'https://bot.example.test/hooks/secret-token' });
+        });
+
+        expect(await screen.findByLabelText('Webhook URL'))
+            .toHaveProperty('value', 'https://bot.example.test/hooks/secret-token');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Hide URL' }));
+
+        expect(screen.queryByLabelText('Webhook URL'))
+            .toBeNull();
+    });
+
+    it('keeps the first webhook URL when the bot makes a second one', async () => {
+        const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
+
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('Ana')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(subscribeToEvents)
+            .mockImplementation((_botId, onEvent) => {
+                emitEvent.current = onEvent;
+
+                return () => {};
+            });
+
+        render(<App />);
+        await waitFor(() => {
+            expect(emitEvent.current)
+                .toBeDefined();
+        });
+
+        act(() => {
+            emitEvent.current?.({ type: 'webhookUrl', botId: 'bot-1', name: 'stripe', url: 'https://bot.example.test/hooks/first' });
+            emitEvent.current?.({ type: 'webhookUrl', botId: 'bot-1', name: 'github', url: 'https://bot.example.test/hooks/second' });
+        });
+
+        await waitFor(() => {
+            expect(screen.getAllByLabelText('Webhook URL'))
+                .toHaveLength(2);
+        });
+
+        const [firstHide] = screen.getAllByRole('button', { name: 'Hide URL' });
+
+        fireEvent.click(firstHide as HTMLElement);
+
+        const remaining = screen.getAllByLabelText('Webhook URL');
+
+        expect(remaining)
+            .toHaveLength(1);
+        expect(remaining[0])
+            .toHaveProperty('value', 'https://bot.example.test/hooks/second');
+    });
 });

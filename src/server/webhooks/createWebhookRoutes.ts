@@ -56,6 +56,39 @@ function readWebhookName(payload: unknown): string | undefined {
     return isValid ? trimmedName : undefined;
 }
 
+interface AddBotWebhookProblem {
+    problem: WebhookErrorResponse;
+}
+
+interface AddBotWebhookSuccess {
+    created: CreatedBotWebhook;
+}
+
+type AddBotWebhookResult = AddBotWebhookProblem | AddBotWebhookSuccess;
+
+// Shared by the owner route and the bot's webhook_create tool, so both follow the same name and limit rules.
+async function addBotWebhook(webhookStore: WebhookStore, botId: string, payload: unknown, publicBaseUrl: string): Promise<AddBotWebhookResult> {
+    const name = readWebhookName(payload);
+
+    if (name === undefined) {
+        return { problem: INVALID_NAME };
+    }
+
+    const existingWebhooks = await webhookStore.list(botId);
+
+    if (existingWebhooks.length >= MAX_WEBHOOKS_PER_BOT) {
+        return { problem: TOO_MANY };
+    }
+
+    const token = createWebhookToken();
+    const tokenHash = hashWebhookToken(token);
+    const webhook = await webhookStore.add(botId, name, tokenHash);
+    const url = buildWebhookUrl(publicBaseUrl, token);
+    const created: CreatedBotWebhook = { ...toBotWebhook(webhook), url };
+
+    return { created };
+}
+
 // These routes sit behind the session check.
 function createWebhookRoutes(options: WebhookRoutesOptions): Hono {
     const routes = new Hono();
@@ -84,25 +117,13 @@ function createWebhookRoutes(options: WebhookRoutesOptions): Hono {
 
         const payload: unknown = await context.req.json()
             .catch(() => undefined);
-        const name = readWebhookName(payload);
+        const result = await addBotWebhook(options.webhookStore, botId, payload, options.publicBaseUrl);
 
-        if (name === undefined) {
-            return context.json(INVALID_NAME, 400);
+        if ('problem' in result) {
+            return context.json(result.problem, 400);
         }
 
-        const existingWebhooks = await options.webhookStore.list(botId);
-
-        if (existingWebhooks.length >= MAX_WEBHOOKS_PER_BOT) {
-            return context.json(TOO_MANY, 400);
-        }
-
-        const token = createWebhookToken();
-        const tokenHash = hashWebhookToken(token);
-        const webhook = await options.webhookStore.add(botId, name, tokenHash);
-        const url = buildWebhookUrl(options.publicBaseUrl, token);
-        const created: CreatedBotWebhook = { ...toBotWebhook(webhook), url };
-
-        return context.json(created, 201);
+        return context.json(result.created, 201);
     });
 
     routes.delete('/api/bots/:id/webhooks/:webhookId', async (context) => {
@@ -120,5 +141,5 @@ function createWebhookRoutes(options: WebhookRoutesOptions): Hono {
     return routes;
 }
 
-export { MAX_NAME_LENGTH, MAX_WEBHOOKS_PER_BOT, createWebhookRoutes, toBotWebhook };
-export type { BotWebhook, CreatedBotWebhook, WebhookRoutesOptions };
+export { MAX_NAME_LENGTH, MAX_WEBHOOKS_PER_BOT, addBotWebhook, createWebhookRoutes, toBotWebhook };
+export type { AddBotWebhookResult, BotWebhook, CreatedBotWebhook, WebhookRoutesOptions };
