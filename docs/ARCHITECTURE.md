@@ -474,6 +474,41 @@ them at the bottom. The bot has `webhook_list` (on the skip list of
 `classifyToolCall`), `webhook_create` and `webhook_delete` (both reviewed). The review agent reads a
 webhook message as `Webhook (outside data)`, not as the owner.
 
+## Page watches
+
+The bot creates a watch with `watch_create` (`{ name, url, intervalMinutes?,
+keyword? }`). The tool is reviewed. It checks the address first with
+`checkWatchUrl`, so a private address is refused before anything is saved.
+The default interval is 60 minutes, the minimum 15, and a bot holds at most
+10 watches. `watch_list` is on the skip list, `watch_delete` is reviewed. The
+owner lists and removes watches with `GET` and `DELETE /api/bots/:id/watches`.
+
+`WatchScheduler` runs every 30 seconds, like the routine scheduler. A due
+watch first moves its next check, so a crash cannot repeat it at once. Then it
+fetches the page through `fetchWatchedPage`, keeps the lines that contain the
+keyword, and hashes them with SHA-256. The `watches` table keeps the hash and
+the last text, capped at 20000 characters. The first check only records the
+page. A later change sends a chat message with source `routine`, so it uses
+the routines model and effort. The message starts with `Page watch "<name>"`
+and marks the text as outside data. The review context labels it
+`Page watch (outside data)`.
+
+The fetch is the SSRF guard. Only http and https are read. The host is
+resolved with `dns.lookup(all)`, and every address must be public. `isPublicAddress`
+refuses loopback, private, link-local, CGNAT, multicast, reserved and
+broadcast addresses, the IPv6 equivalents, and the addresses of the server
+itself, and the benchmarking range 198.18.0.0/15 and the AWS IPv6 metadata
+address. An IPv6 address that carries an IPv4 address (mapped `::ffff:0:0/96`,
+NAT64 `64:ff9b::/96`, 6to4 `2002::/16`) is checked by that IPv4 address, so an
+embedded 127.0.0.1 is refused in every form. An IPv6 address that cannot be
+read is refused.
+The request is pinned to the address that was checked, through a `lookup`
+hook, so a second DNS answer cannot change where it connects. Redirects are
+followed by hand, at most 3, and each hop runs the same check. A response is
+read only when it is a 200 with a `text/html` or `text/plain` type, and
+reading stops past 1 MB. The request has a 15 second limit. Tests inject the
+resolver and the request, so no test reaches the network.
+
 ## Helper agents
 
 A helper is an SDK subagent with its own model. `browsing` gets the browser

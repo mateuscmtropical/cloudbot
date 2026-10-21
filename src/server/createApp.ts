@@ -21,6 +21,8 @@ import type { ModelStore } from './store/ModelStore.ts';
 import type { RoutineStore } from './store/RoutineStore.ts';
 import type { RuleStore } from './store/RuleStore.ts';
 import type { WebhookStore } from './store/WebhookStore.ts';
+import type { WatchStore } from './store/WatchStore.ts';
+import { createWatchRoutes } from './watches/createWatchRoutes.ts';
 import { createWebhookHookRoutes } from './webhooks/createWebhookHookRoutes.ts';
 import { createWebhookRoutes } from './webhooks/createWebhookRoutes.ts';
 
@@ -38,6 +40,7 @@ interface AppOptions {
     routineStore?: RoutineStore;
     modelStore?: ModelStore;
     webhookStore?: WebhookStore;
+    watchStore?: WatchStore;
     // The address new webhook URLs start with. Without it the server's own address is used.
     publicBaseUrl?: string;
     // Webhook calls wait for the setup to finish. Without it the server is always ready.
@@ -120,6 +123,13 @@ function createApp(options: AppOptions): Hono {
         const webhookRoutes = createWebhookRoutes({ webhookStore: options.webhookStore, hasBot: botId => chatService.hasBot(botId), publicBaseUrl });
 
         app.route('/', webhookRoutes);
+    }
+
+    if (options.chatService !== undefined && options.watchStore !== undefined) {
+        const chatService = options.chatService;
+        const watchRoutes = createWatchRoutes({ watchStore: options.watchStore, hasBot: botId => chatService.hasBot(botId) });
+
+        app.route('/', watchRoutes);
     }
 
     if (options.chatService !== undefined && options.modelStore !== undefined) {

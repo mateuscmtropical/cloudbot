@@ -19,6 +19,7 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__request_screen',
     'mcp__cloudbot__routine_list',
     'mcp__cloudbot__webhook_list',
+    'mcp__cloudbot__watch_list',
     'mcp__cloudbot__request_secret',
     'mcp__cloudbot__share_file',
     'mcp__cloudbot__update_profile',

@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import type { ChangeEvent, ReactElement, SyntheticEvent } from 'react';
 
 import type { BotRoutine } from '../../shared/routineTypes.ts';
+import type { BotWatch } from '../../shared/watchTypes.ts';
 import type { BotWebhook, CreatedBotWebhook } from '../../shared/webhookTypes.ts';
-import { RequestFailedError, createWebhook, listRoutines, listWebhooks, removeRoutine, removeWebhook } from '../apiClient.ts';
+import { RequestFailedError, createWebhook, listRoutines, listWatches, listWebhooks, removeRoutine, removeWatch, removeWebhook } from '../apiClient.ts';
 import { describeSchedule, formatRunTime } from '../routineText.ts';
 import { WebhookUrlNotice } from './WebhookUrlNotice.tsx';
 
@@ -11,6 +12,10 @@ interface RoutinesPanelProps {
     botId: string;
     botName: string;
     onClose: () => void;
+}
+
+interface BotSectionProps {
+    botId: string;
 }
 
 type LoadState = 'loading' | 'ready' | 'failed';
@@ -26,8 +31,99 @@ function describeFailure(error: unknown, fallbackText: string): string {
     return fallbackText;
 }
 
+// The page watches of one bot. The bot creates them in the chat, and the owner can only list and remove them here.
+function WatchSection({ botId }: BotSectionProps): ReactElement {
+    const [watches, setWatches] = useState<BotWatch[]>([]);
+    const [loadState, setLoadState] = useState<LoadState>('loading');
+    const [removingIds, setRemovingIds] = useState<string[]>([]);
+    const [problem, setProblem] = useState<string | undefined>(undefined);
+
+    useEffect(() => {
+        let isCurrent = true;
+
+        listWatches(botId)
+            .then((loadedWatches) => {
+                if (isCurrent) {
+                    setWatches(loadedWatches);
+                    setLoadState('ready');
+                }
+            })
+            .catch(() => {
+                if (isCurrent) {
+                    setLoadState('failed');
+                }
+            });
+
+        return () => {
+            isCurrent = false;
+        };
+    }, [botId]);
+
+    function handleRemove(watchId: string): void {
+        if (removingIds.includes(watchId)) {
+            return;
+        }
+
+        setProblem(undefined);
+        setRemovingIds(currentIds => [...currentIds, watchId]);
+
+        removeWatch(botId, watchId)
+            .then(() => {
+                setWatches(currentWatches => currentWatches.filter(watch => watch.id !== watchId));
+            })
+            .catch((error: unknown) => {
+                // The watch may have been removed already, so it leaves the list.
+                if (error instanceof RequestFailedError && error.status === NOT_FOUND_STATUS) {
+                    setWatches(currentWatches => currentWatches.filter(watch => watch.id !== watchId));
+
+                    return;
+                }
+
+                const failureText = describeFailure(error, 'The page watch could not be removed. Try again.');
+
+                setProblem(failureText);
+            })
+            .finally(() => {
+                setRemovingIds(currentIds => currentIds.filter(currentId => currentId !== watchId));
+            });
+    }
+
+    return (
+        <section aria-label="Page watches" className="webhook-section">
+            <h3>Page watches</h3>
+            <p className="rules-help">
+                The bot checks these pages on a schedule and wakes up when their text changes. The owner asks for a watch in the chat.
+            </p>
+            {loadState === 'loading' ? <p>Loading...</p> : null}
+            {loadState === 'failed' ? <p className="rules-problem">The page watches could not be loaded.</p> : null}
+            {loadState === 'ready' && watches.length === 0 ? <p>No page watches yet.</p> : null}
+            <ul className="rules-list">
+                {watches.map(watch => (
+                    <li key={watch.id} className="rule-item">
+                        <span className="rule-kind">{watch.name}</span>
+                        <span className="rule-tools">
+                            {`Every ${String(watch.intervalMinutes)} minutes. ${watch.lastCheckedAt === null ? 'Not checked yet.' : `Checked: ${formatRunTime(watch.lastCheckedAt)}`}`}
+                        </span>
+                        <button
+                            type="button"
+                            disabled={removingIds.includes(watch.id)}
+                            aria-label={`Remove page watch: ${watch.name}`}
+                            onClick={() => {
+                                handleRemove(watch.id);
+                            }}
+                        >
+                            Remove
+                        </button>
+                    </li>
+                ))}
+            </ul>
+            {problem === undefined ? null : <p className="rules-problem" role="alert">{problem}</p>}
+        </section>
+    );
+}
+
 // The owner's webhooks for one bot. The URL of a new webhook is shown once, right after Create.
-function WebhookSection({ botId }: { botId: string }): ReactElement {
+function WebhookSection({ botId }: BotSectionProps): ReactElement {
     const [webhooks, setWebhooks] = useState<BotWebhook[]>([]);
     const [loadState, setLoadState] = useState<LoadState>('loading');
     const [nameDraft, setNameDraft] = useState('');
@@ -287,6 +383,7 @@ function RoutinesPanel({ botId, botName, onClose }: RoutinesPanelProps): ReactEl
             </ul>
             {problem === undefined ? null : <p className="rules-problem" role="alert">{problem}</p>}
             <WebhookSection botId={botId} />
+            <WatchSection botId={botId} />
         </div>
     );
 }

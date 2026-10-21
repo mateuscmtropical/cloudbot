@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { buildWebhookMessage } from '../webhooks/webhookMessage.ts';
+import { buildWatchMessage } from '../watches/watchMessage.ts';
 import { createReviewContextReader } from './createReviewContextReader.ts';
 import type { EffortChoices, ModelChoices } from '../models/modelChoices.ts';
 
@@ -39,6 +40,19 @@ describe('createReviewContextReader', () => {
                 ownerRules: ['Block: Never email my boss.', 'Allow: Edit files in the workspace.'],
                 recentMessages: ['Owner: Book me a table', 'Bot: Which day?'],
             });
+    });
+
+    it('labels a page watch message as outside data, not as the owner', async () => {
+        const watchText = buildWatchMessage('Shop', 'https://shop.example.test/', ['+ Bread 5']);
+        const listByBot = vi.fn()
+            .mockResolvedValue([{ role: 'user', content: { kind: 'text', text: watchText } }]);
+        const readContext = createReviewContextReader({ ruleStore: { list: vi.fn()
+            .mockResolvedValue([]) }, messageStore: { listByBot }, modelStore: createModelStore() });
+
+        const context = await readContext('bot-1');
+
+        expect(context.recentMessages)
+            .toEqual([`Page watch (outside data): ${watchText.replace(/\s+/g, ' ')}`]);
     });
 
     it('labels a webhook message as outside data, not as the owner', async () => {

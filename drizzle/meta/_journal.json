@@ -57,6 +57,13 @@
       "when": 1792589165378,
       "tag": "0007_effort",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792591804229,
+      "tag": "0008_watches",
+      "breakpoints": true
     }
   ]
 }
