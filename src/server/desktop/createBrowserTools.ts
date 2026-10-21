@@ -63,7 +63,14 @@ const SCROLL_SHAPE = {
         .min(-MAX_SCROLL_PIXELS)
         .max(MAX_SCROLL_PIXELS),
 };
+const SCREENSHOT_SHAPE = {
+    showOwner: z.boolean()
+        .optional(),
+};
 const EMPTY_SHAPE = {};
+
+// Posts a PNG, as base64, to the chat. It throws when the image cannot be stored.
+type ScreenshotShareHandler = (pngBase64: string) => Promise<void>;
 
 function textResult(text: string, isError = false): BrowserToolResult {
     const content: BrowserToolTextContent = { type: 'text', text };
@@ -102,7 +109,26 @@ async function runBrowserAction(browser: BrowserControl, action: () => Promise<B
     return { ...result, content: [...result.content, ...dialogContent] };
 }
 
-function createBrowserTools(browser: BrowserControl): SdkMcpToolDefinition<z.ZodRawShape>[] {
+async function shareIfAsked(data: string, showOwner: boolean | undefined, shareScreenshot: ScreenshotShareHandler | undefined): Promise<string> {
+    if (showOwner !== true) {
+        return '';
+    }
+
+    if (shareScreenshot === undefined) {
+        return 'Screenshots cannot be shown in the chat here.';
+    }
+
+    try {
+        await shareScreenshot(data);
+
+        return 'The owner can see this screenshot in the chat.';
+    } catch {
+        return 'The screenshot could not be shown in the chat.';
+    }
+}
+
+// shareScreenshot is given when the chat can show screenshots, so browser_screenshot can post one.
+function createBrowserTools(browser: BrowserControl, shareScreenshot?: ScreenshotShareHandler): SdkMcpToolDefinition<z.ZodRawShape>[] {
     const openTool = tool(
         `${BROWSER_TOOL_PREFIX}open`,
         'Open a web page in your browser, on your screen. Returns the page title, its address and its visible text.',
@@ -129,12 +155,15 @@ function createBrowserTools(browser: BrowserControl): SdkMcpToolDefinition<z.Zod
     );
     const screenshotTool = tool(
         `${BROWSER_TOOL_PREFIX}screenshot`,
-        `Take a screenshot of the page in your browser. The image is ${String(SCREEN_WIDTH)} by ${String(SCREEN_HEIGHT)} pixels or smaller, and its pixels are the coordinates for browser_click.`,
-        EMPTY_SHAPE,
-        () => runBrowserAction(browser, async () => {
+        `Take a screenshot of the page in your browser. The image is ${String(SCREEN_WIDTH)} by ${String(SCREEN_HEIGHT)} pixels or smaller, and its pixels are the coordinates for browser_click. Set showOwner to true to also show it to the owner in the chat, for example to show a result or a problem.`,
+        SCREENSHOT_SHAPE,
+        args => runBrowserAction(browser, async () => {
             const data = await browser.screenshot();
+            const shareNote = await shareIfAsked(data, args.showOwner, shareScreenshot);
+            const image: BrowserToolImageContent = { type: 'image', data, mimeType: 'image/png' };
+            const noteContent: BrowserToolTextContent[] = shareNote === '' ? [] : [{ type: 'text', text: shareNote }];
 
-            return { content: [{ type: 'image', data, mimeType: 'image/png' }] };
+            return { content: [image, ...noteContent] };
         }),
     );
     const clickTool = tool(
@@ -182,4 +211,4 @@ function createBrowserTools(browser: BrowserControl): SdkMcpToolDefinition<z.Zod
 }
 
 export { BROWSER_TOOL_FULL_NAMES, SCREEN_HEIGHT, SCREEN_WIDTH, createBrowserTools };
-export type { BrowserToolResult };
+export type { BrowserToolResult, ScreenshotShareHandler };

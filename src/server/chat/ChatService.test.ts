@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -19,7 +19,7 @@ import { MessageStore } from '../store/MessageStore.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
 import type { ChatEvent } from '../../shared/chatTypes.ts';
-import { ChatService, PendingUploadLimitError, UploadDuringTurnError } from './ChatService.ts';
+import { ChatService, PendingUploadLimitError, UploadDuringTurnError, buildScreenshotName } from './ChatService.ts';
 
 interface TestSetup {
     service: ChatService;
@@ -1188,6 +1188,44 @@ describe('ChatService', () => {
             .rejects.toThrow('disk full');
         expect(await readdir(service.shareDirFor(bot.id)))
             .toEqual([]);
+    });
+
+    it('posts a screenshot to the chat as a png file that can be downloaded', async () => {
+        const { service } = buildSetup([]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+        await service.shareScreenshot(bot.id, pngBytes.toString('base64'));
+
+        const storedMessages = (await service.listMessages(bot.id)) ?? [];
+        const fileMessage = storedMessages.find(message => message.body.kind === 'file');
+
+        expect(fileMessage?.body)
+            .toMatchObject({ kind: 'file', mimeType: 'image/png', sizeBytes: 8 });
+
+        const download = await service.findSharedFile(bot.id, fileMessage?.id ?? '');
+
+        expect(await readFile(download?.absolutePath ?? ''))
+            .toEqual(pngBytes);
+    });
+
+    it('refuses an empty screenshot and leaves no copy when its message cannot be saved', async () => {
+        const { service } = buildSetup([]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await expect(service.shareScreenshot(bot.id, ''))
+            .rejects.toThrow('empty or too large');
+        vi.spyOn(messageStore, 'add')
+            .mockRejectedValueOnce(new Error('disk full'));
+        await expect(service.shareScreenshot(bot.id, 'iVBORw0KGgo='))
+            .rejects.toThrow('disk full');
+        expect(await readdir(service.shareDirFor(bot.id)))
+            .toEqual([]);
+    });
+
+    it('names a screenshot after the UTC time it was taken', () => {
+        expect(buildScreenshotName(new Date(Date.UTC(2026, 9, 21, 3, 15, 42))))
+            .toBe('screenshot-2026-10-21-03-15-42.png');
     });
 
     it('keeps the files of a turn that is still running, however old they are', async () => {

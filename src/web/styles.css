@@ -484,3 +484,12 @@ svg {
     font-size: 0.85em;
     opacity: 0.7;
 }
+
+.file-preview {
+    display: block;
+    flex-basis: 100%;
+    max-width: 100%;
+    max-height: 480px;
+    border-radius: 6px;
+    object-fit: contain;
+}

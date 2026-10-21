@@ -97,6 +97,41 @@ describe('createBrowserTools', () => {
             .toEqual({ content: [{ type: 'text', text: 'Only http and https addresses can be opened.' }], isError: true });
     });
 
+    it('shows the screenshot to the owner only when asked', async () => {
+        const { browser } = createFakeBrowser();
+        const shared: string[] = [];
+        const tools = createBrowserTools(browser, (data) => {
+            shared.push(data);
+
+            return Promise.resolve();
+        });
+        const screenshotTool = tools.find(candidate => candidate.name === 'browser_screenshot');
+        const handler = screenshotTool?.handler as unknown as ToolHandler;
+        const quiet = await handler({}, {});
+        const shown = await handler({ showOwner: true }, {});
+
+        expect(quiet.content)
+            .toHaveLength(1);
+        expect(shown.content[1])
+            .toEqual({ type: 'text', text: 'The owner can see this screenshot in the chat.' });
+        expect(shared)
+            .toEqual(['iVBORw0KGgo=']);
+    });
+
+    it('still returns the image when the chat cannot store it', async () => {
+        const { browser } = createFakeBrowser();
+        const tools = createBrowserTools(browser, () => Promise.reject(new Error('disk full')));
+        const handler = tools.find(candidate => candidate.name === 'browser_screenshot')?.handler as unknown as ToolHandler;
+        const result = await handler({ showOwner: true }, {});
+
+        expect(result.content[0])
+            .toEqual({ type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' });
+        expect(result.content[1])
+            .toEqual({ type: 'text', text: 'The screenshot could not be shown in the chat.' });
+        expect(result.isError)
+            .toBeUndefined();
+    });
+
     it('returns the screenshot as a PNG image', async () => {
         const { browser } = createFakeBrowser();
         const result = await findHandler(browser, 'browser_screenshot')({}, {});

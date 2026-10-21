@@ -8,6 +8,9 @@ import { CodeField } from './CodeField.tsx';
 import { LinkCard } from './LinkCard.tsx';
 import { SecureForm } from './SecureForm.tsx';
 
+// Raster images only. An img tag never runs scripts in them, and the server sends nothing else as these types.
+const PREVIEW_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
 interface MessageActions {
     // Settles when the server answered.
     onChoose: (messageId: string, choiceId: string) => Promise<void>;
@@ -87,19 +90,21 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
                     />
                 </div>
             );
-        case 'file':
+        case 'file': {
+            const fileUrl = `/api/bots/${encodeURIComponent(message.botId)}/messages/${encodeURIComponent(message.id)}/file`;
+
             return (
                 <div className="setup-card file-card">
-                    <a
-                        className="link-card"
-                        href={`/api/bots/${encodeURIComponent(message.botId)}/messages/${encodeURIComponent(message.id)}/file`}
-                        download={body.name}
-                    >
+                    {PREVIEW_IMAGE_TYPES.has(body.mimeType)
+                        ? <img className="file-preview" src={fileUrl} alt={body.name} loading="lazy" />
+                        : null}
+                    <a className="link-card" href={fileUrl} download={body.name}>
                         {`Download ${body.name}`}
                     </a>
                     <span className="file-size">{formatFileSize(body.sizeBytes)}</span>
                 </div>
             );
+        }
         case 'toolActivity':
             return (
                 <div className={`tool-line is-${body.status}`}>
