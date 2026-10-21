@@ -10,6 +10,8 @@ import type { AgentRunner, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildPng } from '../attachments/testImages.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
 import { PROFILE_SERVER_NAME, SHARE_FILE_TOOL_FULL_NAME, UPDATE_PROFILE_TOOL_FULL_NAME } from '../agent/createProfileToolServer.ts';
+import { BrowserControl } from '../desktop/BrowserControl.ts';
+import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
 import { FakeAgentRunner } from '../agent/FakeAgentRunner.ts';
 import type { ScriptedAgentStep } from '../agent/FakeAgentRunner.ts';
 import { BotStore } from '../store/BotStore.ts';
@@ -900,6 +902,24 @@ describe('ChatService', () => {
             .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME]);
         expect(turnRequest?.systemPrompt)
             .toBe(buildSystemPrompt(bot));
+    });
+
+    it('adds the browser tools and the browser paragraph when the bot has a browser', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:9' });
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, browser });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const turnRequest = runner.receivedRequests[0];
+
+        expect(turnRequest?.allowedTools)
+            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...BROWSER_TOOL_FULL_NAMES]);
+        expect(turnRequest?.systemPrompt)
+            .toBe(buildSystemPrompt(bot, { hasBrowser: true }));
     });
 
     it('stops a turn without hanging when the stop arrives before the runner starts', async () => {

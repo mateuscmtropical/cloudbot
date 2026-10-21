@@ -44,8 +44,10 @@ Status: **open** means the default is in use and waits for the owner.
 
 - Status: open
 - Default: small browser tools in the server, connected to Chromium over the
-  DevTools protocol on `127.0.0.1:9222`.
-- Why: no extra service, and the tools fit the existing tool server.
+  DevTools protocol on `127.0.0.1:9222` with Node's built-in WebSocket. The
+  model works from screenshots of the page and clicks in their pixels.
+- Why: no extra service and no new dependency, and the tools fit the existing
+  tool server.
 - Other options: a browser MCP server started for each turn.
 
 ### Desktop log
@@ -55,6 +57,13 @@ Status: **open** means the default is in use and waits for the owner.
   `/home/bot/.cache/cloudbot-desktop/desktop.log`. It starts empty on each
   start of the desktop. The server log says when the desktop exits, with the
   last lines of the script's own messages, and when it starts again.
+
+### One browser for all bots
+
+- Status: open
+- Default: every bot uses the same desktop and the same browser profile, so
+  they share sign-ins. This matters once v0.5 adds more bots.
+- Other options: one desktop or one browser profile per bot.
 
 ## Secure form for secrets the bot uses (#44)
 
