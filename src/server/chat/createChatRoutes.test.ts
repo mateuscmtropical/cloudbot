@@ -40,6 +40,10 @@ function describeEvent(event: ChatEvent): string {
         return `delta:${event.text}`;
     }
 
+    if (event.type === 'webhookUrl') {
+        return 'webhookUrl';
+    }
+
     return `message:${event.message.role}:${event.message.body.kind}`;
 }
 

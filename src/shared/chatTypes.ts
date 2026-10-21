@@ -115,7 +115,15 @@ interface ChatTextDeltaEvent {
     text: string;
 }
 
-type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent;
+// A new webhook URL, sent once to the open web app. It is never stored, so the web app keeps it only in memory.
+interface ChatWebhookUrlEvent {
+    type: 'webhookUrl';
+    botId: string;
+    name: string;
+    url: string;
+}
+
+type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent | ChatWebhookUrlEvent;
 
 // A rule the owner set for a bot. Block rules may name tools the bot cannot use.
 interface BotRule {
@@ -150,4 +158,5 @@ export type {
     ToolStatus,
     ChatTextDeltaEvent,
     ChatTurnEvent,
+    ChatWebhookUrlEvent,
 };

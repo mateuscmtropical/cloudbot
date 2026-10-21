@@ -1,7 +1,7 @@
 import { Suspense, createElement, lazy, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
-import type { BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
+import type { BotSummary, ChatMessage, ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
 import { renderMarkdown } from '../markdown.ts';
 import { Composer } from './Composer.tsx';
 import type { DraftAttachment } from './Composer.tsx';
@@ -9,6 +9,7 @@ import { MessageItem } from './MessageItem.tsx';
 import { ModelsPanel } from './ModelsPanel.tsx';
 import { RoutinesPanel } from './RoutinesPanel.tsx';
 import { RulesPanel } from './RulesPanel.tsx';
+import { WebhookUrlNotice } from './WebhookUrlNotice.tsx';
 import type { MessageActions } from './MessageItem.tsx';
 
 // Within this many pixels of the top, the view asks for the page of older messages.
@@ -39,6 +40,9 @@ interface ConversationViewProps {
     onSend: (text: string) => void;
     onStop: () => void;
     onAttach: (files: File[]) => void;
+    // Webhook URLs the bot just made for this bot. Each is shown until the owner hides it.
+    webhookUrls?: ChatWebhookUrlEvent[] | undefined;
+    onHideWebhookUrl?: (hidden: ChatWebhookUrlEvent) => void;
 }
 
 // A message kept in place while older messages are added, and where it sat in the viewport.
@@ -84,6 +88,8 @@ function ConversationView({
     onSend,
     onStop,
     onAttach,
+    webhookUrls = [],
+    onHideWebhookUrl,
 }: ConversationViewProps): ReactElement {
     const messageListRef = useRef<HTMLDivElement>(null);
     const previousBotIdRef = useRef<string | undefined>(undefined);
@@ -240,6 +246,16 @@ function ConversationView({
                             </div>
                         )}
             </header>
+            {onHideWebhookUrl === undefined
+                ? null
+                : webhookUrls.map(notice => (
+                        <WebhookUrlNotice
+                            key={notice.url}
+                            name={notice.name}
+                            url={notice.url}
+                            onHide={() => { onHideWebhookUrl(notice); }}
+                        />
+                    ))}
             {isDesktopOpen
                 ? (
                         <Suspense fallback={<p className="desktop-status">Loading the screen...</p>}>

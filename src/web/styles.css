@@ -678,6 +678,38 @@ svg {
     color: var(--color-danger);
 }
 
+/* A new webhook URL, in the Routines panel or under the conversation header. */
+.webhook-created {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 0 16px 12px;
+    padding: 12px 16px;
+    border-radius: var(--radius-bubble);
+    background: var(--color-surface);
+}
+
+.rules-panel .webhook-created {
+    margin: 8px 0;
+    padding: 0;
+}
+
+.webhook-created p {
+    flex-basis: 100%;
+    margin: 0;
+}
+
+.webhook-created input {
+    flex: 1 1 240px;
+    min-width: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--color-surface-raised);
+    border-radius: var(--radius-control);
+    background: var(--color-background);
+}
+
+.webhook-created button,
 .rules-panel button:not(.icon-button) {
     padding: 4px 12px;
     border: none;

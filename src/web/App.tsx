@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
-import type { BotSummary, ChatEvent, ChatMessage } from '../shared/chatTypes.ts';
+import type { BotSummary, ChatEvent, ChatMessage, ChatWebhookUrlEvent } from '../shared/chatTypes.ts';
 import { BotList } from './components/BotList.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
@@ -70,6 +70,8 @@ function App(): ReactElement {
     const [chatState, setChatState] = useState<ChatState>(emptyChatState);
     const [draft, setDraft] = useState<DraftState>(emptyDraft);
     const [runningBotId, setRunningBotId] = useState<string | undefined>(undefined);
+    // Webhook URLs the bot made, kept in memory only, each until the owner hides it.
+    const [webhookUrls, setWebhookUrls] = useState<ChatWebhookUrlEvent[]>([]);
     const [isBotListOpen, setIsBotListOpen] = useState(false);
     const [errorText, setErrorText] = useState<string | undefined>(undefined);
     // Chips per bot: files still uploading, and the files the server holds for the next message.
@@ -210,6 +212,13 @@ function App(): ReactElement {
                         afterSequence: isNewDraft ? knownSequence : previousDraft.afterSequence,
                     };
                 });
+
+                return;
+            }
+
+            if (event.type === 'webhookUrl') {
+                // A list, so a second webhook made in the same turn does not hide the first URL.
+                setWebhookUrls(current => [...current, event]);
 
                 return;
             }
@@ -499,6 +508,7 @@ function App(): ReactElement {
 
     const botAttachments = selectedBotId === undefined ? [] : (attachmentsByBot[selectedBotId] ?? []);
     const isUploading = botAttachments.some(attachment => attachment.status === 'uploading');
+    const botWebhookUrls = webhookUrls.filter(notice => notice.botId === selectedBotId);
 
     return (
         <div className="app">
@@ -540,6 +550,10 @@ function App(): ReactElement {
                     onLoadOlder={handleLoadOlder}
                     onOpenBotList={() => {
                         setIsBotListOpen(true);
+                    }}
+                    webhookUrls={botWebhookUrls}
+                    onHideWebhookUrl={(hidden) => {
+                        setWebhookUrls(current => current.filter(notice => notice !== hidden));
                     }}
                     onSend={handleSend}
                     onStop={handleStop}
