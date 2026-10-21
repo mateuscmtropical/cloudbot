@@ -21,6 +21,17 @@ Status: **open** means the default is in use and waits for the owner.
 - Other options: headless Chromium with a screencast only. It is lighter, but
   a person cannot use the terminal or other windows.
 
+### Live view is view only
+
+- Status: open
+- Default: the Screen panel is view only. The browser client ignores mouse and
+  keyboard input. The server proxy forwards all bytes in both directions, so the
+  limit is in the client for now. The screen handoff will add control, and
+  then the server should filter input messages while the bot has the screen.
+- Why: the roadmap says the bot never acts while a person has the screen, and
+  that needs the handoff state first.
+- Other options: let the owner control the screen at any time.
+
 ### Chromium sandbox
 
 - Status: open

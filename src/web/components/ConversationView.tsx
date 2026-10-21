@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, createElement, lazy, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
@@ -13,6 +13,13 @@ import type { MessageActions } from './MessageItem.tsx';
 const LOAD_OLDER_THRESHOLD_PX = 40;
 // Within this many pixels of the bottom, new messages keep the view at the bottom.
 const NEAR_BOTTOM_PX = 40;
+
+// Loaded on first use, because noVNC is large and only needed when the owner opens the screen.
+const lazyDesktopPanel = lazy(async () => {
+    const panelModule = await import('./DesktopPanel.tsx');
+
+    return { default: panelModule.DesktopPanel };
+});
 
 interface ConversationViewProps {
     bot: BotSummary | undefined;
@@ -86,6 +93,7 @@ function ConversationView({
     const botName = bot?.name ?? 'CloudBot';
     // The id of the bot whose rules are open. Switching to another bot closes the panel.
     const [rulesBotId, setRulesBotId] = useState<string | undefined>(undefined);
+    const [isDesktopOpen, setIsDesktopOpen] = useState(false);
     const [shownBotId, setShownBotId] = useState(bot?.id);
 
     // React's pattern for state that follows a prop: reset it during render, not in an effect.
@@ -184,6 +192,19 @@ function ConversationView({
                     : (
                             <button
                                 type="button"
+                                className="screen-button"
+                                onClick={() => {
+                                    setIsDesktopOpen(!isDesktopOpen);
+                                }}
+                            >
+                                Screen
+                            </button>
+                        )}
+                {bot === undefined
+                    ? null
+                    : (
+                            <button
+                                type="button"
                                 className="rules-button"
                                 onClick={() => {
                                     setRulesBotId(isRulesOpen ? undefined : bot.id);
@@ -193,6 +214,17 @@ function ConversationView({
                             </button>
                         )}
             </header>
+            {isDesktopOpen
+                ? (
+                        <Suspense fallback={<p className="desktop-status">Loading the screen...</p>}>
+                            {createElement(lazyDesktopPanel, {
+                                onClose: () => {
+                                    setIsDesktopOpen(false);
+                                },
+                            })}
+                        </Suspense>
+                    )
+                : null}
             {isRulesOpen
                 ? (
                         <RulesPanel
