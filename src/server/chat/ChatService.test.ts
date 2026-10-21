@@ -11,6 +11,7 @@ import { buildPng } from '../attachments/testImages.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
 import { PROFILE_SERVER_NAME, SHARE_FILE_TOOL_FULL_NAME, UPDATE_PROFILE_TOOL_FULL_NAME } from '../agent/createProfileToolServer.ts';
 import { BrowserControl } from '../desktop/BrowserControl.ts';
+import { RuleStore } from '../store/RuleStore.ts';
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
 import { BotSecrets } from '../secrets/BotSecrets.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME } from '../secrets/createSecretTools.ts';
@@ -1040,6 +1041,25 @@ describe('ChatService', () => {
             .rejects.toThrow('must use https');
         expect((await service.listMessages(bot.id)) ?? [])
             .toEqual([]);
+    });
+
+    it('reads the owner rules for each turn and passes the blocked tools', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const ruleStore = new RuleStore(opened.db);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, ruleStore });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await ruleStore.add(bot.id, { kind: 'block', text: 'Never delete files.', blockedTools: ['Bash(rm:*)'] });
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const turnRequest = runner.receivedRequests[0];
+
+        expect(turnRequest?.disallowedTools)
+            .toEqual(['Bash(rm:*)']);
+        expect(turnRequest?.systemPrompt)
+            .toContain('- Not allowed: Never delete files.');
     });
 
     it('stops a turn without hanging when the stop arrives before the runner starts', async () => {

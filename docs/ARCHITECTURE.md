@@ -346,7 +346,10 @@ site in the form and saves the value with `BotSecrets` instead of the setup.
 `BotSecrets` (`src/server/secrets/`) stores `{ site, value }` in the vault
 under `BOT_<hash of the bot id>_<NAME>`, so each bot has its own names. The
 form closes and a system message says what was saved, without the value. The
-bot does not see the value. The owner tells the bot to continue.
+bot does not see the value. The owner tells the bot to continue. Names that
+start with `ANTHROPIC_` or `CLAUDE_` are refused. A second answer to a form
+while the first is saved is refused. The setup's recovery ignores forms with
+a site, so a bot form never becomes the setup's API key form.
 
 `browser_type_secret` takes a saved name. The server reads the value and calls
 `BrowserControl.typeSecret`. In one DevTools connection it creates an isolated
@@ -356,10 +359,21 @@ input, or an input whose autocomplete says `current-password`, `new-password`,
 `one-time-code`, `cc-number` or `cc-csc`. A focused frame is refused. Only then
 does it type the value with `Input.insertText`. A search box or a text field is
 refused, so a page cannot get the value into an address, onto the screen or
-into a post. The tool result never holds the value. Names that
-start with `ANTHROPIC_` or `CLAUDE_` are refused. A second answer to a form
-while the first is saved is refused. The setup's recovery ignores forms with
-a site, so a bot form never becomes the setup's API key form.
+into a post. The tool result never holds the value.
+
+## Owner rules
+
+`RuleStore` keeps the owner's rules in the `bot_rules` table. Each row has the
+bot, a kind (`allow` or `block`), a sentence and a list of blocked tools. The
+routes `GET` and `POST /api/bots/:id/rules` and `DELETE
+/api/bots/:id/rules/:ruleId` sit behind the session cookie. `parseRuleInput`
+checks the input: a sentence of 1 to 300 characters, at most 20 tool names as
+the SDK spells them, optionally with a pattern such as `Bash(rm:*)`. Only a
+block rule can name tools. The bot has no tool to read or change rules.
+
+Each turn reads the bot's rules. `buildSystemPrompt` lists the sentences as
+owner rules, and the blocked tools go to the SDK as `disallowedTools`, which
+wins over `allowedTools`.
 
 ## Setup conversation
 

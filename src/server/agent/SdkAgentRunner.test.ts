@@ -286,11 +286,19 @@ describe('buildQueryOptions', () => {
         expect(options.systemPrompt).not.toHaveProperty('append');
     });
 
+    it('passes the tools the owner blocked as disallowedTools', () => {
+        const options = buildQueryOptions(buildRequest({ disallowedTools: ['Bash(rm:*)', 'WebFetch'] }), {}, abortController);
+
+        expect(options.disallowedTools)
+            .toEqual(['Bash(rm:*)', 'WebFetch']);
+    });
+
     it('leaves out MCP servers and allowed tools when the request has none', () => {
         const options = buildQueryOptions(buildRequest({}), {}, abortController);
 
         expect(options).not.toHaveProperty('mcpServers');
         expect(options).not.toHaveProperty('allowedTools');
+        expect(options).not.toHaveProperty('disallowedTools');
     });
 });
 

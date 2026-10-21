@@ -25,6 +25,7 @@ import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secre
 import { TYPE_SECRET_TOOL_FULL_NAME, createTypeSecretTool } from '../secrets/createTypeSecretTool.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
+import type { RuleStore } from '../store/RuleStore.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
 import type { SetupAction, SetupConversation } from '../setup/SetupConversation.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
@@ -60,6 +61,8 @@ interface ChatServiceOptions {
     browser?: BrowserControl | undefined;
     // Where the secrets the bot asks for are kept. Without it the bot cannot ask for one.
     botSecrets?: BotSecrets | undefined;
+    // The owner's rules for each bot. Without it turns run without rules.
+    ruleStore?: RuleStore | undefined;
 }
 
 interface SharedFileDownload {
@@ -113,6 +116,7 @@ interface TurnContext {
     images: TurnImage[];
     systemPrompt: string;
     mcpServers: NonNullable<TurnRequest['mcpServers']>;
+    disallowedTools: string[];
     additionalDirectories: string[];
 }
 
@@ -322,6 +326,7 @@ class ChatService {
     private readonly botSecrets: BotSecrets | undefined;
     // Bot secret forms with an answer in progress, by message id.
     private readonly answeringForms = new Set<string>();
+    private readonly ruleStore: RuleStore | undefined;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
     private setup: SetupConversation | undefined;
@@ -343,6 +348,7 @@ class ChatService {
         this.maxShareBytes = options.maxShareBytes ?? readMaxShareBytes();
         this.browser = options.browser;
         this.botSecrets = options.botSecrets;
+        this.ruleStore = options.ruleStore;
     }
 
     // Uploads live outside the agent's writable workspace. The agent reads them and cannot change them.
@@ -1092,6 +1098,9 @@ class ChatService {
             const images = readTurnImages(uploads);
             // The upload folder is passed on every turn, so earlier uploads stay readable by path.
             const additionalDirectories = [this.uploadDirFor(botId)];
+            // Rules are read for each turn, so a change in the web app applies to the next message.
+            const ownerRules = this.ruleStore === undefined ? [] : await this.ruleStore.list(botId);
+            const disallowedTools = ownerRules.flatMap(rule => rule.blockedTools);
             const turnContext: TurnContext = {
                 additionalDirectories,
                 botId,
@@ -1099,7 +1108,8 @@ class ChatService {
                 abortController,
                 workspaceDir,
                 images,
-                systemPrompt: buildSystemPrompt(bot, { hasBrowser: this.browser !== undefined }),
+                systemPrompt: buildSystemPrompt(bot, { hasBrowser: this.browser !== undefined, ownerRules }),
+                disallowedTools,
                 mcpServers: { [PROFILE_SERVER_NAME]: profileServer },
             };
             const firstAttempt = await this.runAttempt(turnContext, bot.sessionId, turnState);
@@ -1177,6 +1187,7 @@ class ChatService {
             systemPrompt: turnContext.systemPrompt,
             mcpServers: turnContext.mcpServers,
             allowedTools: this.allowedToolNames(),
+            disallowedTools: turnContext.disallowedTools,
             additionalDirectories: turnContext.additionalDirectories,
             ...sessionOption,
         };

@@ -99,4 +99,15 @@ Status: **open** means the default is in use and waits for the owner.
 
 ## Permissions in plain language (#45)
 
-- Status: open. No default yet. Work on this item waits for the owner.
+- Status: open
+- Default: rules live per bot. Only the owner changes them, through owner-only
+  routes and a panel in the web app (#56). The bot has no tool for them, so a
+  web page cannot talk it into more rights.
+- Each rule is a sentence. Every sentence goes into the system prompt as an
+  owner rule. Block rules can also name tools, such as `Bash(rm:*)` or
+  `WebFetch`, and the SDK refuses those through `disallowedTools`.
+- An allow rule cannot name tools, so it never widens what the bot can do.
+- A blocked call is refused by the SDK, and the bot continues. A review agent
+  that checks each call against the sentences is the next roadmap item.
+- Other options: rules for all bots at once, or a turn that pauses and asks the
+  owner when a call is blocked.

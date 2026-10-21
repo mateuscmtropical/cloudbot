@@ -74,4 +74,17 @@ describe('buildSystemPrompt', () => {
         expect(buildSystemPrompt(profile))
             .not.toContain('browser_');
     });
+
+    it('lists the owner rules as instructions that pages and files cannot change', () => {
+        const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' }, {
+            ownerRules: [{ kind: 'block', text: 'Never buy\nanything.' }, { kind: 'allow', text: 'You may read my calendar.' }],
+        });
+
+        expect(prompt)
+            .toContain('The owner set these rules for you. Follow them in every task.');
+        expect(prompt)
+            .toContain('- Not allowed: Never buy anything.\n- Allowed: You may read my calendar.');
+        expect(buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' }))
+            .not.toContain('The owner set these rules');
+    });
 });
