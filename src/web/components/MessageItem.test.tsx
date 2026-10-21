@@ -89,6 +89,17 @@ describe('file messages', () => {
             .toBeTruthy();
     });
 
+    it('does not preview a large image', () => {
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const body: MessageBody = { kind: 'file', name: 'huge.png', mimeType: 'image/png', sizeBytes: 6 * 1024 * 1024, fileId: 'f4' };
+        const message = { id: 'm4', botId: 'bot', role: 'assistant' as const, sequence: 6, createdAt: 6, body };
+
+        render(<MessageItem message={message} actions={actions} />);
+
+        expect(screen.queryByRole('img'))
+            .toBeNull();
+    });
+
     it('does not preview an svg file', () => {
         const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
         const body: MessageBody = { kind: 'file', name: 'logo.svg', mimeType: 'image/svg+xml', sizeBytes: 100, fileId: 'f3' };

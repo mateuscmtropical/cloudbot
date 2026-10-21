@@ -8,8 +8,10 @@ import { CodeField } from './CodeField.tsx';
 import { LinkCard } from './LinkCard.tsx';
 import { SecureForm } from './SecureForm.tsx';
 
-// Raster images only. An img tag never runs scripts in them, and the server sends nothing else as these types.
+// Raster images only. An img tag never runs scripts, so a file with another content under these types just fails to show.
 const PREVIEW_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+// Larger images keep only the download link, so opening the chat does not fetch big files.
+const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
 
 interface MessageActions {
     // Settles when the server answered.
@@ -95,7 +97,7 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
 
             return (
                 <div className="setup-card file-card">
-                    {PREVIEW_IMAGE_TYPES.has(body.mimeType)
+                    {PREVIEW_IMAGE_TYPES.has(body.mimeType) && body.sizeBytes <= MAX_PREVIEW_BYTES
                         ? <img className="file-preview" src={fileUrl} alt={body.name} loading="lazy" />
                         : null}
                     <a className="link-card" href={fileUrl} download={body.name}>

@@ -122,7 +122,9 @@ async function shareIfAsked(data: string, showOwner: boolean | undefined, shareS
         await shareScreenshot(data);
 
         return 'The owner can see this screenshot in the chat.';
-    } catch {
+    } catch (error: unknown) {
+        console.error('Could not post a screenshot to the chat:', error);
+
         return 'The screenshot could not be shown in the chat.';
     }
 }
