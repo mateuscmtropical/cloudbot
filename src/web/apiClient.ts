@@ -238,6 +238,33 @@ async function removeRoutine(botId: string, routineId: string): Promise<void> {
     }
 }
 
+// The model choice of each kind of work. A null choice is the default, or no helper for browsing and documents.
+interface ModelSettings {
+    chat: string | null;
+    routines: string | null;
+    review: string | null;
+    browsing: string | null;
+    documents: string | null;
+}
+
+interface ModelSettingsResponse extends ModelSettings {
+    // The aliases the server accepts. The panel offers exactly these.
+    aliases: string[];
+}
+
+function getModelSettings(botId: string): Promise<ModelSettingsResponse> {
+    const path = botPath(botId, '/models');
+
+    return requestJson<ModelSettingsResponse>(path, {});
+}
+
+function saveModelSettings(botId: string, settings: ModelSettings): Promise<ModelSettings> {
+    const path = botPath(botId, '/models');
+    const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) };
+
+    return requestJson<ModelSettings>(path, init);
+}
+
 // onOpen runs on the first connection and on every reconnect. Events missed while
 // the stream was down are lost, so the caller reloads the conversation there.
 function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void, onOpen: () => void): () => void {
@@ -259,7 +286,7 @@ function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void, o
     };
 }
 
-export type { MessagePageRequest, NewRuleRequest };
+export type { MessagePageRequest, ModelSettings, ModelSettingsResponse, NewRuleRequest };
 export {
     RequestFailedError,
     listBots,
@@ -281,4 +308,6 @@ export {
     removeRule,
     listRoutines,
     removeRoutine,
+    getModelSettings,
+    saveModelSettings,
 };

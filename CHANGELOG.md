@@ -9,11 +9,12 @@ All notable changes to this project are listed here. The format follows
 ### Fixed
 
 - The buttons inside the Rules panel had no background and their text could not be read.
-- The header buttons are one group now. On windows up to 1000px wide they sit in a row after the bot name instead of covering it.
+- The header buttons are one group now. On windows up to 1200px wide they sit in a row after the bot name instead of covering it, and on a phone they take a second row.
 - `browser_click` checks the focus after a click. A click on a field that did not take the focus is repeated once, and the result tells the model whether a field has the focus.
 
 ### Added
 
+- Models panel: the Models button in the conversation header sets the model of each kind of work, with a select per kind. Helpers show "No helper" when unset. `GET /api/bots/:id/models` also returns the allowed aliases. The bot can change its models in the chat with `models_set`, which goes through the review agent.
 - Helper agents: the owner can pick a model for `browsing` (the browser tools) and for `documents` (the file tools and `share_file`). A helper exists only when its model is set. The main agent hands that work to the helper with the Agent tool. The owner's blocked tools apply inside helpers too. The helper choices use the same `GET` and `PUT /api/bots/:id/models`.
 - Model choice per kind of work: the owner picks a model for chat turns, for routine turns and for the review agent, with `GET` and `PUT /api/bots/:id/models`. An unset choice keeps the CLI default. A choice is an SDK alias (`fable`, `opus`, `sonnet` or `haiku`) or a full `claude-` model id. Routine turns use the routines choice and fall back to the chat choice.
 - Routines panel: the Routines button in the conversation header lists the bot's routines with their prompt, their schedule in UTC, the next run and the last run. Remove deletes a routine from the list. The panel says the bot creates routines when asked in the chat and marks routines that are off.

@@ -1859,6 +1859,21 @@ describe('ChatService model choices', () => {
             .not.toContain('Agent');
     });
 
+    it('lets the bot change its models with models_set when a model store is set', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        expect(runner.receivedRequests[0]?.allowedTools)
+            .toContain('mcp__cloudbot__models_set');
+        expect(runner.receivedRequests[0]?.systemPrompt)
+            .toContain('models_set');
+    });
+
     it('leaves the model to the CLI default when nothing is chosen', async () => {
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
         const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));

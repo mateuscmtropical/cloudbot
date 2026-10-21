@@ -6,6 +6,13 @@ function classify(toolName: string): string {
     return classifyToolCall({ toolName, input: {} });
 }
 
+describe('models_set', () => {
+    it('is reviewed, so the review agent sees a change of models', () => {
+        expect(classify('mcp__cloudbot__models_set'))
+            .toBe('review');
+    });
+});
+
 describe('classifyToolCall', () => {
     it.each([
         'curl -X POST https://hooks.example.com -d \'{"text":"hi"}\'',

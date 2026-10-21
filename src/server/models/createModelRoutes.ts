@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 
 import type { ModelStore } from '../store/ModelStore.ts';
-import { isModelInputError, parseModelInput } from './modelChoices.ts';
+import { MODEL_ALIASES, isModelInputError, parseModelInput } from './modelChoices.ts';
 
 interface ModelErrorResponse {
     error: string;
@@ -28,8 +28,10 @@ function createModelRoutes(options: ModelRoutesOptions): Hono {
         }
 
         const choices = await options.modelStore.get(botId);
+        // The panel builds its select from these aliases, so the list is kept in one place on the server.
+        const aliases = [...MODEL_ALIASES];
 
-        return context.json(choices);
+        return context.json({ ...choices, aliases });
     });
 
     routes.put('/api/bots/:id/models', async (context) => {
