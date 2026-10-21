@@ -157,7 +157,7 @@ is left.
 |---|---|
 | `browser_open` | Opens an http or https address, waits up to 15 seconds for it to load and returns its title, address and visible text |
 | `browser_read` | Returns the title, address and visible text of the open page |
-| `browser_screenshot` | Returns a PNG of the page to the model |
+| `browser_screenshot` | Returns a PNG of the page to the model. With `showOwner`, it is also posted to the chat |
 | `browser_click` | Clicks at a point, in screenshot pixels |
 | `browser_type` | Types text into the focused field |
 | `browser_key` | Presses Enter, Tab, Escape, Backspace, an arrow key, PageUp or PageDown |
@@ -312,7 +312,15 @@ including html and svg, is `application/octet-stream`.
 `GET /api/bots/:id/messages/:mid/file` finds the file through the message, so a
 download needs the message id and the right bot. It sends the copy with
 `Content-Disposition: attachment`, `nosniff` and `no-store`. A missing copy
-answers 404. The web app shows a download link in the message.
+answers 404. The web app shows a download link in the message. For PNG, JPEG,
+GIF and WEBP files up to 5 MB it also shows the image above the link. An
+`img` tag never runs scripts, so a file with the wrong bytes only fails to show.
+
+`ChatService.shareScreenshot` posts a screenshot from `browser_screenshot`
+with `showOwner`. It decodes the PNG, checks the same 50 MB limit and writes it
+to the same share folder with mode 0600, under a random file id. The message
+name is `screenshot-YYYY-MM-DD-HH-MM-SS.png` in UTC. Screenshots are cleaned
+up with the other shared copies.
 
 `ChatService.cleanUploads` also removes shared copies in `<dataDir>/shared`
 whose modification time is older than `CLOUDBOT_UPLOAD_RETENTION_DAYS`. The age

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { AgentEvent } from '../agent/AgentEvent.ts';
@@ -121,6 +121,7 @@ const MAX_MESSAGE_PAGE_LIMIT = 200;
 const AGENT_UPLOAD_ROOT = '/var/lib/cloudbot-uploads';
 const MAX_PENDING_FILES = 10;
 const SHARE_DIR_MODE = 0o700;
+const SHARE_FILE_MODE = 0o600;
 const FILE_ID_PATTERN = /^[0-9a-f-]{36}$/;
 // Used when the runner reports a limit without a reset time.
 const USAGE_LIMIT_FALLBACK_WAIT_MS = 5 * 60 * 1000;
@@ -284,6 +285,15 @@ function formatResumeTime(resumeAt: number): string {
     return `${minuteText.replace('T', ' ')} UTC`;
 }
 
+// For example screenshot-2026-10-21-03-15-42.png, in UTC.
+function buildScreenshotName(takenAt: Date): string {
+    const isoText = takenAt.toISOString();
+    const stamp = isoText.slice(0, 19)
+        .replaceAll(/[T:]/g, '-');
+
+    return `screenshot-${stamp}.png`;
+}
+
 function reportBackgroundError(error: unknown): void {
     console.error('The chat queue failed outside a request', error);
 }
@@ -400,6 +410,37 @@ class ChatService {
         this.publish(botId, { type: 'message', message: toChatMessage(storedMessage) });
 
         return { name: copy.name, sizeBytes: copy.sizeBytes };
+    }
+
+    // Posts a screenshot from the bot's browser to the chat, stored like a shared file.
+    async shareScreenshot(botId: string, pngBase64: string): Promise<void> {
+        const image = Buffer.from(pngBase64, 'base64');
+
+        if (image.length === 0 || image.length > this.maxShareBytes) {
+            throw new Error('The screenshot is empty or too large.');
+        }
+
+        const shareDir = this.shareDirFor(botId);
+        const fileId = randomUUID();
+        const copyPath = join(shareDir, fileId);
+        const name = buildScreenshotName(new Date());
+
+        await mkdir(shareDir, { recursive: true, mode: SHARE_DIR_MODE });
+        await writeFile(copyPath, image, { flag: 'wx', mode: SHARE_FILE_MODE });
+
+        const body: FileBody = { kind: 'file', name, mimeType: 'image/png', sizeBytes: image.length, fileId };
+        let storedMessage;
+
+        try {
+            storedMessage = await this.messageStore.add({ botId, role: 'assistant', kind: body.kind, content: body });
+        } catch (error: unknown) {
+            // Without its message nothing points to the copy, so it would stay on the disk for good.
+            await rm(copyPath, { force: true });
+
+            throw error;
+        }
+
+        this.publish(botId, { type: 'message', message: toChatMessage(storedMessage) });
     }
 
     private uploadRoot(): string {
@@ -952,7 +993,12 @@ class ChatService {
 
             // The profile tool and prompt are built from the bot as it is now, so a
             // change made in the previous turn already applies.
-            const browserTools = this.browser === undefined ? [] : createBrowserTools(this.browser);
+            const browserTools = this.browser === undefined
+                ? []
+                : createBrowserTools(
+                        this.browser,
+                        pngBase64 => this.shareScreenshot(botId, pngBase64),
+                    );
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
@@ -1123,5 +1169,5 @@ class ChatService {
     }
 }
 
-export { ChatService, DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError };
+export { buildScreenshotName, ChatService, DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError };
 export type { ChatEventListener, ChatServiceOptions, MessagePageOptions, SharedFileDownload };

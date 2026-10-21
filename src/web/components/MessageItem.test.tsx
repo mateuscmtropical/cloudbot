@@ -70,5 +70,44 @@ describe('file messages', () => {
             .toBe('report q1.pdf');
         expect(screen.getByText('2.0 KB'))
             .toBeTruthy();
+        expect(screen.queryByRole('img'))
+            .toBeNull();
+    });
+
+    it('shows a preview of an image file, such as a screenshot', () => {
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const body: MessageBody = { kind: 'file', name: 'screenshot-2026-10-21-03-15-42.png', mimeType: 'image/png', sizeBytes: 5000, fileId: 'f2' };
+        const message = { id: 'm2', botId: 'bot', role: 'assistant' as const, sequence: 4, createdAt: 4, body };
+
+        render(<MessageItem message={message} actions={actions} />);
+
+        const image = screen.getByRole('img', { name: 'screenshot-2026-10-21-03-15-42.png' });
+
+        expect(image.getAttribute('src'))
+            .toBe('/api/bots/bot/messages/m2/file');
+        expect(screen.getByRole('link', { name: 'Download screenshot-2026-10-21-03-15-42.png' }))
+            .toBeTruthy();
+    });
+
+    it('does not preview a large image', () => {
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const body: MessageBody = { kind: 'file', name: 'huge.png', mimeType: 'image/png', sizeBytes: 6 * 1024 * 1024, fileId: 'f4' };
+        const message = { id: 'm4', botId: 'bot', role: 'assistant' as const, sequence: 6, createdAt: 6, body };
+
+        render(<MessageItem message={message} actions={actions} />);
+
+        expect(screen.queryByRole('img'))
+            .toBeNull();
+    });
+
+    it('does not preview an svg file', () => {
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const body: MessageBody = { kind: 'file', name: 'logo.svg', mimeType: 'image/svg+xml', sizeBytes: 100, fileId: 'f3' };
+        const message = { id: 'm3', botId: 'bot', role: 'assistant' as const, sequence: 5, createdAt: 5, body };
+
+        render(<MessageItem message={message} actions={actions} />);
+
+        expect(screen.queryByRole('img'))
+            .toBeNull();
     });
 });
