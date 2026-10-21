@@ -4,6 +4,7 @@ import { BrowserError } from './BrowserControl.ts';
 import type { BrowserControl } from './BrowserControl.ts';
 import { BROWSER_TOOL_FULL_NAMES, createBrowserTools } from './createBrowserTools.ts';
 import type { BrowserToolResult } from './createBrowserTools.ts';
+import { ScreenHolder } from './ScreenHolder.ts';
 
 type ToolHandler = (args: Record<string, unknown>, extra: unknown) => Promise<BrowserToolResult>;
 
@@ -95,6 +96,42 @@ describe('createBrowserTools', () => {
 
         expect(result)
             .toEqual({ content: [{ type: 'text', text: 'Only http and https addresses can be opened.' }], isError: true });
+    });
+
+    it('refuses every browser tool while the owner holds the screen', async () => {
+        const { browser, calls } = createFakeBrowser();
+        const screen = new ScreenHolder();
+        const tools = createBrowserTools(browser, undefined, screen);
+
+        screen.giveToPerson();
+
+        const results = await Promise.all(tools.map((candidate) => {
+            const handler = candidate.handler as unknown as ToolHandler;
+
+            return handler({ url: 'https://example.com', x: 1, y: 1, text: 'a', key: 'Enter', deltaY: 10 }, {});
+        }));
+
+        expect(results.every(result => result.isError === true))
+            .toBe(true);
+        expect(JSON.stringify(results[0]?.content))
+            .toContain('owner has the screen');
+        expect(calls)
+            .toEqual({ clicks: [], typed: [], keys: [], scrolls: [] });
+    });
+
+    it('works again after the owner gives the screen back', async () => {
+        const { browser } = createFakeBrowser();
+        const screen = new ScreenHolder();
+        const tools = createBrowserTools(browser, undefined, screen);
+        const readHandler = tools.find(candidate => candidate.name === 'browser_read')?.handler as unknown as ToolHandler;
+
+        screen.giveToPerson();
+        screen.giveToBot();
+
+        const result = await readHandler({}, {});
+
+        expect(result.isError)
+            .toBeUndefined();
     });
 
     it('shows the screenshot to the owner only when asked', async () => {

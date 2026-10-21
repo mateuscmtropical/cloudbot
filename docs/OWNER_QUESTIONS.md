@@ -24,10 +24,10 @@ Status: **open** means the default is in use and waits for the owner.
 ### Live view is view only
 
 - Status: open
-- Default: the Screen panel is view only. The browser client ignores mouse and
-  keyboard input. The server proxy forwards all bytes in both directions, so the
-  limit is in the client for now. The screen handoff will add control, and
-  then the server should filter input messages while the bot has the screen.
+- Default: the Screen panel is view only unless the owner holds the screen.
+  The server proxy reads the VNC messages from the browser and drops key,
+  pointer and clipboard messages while the bot holds the screen. It closes the
+  connection for a message type it cannot frame.
 - Why: the roadmap says the bot never acts while a person has the screen, and
   that needs the handoff state first.
 - Other options: let the owner control the screen at any time.
@@ -94,6 +94,25 @@ Status: **open** means the default is in use and waits for the owner.
   but it is not tested here.
 - Other options: run Chromium in its own network namespace, or block
   loopback addresses for web pages with a proxy rule.
+
+### Screen handoff (#65)
+
+- Status: open
+- Default: one holder for the whole desktop, `bot` or `person`, kept in memory.
+  After a restart the bot holds the screen again. The bot gives the screen away
+  with `request_screen`. Only the owner takes it back, through the session
+  routes, because the bot has no tool for it. While the owner holds it, the
+  `browser_` tools refuse. Giving the screen back does not start a turn. The
+  owner sends the next message.
+- Limits: the guard covers the `browser_` tools and the live view. The bot's
+  shell shares the container, so it could still reach x11vnc on `127.0.0.1:5900`
+  or the DevTools port directly, as the localhost entry above says. A browser
+  action that is already running when the owner takes the screen finishes. Pointer
+  moves from the owner that arrive after the screen goes back are dropped.
+  Key releases and button releases always pass. The live view accepts only RFB 3.8 and
+  closes on message types it does not know, such as desktop resize.
+- Other options: one holder for each bot, which matters when v0.5 adds bots
+  that share one browser.
 
 ## Secure form for secrets the bot uses (#44)
 

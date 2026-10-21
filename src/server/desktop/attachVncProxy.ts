@@ -8,10 +8,14 @@ import type { WebSocket } from 'ws';
 
 import { SESSION_COOKIE_NAME } from '../access/requireSession.ts';
 import type { SetupAccess } from '../access/SetupAccess.ts';
+import { RfbInputFilter } from './RfbInputFilter.ts';
+import type { ScreenHolder } from './ScreenHolder.ts';
 
 interface VncProxyOptions {
     server: Server;
     access: SetupAccess;
+    // Mouse and keyboard reach the desktop only while a person holds the screen.
+    screen: ScreenHolder;
     vncPort?: number;
 }
 
@@ -51,8 +55,9 @@ function resumeWhenDrained(webSocket: WebSocket, vncSocket: Socket): void {
 }
 
 // Binary frames in, raw RFB bytes out, and the other way round. noVNC speaks WebSocket, x11vnc speaks TCP.
-function bridgeToVnc(webSocket: WebSocket, vncPort: number): void {
+function bridgeToVnc(webSocket: WebSocket, vncPort: number, screen: ScreenHolder): void {
     const vncSocket = connect({ host: VNC_HOST, port: vncPort });
+    const inputFilter = new RfbInputFilter(() => screen.isPersonHolding);
 
     vncSocket.on('data', (chunk: Buffer) => {
         webSocket.send(chunk);
@@ -70,7 +75,17 @@ function bridgeToVnc(webSocket: WebSocket, vncPort: number): void {
         webSocket.close();
     });
     webSocket.on('message', (data: Buffer) => {
-        vncSocket.write(data);
+        try {
+            const allowed = inputFilter.filter(data);
+
+            if (allowed.length > 0) {
+                vncSocket.write(allowed);
+            }
+        } catch {
+            // A stream that cannot be framed could carry input the filter cannot see.
+            webSocket.close();
+            vncSocket.destroy();
+        }
     });
     webSocket.on('close', () => {
         vncSocket.destroy();
@@ -110,7 +125,7 @@ function attachVncProxy(options: VncProxyOptions): void {
                 }
 
                 webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
-                    bridgeToVnc(webSocket, vncPort);
+                    bridgeToVnc(webSocket, vncPort, options.screen);
                 });
             })
             .catch(() => {

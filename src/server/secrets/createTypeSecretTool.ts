@@ -5,6 +5,8 @@ import { z } from 'zod/v4';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
 import { BrowserError } from '../desktop/BrowserControl.ts';
 import type { BrowserControl } from '../desktop/BrowserControl.ts';
+import { SCREEN_HELD_BY_PERSON_MESSAGE } from '../desktop/ScreenHolder.ts';
+import type { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import type { BotSecret } from './BotSecrets.ts';
 import type { SecretToolResult } from './createSecretTools.ts';
 
@@ -27,12 +29,16 @@ function textResult(text: string, isError = false): SecretToolResult {
     return isError ? { content: [content], isError: true } : { content: [content] };
 }
 
-function createTypeSecretTool(browser: BrowserControl, readSecret: SecretReader): SdkMcpToolDefinition<typeof TYPE_SECRET_SHAPE> {
+function createTypeSecretTool(browser: BrowserControl, readSecret: SecretReader, screen?: ScreenHolder): SdkMcpToolDefinition<typeof TYPE_SECRET_SHAPE> {
     return tool(
         TYPE_SECRET_TOOL_NAME,
         TYPE_SECRET_DESCRIPTION,
         TYPE_SECRET_SHAPE,
         async (args): Promise<SecretToolResult> => {
+            if (screen?.isPersonHolding === true) {
+                return textResult(SCREEN_HELD_BY_PERSON_MESSAGE, true);
+            }
+
             const secret = readSecret(args.name);
 
             if (secret === undefined) {

@@ -22,6 +22,8 @@ import { BROWSER_TOOL_FULL_NAMES, createBrowserTools } from '../desktop/createBr
 import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
+import { REQUEST_SCREEN_TOOL_FULL_NAME, createRequestScreenTool } from '../desktop/createScreenTools.ts';
+import type { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import { TYPE_SECRET_TOOL_FULL_NAME, createTypeSecretTool } from '../secrets/createTypeSecretTool.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
@@ -61,6 +63,8 @@ interface ChatServiceOptions {
     browser?: BrowserControl | undefined;
     // Where the secrets the bot asks for are kept. Without it the bot cannot ask for one.
     botSecrets?: BotSecrets | undefined;
+    // Who holds the screen. With a browser it gives the bot the request_screen tool.
+    screen?: ScreenHolder | undefined;
     // The owner's rules for each bot. Without it turns run without rules.
     ruleStore?: RuleStore | undefined;
 }
@@ -324,6 +328,7 @@ class ChatService {
     private readonly maxShareBytes: number;
     private readonly browser: BrowserControl | undefined;
     private readonly botSecrets: BotSecrets | undefined;
+    private readonly screen: ScreenHolder | undefined;
     // Bot secret forms with an answer in progress, by message id.
     private readonly answeringForms = new Set<string>();
     private readonly ruleStore: RuleStore | undefined;
@@ -348,6 +353,7 @@ class ChatService {
         this.maxShareBytes = options.maxShareBytes ?? readMaxShareBytes();
         this.browser = options.browser;
         this.botSecrets = options.botSecrets;
+        this.screen = options.screen;
         this.ruleStore = options.ruleStore;
     }
 
@@ -664,6 +670,26 @@ class ChatService {
         }
 
         return this.setup.answer(botId, messageId, action, value);
+    }
+
+    // Gives the screen to the owner and posts a note in the chat. The browser tools stop until the owner gives it back.
+    async requestScreen(botId: string, reason: string): Promise<void> {
+        const body: TextBody = { kind: 'text', text: `I need you on my screen. ${reason}\n\nOpen the Screen panel, do what is needed, then give the screen back and send me a message.` };
+
+        // The holder changes first, so a browser tool called in the same moment is already refused.
+        const wasHeldByPerson = this.screen?.isPersonHolding === true;
+
+        this.screen?.giveToPerson();
+
+        try {
+            await this.saveAndPublish(botId, 'assistant', body);
+        } catch (error: unknown) {
+            if (!wasHeldByPerson) {
+                this.screen?.giveToBot();
+            }
+
+            throw error;
+        }
     }
 
     // Posts a secure form the bot asked for. Throws BotSecretError with a message for the model.
@@ -1086,13 +1112,15 @@ class ChatService {
                 : createBrowserTools(
                         this.browser,
                         pngBase64 => this.shareScreenshot(botId, pngBase64),
+                        this.screen,
                     );
+            const screenTools = this.createScreenTools(botId);
             const secretTools = this.createSecretTools(botId);
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...secretTools],
+                [...browserTools, ...secretTools, ...screenTools],
             );
             const prompt = uploads.length === 0 ? text : `${text}\n\n${describeAttachments(uploads)}`;
             const images = readTurnImages(uploads);
@@ -1159,9 +1187,18 @@ class ChatService {
         const requestTool = createRequestSecretTool((name, purpose, site) => this.requestSecret(botId, name, purpose, site));
         const typeTools = this.browser === undefined
             ? []
-            : [createTypeSecretTool(this.browser, name => botSecrets.read(botId, name))];
+            : [createTypeSecretTool(this.browser, name => botSecrets.read(botId, name), this.screen)];
 
         return [requestTool, ...typeTools];
+    }
+
+    // request_screen needs the browser and the screen state.
+    private createScreenTools(botId: string): CloudbotTool[] {
+        if (this.browser === undefined || this.screen === undefined) {
+            return [];
+        }
+
+        return [createRequestScreenTool(reason => this.requestScreen(botId, reason))];
     }
 
     // Headless turns cannot answer a permission prompt, so the cloudbot tools the bot has are allowed up front.
@@ -1170,7 +1207,9 @@ class ChatService {
         const typeSecretToolNames = this.browser === undefined ? [] : [TYPE_SECRET_TOOL_FULL_NAME];
         const secretToolNames = this.botSecrets === undefined ? [] : [REQUEST_SECRET_TOOL_FULL_NAME, ...typeSecretToolNames];
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames];
+        const screenToolNames = this.browser === undefined || this.screen === undefined ? [] : [REQUEST_SCREEN_TOOL_FULL_NAME];
+
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames, ...screenToolNames];
     }
 
     // With a session to resume, a failure before the session starts is held back

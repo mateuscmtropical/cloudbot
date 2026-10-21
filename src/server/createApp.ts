@@ -11,6 +11,8 @@ import type { SetupAccess } from './access/SetupAccess.ts';
 
 import { createChatRoutes } from './chat/createChatRoutes.ts';
 import type { ChatService } from './chat/ChatService.ts';
+import { createScreenRoutes } from './desktop/createScreenRoutes.ts';
+import type { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { createRuleRoutes } from './rules/createRuleRoutes.ts';
 import type { RuleStore } from './store/RuleStore.ts';
 
@@ -25,6 +27,7 @@ interface AppOptions {
     webRoot?: string;
     chatService?: ChatService;
     ruleStore?: RuleStore;
+    screen?: ScreenHolder;
 }
 
 const DEFAULT_WEB_ROOT = 'dist/web';
@@ -75,6 +78,12 @@ function createApp(options: AppOptions): Hono {
         const ruleRoutes = createRuleRoutes({ ruleStore: options.ruleStore, hasBot: botId => chatService.hasBot(botId) });
 
         app.route('/', ruleRoutes);
+    }
+
+    if (options.screen !== undefined) {
+        const screenRoutes = createScreenRoutes(options.screen);
+
+        app.route('/', screenRoutes);
     }
 
     app.get('/setup', async (context) => {

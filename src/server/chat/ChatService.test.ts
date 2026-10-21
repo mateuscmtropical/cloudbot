@@ -11,6 +11,8 @@ import { buildPng } from '../attachments/testImages.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
 import { PROFILE_SERVER_NAME, SHARE_FILE_TOOL_FULL_NAME, UPDATE_PROFILE_TOOL_FULL_NAME } from '../agent/createProfileToolServer.ts';
 import { BrowserControl } from '../desktop/BrowserControl.ts';
+import { REQUEST_SCREEN_TOOL_FULL_NAME } from '../desktop/createScreenTools.ts';
+import { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import { RuleStore } from '../store/RuleStore.ts';
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
 import { BotSecrets } from '../secrets/BotSecrets.ts';
@@ -969,6 +971,67 @@ describe('ChatService', () => {
         expect(withBoth.receivedRequests[0]?.allowedTools)
             .toContain(TYPE_SECRET_TOOL_FULL_NAME);
         expect(vaultOnly.receivedRequests[0]?.allowedTools).not.toContain(TYPE_SECRET_TOOL_FULL_NAME);
+    });
+
+    it('gives the screen to the owner and posts a note when the bot asks for it', async () => {
+        const screen = new ScreenHolder();
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, screen });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await service.requestScreen(bot.id, 'GitHub shows a check I cannot pass.');
+
+        const lastMessage = ((await service.listMessages(bot.id)) ?? []).at(-1);
+
+        expect(screen.holder)
+            .toBe('person');
+        expect(lastMessage?.role)
+            .toBe('assistant');
+        expect(lastMessage?.body)
+            .toMatchObject({ kind: 'text' });
+        expect(JSON.stringify(lastMessage?.body))
+            .toContain('GitHub shows a check I cannot pass.');
+    });
+
+    it('keeps the screen with the bot when the note cannot be saved', async () => {
+        const screen = new ScreenHolder();
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, screen });
+
+        await expect(service.requestScreen('missing-bot', 'Reason')).rejects.toThrow();
+        expect(screen.holder)
+            .toBe('bot');
+    });
+
+    it('does not take the screen from the owner when a second request fails', async () => {
+        const screen = new ScreenHolder();
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, screen });
+
+        screen.giveToPerson();
+
+        await expect(service.requestScreen('missing-bot', 'Reason')).rejects.toThrow();
+        expect(screen.holder)
+            .toBe('person');
+    });
+
+    it('allows request_screen only with a browser and a screen', async () => {
+        const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:1' });
+        const withBoth = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const browserOnly = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const firstService = new ChatService({ botStore, messageStore, runner: withBoth, dataDir, browser, screen: new ScreenHolder() });
+        const secondService = new ChatService({ botStore, messageStore, runner: browserOnly, dataDir, browser });
+        const firstFinished = waitForTurnFinish(firstService, bot.id);
+
+        await firstService.sendMessage(bot.id, 'Hi');
+        await firstFinished;
+
+        const secondFinished = waitForTurnFinish(secondService, bot.id);
+
+        await secondService.sendMessage(bot.id, 'Hi');
+        await secondFinished;
+
+        expect(withBoth.receivedRequests[0]?.allowedTools)
+            .toContain(REQUEST_SCREEN_TOOL_FULL_NAME);
+        expect(browserOnly.receivedRequests[0]?.allowedTools).not.toContain(REQUEST_SCREEN_TOOL_FULL_NAME);
     });
 
     it('saves the answer only in the vault, closes the form and refuses a second answer', async () => {

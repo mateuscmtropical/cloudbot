@@ -5,6 +5,8 @@ import { z } from 'zod/v4';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
 import { BROWSER_KEYS, BrowserError } from './BrowserControl.ts';
 import type { BrowserControl, BrowserKey, PageText } from './BrowserControl.ts';
+import { SCREEN_HELD_BY_PERSON_MESSAGE } from './ScreenHolder.ts';
+import type { ScreenHolder } from './ScreenHolder.ts';
 
 interface BrowserToolTextContent {
     type: 'text';
@@ -92,7 +94,12 @@ function describeDialogs(dialogs: string[]): BrowserToolTextContent[] {
 }
 
 // A BrowserError carries a message for the model. Other errors stay generic.
-async function runBrowserAction(browser: BrowserControl, action: () => Promise<BrowserToolResult>): Promise<BrowserToolResult> {
+async function runBrowserAction(browser: BrowserControl, screen: ScreenHolder | undefined, action: () => Promise<BrowserToolResult>): Promise<BrowserToolResult> {
+    // The bot never acts while a person has the screen.
+    if (screen?.isPersonHolding === true) {
+        return textResult(SCREEN_HELD_BY_PERSON_MESSAGE, true);
+    }
+
     let result: BrowserToolResult;
 
     try {
@@ -130,12 +137,12 @@ async function shareIfAsked(data: string, showOwner: boolean | undefined, shareS
 }
 
 // shareScreenshot is given when the chat can show screenshots, so browser_screenshot can post one.
-function createBrowserTools(browser: BrowserControl, shareScreenshot?: ScreenshotShareHandler): SdkMcpToolDefinition<z.ZodRawShape>[] {
+function createBrowserTools(browser: BrowserControl, shareScreenshot?: ScreenshotShareHandler, screen?: ScreenHolder): SdkMcpToolDefinition<z.ZodRawShape>[] {
     const openTool = tool(
         `${BROWSER_TOOL_PREFIX}open`,
         'Open a web page in your browser, on your screen. Returns the page title, its address and its visible text.',
         OPEN_SHAPE,
-        args => runBrowserAction(browser, async () => {
+        args => runBrowserAction(browser, screen, async () => {
             const page = await browser.open(args.url);
 
             const description = describePage(page);
@@ -147,7 +154,7 @@ function createBrowserTools(browser: BrowserControl, shareScreenshot?: Screensho
         `${BROWSER_TOOL_PREFIX}read`,
         'Read the title, address and visible text of the page that is open in your browser.',
         EMPTY_SHAPE,
-        () => runBrowserAction(browser, async () => {
+        () => runBrowserAction(browser, screen, async () => {
             const page = await browser.read();
 
             const description = describePage(page);
@@ -159,7 +166,7 @@ function createBrowserTools(browser: BrowserControl, shareScreenshot?: Screensho
         `${BROWSER_TOOL_PREFIX}screenshot`,
         `Take a screenshot of the page in your browser. The image is ${String(SCREEN_WIDTH)} by ${String(SCREEN_HEIGHT)} pixels or smaller, and its pixels are the coordinates for browser_click. Set showOwner to true to also show it to the owner in the chat, for example to show a result or a problem.`,
         SCREENSHOT_SHAPE,
-        args => runBrowserAction(browser, async () => {
+        args => runBrowserAction(browser, screen, async () => {
             const data = await browser.screenshot();
             const shareNote = await shareIfAsked(data, args.showOwner, shareScreenshot);
             const image: BrowserToolImageContent = { type: 'image', data, mimeType: 'image/png' };
@@ -172,7 +179,7 @@ function createBrowserTools(browser: BrowserControl, shareScreenshot?: Screensho
         `${BROWSER_TOOL_PREFIX}click`,
         'Click at a point of the page, in screenshot pixels. Take a screenshot first to find the point.',
         POINT_SHAPE,
-        args => runBrowserAction(browser, async () => {
+        args => runBrowserAction(browser, screen, async () => {
             const { hasFocusedField } = await browser.click(args.x, args.y);
             const focusNote = hasFocusedField ? 'A field has the focus.' : 'No field has the focus. To type, click a field.';
 
@@ -183,7 +190,7 @@ function createBrowserTools(browser: BrowserControl, shareScreenshot?: Screensho
         `${BROWSER_TOOL_PREFIX}type`,
         'Type text into the field that has focus. Click the field first.',
         TYPE_SHAPE,
-        args => runBrowserAction(browser, async () => {
+        args => runBrowserAction(browser, screen, async () => {
             await browser.typeText(args.text);
 
             return textResult('Typed the text.');
@@ -193,7 +200,7 @@ function createBrowserTools(browser: BrowserControl, shareScreenshot?: Screensho
         `${BROWSER_TOOL_PREFIX}key`,
         'Press one key in the browser, such as Enter to send a form or Tab to move to the next field.',
         KEY_SHAPE,
-        args => runBrowserAction(browser, async () => {
+        args => runBrowserAction(browser, screen, async () => {
             await browser.pressKey(args.key);
 
             return textResult(`Pressed ${args.key}.`);
@@ -203,7 +210,7 @@ function createBrowserTools(browser: BrowserControl, shareScreenshot?: Screensho
         `${BROWSER_TOOL_PREFIX}scroll`,
         'Scroll the page. A positive deltaY scrolls down and a negative one scrolls up, in pixels.',
         SCROLL_SHAPE,
-        args => runBrowserAction(browser, async () => {
+        args => runBrowserAction(browser, screen, async () => {
             await browser.scroll(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, args.deltaY);
 
             return textResult(`Scrolled by ${String(args.deltaY)} pixels.`);
