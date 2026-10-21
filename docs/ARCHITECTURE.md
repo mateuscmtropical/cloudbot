@@ -209,7 +209,7 @@ whatever the reason, such as a stop during startup or a failed start. A turn
 that got a session event keeps its files, so the agent never gets the same files
 twice.
 
-`ChatService.cleanUploads` runs on start and once a day. A pending file that was
+`ChatService.cleanUploads` runs on start and once a day, for uploads and shared files. A pending file that was
 never sent is removed after one day. Any other file in the upload folders is
 removed when its modification time is older than `CLOUDBOT_UPLOAD_RETENTION_DAYS`
 (default 30). The age counts from the upload, not from the send. A bot with a
@@ -253,7 +253,10 @@ download needs the message id and the right bot. It sends the copy with
 `Content-Disposition: attachment`, `nosniff` and `no-store`. A missing copy
 answers 404. The web app shows a download link in the message.
 
-Shared files are not cleaned up yet.
+`ChatService.cleanUploads` also removes shared copies in `<dataDir>/shared`
+whose modification time is older than `CLOUDBOT_UPLOAD_RETENTION_DAYS`. The age
+counts from the copy. A download after that gets 404. If the file message cannot
+be saved, `shareFile` removes the copy before it rethrows the error.
 
 ## Secrets
 

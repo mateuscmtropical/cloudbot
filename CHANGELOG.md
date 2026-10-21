@@ -9,6 +9,7 @@ All notable changes to this project are listed here. The format follows
 ### Added
 
 - File downloads: the bot can send a file from its workspace to the chat with the `share_file` tool. The server copies the file (at most 50 MB, regular files inside the workspace only) and the chat shows a download link. Downloads need the session cookie and are sent as attachments.
+- Shared file cleanup: copies of files the bot shared are removed `CLOUDBOT_UPLOAD_RETENTION_DAYS` days after they were shared, in the same daily job as the upload cleanup. A copy is also removed when its message cannot be saved.
 - Image check: before an attached image goes to Claude as an image block, its header and end marker are checked and its sides must be at most 8000 pixels. A file that fails is still listed by path.
 - Upload cleanup: files are removed `CLOUDBOT_UPLOAD_RETENTION_DAYS` days after the upload (default 30). Files that were never sent are removed after one day. A bot with a running or queued message keeps its files. The cleanup runs on start and once a day.
 - Messages sent while a bot answers are queued and run in order after the current turn. When Claude reports a usage limit, the turn waits for the reset time, then continues. The chat shows when it resumes. Queued messages and waits survive a restart, and Stop cancels the wait and the queue.
