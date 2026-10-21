@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BotSummary, ChatMessage, MessageBody } from '../../shared/chatTypes.ts';
 import { ConversationView } from './ConversationView.tsx';
 import type { ConversationViewProps } from './ConversationView.tsx';
+import type * as apiClientTypes from '../apiClient.ts';
 
 function createMessage(id: string, role: ChatMessage['role'], body: MessageBody): ChatMessage {
     return { id, botId: 'bot-1', role, createdAt: 1, sequence: 1, body };
@@ -72,6 +73,15 @@ function conversationElement(messages: ChatMessage[], draftText: string): ReactE
 function renderConversation(messages: ChatMessage[]): void {
     render(conversationElement(messages, ''));
 }
+
+type ApiClientModule = typeof apiClientTypes;
+
+vi.mock('../apiClient.ts', async importOriginal => ({
+    ...(await importOriginal<ApiClientModule>()),
+    getScreenHolder: vi.fn(() => Promise.resolve('bot')),
+    takeScreen: vi.fn(() => Promise.resolve('person')),
+    releaseScreen: vi.fn(() => Promise.resolve('bot')),
+}));
 
 vi.mock('@novnc/novnc', () => ({
     default: class FakeRfb {
