@@ -398,6 +398,24 @@ Each turn reads the bot's rules. `buildSystemPrompt` lists the sentences as
 owner rules, and the blocked tools go to the SDK as `disallowedTools`, which
 wins over `allowedTools`.
 
+## Tool call approval
+
+`ApprovalGate` pauses a tool call until the owner answers. `SdkAgentRunner`
+installs a `PreToolUse` hook when the turn request has `reviewToolCall`. The
+hook runs for every tool, also for the ones in `allowedTools`. It returns
+nothing for an allowed call and a `deny` with the reason for a refused one.
+
+A `ToolCallReviewer` decides for each call: `allow`, `deny` with a reason, or
+`ask` with a one line summary. `ask` posts a choice message with Approve and
+Deny (`isApproval` on the body) and waits. The owner answers through the same
+route as the setup choices, `POST /api/bots/:id/messages/:mid/choice`. Stop, a
+timeout of one hour or a failing reviewer never lets the call through. Stop and
+the timeout close the question as Deny, and a failing reviewer asks the owner.
+
+Open questions live in memory. `ChatService.resumeQueue` closes any that a
+restart left open. Without a `toolCallReviewer` option the gate does not exist
+and no call waits.
+
 ## Setup conversation
 
 `SetupConversation` in `src/server/setup/` writes scripted messages through

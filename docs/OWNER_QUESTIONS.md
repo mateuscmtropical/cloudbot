@@ -156,3 +156,14 @@ Status: **open** means the default is in use and waits for the owner.
   that checks each call against the sentences is the next roadmap item.
 - Other options: rules for all bots at once, or a turn that pauses and asks the
   owner when a call is blocked.
+
+## Approval before sensitive actions (#71)
+
+- Status: open
+- Default: a paused call waits at most one hour for the owner. Silence, Stop
+  and a restart all count as Deny. The owner answers in the chat with Approve
+  or Deny. There is no "always allow" button yet.
+- A reviewer that fails asks the owner instead of letting the call run.
+- Which calls are sensitive is decided by a reviewer. None is set yet, so
+  nothing waits until the review agent lands.
+- Other options: a longer wait, or a notification outside the chat.

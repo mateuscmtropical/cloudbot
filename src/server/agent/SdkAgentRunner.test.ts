@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import * as fileSystem from 'node:fs/promises';
-import type { Options, SDKAssistantMessage, SDKMessage, SDKResultMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { HookCallback, HookInput, Options, SDKAssistantMessage, SDKMessage, SDKResultMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { SdkAgentRunner, buildQueryOptions, mapSdkMessage } from './SdkAgentRunner.ts';
 import type { SdkQueryFunction } from './SdkAgentRunner.ts';
 import type { AgentEvent } from './AgentEvent.ts';
@@ -357,6 +357,101 @@ async function collectRunTurnEvents(runner: SdkAgentRunner, request: TurnRequest
 
     return collected;
 }
+
+describe('SdkAgentRunner tool call review', () => {
+    function getReviewHook(options: Options | undefined): HookCallback {
+        const hook = options?.hooks?.PreToolUse?.[0]?.hooks[0];
+
+        if (hook === undefined) {
+            throw new Error('No PreToolUse hook');
+        }
+
+        return hook;
+    }
+
+    async function runWithReview(reviewToolCall: NonNullable<TurnRequest['reviewToolCall']>): Promise<HookCallback> {
+        const queryFunction = vi.fn<SdkQueryFunction>(() => streamSdkMessages([]));
+        const runner = new SdkAgentRunner({ queryFunction });
+
+        await collectRunTurnEvents(runner, { ...buildRunTurnRequest(new AbortController()), reviewToolCall });
+
+        return getReviewHook(queryFunction.mock.calls[0]?.[0].options);
+    }
+
+    function buildHookInput(): HookInput {
+        return {
+            hook_event_name: 'PreToolUse',
+            tool_name: 'Bash',
+            tool_input: { command: 'ls' },
+            tool_use_id: 'tool-1',
+            session_id: 's',
+            transcript_path: '',
+            cwd: '/',
+        };
+    }
+
+    it('installs no hook without a reviewer', async () => {
+        const queryFunction = vi.fn<SdkQueryFunction>(() => streamSdkMessages([]));
+        const runner = new SdkAgentRunner({ queryFunction });
+
+        await collectRunTurnEvents(runner, buildRunTurnRequest(new AbortController()));
+
+        expect(queryFunction.mock.calls[0]?.[0].options.hooks)
+            .toBeUndefined();
+    });
+
+    it('lets the call continue when the reviewer allows it', async () => {
+        const reviewToolCall = vi.fn(() => Promise.resolve({ isAllowed: true as const }));
+        const hook = await runWithReview(reviewToolCall);
+
+        const output = await hook(buildHookInput(), 'tool-1', { signal: new AbortController().signal });
+
+        expect(output)
+            .toEqual({});
+        expect(reviewToolCall)
+            .toHaveBeenCalledWith({ toolName: 'Bash', input: { command: 'ls' } }, expect.any(AbortSignal));
+    });
+
+    it('denies the call with the reason when the reviewer refuses it', async () => {
+        const hook = await runWithReview(() => Promise.resolve({ isAllowed: false, reason: 'No.' }));
+
+        const output = await hook(buildHookInput(), 'tool-1', { signal: new AbortController().signal });
+
+        expect(output)
+            .toEqual({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'No.' } });
+    });
+
+    it('denies the call when the review throws', async () => {
+        const hook = await runWithReview(() => Promise.reject(new Error('disk full')));
+
+        const output = await hook(buildHookInput(), 'tool-1', { signal: new AbortController().signal });
+
+        expect(output)
+            .toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny' } });
+    });
+
+    it('gives the reviewer a signal that fires when the turn stops', async () => {
+        let reviewSignal: AbortSignal | undefined;
+        const abortController = new AbortController();
+        const queryFunction = vi.fn<SdkQueryFunction>(() => streamSdkMessages([]));
+        const runner = new SdkAgentRunner({ queryFunction });
+        const reviewToolCall: NonNullable<TurnRequest['reviewToolCall']> = (_call, signal) => {
+            reviewSignal = signal;
+
+            return Promise.resolve({ isAllowed: true });
+        };
+
+        await collectRunTurnEvents(runner, { ...buildRunTurnRequest(abortController), reviewToolCall });
+
+        const hook = getReviewHook(queryFunction.mock.calls[0]?.[0].options);
+
+        await hook(buildHookInput(), 'tool-1', { signal: new AbortController().signal });
+        abortController.abort();
+
+        expect(reviewSignal?.aborted)
+            .toBe(true);
+    });
+});
 
 describe('SdkAgentRunner.runTurn', () => {
     it('does not start the SDK query when the turn was stopped before it began', async () => {

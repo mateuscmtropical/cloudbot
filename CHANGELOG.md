@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Approval gate: a tool call can wait for the owner. The chat shows a question with Approve and Deny. Deny, Stop, a restart and one hour without an answer all refuse the call. No call waits until a review agent decides which ones are sensitive.
 - Document tools: the image has Python 3 with openpyxl, python-docx, python-pptx, reportlab, pypdf and matplotlib, plus pdftotext from poppler-utils. The bot builds spreadsheets, documents, slides, PDFs and charts in its workspace and sends them with `share_file`. The system prompt names the tools. The container check imports every library as the bot user.
 - Screen handoff in the web app: the Screen panel shows who holds the screen. The owner can take it and give it back with Done, take over, or keep it. The panel accepts mouse and keyboard only while the owner holds the screen, and it follows a handoff the bot starts.
 - Screen handoff on the server: the bot has a `request_screen` tool that gives the screen to the owner with a note in the chat. While the owner holds the screen, the `browser_` tools and `browser_type_secret` refuse to act. The owner takes or returns the screen with `POST /api/desktop/screen/take` and `POST /api/desktop/screen/release`, and reads the holder with `GET /api/desktop/screen`. The live view drops mouse, keyboard and clipboard input unless the owner holds the screen.

@@ -1125,6 +1125,75 @@ describe('ChatService', () => {
             .toContain('- Not allowed: Never delete files.');
     });
 
+    it('pauses a tool call until the owner approves it in the chat', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const toolCallReviewer = vi.fn(() => Promise.resolve({ decision: 'ask' as const, summary: 'Send an email to Ana' }));
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, toolCallReviewer });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const reviewToolCall = runner.receivedRequests[0]?.reviewToolCall;
+        const abortController = new AbortController();
+        const pending = reviewToolCall?.({ toolName: 'send_email', input: {} }, abortController.signal);
+
+        const question = await vi.waitFor(async () => {
+            const messages = (await service.listMessages(bot.id)) ?? [];
+            const found = messages.find(message => message.body.kind === 'choice');
+
+            expect(found)
+                .toBeDefined();
+
+            return found;
+        });
+
+        const answered = await service.answerSetup(bot.id, question?.id ?? '', 'choice', 'approve');
+
+        expect(answered.body)
+            .toMatchObject({ kind: 'choice', isApproval: true, chosenId: 'approve' });
+        await expect(pending)
+            .resolves.toEqual({ isAllowed: true });
+        await expect(service.answerSetup(bot.id, question?.id ?? '', 'choice', 'deny'))
+            .rejects.toThrow('already answered');
+    });
+
+    it('gives the turn no review hook without a reviewer', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        expect(runner.receivedRequests[0]?.reviewToolCall)
+            .toBeUndefined();
+    });
+
+    it('closes approval questions left open by a restart', async () => {
+        const toolCallReviewer = vi.fn(() => Promise.resolve({ decision: 'allow' as const }));
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, toolCallReviewer });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const body = {
+            kind: 'choice',
+            prompt: 'The bot wants your approval. Send it',
+            options: [{ id: 'approve', label: 'Approve' }, { id: 'deny', label: 'Deny' }],
+            isApproval: true,
+        };
+        const stored = await messageStore.add({ botId: bot.id, role: 'assistant', kind: 'choice', content: body });
+
+        await service.resumeQueue();
+
+        const reloaded = await messageStore.getById(stored.id);
+
+        expect(reloaded?.content)
+            .toMatchObject({ chosenId: 'deny' });
+        await expect(service.answerSetup(bot.id, stored.id, 'choice', 'approve'))
+            .rejects.toThrow('already answered');
+    });
+
     it('stops a turn without hanging when the stop arrives before the runner starts', async () => {
         const runner = new AbortOnlyRunner();
         const service = new ChatService({ botStore, messageStore, runner, dataDir });
