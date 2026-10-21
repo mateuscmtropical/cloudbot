@@ -190,7 +190,8 @@ in [OWNER_QUESTIONS.md](OWNER_QUESTIONS.md).
 
 The image installs Python 3 from Debian with `openpyxl`, `python-docx`,
 `python-pptx`, `reportlab`, `pypdf` and `matplotlib`, and `poppler-utils` for
-`pdftotext`. The bot writes spreadsheets, documents, slides, PDFs and charts
+`pdftotext`. Debian has no package for `python-pptx`, so pip installs version
+1.0.2 without dependencies, which apt provides. The bot writes spreadsheets, documents, slides, PDFs and charts
 into its workspace with its shell and sends them with `share_file`.
 `buildSystemPrompt` names the libraries. `docker/check-container.sh` imports
 each one as the `bot` user. Open choices are in

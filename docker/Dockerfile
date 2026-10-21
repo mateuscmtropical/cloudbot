@@ -22,9 +22,13 @@ FROM base AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl sudo \
         chromium fonts-dejavu-core fonts-liberation openbox procps x11vnc xterm xvfb \
-        poppler-utils python3 python3-docx python3-matplotlib python3-openpyxl \
-        python3-pptx python3-pypdf python3-reportlab \
+        poppler-utils python3 python3-docx python3-lxml python3-matplotlib python3-openpyxl \
+        python3-pil python3-pip python3-pypdf python3-reportlab python3-typing-extensions \
+        python3-xlsxwriter \
     && rm -rf /var/lib/apt/lists/*
+
+# Debian bookworm has no python3-pptx package. Its dependencies come from apt above.
+RUN python3 -m pip install --no-cache-dir --no-deps --break-system-packages python-pptx==1.0.2
 
 # cloudbot runs the server and owns the data. bot runs the Claude Code CLI and
 # cannot read the data folder, which is mode 700 and owned by cloudbot.
