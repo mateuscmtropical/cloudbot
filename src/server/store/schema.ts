@@ -158,6 +158,33 @@ const webhooks = sqliteTable('webhooks', {
         .on(table.botId),
 ]);
 
+// A page the bot checks on a schedule. Only a hash of the visible text is kept, plus the last text for the diff.
+// `lastText` is capped in size. `textHash` is null until the first check sets the baseline.
+const watches = sqliteTable('watches', {
+    id: text('id')
+        .primaryKey(),
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    name: text('name')
+        .notNull(),
+    url: text('url')
+        .notNull(),
+    intervalMinutes: integer('interval_minutes')
+        .notNull(),
+    keyword: text('keyword'),
+    textHash: text('text_hash'),
+    lastText: text('last_text'),
+    nextCheckAt: integer('next_check_at')
+        .notNull(),
+    lastCheckedAt: integer('last_checked_at'),
+    createdAt: integer('created_at')
+        .notNull(),
+}, table => [
+    index('watches_bot_id')
+        .on(table.botId),
+]);
+
 // The model the owner chose for each kind of work. A null column means the CLI default,
 // or no helper agent for browsing and documents.
 const botModels = sqliteTable('bot_models', {
@@ -177,5 +204,5 @@ const botModels = sqliteTable('bot_models', {
     documentsEffort: text('documents_effort'),
 });
 
-export { botModels, botRules, bots, messages, routines, settings, turnQueue, turnWaits, webhooks };
+export { botModels, botRules, bots, messages, routines, settings, turnQueue, turnWaits, watches, webhooks };
 export type { StoredUploadRecord };

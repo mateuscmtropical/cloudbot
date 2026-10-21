@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotRoutine } from '../../shared/routineTypes.ts';
+import type { BotWatch } from '../../shared/watchTypes.ts';
 import type { BotWebhook, CreatedBotWebhook } from '../../shared/webhookTypes.ts';
 import { RoutinesPanel } from './RoutinesPanel.tsx';
 
@@ -35,6 +36,10 @@ function stubPanelApi(options: { routines: BotRoutine[]; webhooks: BotWebhook[] 
 
         if (method === 'GET' && input.endsWith('/webhooks')) {
             return Promise.resolve(Response.json(options.webhooks));
+        }
+
+        if (method === 'GET' && input.endsWith('/watches')) {
+            return Promise.resolve(Response.json([]));
         }
 
         if (method === 'GET') {
@@ -97,7 +102,7 @@ describe('RoutinesPanel', () => {
                 return Promise.resolve(Response.json({ error: 'This bot has no routine with this id.' }, { status: 404 }));
             }
 
-            if (input.endsWith('/webhooks')) {
+            if (input.endsWith('/webhooks') || input.endsWith('/watches')) {
                 return Promise.resolve(Response.json([]));
             }
 
@@ -199,5 +204,55 @@ describe('RoutinesPanel', () => {
         });
         expect(calls.at(-1))
             .toEqual({ url: '/api/bots/bot/webhooks/w1', method: 'DELETE' });
+    });
+
+    it('lists the page watches of the bot and removes one', async () => {
+        const watch: BotWatch = {
+            id: 'pw1',
+            name: 'Bread prices',
+            url: 'https://shop.example.test/',
+            intervalMinutes: 60,
+            keyword: 'bread',
+            lastCheckedAt: Date.UTC(2026, 9, 21, 10, 0),
+            nextCheckAt: Date.UTC(2026, 9, 21, 11, 0),
+            createdAt: Date.UTC(2026, 9, 21, 9, 0),
+        };
+        const calls: FetchCall[] = [];
+
+        vi.stubGlobal('fetch', (input: string, init: RequestInit = {}) => {
+            const method = init.method ?? 'GET';
+
+            calls.push({ url: input, method });
+
+            if (method === 'GET' && input.endsWith('/watches')) {
+                return Promise.resolve(Response.json([watch]));
+            }
+
+            if (method === 'GET' && input.endsWith('/webhooks')) {
+                return Promise.resolve(Response.json([]));
+            }
+
+            if (method === 'GET') {
+                return Promise.resolve(Response.json([]));
+            }
+
+            return Promise.resolve(new Response(null, { status: 204 }));
+        });
+
+        render(<RoutinesPanel botId="bot" botName="Ana" onClose={vi.fn()} />);
+
+        expect(await screen.findByText('Bread prices'))
+            .toBeDefined();
+        expect(screen.getByText(/Every 60 minutes/))
+            .toBeDefined();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Remove page watch: Bread prices' }));
+
+        await waitFor(() => {
+            expect(screen.queryByText('Bread prices'))
+                .toBeNull();
+        });
+        expect(calls.at(-1))
+            .toEqual({ url: '/api/bots/bot/watches/pw1', method: 'DELETE' });
     });
 });

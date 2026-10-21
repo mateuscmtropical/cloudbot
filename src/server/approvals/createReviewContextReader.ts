@@ -3,6 +3,7 @@ import type { MessageStore } from '../store/MessageStore.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
 import type { ReviewContext } from './createToolCallReviewer.ts';
 import { isWebhookMessage } from '../webhooks/webhookMessage.ts';
+import { isWatchMessage } from '../watches/watchMessage.ts';
 
 interface ReviewContextSources {
     ruleStore: Pick<RuleStore, 'list'>;
@@ -14,6 +15,7 @@ interface ReviewContextSources {
 const DEFAULT_MESSAGE_COUNT = 6;
 const ROLE_LABELS = { user: 'Owner', assistant: 'Bot', system: 'System' };
 const WEBHOOK_LABEL = 'Webhook (outside data)';
+const WATCH_LABEL = 'Page watch (outside data)';
 
 interface StoredMessage {
     role: keyof typeof ROLE_LABELS;
@@ -34,6 +36,11 @@ function toChatLine(message: StoredMessage): string[] {
 
     if (message.role === 'user' && isWebhookMessage(content.text)) {
         return [`${WEBHOOK_LABEL}: ${oneLineText}`];
+    }
+
+    // A page watch message carries page text from outside, so it is labeled the same way.
+    if (message.role === 'user' && isWatchMessage(content.text)) {
+        return [`${WATCH_LABEL}: ${oneLineText}`];
     }
 
     return [`${ROLE_LABELS[message.role]}: ${oneLineText}`];

@@ -13,6 +13,17 @@ describe('models_set', () => {
     });
 });
 
+describe('page watch tools', () => {
+    it('skips the list, and reviews create and delete', () => {
+        expect(classify('mcp__cloudbot__watch_list'))
+            .toBe('skip');
+        expect(classify('mcp__cloudbot__watch_create'))
+            .toBe('review');
+        expect(classify('mcp__cloudbot__watch_delete'))
+            .toBe('review');
+    });
+});
+
 describe('webhook tools', () => {
     it('skips the list, and reviews create and delete', () => {
         expect(classify('mcp__cloudbot__webhook_list'))

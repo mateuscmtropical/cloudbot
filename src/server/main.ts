@@ -22,6 +22,9 @@ import { RoutineStore } from './store/RoutineStore.ts';
 import { RuleStore } from './store/RuleStore.ts';
 import { ModelStore } from './store/ModelStore.ts';
 import { WebhookStore } from './store/WebhookStore.ts';
+import { WatchStore } from './store/WatchStore.ts';
+import { WatchScheduler } from './watches/WatchScheduler.ts';
+import { fetchWatchedPage } from './watches/fetchWatchedPage.ts';
 import { ensureDefaultBot } from './store/ensureDefaultBot.ts';
 import { openDatabase } from './store/openDatabase.ts';
 import { databasePath, resolveDataDir } from './store/resolveDataDir.ts';
@@ -74,6 +77,7 @@ const ruleStore = new RuleStore(opened.db);
 const routineStore = new RoutineStore(opened.db);
 const modelStore = new ModelStore(opened.db);
 const webhookStore = new WebhookStore(opened.db);
+const watchStore = new WatchStore(opened.db);
 // The review model has no tools, so it runs as the server user. The environment object is shared, so a change of sign-in reaches it.
 const askReviewModel = createClaudeReviewModel({
     pathToClaudeCodeExecutable: claudePath, environment, workingDirectory: dataDir,
@@ -85,6 +89,7 @@ const toolCallReviewer = createToolCallReviewer({
 const chatService = new ChatService({
     botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore, routineStore, modelStore, screen,
     webhookStore,
+    watchStore,
     webhookBaseUrl: readPublicBaseUrl(process.env),
     toolCallReviewer,
 });
@@ -121,9 +126,18 @@ const routineScheduler = new RoutineScheduler({
     isReady: () => setup.isDone(),
 });
 
+// Page watches wake the bot through the same routine turns, so they use the routines model and effort.
+const watchScheduler = new WatchScheduler({
+    watchStore,
+    fetchPage: url => fetchWatchedPage(url),
+    sendMessage: (botId, text) => chatService.sendMessage(botId, text, 'routine'),
+    isReady: () => setup.isDone(),
+});
+
 // Queued messages and usage limit waits from the last run continue before the first request.
 await chatService.resumeQueue();
 routineScheduler.start();
+watchScheduler.start();
 
 function cleanUploads(): void {
     chatService.cleanUploads()
@@ -139,7 +153,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ version, access, chatService, ruleStore, routineStore, modelStore, webhookStore, isReady: () => setup.isDone(), screen });
+const app = createApp({ version, access, chatService, ruleStore, routineStore, modelStore, webhookStore, watchStore, isReady: () => setup.isDone(), screen });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

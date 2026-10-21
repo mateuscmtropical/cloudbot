@@ -1,5 +1,6 @@
 import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName } from '../shared/chatTypes.ts';
 import type { BotRoutine } from '../shared/routineTypes.ts';
+import type { BotWatch } from '../shared/watchTypes.ts';
 import type { BotWebhook, CreatedBotWebhook } from '../shared/webhookTypes.ts';
 
 const API_ROOT = '/api';
@@ -252,6 +253,23 @@ function createWebhook(botId: string, name: string): Promise<CreatedBotWebhook> 
     return postJson<CreatedBotWebhook>(path, { name });
 }
 
+function listWatches(botId: string): Promise<BotWatch[]> {
+    const path = botPath(botId, '/watches');
+
+    return requestJson<BotWatch[]>(path, {});
+}
+
+async function removeWatch(botId: string, watchId: string): Promise<void> {
+    const path = botPath(botId, `/watches/${encodeURIComponent(watchId)}`);
+    const response = await fetch(path, { method: 'DELETE' });
+
+    if (!response.ok) {
+        const serverMessage = await readServerMessage(response);
+
+        throw new RequestFailedError(path, response.status, serverMessage);
+    }
+}
+
 async function removeWebhook(botId: string, webhookId: string): Promise<void> {
     const path = botPath(botId, `/webhooks/${encodeURIComponent(webhookId)}`);
     const response = await fetch(path, { method: 'DELETE' });
@@ -346,6 +364,8 @@ export {
     listWebhooks,
     createWebhook,
     removeWebhook,
+    listWatches,
+    removeWatch,
     getModelSettings,
     saveModelSettings,
 };
