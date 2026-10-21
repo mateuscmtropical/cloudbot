@@ -78,9 +78,18 @@ class RoutineStore {
             return false;
         }
 
+        const idCondition = eq(routines.id, routineId);
+
+        if (routine.isEnabled || !isEnabled) {
+            await this.database.update(routines)
+                .set({ isEnabled })
+                .where(idCondition);
+
+            return true;
+        }
+
         const nowMs = this.now();
         const nextRunAt = computeNextRun(routine.schedule, nowMs);
-        const idCondition = eq(routines.id, routineId);
 
         await this.database.update(routines)
             .set({ isEnabled, nextRunAt })

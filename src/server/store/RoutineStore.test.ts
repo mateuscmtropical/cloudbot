@@ -82,6 +82,16 @@ describe('RoutineStore', () => {
             .toMatchObject({ isEnabled: true, nextRunAt: clock + 10 * MINUTE_MS });
     });
 
+    it('keeps a due run when a routine that is already on is turned on again', async () => {
+        const routine = await store.add(botId, { name: 'A', prompt: 'a', schedule: EVERY_TEN_MINUTES });
+
+        clock += 12 * MINUTE_MS;
+        await store.setEnabled(botId, routine.id, true);
+
+        await expect(store.listDue(clock))
+            .resolves.toEqual([routine]);
+    });
+
     it('changes and removes a routine only for its own bot', async () => {
         const otherBot = await botStore.create({ name: 'Bia', title: 'Assistant', description: '' });
         const routine = await store.add(botId, { name: 'A', prompt: 'a', schedule: EVERY_TEN_MINUTES });
