@@ -47,6 +47,9 @@ import { startKeyProxy } from './vault/KeyProxy.ts';
 import type { KeyProxy } from './vault/KeyProxy.ts';
 import { AppProxy } from './apps/AppProxy.ts';
 import { ConnectedApps } from './apps/ConnectedApps.ts';
+import { GithubProxy } from './github/GithubProxy.ts';
+import { createLoopbackCertificate, removeLoopbackCertificate } from './github/loopbackCertificate.ts';
+import { readGithubToken } from './github/githubRouting.ts';
 import { checkAppUrl, defaultAppAddressDeps } from './apps/appAddress.ts';
 import type { AllowedPrivateHost } from './apps/appAddress.ts';
 import { ConnectedAppStore } from './store/ConnectedAppStore.ts';
@@ -169,7 +172,26 @@ const toolCallReviewer = createToolCallReviewer({
         chatService.recordReviewCost(botId, costUsd, turnSignal);
     },
 });
-const chatService = new ChatService({
+// The bot's git and gh reach GitHub only through this proxy. It needs openssl for its loopback certificate, so without it GitHub routing is off.
+const githubCertificate = await createLoopbackCertificate()
+    .catch(() => {
+        console.error('GitHub routing is off, because openssl could not make the loopback certificate.');
+
+        return undefined;
+    });
+// The type is written out, since chatService is defined after this and TypeScript cannot infer the closures' types otherwise.
+const githubProxy: GithubProxy | undefined = githubCertificate === undefined
+    ? undefined
+    : new GithubProxy({
+            readToken: botId => readGithubToken(botSecrets, botId),
+            // The approval card is answered in the chat. chatService is set below, before any turn can run.
+            approve: (botId, summary, detail) => chatService.requestOwnerApproval(botId, summary, detail),
+            key: githubCertificate.key,
+            cert: githubCertificate.cert,
+            caFile: githubCertificate.caFile,
+            bundleFile: githubCertificate.bundleFile,
+        });
+const chatService: ChatService = new ChatService({
     botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore, routineStore, modelStore, limitStore, screen,
     webhookStore,
     watchStore,
@@ -180,6 +202,7 @@ const chatService = new ChatService({
     webhookRefusals,
     webhookDeliveries,
     toolCallReviewer,
+    ...(githubProxy === undefined ? {} : { githubEnvironment: botId => githubProxy.environmentFor(botId) }),
 });
 const bots = await botStore.list();
 const firstBot = bots[0];
@@ -276,6 +299,11 @@ function shutdown(): void {
     desktop?.stop();
     void browserGate?.close();
     void appProxy.close();
+    void githubProxy?.close();
+    // The certificate's public folder is removed on exit. Its key was only on disk in a private folder while openssl ran.
+    if (githubCertificate !== undefined) {
+        void removeLoopbackCertificate(githubCertificate);
+    }
     setup.close();
     server.close();
     (server as Server).closeAllConnections();

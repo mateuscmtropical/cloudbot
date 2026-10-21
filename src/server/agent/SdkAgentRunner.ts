@@ -275,15 +275,18 @@ function buildQueryOptions(
         ? { pathToClaudeCodeExecutable: runnerOptions.pathToClaudeCodeExecutable }
         : {};
     // Without env the SDK subprocess inherits process.env, and with env it replaces the whole environment, so the caller must pass PATH and HOME too.
+    // The turn's extra variables, such as the GitHub proxy addresses, are added to the same environment.
+    const extraEnvironment = request.extraEnvironment ?? {};
     const environmentOption = runnerOptions.agentUser
-        ? { env: buildAgentEnvironment(runnerOptions.agentUser, runnerOptions.environment) }
-        : runnerOptions.environment ? { env: runnerOptions.environment } : {};
+        ? { env: buildAgentEnvironment(runnerOptions.agentUser, runnerOptions.environment, extraEnvironment) }
+        : runnerOptions.environment ? { env: { ...runnerOptions.environment, ...extraEnvironment } } : {};
     const spawnOption = runnerOptions.agentUser
         ? {
                 spawnClaudeCodeProcess: createAgentUserSpawn({
                     user: runnerOptions.agentUser,
                     executable: runnerOptions.pathToClaudeCodeExecutable ?? '',
                     environment: runnerOptions.environment,
+                    extraEnvironment,
                     onStderrTail,
                 }),
             }

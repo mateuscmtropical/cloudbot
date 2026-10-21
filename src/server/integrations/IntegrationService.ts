@@ -4,6 +4,7 @@ import type { BotSecret, BotSecrets } from '../secrets/BotSecrets.ts';
 import { assertSecretName } from '../secrets/BotSecrets.ts';
 import type { IntegrationRecord, IntegrationStore } from '../store/IntegrationStore.ts';
 import { IntegrationError, hashContent, readEntryFile } from './integrationFiles.ts';
+import { hasHiddenCode } from '../text/isHiddenCode.ts';
 import { redactSecret } from './redactSecret.ts';
 import { composeInput } from './runIntegrationProcess.ts';
 import type { ProcessRequest, ProcessResult } from './runIntegrationProcess.ts';
@@ -115,25 +116,6 @@ function isIntegrationCommand(value: string | undefined): value is IntegrationCo
     return INTEGRATION_COMMANDS.some(command => command === value);
 }
 
-// Control characters other than tab and line feed, C1 controls, zero-width and invisible format characters, bidi
-// overrides and isolates, line and paragraph separators, the byte order mark, and the language tag block. A carriage
-// return is a line end in JavaScript and Python, so it is refused too: a `//` comment would end where the card shows it.
-function isHiddenCode(code: number): boolean {
-    const isControl = code < 0x20 && code !== 0x09 && code !== 0x0a;
-    const isDelete = code >= 0x7f && code <= 0x9f;
-    const isSoftHyphen = code === 0x00ad;
-    const isArabicLetterMark = code === 0x061c;
-    const isZeroWidth = code >= 0x200b && code <= 0x200f;
-    const isBidi = code >= 0x202a && code <= 0x202e;
-    const isIsolate = code >= 0x2066 && code <= 0x2069;
-    const isLineSeparator = code === 0x2028 || code === 0x2029;
-    const isWordJoiner = code >= 0x2060 && code <= 0x2064;
-    const isTag = code >= 0xe0000 && code <= 0xe007f;
-
-    return isControl || isDelete || isSoftHyphen || isArabicLetterMark || isZeroWidth || isBidi || isIsolate
-        || isLineSeparator || isWordJoiner || isTag || code === 0xfeff;
-}
-
 // Refuses a script that is too large for the card, or that has characters which could hide its content.
 function checkScript(content: Buffer): void {
     if (content.length > MAX_SCRIPT_BYTES) {
@@ -146,14 +128,7 @@ function checkScript(content: Buffer): void {
         throw new IntegrationError('The script has a carriage return. Save the script with LF line endings and register again.');
     }
 
-    const hasHidden = Array.from(text)
-        .some((character) => {
-            const code = character.codePointAt(0) ?? 0;
-
-            return isHiddenCode(code);
-        });
-
-    if (hasHidden) {
+    if (hasHiddenCode(text)) {
         throw new IntegrationError('The script has a control, bidi or zero-width character, which could hide what it does. Remove it and register again.');
     }
 }

@@ -104,6 +104,13 @@ class ApprovalGate {
         return this.askOwner(botId, verdict.summary, signal, verdict.detail);
     }
 
+    // Asks the owner about an action that is not a tool call, such as a git push. Resolves true only when the owner approves.
+    async ask(botId: string, summary: string, detail: string | undefined, signal: AbortSignal): Promise<boolean> {
+        const decision = await this.askOwner(botId, summary, signal, detail);
+
+        return decision.isAllowed;
+    }
+
     isPending(messageId: string): boolean {
         return this.pendingByMessage.has(messageId);
     }

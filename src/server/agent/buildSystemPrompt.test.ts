@@ -21,6 +21,15 @@ describe('buildSystemPrompt', () => {
             .not.toContain('models_set');
     });
 
+    it('explains the GitHub token and the --repo rule only when GitHub is on', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+
+        expect(buildSystemPrompt(profile, { hasGithub: true }))
+            .toContain('pass --repo owner/repo to every gh command');
+        expect(buildSystemPrompt(profile))
+            .not.toContain('GITHUB_TOKEN');
+    });
+
     it('says nothing about helpers when none is active', () => {
         const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' });
 

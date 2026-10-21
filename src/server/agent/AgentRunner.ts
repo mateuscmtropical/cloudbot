@@ -42,6 +42,8 @@ interface TurnRequest {
     maxSteps?: number;
     // The most the turn may spend, in estimated US dollars. Unset means no limit. The SDK stops the turn at it.
     maxSpendUsd?: number;
+    // Variables added to the agent's environment for this turn, such as the GitHub proxy addresses. Only the server sets them.
+    extraEnvironment?: Record<string, string>;
     abortSignal: AbortSignal;
 }
 
