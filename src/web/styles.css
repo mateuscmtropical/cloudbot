@@ -287,11 +287,6 @@ svg {
     height: 40px;
 }
 
-.bot-list-header .new-bot-button {
-    font-size: 1.75rem;
-    line-height: 1;
-}
-
 @media (max-width: 720px) {
     .bot-list-header .icon-button {
         width: 44px;

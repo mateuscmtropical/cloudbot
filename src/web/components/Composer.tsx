@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent, ReactElement } from 'react';
 
+import { PlusIcon } from './PlusIcon.tsx';
+
 interface DraftAttachment {
     id: string;
     name: string;
@@ -90,7 +92,9 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
                         </ul>
                     )}
             <div className="composer">
-                <button type="button" className="icon-button" aria-label="Attach files" disabled={isRunning} onClick={openFilePicker}>+</button>
+                <button type="button" className="icon-button" aria-label="Attach files" disabled={isRunning} onClick={openFilePicker}>
+                    <PlusIcon />
+                </button>
                 <input ref={fileInputRef} type="file" multiple hidden onChange={handleFilesChosen} />
                 <textarea
                     className="composer-input"

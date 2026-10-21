@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import type { BotSummary } from '../../shared/chatTypes.ts';
 import type { MascotState } from '../mascotState.ts';
 import { CloudMascot } from './CloudMascot.tsx';
+import { PlusIcon } from './PlusIcon.tsx';
 
 interface BotListProps {
     bots: BotSummary[];
@@ -27,7 +28,9 @@ function BotList({ bots, selectedBotId, selectedMascotState, isOpen, onSelectBot
                         <path d="M20 20l-4.5-4.5" />
                     </svg>
                 </button>
-                <button type="button" className="icon-button new-bot-button" aria-label="New bot" onClick={onNewBot}>+</button>
+                <button type="button" className="icon-button" aria-label="New bot" onClick={onNewBot}>
+                    <PlusIcon />
+                </button>
             </div>
             <div className="bot-items">
                 {bots.map((bot) => {

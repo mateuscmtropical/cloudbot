@@ -8,6 +8,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- The plus in the new bot and attach buttons sits exactly in the center of the round button.
 - `share_file` works on Windows and macOS. The file must stay inside the workspace, and the opened file must be the one the path leads to, checked by file identity. Linux uses the same check. On Windows the open does not refuse links, so the realpath and identity check are the guard there.
 - The buttons inside the Rules panel had no background and their text could not be read.
 - The header buttons are one group now. On windows up to 1200px wide they sit in a row after the bot name instead of covering it, and on a phone they take a second row.
