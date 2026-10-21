@@ -24,6 +24,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A thinking bubble shows beside the mascot while the bot works on a reply. It shows the thinking face and pulsing dots, changes its line every few seconds, and names the tool the bot is using in plain words. It goes away when the reply starts and comes back if the bot keeps working. It also shows for routine, webhook and watch turns while the chat is open.
+- Tool calls no longer show as rows in the chat. Approvals, screenshots, shared files, errors and the final reply still show.
 - The browser tab shows the cloud mascot. It shows the thinking face while the open bot works, and a red dot when its reply arrives while the tab is in the background, until you look at the tab again. Safari shows the plain icon only, since it does not use SVG tab icons.
 - New bots: the "+" button makes a bot, and its chat asks for its name and job. A bot can also make one with `bot_create`, after the owner approves the name, title and first instructions. The new bot uses the same Claude sign-in as the others. A bot is deleted from its chat after a confirm. Its chats, rules, routines, watches, webhooks, secrets, connected apps, integrations, uploads, shared files and workspace go with it. A running turn stops first, and the last bot cannot be deleted.
 - Local mode: a warning prints at start, and the setup chat says once that the bot runs as the owner, with their files and account. The install docs say so too.

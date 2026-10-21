@@ -1208,3 +1208,129 @@ describe('App setup reminder', () => {
             .toHaveProperty('value', 'https://bot.example.test/hooks/second');
     });
 });
+
+describe('App thinking bubble', () => {
+    // Renders the app with a stream the test drives, and waits until the bot's events are subscribed.
+    async function renderApp(): Promise<{ container: HTMLElement; emit: (event: ChatEvent) => void }> {
+        const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
+
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(subscribeToEvents)
+            .mockImplementation((_botId, onEvent) => {
+                emitEvent.current = onEvent;
+
+                return () => {};
+            });
+
+        const { container } = render(<App />);
+
+        await waitFor(() => {
+            expect(emitEvent.current)
+                .toBeDefined();
+        });
+
+        return {
+            container,
+            emit: (event: ChatEvent) => {
+                act(() => {
+                    emitEvent.current?.(event);
+                });
+            },
+        };
+    }
+
+    it('names the tool in the bubble and keeps its stored row out of the chat', async () => {
+        const toolRow: ChatMessage = {
+            id: 't1',
+            botId: 'bot-1',
+            role: 'assistant',
+            createdAt: 1,
+            sequence: 1,
+            body: { kind: 'toolActivity', toolName: 'WebFetch', status: 'done', summary: 'Fetched example.com' },
+        };
+        const { container, emit } = await renderApp();
+
+        emit({ type: 'turn', botId: 'bot-1', isRunning: true });
+        emit({ type: 'toolStarted', botId: 'bot-1', toolName: 'WebFetch' });
+
+        await waitFor(() => {
+            expect(container.querySelector('.thinking-line')?.textContent)
+                .toBe('Reading a web page');
+        });
+
+        emit({ type: 'message', message: toolRow });
+
+        expect(container.querySelector('[data-message-id="t1"]'))
+            .toBeNull();
+    });
+
+    it('stops naming a tool once its row is stored, until the next tool starts', async () => {
+        const toolRow: ChatMessage = {
+            id: 't1',
+            botId: 'bot-1',
+            role: 'assistant',
+            createdAt: 1,
+            sequence: 1,
+            body: { kind: 'toolActivity', toolName: 'WebFetch', status: 'done', summary: 'Fetched example.com' },
+        };
+        const { container, emit } = await renderApp();
+
+        emit({ type: 'turn', botId: 'bot-1', isRunning: true });
+        emit({ type: 'toolStarted', botId: 'bot-1', toolName: 'WebFetch' });
+
+        await waitFor(() => {
+            expect(container.querySelector('.thinking-line')?.textContent)
+                .toBe('Reading a web page');
+        });
+
+        emit({ type: 'message', message: toolRow });
+
+        expect(container.querySelector('.thinking-line')?.textContent)
+            .toBe('Thinking');
+    });
+
+    it('hides the bubble once the reply starts streaming', async () => {
+        const { container, emit } = await renderApp();
+
+        emit({ type: 'turn', botId: 'bot-1', isRunning: true });
+
+        await waitFor(() => {
+            expect(container.querySelector('.message.is-thinking'))
+                .not.toBeNull();
+        });
+
+        emit({ type: 'textDelta', botId: 'bot-1', text: 'Hel' });
+
+        // Deltas are batched into one frame, so the draft, and with it the hidden bubble, lands on the next frame.
+        await waitFor(() => {
+            expect(container.querySelector('.message.is-thinking'))
+                .toBeNull();
+        });
+    });
+
+    it('shows nothing in the gap between the final text and the end of the turn', async () => {
+        const finalReply: ChatMessage = {
+            id: 'a1',
+            botId: 'bot-1',
+            role: 'assistant',
+            createdAt: 1,
+            sequence: 1,
+            body: { kind: 'text', text: 'Done.' },
+        };
+        const { container, emit } = await renderApp();
+
+        emit({ type: 'turn', botId: 'bot-1', isRunning: true });
+        emit({ type: 'message', message: finalReply });
+        emit({ type: 'turn', botId: 'bot-1', isRunning: false });
+
+        await new Promise((resolve) => {
+            setTimeout(resolve, 400);
+        });
+
+        expect(container.querySelector('.message.is-thinking'))
+            .toBeNull();
+    });
+});

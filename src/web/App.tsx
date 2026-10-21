@@ -12,6 +12,7 @@ import { createBot, getScreenHolder, listBots, listMessages, RequestFailedError,
 import { mergeLoadedUploads } from './attachmentChips.ts';
 import { applyTabIcon } from './tabIcon.ts';
 import { MESSAGE_PAGE_SIZE, mergeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
+import { withoutToolRows } from './thinkingBubble.ts';
 
 interface DraftState {
     botId: string;
@@ -35,6 +36,12 @@ interface ChatState {
 
 interface FinishedTurn {
     botId: string;
+}
+
+// The tool a bot is using now. Only the thinking bubble reads it.
+interface ActiveTool {
+    botId: string;
+    toolName: string;
 }
 
 const emptyDraft: DraftState = { botId: '', text: '', afterSequence: 0 };
@@ -86,6 +93,8 @@ function App(): ReactElement {
     const stoppedBotIdRef = useRef<string | undefined>(undefined);
     // A turn that ended just now. It drives the done face for a moment, and each end is a new object.
     const [finishedTurn, setFinishedTurn] = useState<FinishedTurn | undefined>(undefined);
+    // The tool a bot is using now. It clears when the bot writes a reply or the turn ends.
+    const [activeTool, setActiveTool] = useState<ActiveTool | undefined>(undefined);
     // True while the composer has text. It drives the typing face of the live bot.
     const [isOwnerTyping, setIsOwnerTyping] = useState(false);
     // Webhook URLs the bot made, kept in memory only, each until the owner hides it.
@@ -366,10 +375,20 @@ function App(): ReactElement {
                 return;
             }
 
+            // A tool has started. Its row is stored only when it finishes, so the bubble is the only sign until then.
+            if (event.type === 'toolStarted') {
+                setActiveTool({ botId: event.botId, toolName: event.toolName });
+
+                return;
+            }
+
             // A stored message ends the block being written, so its draft goes away.
             if (event.type === 'message') {
                 dropPendingDraft();
                 setDraft(emptyDraft);
+
+                setActiveTool(current => (current?.botId === event.message.botId ? undefined : current));
+
                 setChatState(previousState => ({
                     ...previousState,
                     messages: upsertLiveMessage(previousState.messages, event.message),
@@ -385,6 +404,7 @@ function App(): ReactElement {
 
             dropPendingDraft();
             setDraft(emptyDraft);
+            setActiveTool(current => (current?.botId === event.botId ? undefined : current));
             const wasRunning = runningBotIdRef.current === event.botId;
             const wasStopped = stoppedBotIdRef.current === event.botId;
 
@@ -694,7 +714,9 @@ function App(): ReactElement {
     }), [selectedBotId, showMessageResult]);
 
     const selectedBot = bots.find(bot => bot.id === selectedBotId);
-    const visibleMessages = messages.filter(message => message.botId === selectedBotId);
+    const selectedMessages = messages.filter(message => message.botId === selectedBotId);
+    const visibleMessages = withoutToolRows(selectedMessages);
+    const activeToolName = activeTool?.botId === selectedBotId ? activeTool?.toolName : undefined;
     const isRunning = selectedBotId !== undefined && runningBotId === selectedBotId;
     const isJustFinished = selectedBotId !== undefined && finishedTurn?.botId === selectedBotId;
     const liveMascotState = deriveMascotState({ isRunning, isOwnerTyping, isJustFinished, messages: visibleMessages });
@@ -753,6 +775,7 @@ function App(): ReactElement {
                     messages={visibleMessages}
                     draftText={draft.botId === selectedBotId ? draft.text : ''}
                     isRunning={isRunning}
+                    activeToolName={activeToolName}
                     attachments={botAttachments}
                     isUploading={isUploading}
                     onRemoveAttachment={handleRemoveAttachment}

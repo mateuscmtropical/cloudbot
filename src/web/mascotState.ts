@@ -88,5 +88,5 @@ function deriveMascotState(input: MascotStateInput): MascotState {
     return failureState ?? 'idle';
 }
 
-export { deriveMascotState };
+export { deriveMascotState, findFailureState };
 export type { MascotState, MascotStateInput };

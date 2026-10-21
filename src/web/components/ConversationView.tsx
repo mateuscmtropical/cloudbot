@@ -5,10 +5,13 @@ import type { BotSummary, ChatMessage, ChatWebhookUrlEvent } from '../../shared/
 import { renderMarkdown } from '../markdown.ts';
 import type { MascotState } from '../mascotState.ts';
 import { MESSAGE_MASCOT_SIZE, showsMessageMascot } from '../messageMascot.ts';
+import { BUBBLE_DELAY_MS, isThinkingBubbleShown } from '../thinkingBubble.ts';
+import { useDelayedFlag } from '../useDelayedFlag.ts';
 import { CloudMascot } from './CloudMascot.tsx';
 import { Composer } from './Composer.tsx';
 import type { DraftAttachment } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
+import { ThinkingBubble } from './ThinkingBubble.tsx';
 import { WebhookUrlNotice } from './WebhookUrlNotice.tsx';
 import type { MessageActions } from './MessageItem.tsx';
 
@@ -31,6 +34,8 @@ interface ConversationViewProps {
     messages: ChatMessage[];
     draftText: string;
     isRunning: boolean;
+    // The tool the bot is using now, named in the thinking bubble. Unset when no tool runs.
+    activeToolName?: string | undefined;
     onTypingChange?: ((isTyping: boolean) => void) | undefined;
     attachments: DraftAttachment[];
     isUploading: boolean;
@@ -83,6 +88,7 @@ function ConversationView({
     messages,
     draftText,
     isRunning,
+    activeToolName,
     onTypingChange,
     attachments,
     isUploading,
@@ -108,6 +114,8 @@ function ConversationView({
     const olderAnchorRef = useRef<OlderAnchor | undefined>(undefined);
     const previousIsLoadingRef = useRef(false);
     const botName = bot?.name ?? 'CloudBot';
+    const isBubbleDue = isThinkingBubbleShown({ isRunning, draftText, messages });
+    const isThinkingShown = useDelayedFlag(isBubbleDue, BUBBLE_DELAY_MS);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
     const [shownBotId, setShownBotId] = useState(bot?.id);
     const [shownScreenRequestId, setShownScreenRequestId] = useState(screenRequestId);
@@ -265,11 +273,14 @@ function ConversationView({
                             message={message}
                             actions={actions}
                             mascot={message.role === 'assistant' ? bot : undefined}
-                            isMascotShown={showsMessageMascot(messages, index, { isShown: draftText !== '', botId: bot?.id })}
+                            isMascotShown={showsMessageMascot(messages, index, { isShown: draftText !== '' || isThinkingShown, botId: bot?.id })}
                             mascotState={mascotState === 'typing' ? 'typing' : 'idle'}
                         />
                     </div>
                 ))}
+                {isThinkingShown && bot !== undefined
+                    ? <ThinkingBubble color={bot.mascotColor} shape={bot.mascotShape} activeToolName={activeToolName} />
+                    : null}
                 {draftText === ''
                     ? null
                     : (

@@ -58,6 +58,10 @@ function describeEvent(event: ChatEvent): string {
         return `delta:${event.text}`;
     }
 
+    if (event.type === 'toolStarted') {
+        return `toolStarted:${event.toolName}`;
+    }
+
     if (event.type === 'webhookUrl') {
         return 'webhookUrl';
     }

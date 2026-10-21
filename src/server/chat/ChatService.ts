@@ -2046,6 +2046,7 @@ class ChatService {
             }
             case 'tool_started':
                 toolNamesById.set(agentEvent.toolUseId, agentEvent.toolName);
+                this.publish(botId, { type: 'toolStarted', botId, toolName: agentEvent.toolName });
 
                 return;
             case 'tool_finished': {

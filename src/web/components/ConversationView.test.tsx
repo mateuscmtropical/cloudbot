@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotSummary, ChatMessage, MessageBody } from '../../shared/chatTypes.ts';
 import { ConversationView } from './ConversationView.tsx';
 import type { ConversationViewProps } from './ConversationView.tsx';
 import type * as apiClientTypes from '../apiClient.ts';
+import { BUBBLE_DELAY_MS } from '../thinkingBubble.ts';
 
 function createMessage(id: string, role: ChatMessage['role'], body: MessageBody): ChatMessage {
     return { id, botId: 'bot-1', role, createdAt: 1, sequence: 1, body };
@@ -543,5 +544,93 @@ describe('ConversationView header', () => {
 
         expect(screen.queryByRole('region', { name: 'Bot screen' }))
             .toBeNull();
+    });
+});
+describe('ConversationView thinking bubble', () => {
+    const bot: BotSummary = {
+        id: 'bot-1',
+        name: 'CloudBot',
+        title: 'Helper',
+        mascotColor: 'blue',
+        mascotShape: 'puff',
+        lastMessagePreview: '',
+        hasUnread: false,
+    };
+
+    function viewWith(options: { isRunning: boolean; draftText: string; activeToolName?: string; messages?: ChatMessage[] }): ReactElement {
+        return (
+            <ConversationView
+                bot={bot}
+                messages={options.messages ?? [createMessage('u1', 'user', { kind: 'text', text: 'Hi' })]}
+                draftText={options.draftText}
+                isRunning={options.isRunning}
+                activeToolName={options.activeToolName}
+                attachments={[]}
+                isUploading={false}
+                onRemoveAttachment={vi.fn()}
+                actions={noopActions}
+                onOpenBotList={vi.fn()}
+                onSend={vi.fn()}
+                onStop={vi.fn()}
+                onAttach={vi.fn()}
+            />
+        );
+    }
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        cleanup();
+        vi.useRealTimers();
+    });
+
+    // The bubble waits BUBBLE_DELAY_MS before it shows, so tests advance the clock past it.
+    function renderShown(element: ReactElement): ReturnType<typeof render> {
+        const rendered = render(element);
+
+        act(() => {
+            vi.advanceTimersByTime(BUBBLE_DELAY_MS);
+        });
+
+        return rendered;
+    }
+
+    it('shows the bubble with the mascot while a turn runs and no reply streams', () => {
+        const { container } = renderShown(viewWith({ isRunning: true, draftText: '' }));
+
+        expect(container.querySelector('.message.is-thinking .cloud-mascot'))
+            .not.toBeNull();
+    });
+
+    it('does not show the bubble before the delay has passed', () => {
+        const { container } = render(viewWith({ isRunning: true, draftText: '' }));
+
+        expect(container.querySelector('.message.is-thinking'))
+            .toBeNull();
+    });
+
+    it('hides the bubble once a draft reply shows', () => {
+        const { container } = renderShown(viewWith({ isRunning: true, draftText: 'Hello' }));
+
+        expect(container.querySelector('.message.is-thinking'))
+            .toBeNull();
+    });
+
+    it('hides the bubble while a field the owner has not sent is open', () => {
+        const field = createMessage('f1', 'assistant', { kind: 'secureForm', prompt: 'Add your key', secretName: 'API_KEY', submitted: false });
+        const messages = [createMessage('u1', 'user', { kind: 'text', text: 'Hi' }), field];
+        const { container } = renderShown(viewWith({ isRunning: true, draftText: '', messages }));
+
+        expect(container.querySelector('.message.is-thinking'))
+            .toBeNull();
+    });
+
+    it('names the active tool in the bubble', () => {
+        const { container } = renderShown(viewWith({ isRunning: true, draftText: '', activeToolName: 'Bash' }));
+
+        expect(container.querySelector('.thinking-line')?.textContent)
+            .toBe('Running a command');
     });
 });
