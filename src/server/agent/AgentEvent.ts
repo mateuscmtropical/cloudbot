@@ -46,6 +46,12 @@ interface RateLimitEvent {
     resetsAt?: number;
 }
 
+// The SDK stopped the turn at the step limit or at the spending limit it was given.
+interface TurnLimitEvent {
+    type: 'turn_limit';
+    limit: 'steps' | 'spending';
+}
+
 /**
  * Render either text_delta or text, never both. The text event arrives after
  * the text_delta events of the same block and repeats their content in full,
@@ -59,7 +65,8 @@ type AgentEvent
         | SessionEvent
         | TurnFinishedEvent
         | TurnErrorEvent
-        | RateLimitEvent;
+        | RateLimitEvent
+        | TurnLimitEvent;
 
 export type {
     AgentEvent,
@@ -71,4 +78,5 @@ export type {
     ToolStartedEvent,
     TurnErrorEvent,
     TurnFinishedEvent,
+    TurnLimitEvent,
 };

@@ -27,6 +27,12 @@ import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import { ROUTINE_TOOL_FULL_NAMES, createRoutineTools } from '../routines/createRoutineTools.ts';
 import { MODELS_SET_TOOL_FULL_NAME, createModelTools } from '../models/createModelTools.ts';
+import { LIMITS_SET_TOOL_FULL_NAME, createLimitTools } from '../limits/createLimitTools.ts';
+import { TurnDeadline } from '../limits/TurnDeadline.ts';
+import type { TurnLimitStop } from '../limits/turnLimits.ts';
+import { NO_LIMIT, chooseTurnLimit, describeLimitStop } from '../limits/turnLimits.ts';
+import type { TurnLimit } from '../../shared/limitTypes.ts';
+import type { LimitStore } from '../store/LimitStore.ts';
 import { WEBHOOK_TOOL_FULL_NAMES, createWebhookTools } from '../webhooks/createWebhookTools.ts';
 import type { WebhookCreation } from '../webhooks/createWebhookTools.ts';
 import { WATCH_TOOL_FULL_NAMES, createWatchTools } from '../watches/createWatchTools.ts';
@@ -86,6 +92,8 @@ interface ChatServiceOptions {
     routineStore?: RoutineStore | undefined;
     // The model the owner chose for chat and routine turns. Without it turns use the CLI default.
     modelStore?: ModelStore | undefined;
+    // The time, spending and step limits per turn. Without it turns have no limits.
+    limitStore?: LimitStore | undefined;
     // Page watches the bot can create, list and delete. Without it the bot has no watch tools.
     watchStore?: WatchStore | undefined;
     // Webhooks the bot can list, create and remove. Without it the bot has no webhook tools.
@@ -159,6 +167,8 @@ interface TurnContext {
     effort?: EffortLevel;
     // The helper agents of this turn. Empty when the owner chose no helper.
     agents: NonNullable<TurnRequest['agents']>;
+    // The limits of this turn. Each null field is no limit.
+    limit: TurnLimit;
 }
 
 type ChatEventListener = (event: ChatEvent) => void;
@@ -373,12 +383,20 @@ class ChatService {
     private readonly ruleStore: RuleStore | undefined;
     private readonly routineStore: RoutineStore | undefined;
     private readonly modelStore: ModelStore | undefined;
+    private readonly limitStore: LimitStore | undefined;
     private readonly watchStore: WatchStore | undefined;
     private readonly webhookStore: WebhookStore | undefined;
     private readonly webhookBaseUrl: string | undefined;
     private readonly approvals: ApprovalGate | undefined;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
+    // The limits and the clock of the running turn of each bot. They are set when the turn starts and cleared when it ends.
+    private readonly runningLimits = new Map<string, TurnLimit>();
+    private readonly turnDeadlines = new Map<string, TurnDeadline>();
+    // Estimated spending of the review agent in the running turn of each bot.
+    private readonly reviewSpend = new Map<string, number>();
+    // Bots whose screen is held by the owner for a request of theirs. Their clock waits until the screen is back.
+    private readonly screenWaitBots = new Set<string>();
     private setup: SetupConversation | undefined;
     // Files uploaded since the bot's last message. The next message takes them.
     private readonly pendingUploads = new Map<string, SavedUpload[]>();
@@ -402,6 +420,7 @@ class ChatService {
         this.ruleStore = options.ruleStore;
         this.routineStore = options.routineStore;
         this.modelStore = options.modelStore;
+        this.limitStore = options.limitStore;
         this.watchStore = options.watchStore;
         this.webhookStore = options.webhookStore;
         this.webhookBaseUrl = options.webhookBaseUrl;
@@ -413,7 +432,16 @@ class ChatService {
                         close: (messageId, body) => this.updateSetupMessage(messageId, body),
                     },
                     reviewer: options.toolCallReviewer,
+                    onOwnerWait: (botId, isWaiting) => {
+                        this.reportOwnerWait(botId, isWaiting);
+                    },
                 });
+        // When the owner gives the screen back, the clocks of the bots that asked for it run again.
+        this.screen?.onChange((isPersonHolding) => {
+            if (!isPersonHolding) {
+                this.releaseScreenWaits();
+            }
+        });
     }
 
     // Uploads live outside the agent's writable workspace. The agent reads them and cannot change them.
@@ -787,6 +815,12 @@ class ChatService {
 
         this.screen?.giveToPerson();
 
+        // The turn waits on the owner while the owner holds the screen. The wait ends when the screen is given back.
+        if (this.screen !== undefined && !wasHeldByPerson && !this.screenWaitBots.has(botId)) {
+            this.screenWaitBots.add(botId);
+            this.reportOwnerWait(botId, true);
+        }
+
         try {
             await this.saveAndPublish(botId, 'assistant', body);
         } catch (error: unknown) {
@@ -991,6 +1025,70 @@ class ChatService {
         return false;
     }
 
+    // The one place that reports a turn waiting on the owner, or no longer waiting. The turn's clock holds while it waits.
+    private reportOwnerWait(botId: string, isWaiting: boolean): void {
+        this.turnDeadlines.get(botId)
+            ?.setWaitingOnHuman(isWaiting);
+    }
+
+    // The screen came back to the bot, so every bot that waited for it runs its clock again.
+    private releaseScreenWaits(): void {
+        this.screenWaitBots.forEach((botId) => {
+            this.reportOwnerWait(botId, false);
+        });
+        this.screenWaitBots.clear();
+    }
+
+    // The one place that stops a turn because of a limit. The chat says which limit stopped it and its value.
+    // A turn that was already stopped, by Stop or by another limit, gets no second message.
+    private async stopForLimit(botId: string, stop: TurnLimitStop): Promise<void> {
+        const abortController = this.runningTurns.get(botId);
+
+        if (abortController === undefined || abortController.signal.aborted) {
+            return;
+        }
+
+        abortController.abort();
+
+        await this.saveAndPublish(botId, 'system', { kind: 'text', text: describeLimitStop(stop) });
+    }
+
+    // Counts the estimated cost of a review call in the running turn. The turn stops once the review spending passes its limit.
+    // The main agent's spending is limited by the SDK. Its cost is not known until the SDK reports it, so it is not added here.
+    // The cost counts only for the turn that asked for the review. A review of an earlier or stopped turn is dropped.
+    recordReviewCost(botId: string, costUsd: number, turnSignal?: AbortSignal): void {
+        const runningController = this.runningTurns.get(botId);
+
+        if (runningController === undefined || turnSignal === undefined || runningController.signal !== turnSignal || turnSignal.aborted) {
+            return;
+        }
+
+        const spent = (this.reviewSpend.get(botId) ?? 0) + costUsd;
+        const spendLimit = this.runningLimits.get(botId)?.usd ?? null;
+
+        this.reviewSpend.set(botId, spent);
+
+        if (spendLimit !== null && spent >= spendLimit) {
+            this.stopForLimit(botId, { kind: 'usd', value: spendLimit })
+                .catch(reportBackgroundError);
+        }
+    }
+
+    // Starts the time limit of a turn. It counts work only, so the clock holds while the owner is asked.
+    private startTurnClock(botId: string, minutes: number | null): void {
+        if (minutes === null) {
+            return;
+        }
+
+        const deadline = new TurnDeadline(minutes * 60 * 1000, () => {
+            this.stopForLimit(botId, { kind: 'minutes', value: minutes })
+                .catch(reportBackgroundError);
+        });
+
+        this.turnDeadlines.set(botId, deadline);
+        deadline.start();
+    }
+
     isTurnRunning(botId: string): boolean {
         return this.runningTurns.has(botId);
     }
@@ -1042,6 +1140,12 @@ class ChatService {
     }
 
     private finishTurn(botId: string): void {
+        this.turnDeadlines.get(botId)
+            ?.stop();
+        this.turnDeadlines.delete(botId);
+        this.runningLimits.delete(botId);
+        this.reviewSpend.delete(botId);
+        this.screenWaitBots.delete(botId);
         this.runningTurns.delete(botId);
         this.publishTurnState(botId);
         this.startNextQueuedTurn(botId)
@@ -1217,6 +1321,14 @@ class ChatService {
                 return;
             }
 
+            // The limits are read for each turn, so a change in the web app applies to the next message.
+            const limits = this.limitStore === undefined ? undefined : await this.limitStore.get(botId);
+            const turnLimit = limits === undefined ? NO_LIMIT : chooseTurnLimit(limits, turn.source);
+
+            this.runningLimits.set(botId, turnLimit);
+            this.reviewSpend.set(botId, 0);
+            this.startTurnClock(botId, turnLimit.minutes);
+
             // The profile tool and prompt are built from the bot as it is now, so a
             // change made in the previous turn already applies.
             const browserTools = this.browser === undefined
@@ -1230,13 +1342,14 @@ class ChatService {
             const secretTools = this.createSecretTools(botId);
             const routineTools = this.routineStore === undefined ? [] : createRoutineTools(this.routineStore, botId);
             const modelTools = this.modelStore === undefined ? [] : createModelTools(this.modelStore, botId);
+            const limitTools = this.limitStore === undefined ? [] : createLimitTools(this.limitStore, botId);
             const webhookTools = this.webhookTools(botId);
             const watchTools = this.watchStore === undefined ? [] : createWatchTools(this.watchStore, botId);
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...webhookTools, ...watchTools],
+                [...browserTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools],
             );
             const prompt = uploads.length === 0 ? text : `${text}\n\n${describeAttachments(uploads)}`;
             const images = readTurnImages(uploads);
@@ -1278,6 +1391,7 @@ class ChatService {
                     hasModels: this.modelStore !== undefined,
                     hasWebhooks: this.webhookStore !== undefined,
                     hasWatches: this.watchStore !== undefined,
+                    hasLimits: this.limitStore !== undefined,
                     ownerRules,
                     helpers: helperKinds,
                 }),
@@ -1285,6 +1399,7 @@ class ChatService {
                 ...reviewOption,
                 ...modelOption,
                 ...effortOption,
+                limit: turnLimit,
                 mcpServers: { [PROFILE_SERVER_NAME]: profileServer },
             };
             const firstAttempt = await this.runAttempt(turnContext, bot.sessionId, turnState);
@@ -1367,10 +1482,11 @@ class ChatService {
 
         const routineToolNames = this.routineStore === undefined ? [] : ROUTINE_TOOL_FULL_NAMES;
         const modelToolNames = this.modelStore === undefined ? [] : [MODELS_SET_TOOL_FULL_NAME];
+        const limitToolNames = this.limitStore === undefined ? [] : [LIMITS_SET_TOOL_FULL_NAME];
         const webhookToolNames = this.webhookStore === undefined ? [] : WEBHOOK_TOOL_FULL_NAMES;
         const watchToolNames = this.watchStore === undefined ? [] : WATCH_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...webhookToolNames, ...watchToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames];
     }
 
     private webhookTools(botId: string): CloudbotTool[] {
@@ -1409,6 +1525,8 @@ class ChatService {
             ...(hasHelpers ? { agents: turnContext.agents } : {}),
             ...(turnContext.model === undefined ? {} : { model: turnContext.model }),
             ...(turnContext.effort === undefined ? {} : { effort: turnContext.effort }),
+            ...(turnContext.limit.steps === null ? {} : { maxSteps: turnContext.limit.steps }),
+            ...(turnContext.limit.usd === null ? {} : { maxSpendUsd: turnContext.limit.usd }),
             ...(turnContext.reviewToolCall === undefined ? {} : { reviewToolCall: turnContext.reviewToolCall }),
             ...sessionOption,
         };
@@ -1495,6 +1613,20 @@ class ChatService {
                 this.publish(botId, { type: 'textDelta', botId, text: agentEvent.text });
 
                 return;
+            case 'turn_limit': {
+                const turnLimit = this.runningLimits.get(botId) ?? NO_LIMIT;
+                const isSteps = agentEvent.limit === 'steps';
+                const value = isSteps ? turnLimit.steps : turnLimit.usd;
+
+                // The SDK only stops at a limit that was passed to it, so a missing value cannot happen. Nothing is posted then.
+                if (value === null) {
+                    return;
+                }
+
+                await this.stopForLimit(botId, { kind: isSteps ? 'steps' : 'usd', value });
+
+                return;
+            }
             case 'rate_limit':
             case 'turn_finished':
                 return;

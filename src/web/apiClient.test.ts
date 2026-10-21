@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createWebhook, getModelSettings, listBots, listMessages, listRoutines, listWebhooks, removeRoutine, removeWebhook, RequestFailedError, saveModelSettings, stopTurn, uploadAttachments } from './apiClient.ts';
+import { createWebhook, getLimits, getModelSettings, listBots, listMessages, listRoutines, listWebhooks, removeRoutine, removeWebhook, RequestFailedError, saveLimits, saveModelSettings, stopTurn, uploadAttachments } from './apiClient.ts';
 
 const NO_SETTINGS = {
     chat: null,
@@ -179,5 +179,32 @@ describe('apiClient', () => {
 
         expect(fetchMock)
             .toHaveBeenCalledWith('/api/bots/bot-1/models', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
+    });
+
+    it('reads the limits of a bot with their bounds', async () => {
+        const fetchMock = stubFetch(Response.json({
+            chat: { minutes: 10, usd: null, steps: null },
+            routines: { minutes: null, usd: null, steps: null },
+            bounds: { minutes: { min: 1, max: 1440, isWhole: true } },
+        }));
+
+        const limits = await getLimits('bot-1');
+
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/bots/bot-1/limits', {});
+        expect(limits.chat.minutes)
+            .toBe(10);
+        expect(limits.bounds.minutes.max)
+            .toBe(1440);
+    });
+
+    it('saves the limits of a bot with one PUT', async () => {
+        const limits = { chat: { minutes: 5, usd: 0.5, steps: null }, routines: { minutes: null, usd: null, steps: null } };
+        const fetchMock = stubFetch(Response.json(limits));
+
+        await saveLimits('bot-1', limits);
+
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/bots/bot-1/limits', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(limits) });
     });
 });

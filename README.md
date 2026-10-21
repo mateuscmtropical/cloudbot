@@ -40,6 +40,7 @@ comes back when the job is done or when it needs you.
   before sensitive actions such as sending a message or paying.
 - **Run routines.** Scheduled tasks and tasks started by events.
 - **Wake it from outside.** Webhooks: a URL that another service calls to send the bot a message.
+- **Set limits.** Optional time, spending and step limits per turn, one set for chat and one for routines. A stopped turn says which limit it hit. The agent and the review agent are each held to the spending limit, so a turn can spend up to twice the limit. The spending is an estimate, and a subscription is not billed by it.
 - **Connect apps.** Claude connectors, remote MCP servers and APIs you give it
   a key for.
 - **Work as a team.** Several bots that pass work to each other, group chats

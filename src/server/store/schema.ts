@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import type { RoutineSchedule } from '../routines/schedule.ts';
 
@@ -204,5 +204,19 @@ const botModels = sqliteTable('bot_models', {
     documentsEffort: text('documents_effort'),
 });
 
-export { botModels, botRules, bots, messages, routines, settings, turnQueue, turnWaits, watches, webhooks };
+// The time, spending and step limits per turn, for chat turns and for routine, webhook and watch turns.
+// A null column means no limit of that kind.
+const botLimits = sqliteTable('bot_limits', {
+    botId: text('bot_id')
+        .primaryKey()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    chatMinutes: integer('chat_minutes'),
+    chatUsd: real('chat_usd'),
+    chatSteps: integer('chat_steps'),
+    routineMinutes: integer('routine_minutes'),
+    routineUsd: real('routine_usd'),
+    routineSteps: integer('routine_steps'),
+});
+
+export { botLimits, botModels, botRules, bots, messages, routines, settings, turnQueue, turnWaits, watches, webhooks };
 export type { StoredUploadRecord };

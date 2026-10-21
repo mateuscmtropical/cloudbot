@@ -2,6 +2,7 @@ import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, Screen
 import type { BotRoutine } from '../shared/routineTypes.ts';
 import type { BotWatch } from '../shared/watchTypes.ts';
 import type { BotWebhook, CreatedBotWebhook } from '../shared/webhookTypes.ts';
+import type { TurnLimits } from '../shared/limitTypes.ts';
 
 const API_ROOT = '/api';
 
@@ -318,6 +319,30 @@ function saveModelSettings(botId: string, settings: ModelSettings): Promise<Mode
     return requestJson<ModelSettings>(path, init);
 }
 
+interface LimitBound {
+    min: number;
+    max: number;
+    isWhole: boolean;
+}
+
+interface LimitsResponse extends TurnLimits {
+    // The range of each limit kind. The panel builds its inputs from it.
+    bounds: Record<'minutes' | 'usd' | 'steps', LimitBound>;
+}
+
+function getLimits(botId: string): Promise<LimitsResponse> {
+    const path = botPath(botId, '/limits');
+
+    return requestJson<LimitsResponse>(path, {});
+}
+
+function saveLimits(botId: string, limits: TurnLimits): Promise<TurnLimits> {
+    const path = botPath(botId, '/limits');
+    const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(limits) };
+
+    return requestJson<TurnLimits>(path, init);
+}
+
 // onOpen runs on the first connection and on every reconnect. Events missed while
 // the stream was down are lost, so the caller reloads the conversation there.
 function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void, onOpen: () => void): () => void {
@@ -339,7 +364,7 @@ function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void, o
     };
 }
 
-export type { EffortLevel, MessagePageRequest, ModelSettings, ModelSettingsResponse, NewRuleRequest };
+export type { EffortLevel, LimitBound, LimitsResponse, MessagePageRequest, ModelSettings, ModelSettingsResponse, NewRuleRequest };
 export {
     RequestFailedError,
     listBots,
@@ -368,4 +393,6 @@ export {
     removeWatch,
     getModelSettings,
     saveModelSettings,
+    getLimits,
+    saveLimits,
 };

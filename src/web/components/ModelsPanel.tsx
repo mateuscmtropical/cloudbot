@@ -3,6 +3,7 @@ import type { ReactElement, SyntheticEvent } from 'react';
 
 import { RequestFailedError, getModelSettings, saveModelSettings } from '../apiClient.ts';
 import type { EffortLevel, ModelSettings } from '../apiClient.ts';
+import { LimitsSection } from './LimitsSection.tsx';
 
 interface ModelsPanelProps {
     botId: string;
@@ -251,6 +252,7 @@ function ModelsPanel({ botId, botName, onClose }: ModelsPanelProps): ReactElemen
                             {isSaved ? <p className="rules-help" role="status">Saved.</p> : null}
                         </form>
                     )}
+            <LimitsSection botId={botId} />
             {problem === undefined ? null : <p className="rules-problem" role="alert">{problem}</p>}
         </div>
     );

@@ -4,7 +4,14 @@ import type { EffortLevel } from '../models/modelChoices.ts';
 import type { ToolCallReviewer, ToolCallVerdict } from './ApprovalGate.ts';
 
 // Sends one prompt to a model without tools and returns its text answer. The model and effort are the owner's review choices.
-type ReviewModel = (prompt: string, signal?: AbortSignal, model?: string, effort?: EffortLevel) => Promise<string>;
+// onCost gets the estimated cost of the call, so the turn's spending limit can count the review.
+type ReviewModel = (
+    prompt: string,
+    signal?: AbortSignal,
+    model?: string,
+    effort?: EffortLevel,
+    onCost?: (costUsd: number) => void,
+) => Promise<string>;
 
 interface ReviewContext {
     // The owner rules of the bot, as the owner wrote them.
@@ -20,6 +27,8 @@ interface ReviewContext {
 interface ToolCallReviewerOptions {
     askModel: ReviewModel;
     readContext: (botId: string) => Promise<ReviewContext>;
+    // Called with the estimated cost of each review call, the bot whose turn asked for it, and that turn's signal.
+    reportCost?: (botId: string, costUsd: number, turnSignal?: AbortSignal) => void;
 }
 
 type ReviewCategory = 'send_message' | 'purchase' | 'booking' | 'other';
@@ -127,7 +136,7 @@ function toVerdict(answer: ModelAnswer, call: ToolCall): ToolCallVerdict {
 // Skips harmless calls, always asks for connector tools that send, buy or book, and lets a model judge the rest.
 // A model that fails or answers badly throws, and the approval gate then asks the owner.
 function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallReviewer {
-    return async (botId, call) => {
+    return async (botId, call, signal) => {
         const callClass = classifyToolCall(call);
 
         if (callClass === 'skip') {
@@ -147,7 +156,10 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
 
         const context = await options.readContext(botId);
         const prompt = buildReviewPrompt(call, context);
-        const answerText = await options.askModel(prompt, undefined, context.reviewModel, context.reviewEffort);
+        const reportReviewCost = (costUsd: number): void => {
+            options.reportCost?.(botId, costUsd, signal);
+        };
+        const answerText = await options.askModel(prompt, signal, context.reviewModel, context.reviewEffort, reportReviewCost);
         const answer = parseModelAnswer(answerText);
 
         return toVerdict(answer, call);
