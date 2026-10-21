@@ -1,5 +1,7 @@
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
+import type { RoutineSchedule } from '../routines/schedule.ts';
+
 import { MESSAGE_ROLES } from './messageRoles.ts';
 
 // The file facts a queued turn needs. The bytes are read back from absolutePath after a restart.
@@ -107,5 +109,31 @@ const botRules = sqliteTable('bot_rules', {
         .on(table.botId),
 ]);
 
-export { botRules, bots, messages, settings, turnQueue, turnWaits };
+// A prompt a bot gets on a schedule. `nextRunAt` is in milliseconds since the epoch.
+const routines = sqliteTable('routines', {
+    id: text('id')
+        .primaryKey(),
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    name: text('name')
+        .notNull(),
+    prompt: text('prompt')
+        .notNull(),
+    schedule: text('schedule', { mode: 'json' })
+        .$type<RoutineSchedule>()
+        .notNull(),
+    isEnabled: integer('is_enabled', { mode: 'boolean' })
+        .notNull(),
+    nextRunAt: integer('next_run_at')
+        .notNull(),
+    lastRunAt: integer('last_run_at'),
+    createdAt: integer('created_at')
+        .notNull(),
+}, table => [
+    index('routines_bot_id')
+        .on(table.botId),
+]);
+
+export { botRules, bots, messages, routines, settings, turnQueue, turnWaits };
 export type { StoredUploadRecord };
