@@ -32,7 +32,18 @@ describe('createToolCallReviewer', () => {
         await reviewer('bot-1', BASH_CALL);
 
         expect(askModel)
-            .toHaveBeenCalledWith(expect.any(String), undefined, 'opus');
+            .toHaveBeenCalledWith(expect.any(String), undefined, 'opus', undefined);
+    });
+
+    it('asks the model with the review effort choice of the bot', async () => {
+        const { reviewer, askModel, readContext } = createReviewer('{"category":"other","decision":"ask","summary":"","reason":""}');
+
+        readContext.mockResolvedValue({ ...CONTEXT, reviewEffort: 'high' });
+
+        await reviewer('bot-1', BASH_CALL);
+
+        expect(askModel)
+            .toHaveBeenCalledWith(expect.any(String), undefined, undefined, 'high');
     });
 
     it('allows a harmless call without asking the model', async () => {

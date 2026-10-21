@@ -44,6 +44,30 @@ describe('buildHelperAgents', () => {
             .not.toContain(BROWSER_TOOL_FULL_NAMES[0]);
     });
 
+    it('gives each helper the effort the owner chose for it', () => {
+        const agents = buildHelperAgents(
+            { browsing: 'haiku', documents: 'sonnet' },
+            { disallowedTools: NO_BLOCKS, hasBrowser: true, efforts: { browsing: 'low', documents: 'xhigh' } },
+        );
+
+        expect(agents.browsing)
+            .toHaveProperty('effort', 'low');
+        expect(agents.documents)
+            .toHaveProperty('effort', 'xhigh');
+    });
+
+    it('leaves the effort off a helper when none is chosen for it', () => {
+        const agents = buildHelperAgents(
+            { browsing: 'haiku', documents: 'sonnet' },
+            { disallowedTools: NO_BLOCKS, hasBrowser: true, efforts: { browsing: null, documents: 'max' } },
+        );
+
+        expect(agents.browsing)
+            .not.toHaveProperty('effort');
+        expect(agents.documents)
+            .toHaveProperty('effort', 'max');
+    });
+
     it('passes the owner blocked tools to every helper as disallowedTools', () => {
         const blocked = ['Bash(rm:*)'];
         const agents = buildHelperAgents({ browsing: 'haiku', documents: 'opus' }, { disallowedTools: blocked, hasBrowser: true });

@@ -32,6 +32,26 @@ describe('createClaudeReviewModel', () => {
             .toMatchObject({ model: 'haiku' });
     });
 
+    it('runs the review with the effort the owner chose', async () => {
+        const { queryFunction, calls } = createQuery([resultMessage({ result: '{}' })]);
+        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
+
+        await askModel('prompt', undefined, undefined, 'max');
+
+        expect(calls[0]?.options)
+            .toMatchObject({ effort: 'max' });
+    });
+
+    it('runs the review with the CLI default effort when none is chosen', async () => {
+        const { queryFunction, calls } = createQuery([resultMessage({ result: '{}' })]);
+        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
+
+        await askModel('prompt');
+
+        expect(calls[0]?.options)
+            .not.toHaveProperty('effort');
+    });
+
     it('runs the review with the CLI default model when none is chosen', async () => {
         const { queryFunction, calls } = createQuery([resultMessage({ result: '{}' })]);
         const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });

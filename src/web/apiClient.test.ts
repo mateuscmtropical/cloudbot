@@ -2,6 +2,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createWebhook, getModelSettings, listBots, listMessages, listRoutines, listWebhooks, removeRoutine, removeWebhook, RequestFailedError, saveModelSettings, stopTurn, uploadAttachments } from './apiClient.ts';
 
+const NO_SETTINGS = {
+    chat: null,
+    routines: null,
+    review: null,
+    browsing: null,
+    documents: null,
+    chatEffort: null,
+    routinesEffort: null,
+    reviewEffort: null,
+    browsingEffort: null,
+    documentsEffort: null,
+};
+
 function stubFetch(response: Response): ReturnType<typeof vi.fn> {
     const fetchMock = vi.fn(() => Promise.resolve(response));
 
@@ -146,7 +159,7 @@ describe('apiClient', () => {
     });
 
     it('reads the model settings and the aliases of a bot', async () => {
-        const fetchMock = stubFetch(Response.json({ chat: 'haiku', routines: null, review: null, browsing: null, documents: null, aliases: ['haiku'] }));
+        const fetchMock = stubFetch(Response.json({ ...NO_SETTINGS, chat: 'haiku', aliases: ['haiku'], effortLevels: ['low', 'max'] }));
 
         const settings = await getModelSettings('bot-1');
 
@@ -154,11 +167,13 @@ describe('apiClient', () => {
             .toHaveBeenCalledWith('/api/bots/bot-1/models', {});
         expect(settings.aliases)
             .toEqual(['haiku']);
+        expect(settings.effortLevels)
+            .toEqual(['low', 'max']);
     });
 
-    it('saves all five model settings of a bot with one PUT', async () => {
-        const fetchMock = stubFetch(Response.json({ chat: 'haiku', routines: null, review: null, browsing: null, documents: null }));
-        const settings = { chat: 'haiku', routines: null, review: null, browsing: null, documents: null };
+    it('saves all ten model and effort settings of a bot with one PUT', async () => {
+        const settings = { ...NO_SETTINGS, chat: 'haiku', chatEffort: 'high' as const };
+        const fetchMock = stubFetch(Response.json(settings));
 
         await saveModelSettings('bot-1', settings);
 

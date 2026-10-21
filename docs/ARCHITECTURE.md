@@ -418,11 +418,28 @@ means no helper agent. A choice is an alias the SDK accepts (`fable`, `opus`,
 `PUT /api/bots/:id/models` sit behind the session cookie. `PUT` replaces all
 choices, and a missing field clears its choice.
 
+Effort has the same five kinds. Each kind has an `effort` column in the same
+`bot_models` row (`chat_effort`, `routines_effort`, and so on, added by the
+migration `0007_effort`). A null effort is the CLI default. A level is one of
+`low`, `medium`, `high`, `xhigh` or `max` (`EFFORT_LEVELS`). The JSON fields
+are flat (`chatEffort`, `reviewEffort`, ...). `ModelStore` reads them with
+`getEfforts` and writes them with `setEfforts`, so the model and effort
+methods never overwrite each other. `GET` also returns `effortLevels`. A `PUT`
+parses the models and the efforts before either is saved, so one bad level
+returns 400 and saves nothing. `models_set` takes the same fields as a partial
+update, and the bot is told to pick a sensible effort when the owner names a
+model only.
+
 A turn sends its choice to the SDK `model` option. A routine or webhook turn
 uses the `routines` choice and falls back to `chat`. The `source` of a turn
 (`chat`, `routine` or `webhook`) is stored with the queued turn, so a turn that
 waits keeps its choice after a restart. The review model is read with the owner
 rules on each review call.
+
+The effort follows the same rule (`chooseTurnEffort`) and goes to the SDK
+`effort` option. The review call gets the review effort, and each helper gets
+its own effort on its `AgentDefinition`. An unset effort is left out, so the
+CLI default applies.
 
 ## Webhooks
 

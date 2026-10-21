@@ -281,6 +281,7 @@ function buildQueryOptions(
         : {};
     const resumeOption = request.sessionId ? { resume: request.sessionId } : {};
     const modelOption = request.model === undefined ? {} : { model: request.model };
+    const effortOption = request.effort === undefined ? {} : { effort: request.effort };
     // Helper agents run their own tool calls, which the PreToolUse review hook below also sees.
     const agentsOption = request.agents === undefined ? {} : { agents: request.agents };
     // A plain string systemPrompt would replace Claude Code's default prompt, so the bot profile is appended to the preset.
@@ -313,6 +314,7 @@ function buildQueryOptions(
         ...spawnOption,
         ...resumeOption,
         ...modelOption,
+        ...effortOption,
         ...agentsOption,
         ...systemPromptOption,
         ...mcpServersOption,

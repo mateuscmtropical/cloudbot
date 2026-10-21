@@ -263,18 +263,28 @@ async function removeWebhook(botId: string, webhookId: string): Promise<void> {
     }
 }
 
-// The model choice of each kind of work. A null choice is the default, or no helper for browsing and documents.
+// How much thinking a kind of work gets. A null effort is the CLI default.
+type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+// The model and effort choice of each kind of work. A null choice is the default, or no helper for browsing and documents.
 interface ModelSettings {
     chat: string | null;
     routines: string | null;
     review: string | null;
     browsing: string | null;
     documents: string | null;
+    chatEffort: EffortLevel | null;
+    routinesEffort: EffortLevel | null;
+    reviewEffort: EffortLevel | null;
+    browsingEffort: EffortLevel | null;
+    documentsEffort: EffortLevel | null;
 }
 
 interface ModelSettingsResponse extends ModelSettings {
     // The aliases the server accepts. The panel offers exactly these.
     aliases: string[];
+    // The effort levels the server accepts, besides the default.
+    effortLevels: EffortLevel[];
 }
 
 function getModelSettings(botId: string): Promise<ModelSettingsResponse> {
@@ -311,7 +321,7 @@ function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void, o
     };
 }
 
-export type { MessagePageRequest, ModelSettings, ModelSettingsResponse, NewRuleRequest };
+export type { EffortLevel, MessagePageRequest, ModelSettings, ModelSettingsResponse, NewRuleRequest };
 export {
     RequestFailedError,
     listBots,

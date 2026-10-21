@@ -1,15 +1,15 @@
 import { Hono } from 'hono';
 
 import type { ModelStore } from '../store/ModelStore.ts';
-import { MODEL_ALIASES, isModelInputError, parseModelInput } from './modelChoices.ts';
+import { EFFORT_LEVELS, MODEL_ALIASES, isModelInputError, parseEffortInput, parseModelInput, toEffortFields } from './modelChoices.ts';
 
 interface ModelErrorResponse {
     error: string;
 }
 
-// The model choices are owner settings. These routes sit behind the session check, and the bot has no tool for them.
+// The model and effort choices are owner settings. These routes sit behind the session check. The bot changes them with models_set.
 interface ModelRoutesOptions {
-    modelStore: Pick<ModelStore, 'get' | 'set'>;
+    modelStore: Pick<ModelStore, 'get' | 'set' | 'getEfforts' | 'setEfforts'>;
     hasBot: (botId: string) => Promise<boolean>;
 }
 
@@ -28,10 +28,12 @@ function createModelRoutes(options: ModelRoutesOptions): Hono {
         }
 
         const choices = await options.modelStore.get(botId);
-        // The panel builds its select from these aliases, so the list is kept in one place on the server.
+        const efforts = await options.modelStore.getEfforts(botId);
+        // The panel builds its selects from these lists, so they are kept in one place on the server.
         const aliases = [...MODEL_ALIASES];
+        const effortLevels = [...EFFORT_LEVELS];
 
-        return context.json({ ...choices, aliases });
+        return context.json({ ...choices, ...toEffortFields(efforts), aliases, effortLevels });
     });
 
     routes.put('/api/bots/:id/models', async (context) => {
@@ -50,15 +52,23 @@ function createModelRoutes(options: ModelRoutesOptions): Hono {
             return context.json(INVALID_JSON, 400);
         }
 
-        const parsed = parseModelInput(payload);
+        // Both parts are checked before anything is saved, so a refused request changes nothing.
+        const parsedModels = parseModelInput(payload);
 
-        if (isModelInputError(parsed)) {
-            return context.json(parsed, 400);
+        if (isModelInputError(parsedModels)) {
+            return context.json(parsedModels, 400);
         }
 
-        await options.modelStore.set(botId, parsed);
+        const parsedEfforts = parseEffortInput(payload);
 
-        return context.json(parsed);
+        if (isModelInputError(parsedEfforts)) {
+            return context.json(parsedEfforts, 400);
+        }
+
+        await options.modelStore.set(botId, parsedModels);
+        await options.modelStore.setEfforts(botId, parsedEfforts);
+
+        return context.json({ ...parsedModels, ...toEffortFields(parsedEfforts) });
     });
 
     return routes;

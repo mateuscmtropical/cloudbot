@@ -169,6 +169,12 @@ const botModels = sqliteTable('bot_models', {
     reviewModel: text('review_model'),
     browsingModel: text('browsing_model'),
     documentsModel: text('documents_model'),
+    // The effort per kind of work, as a level of the SDK effort option. A null column is the CLI default.
+    chatEffort: text('chat_effort'),
+    routinesEffort: text('routines_effort'),
+    reviewEffort: text('review_effort'),
+    browsingEffort: text('browsing_effort'),
+    documentsEffort: text('documents_effort'),
 });
 
 export { botModels, botRules, bots, messages, routines, settings, turnQueue, turnWaits, webhooks };

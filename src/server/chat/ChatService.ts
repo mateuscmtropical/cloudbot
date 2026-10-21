@@ -38,7 +38,8 @@ import type { RuleStore } from '../store/RuleStore.ts';
 import type { RoutineStore } from '../store/RoutineStore.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
 import type { WebhookStore } from '../store/WebhookStore.ts';
-import { chooseTurnModel } from '../models/modelChoices.ts';
+import { chooseTurnEffort, chooseTurnModel } from '../models/modelChoices.ts';
+import type { EffortLevel } from '../models/modelChoices.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
 import type { SetupAction, SetupConversation } from '../setup/SetupConversation.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
@@ -147,6 +148,8 @@ interface TurnContext {
     reviewToolCall?: TurnRequest['reviewToolCall'];
     additionalDirectories: string[];
     model?: string;
+    // The effort level of this turn. Unset keeps the CLI default.
+    effort?: EffortLevel;
     // The helper agents of this turn. Empty when the owner chose no helper.
     agents: NonNullable<TurnRequest['agents']>;
 }
@@ -1228,14 +1231,21 @@ class ChatService {
             const disallowedTools = [...new Set(blockedToolNames)];
             const toolCallReview = this.createToolCallReview(botId);
             const reviewOption = toolCallReview === undefined ? {} : { reviewToolCall: toolCallReview };
-            // The model choices are read for each turn, so a change in the web app applies to the next message.
+            // The model and effort choices are read for each turn, so a change in the web app applies to the next message.
             const modelChoices = this.modelStore === undefined ? undefined : await this.modelStore.get(botId);
+            const efforts = this.modelStore === undefined ? undefined : await this.modelStore.getEfforts(botId);
             const chosenModel = modelChoices === undefined ? undefined : chooseTurnModel(modelChoices, turn.source);
             const modelOption = chosenModel === undefined ? {} : { model: chosenModel };
+            const chosenEffort = efforts === undefined ? undefined : chooseTurnEffort(efforts, turn.source);
+            const effortOption = chosenEffort === undefined ? {} : { effort: chosenEffort };
             // A helper exists only for the work the owner chose a model for, and it gets only the tools of that work.
             const helperAgents = modelChoices === undefined
                 ? {}
-                : buildHelperAgents(modelChoices, { disallowedTools, hasBrowser: this.browser !== undefined });
+                : buildHelperAgents(modelChoices, {
+                        disallowedTools,
+                        hasBrowser: this.browser !== undefined,
+                        efforts: { browsing: efforts?.browsing ?? null, documents: efforts?.documents ?? null },
+                    });
             const helperKinds = Object.keys(helperAgents) as HelperKind[];
             const turnContext: TurnContext = {
                 additionalDirectories,
@@ -1256,6 +1266,7 @@ class ChatService {
                 disallowedTools,
                 ...reviewOption,
                 ...modelOption,
+                ...effortOption,
                 mcpServers: { [PROFILE_SERVER_NAME]: profileServer },
             };
             const firstAttempt = await this.runAttempt(turnContext, bot.sessionId, turnState);
@@ -1372,6 +1383,7 @@ class ChatService {
             additionalDirectories: turnContext.additionalDirectories,
             ...(hasHelpers ? { agents: turnContext.agents } : {}),
             ...(turnContext.model === undefined ? {} : { model: turnContext.model }),
+            ...(turnContext.effort === undefined ? {} : { effort: turnContext.effort }),
             ...(turnContext.reviewToolCall === undefined ? {} : { reviewToolCall: turnContext.reviewToolCall }),
             ...sessionOption,
         };
