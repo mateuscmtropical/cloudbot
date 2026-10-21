@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream';
 import { USAGE_LIMIT_ERROR_PREFIXES, query } from '@anthropic-ai/claude-agent-sdk';
 import type {
+    HookCallback,
     Options,
     SDKAssistantMessage,
     SDKMessage,
@@ -171,6 +172,38 @@ function withResetsAt(agentEvent: AgentEvent, latestResetsAt: number | undefined
     return { ...agentEvent, resetsAt: latestResetsAt };
 }
 
+// A call may wait for the owner, so the hook outlasts the one hour wait of the approval gate.
+const REVIEW_HOOK_TIMEOUT_SECONDS = 3900;
+
+// PreToolUse runs for every tool, including the ones allowedTools lets through. Only a refusal changes the outcome.
+function buildReviewHooks(
+    reviewToolCall: NonNullable<TurnRequest['reviewToolCall']>,
+    turnSignal: AbortSignal,
+): NonNullable<Options['hooks']> {
+    const reviewHook: HookCallback = async (input, _toolUseId, hookOptions) => {
+        if (input.hook_event_name !== 'PreToolUse') {
+            return {};
+        }
+
+        const signal = AbortSignal.any([hookOptions.signal, turnSignal]);
+        const decision = await reviewToolCall({ toolName: input.tool_name, input: input.tool_input }, signal);
+
+        if (decision.isAllowed) {
+            return {};
+        }
+
+        return {
+            hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                permissionDecision: 'deny',
+                permissionDecisionReason: decision.reason,
+            },
+        };
+    };
+
+    return { PreToolUse: [{ hooks: [reviewHook], timeout: REVIEW_HOOK_TIMEOUT_SECONDS }] };
+}
+
 function buildQueryOptions(
     request: TurnRequest,
     runnerOptions: SdkAgentRunnerOptions,
@@ -213,6 +246,8 @@ function buildQueryOptions(
     // Extra folders the agent may read, such as the upload folder of the bot.
     const additionalDirectoriesOption = request.additionalDirectories ? { additionalDirectories: request.additionalDirectories } : {};
 
+    const hooksOption = request.reviewToolCall ? { hooks: buildReviewHooks(request.reviewToolCall, request.abortSignal) } : {};
+
     return {
         cwd: request.workspaceDir,
         abortController,
@@ -226,6 +261,7 @@ function buildQueryOptions(
         ...allowedToolsOption,
         ...disallowedToolsOption,
         ...additionalDirectoriesOption,
+        ...hooksOption,
     };
 }
 

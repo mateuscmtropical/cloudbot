@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { ApprovalGate } from '../approvals/ApprovalGate.ts';
+import type { ToolCallReviewer } from '../approvals/ApprovalGate.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnImage, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
@@ -39,6 +41,7 @@ import type {
     ChatEvent,
     ChatMessage,
     ChatRole,
+    ChoiceBody,
     FileBody,
     MessageBody,
     PendingUpload,
@@ -67,6 +70,8 @@ interface ChatServiceOptions {
     screen?: ScreenHolder | undefined;
     // The owner's rules for each bot. Without it turns run without rules.
     ruleStore?: RuleStore | undefined;
+    // Decides which tool calls wait for the owner. Without it no call waits.
+    toolCallReviewer?: ToolCallReviewer | undefined;
 }
 
 interface SharedFileDownload {
@@ -121,6 +126,7 @@ interface TurnContext {
     systemPrompt: string;
     mcpServers: NonNullable<TurnRequest['mcpServers']>;
     disallowedTools: string[];
+    reviewToolCall?: TurnRequest['reviewToolCall'];
     additionalDirectories: string[];
 }
 
@@ -332,6 +338,7 @@ class ChatService {
     // Bot secret forms with an answer in progress, by message id.
     private readonly answeringForms = new Set<string>();
     private readonly ruleStore: RuleStore | undefined;
+    private readonly approvals: ApprovalGate | undefined;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
     private setup: SetupConversation | undefined;
@@ -355,6 +362,15 @@ class ChatService {
         this.botSecrets = options.botSecrets;
         this.screen = options.screen;
         this.ruleStore = options.ruleStore;
+        this.approvals = options.toolCallReviewer === undefined
+            ? undefined
+            : new ApprovalGate({
+                    chat: {
+                        post: (botId, body) => this.saveAndPublish(botId, 'assistant', body),
+                        close: (messageId, body) => this.updateSetupMessage(messageId, body),
+                    },
+                    reviewer: options.toolCallReviewer,
+                });
     }
 
     // Uploads live outside the agent's writable workspace. The agent reads them and cannot change them.
@@ -606,6 +622,8 @@ class ChatService {
 
     // Rebuilds the queues and the usage limit waits from the database. Call once, after the store is open.
     async resumeQueue(): Promise<void> {
+        await this.closeStaleApprovals();
+
         const storedTurns = await this.botStore.listQueuedTurns();
         const usageWaits = await this.botStore.listUsageWaits();
         const restoreReads = storedTurns.map(restoreQueuedTurn);
@@ -628,6 +646,19 @@ class ChatService {
         });
     }
 
+    // An approval question waits in memory, so any open one belongs to a turn that a restart ended.
+    private async closeStaleApprovals(): Promise<void> {
+        const choiceMessages = await this.messageStore.listByKind('choice');
+        const staleMessages = choiceMessages.filter((stored) => {
+            const body = stored.content as ChoiceBody;
+
+            return body.isApproval === true && body.chosenId === undefined;
+        });
+        const closes = staleMessages.map(stored => this.updateSetupMessage(stored.id, { ...(stored.content as ChoiceBody), chosenId: 'deny' }));
+
+        await Promise.all(closes);
+    }
+
     // Clears the usage limit timers. The database keeps the waits, so a new service resumes them.
     dispose(): void {
         this.usageWaitTimers.forEach((timer) => {
@@ -648,6 +679,14 @@ class ChatService {
     }
 
     async answerSetup(botId: string, messageId: string, action: SetupAction, value: string): Promise<ChatMessage> {
+        if (action === 'choice') {
+            const approvalAnswer = await this.answerApproval(botId, messageId, value);
+
+            if (approvalAnswer !== undefined) {
+                return approvalAnswer;
+            }
+        }
+
         // Two answers to one form could both read it as open, so a second answer during the first is refused.
         if (this.answeringForms.has(messageId)) {
             throw new SetupAnswerError('This form is being answered.');
@@ -670,6 +709,33 @@ class ChatService {
         }
 
         return this.setup.answer(botId, messageId, action, value);
+    }
+
+    // Returns undefined when the message is not an approval question, so the setup handles it.
+    private async answerApproval(botId: string, messageId: string, choiceId: string): Promise<ChatMessage | undefined> {
+        const stored = await this.messageStore.getById(messageId);
+        const body = stored?.content as MessageBody | undefined;
+
+        if (stored?.botId !== botId || body?.kind !== 'choice' || body.isApproval !== true) {
+            return undefined;
+        }
+
+        if (body.chosenId !== undefined) {
+            throw new SetupAnswerError('This question was already answered.');
+        }
+
+        const answered = await this.approvals?.answer(botId, messageId, choiceId);
+
+        if (answered !== undefined) {
+            return answered;
+        }
+
+        // No call waits for this question. It is left from before a restart or is not a valid choice.
+        if (this.approvals?.isPending(messageId) !== true && body.options.some(option => option.id === choiceId)) {
+            await this.updateSetupMessage(messageId, { ...body, chosenId: 'deny' });
+        }
+
+        throw new SetupAnswerError('The bot is no longer waiting for this answer.');
     }
 
     // Gives the screen to the owner and posts a note in the chat. The browser tools stop until the owner gives it back.
@@ -1130,6 +1196,8 @@ class ChatService {
             const ownerRules = this.ruleStore === undefined ? [] : await this.ruleStore.list(botId);
             const blockedToolNames = ownerRules.flatMap(rule => rule.blockedTools);
             const disallowedTools = [...new Set(blockedToolNames)];
+            const toolCallReview = this.createToolCallReview(botId);
+            const reviewOption = toolCallReview === undefined ? {} : { reviewToolCall: toolCallReview };
             const turnContext: TurnContext = {
                 additionalDirectories,
                 botId,
@@ -1139,6 +1207,7 @@ class ChatService {
                 images,
                 systemPrompt: buildSystemPrompt(bot, { hasBrowser: this.browser !== undefined, ownerRules }),
                 disallowedTools,
+                ...reviewOption,
                 mcpServers: { [PROFILE_SERVER_NAME]: profileServer },
             };
             const firstAttempt = await this.runAttempt(turnContext, bot.sessionId, turnState);
@@ -1174,6 +1243,16 @@ class ChatService {
         if (!turnState.agentStarted) {
             this.restoreUploads(turn.botId, turn.uploads);
         }
+    }
+
+    private createToolCallReview(botId: string): TurnRequest['reviewToolCall'] {
+        const approvals = this.approvals;
+
+        if (approvals === undefined) {
+            return undefined;
+        }
+
+        return (call, signal) => approvals.review(botId, call, signal);
     }
 
     // request_secret needs the vault. browser_type_secret also needs the browser.
@@ -1229,6 +1308,7 @@ class ChatService {
             allowedTools: this.allowedToolNames(),
             disallowedTools: turnContext.disallowedTools,
             additionalDirectories: turnContext.additionalDirectories,
+            ...(turnContext.reviewToolCall === undefined ? {} : { reviewToolCall: turnContext.reviewToolCall }),
             ...sessionOption,
         };
         const isResumeAttempt = sessionId !== null;

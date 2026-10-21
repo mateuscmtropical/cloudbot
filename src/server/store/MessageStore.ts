@@ -61,6 +61,14 @@ class MessageStore {
         return rows[0];
     }
 
+    async listByKind(kind: string): Promise<Message[]> {
+        const condition = eq(messages.kind, kind);
+
+        return this.database.select()
+            .from(messages)
+            .where(condition);
+    }
+
     // Returns the newest `limit` messages, oldest first. Pass the `sequence` of
     // the oldest message in the last page as `beforeSequence` to load the page
     // before it.

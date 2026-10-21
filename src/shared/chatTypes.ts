@@ -32,6 +32,8 @@ interface ChoiceBody {
     prompt: string;
     options: ChoiceOption[];
     chosenId?: string;
+    // Set on a question that holds a tool call until the owner answers.
+    isApproval?: boolean;
 }
 
 interface LinkBody {

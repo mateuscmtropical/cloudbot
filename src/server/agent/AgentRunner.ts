@@ -9,6 +9,14 @@ interface TurnImage {
     data: string;
 }
 
+interface ToolCall {
+    toolName: string;
+    input: unknown;
+}
+
+// isAllowed false refuses the call. The reason goes to the model.
+type ToolCallDecision = { isAllowed: true } | { isAllowed: false; reason: string };
+
 interface TurnRequest {
     botId: string;
     workspaceDir: string;
@@ -19,6 +27,8 @@ interface TurnRequest {
     allowedTools?: string[];
     // Tools the owner blocked. The SDK refuses them even when allowedTools names them.
     disallowedTools?: string[];
+    // Called before each tool call. It may wait, for example for the owner. The signal fires when the turn stops.
+    reviewToolCall?: (call: ToolCall, signal: AbortSignal) => Promise<ToolCallDecision>;
     images?: TurnImage[];
     additionalDirectories?: string[];
     abortSignal: AbortSignal;
@@ -28,4 +38,4 @@ interface AgentRunner {
     runTurn(request: TurnRequest): AsyncIterable<AgentEvent>;
 }
 
-export type { AgentRunner, TurnImage, TurnImageMediaType, TurnRequest };
+export type { AgentRunner, ToolCall, ToolCallDecision, TurnImage, TurnImageMediaType, TurnRequest };
