@@ -992,6 +992,15 @@ describe('ChatService', () => {
             .toContain('GitHub shows a check I cannot pass.');
     });
 
+    it('keeps the screen with the bot when the note cannot be saved', async () => {
+        const screen = new ScreenHolder();
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, screen });
+
+        await expect(service.requestScreen('missing-bot', 'Reason')).rejects.toThrow();
+        expect(screen.holder)
+            .toBe('bot');
+    });
+
     it('allows request_screen only with a browser and a screen', async () => {
         const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:1' });
         const withBoth = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);

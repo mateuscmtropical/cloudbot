@@ -81,6 +81,30 @@ describe('RfbInputFilter', () => {
             .toEqual(Buffer.concat([HANDSHAKE, UPDATE_REQUEST]));
     });
 
+    it('passes a key release but not a key press while input is not allowed', () => {
+        const filter = startedFilter(() => false);
+        const keyUp = Buffer.from([4, 0, 0, 0, 0, 0, 0, 97]);
+
+        expect(filter.filter(Buffer.concat([KEY_DOWN, keyUp])))
+            .toEqual(keyUp);
+    });
+
+    it('refuses a client version other than 3.8', () => {
+        const filter = new RfbInputFilter(() => false);
+
+        expect(() => filter.filter(Buffer.from('RFB 003.003\n')))
+            .toThrow(RfbStreamError);
+    });
+
+    it('waits for the whole version before it decides', () => {
+        const filter = new RfbInputFilter(() => false);
+
+        expect(filter.filter(HANDSHAKE.subarray(0, 5)))
+            .toHaveLength(0);
+        expect(filter.filter(HANDSHAKE.subarray(5)))
+            .toEqual(HANDSHAKE);
+    });
+
     it('refuses a message type it cannot frame', () => {
         const filter = startedFilter(() => false);
 

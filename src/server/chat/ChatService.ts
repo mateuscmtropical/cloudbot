@@ -676,8 +676,16 @@ class ChatService {
     async requestScreen(botId: string, reason: string): Promise<void> {
         const body: TextBody = { kind: 'text', text: `I need you on my screen. ${reason}\n\nOpen the Screen panel, do what is needed, then give the screen back and send me a message.` };
 
-        await this.saveAndPublish(botId, 'assistant', body);
+        // The holder changes first, so a browser tool called in the same moment is already refused.
         this.screen?.giveToPerson();
+
+        try {
+            await this.saveAndPublish(botId, 'assistant', body);
+        } catch (error: unknown) {
+            this.screen?.giveToBot();
+
+            throw error;
+        }
     }
 
     // Posts a secure form the bot asked for. Throws BotSecretError with a message for the model.

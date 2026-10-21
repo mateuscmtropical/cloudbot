@@ -1,7 +1,9 @@
 // Filters the bytes a VNC client sends to x11vnc. While the bot holds the screen, key events,
 // pointer events and clipboard text are dropped. All other messages pass.
 // x11vnc runs with no password, so the handshake is: 12 bytes of version, 1 byte of security type, 1 byte of ClientInit.
-const HANDSHAKE_BYTES = 14;
+// Only RFB 3.8 is accepted. Older versions let the server pick the security type, so the framing below would shift by a byte.
+const VERSION = Buffer.from('RFB 003.008\n');
+const AFTER_VERSION_BYTES = 2;
 const SET_PIXEL_FORMAT = 0;
 const SET_ENCODINGS = 2;
 const FRAMEBUFFER_UPDATE_REQUEST = 3;
@@ -25,7 +27,8 @@ type InputAllowed = () => boolean;
 class RfbInputFilter {
     private readonly isInputAllowed: InputAllowed;
     private pending: Buffer = Buffer.alloc(0);
-    private handshakeBytesLeft = HANDSHAKE_BYTES;
+    private isVersionRead = false;
+    private handshakeBytesLeft = AFTER_VERSION_BYTES;
 
     constructor(isInputAllowed: InputAllowed) {
         this.isInputAllowed = isInputAllowed;
@@ -62,6 +65,21 @@ class RfbInputFilter {
             return undefined;
         }
 
+        if (!this.isVersionRead) {
+            if (this.pending.length < VERSION.length) {
+                return undefined;
+            }
+
+            if (!this.pending.subarray(0, VERSION.length)
+                .equals(VERSION)) {
+                throw new RfbStreamError('Only RFB 3.8 is supported.');
+            }
+
+            this.isVersionRead = true;
+
+            return { bytes: this.consume(VERSION.length), isForwarded: true };
+        }
+
         if (this.handshakeBytesLeft > 0) {
             const size = Math.min(this.handshakeBytesLeft, this.pending.length);
 
@@ -77,10 +95,12 @@ class RfbInputFilter {
         }
 
         const type = this.pending[0];
+        // A key release always passes, so a key held when the screen changes hands does not stay down.
+        const isKeyRelease = type === KEY_EVENT && this.pending[1] === 0;
         const isInput = type === KEY_EVENT || type === POINTER_EVENT || type === CLIENT_CUT_TEXT;
         const bytes = this.consume(size);
 
-        return { bytes, isForwarded: !isInput || this.isInputAllowed() };
+        return { bytes, isForwarded: !isInput || isKeyRelease || this.isInputAllowed() };
     }
 
     private consume(size: number): Buffer {
