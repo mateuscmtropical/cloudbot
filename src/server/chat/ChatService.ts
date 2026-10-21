@@ -67,6 +67,10 @@ import { BOT_CREATE_TOOL_FULL_NAME, createBotCreateTool } from '../bots/createBo
 import type { BotCreateInput } from '../bots/createBotTool.ts';
 import { BOT_DELETE_TOOL_FULL_NAME, createBotDeleteTool } from '../bots/createBotDeleteTool.ts';
 import { RULE_LIST_TOOL_FULL_NAME, RULE_TOOL_FULL_NAMES, createRuleTools } from '../rules/createRuleTools.ts';
+import { BOT_SEND_TOOL_FULL_NAME, createBotSendTool } from '../bots/createBotSendTool.ts';
+import type { BotSendInput, BotSendOutcome } from '../bots/createBotSendTool.ts';
+import { HANDOFF_SENT_PREFIX, MAX_HANDOFFS_PER_TURN, MAX_HANDOFF_DEPTH, buildBotHandoffMessage, describeHandoffReply } from '../bots/botHandoff.ts';
+import type { HandoffOutcome } from '../bots/botHandoff.ts';
 import { encodeProjectPath } from '../bots/claudeProjectFolder.ts';
 import { removeBotDirectory } from '../bots/removeBotDirectory.ts';
 import { prepareAgentWorkspace } from '../agent/prepareAgentWorkspace.ts';
@@ -202,14 +206,24 @@ interface TurnState {
     isRejectedByLimit: boolean;
     rejectedResetsAt: number | undefined;
     limit: UsageLimitState | undefined;
+    // True once an error ended the turn and was shown to the owner. An error held back for a retry does not count.
+    hasError: boolean;
 }
 
 interface UsageLimitState {
     resetsAt: number | undefined;
 }
 
-// Who started a turn. A routine turn uses the routines model choice.
-type TurnSource = 'chat' | 'routine' | 'webhook';
+// Who started a turn. A routine turn uses the routines model choice. A bot hand-off uses the routines choice too.
+type TurnSource = 'chat' | 'routine' | 'webhook' | 'bot';
+
+// The bot that sent a hand-off, and how many hand-offs the chain has reached with this one.
+interface BotHandoffSource {
+    senderBotId: string;
+    depth: number;
+    // Set on a turn that continues after a usage limit. The reply then starts at the first hand-off message.
+    sinceMessageId?: string | undefined;
+}
 
 // One message's turn: what to send, its files, and the stored message it answers.
 interface TurnInput {
@@ -218,6 +232,7 @@ interface TurnInput {
     uploads: SavedUpload[];
     messageId: string | undefined;
     source: TurnSource;
+    handoff?: BotHandoffSource | undefined;
 }
 
 // A turn waiting in the queue. Its position orders the queue, so a retry can go in front.
@@ -365,6 +380,35 @@ function toStoredUpload(upload: SavedUpload): StoredUploadRecord {
     };
 }
 
+// How a hand-off turn ended, for the note in the sender's chat.
+function readHandoffOutcome(isStopped: boolean, isFailed: boolean): HandoffOutcome {
+    if (isStopped) {
+        return 'stopped';
+    }
+
+    return isFailed ? 'failed' : 'finished';
+}
+
+// A turn that continues after a usage limit keeps its hand-off. The reply then starts at the first hand-off message.
+function carryHandoff(turn: TurnInput): BotHandoffSource | undefined {
+    if (turn.handoff === undefined) {
+        return undefined;
+    }
+
+    return { ...turn.handoff, sinceMessageId: turn.handoff.sinceMessageId ?? turn.messageId };
+}
+
+// The newest messages read when a hand-off turn ends. A turn that saves more than this loses its earliest replies.
+// ponytail: fixed scan window, a cursor on the hand-off sequence if long turns lose replies.
+const REPLY_SCAN_LIMIT = 500;
+
+// The text of a stored text message, or nothing for cards, files and tool activity.
+function readTextOf(content: unknown): string[] {
+    const body = content as { kind?: unknown; text?: unknown } | null;
+
+    return body?.kind === 'text' && typeof body.text === 'string' ? [body.text] : [];
+}
+
 function toQueuedTurnRecord(queuedTurn: QueuedTurn): QueuedTurnRecord {
     const storedUploads = queuedTurn.uploads.map(toStoredUpload);
 
@@ -465,6 +509,9 @@ class ChatService {
     private readonly deletingBots = new Set<string>();
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
+    // The hand-offs each running turn has sent, by the sender's bot id. Cleared when the turn finishes.
+    private readonly handoffsSentByTurn = new Map<string, number>();
+    private readonly handoffsInFlight = new Map<string, number>();
     // The limits and the clock of the running turn of each bot. They are set when the turn starts and cleared when it ends.
     private readonly runningLimits = new Map<string, TurnLimit>();
     private readonly turnDeadlines = new Map<string, TurnDeadline>();
@@ -984,6 +1031,9 @@ class ChatService {
             this.webhookRefusals?.forget(webhook.id);
             this.webhookDeliveries?.forget(webhook.id);
         });
+        const deletedBot = await this.botStore.getById(botId);
+
+        await this.reportDroppedHandoffs(this.queuedTurns.get(botId) ?? [], deletedBot?.name ?? 'The bot', 'the bot was deleted');
         await this.botStore.delete(botId);
         // The web app learns the bot is gone while the listeners still exist. Then they are dropped.
         this.publish(botId, { type: 'botDeleted', botId });
@@ -1267,7 +1317,7 @@ class ChatService {
 
     // A message sent while the bot is busy is saved as queued and runs after the work ahead of it.
     // The source only picks the model of the turn. Routine messages pass 'routine'.
-    async sendMessage(botId: string, text: string, source: TurnSource = 'chat'): Promise<ChatMessage | undefined> {
+    async sendMessage(botId: string, text: string, source: TurnSource = 'chat', handoff?: BotHandoffSource): Promise<ChatMessage | undefined> {
         if (this.deletingBots.has(botId)) {
             throw new BotDeletingError();
         }
@@ -1301,14 +1351,18 @@ class ChatService {
             this.publishTurnState(botId);
         }
 
-        const turnUploads = this.pendingUploads.get(botId) ?? [];
+        // A hand-off takes no files. The files of the owner wait for the owner's next message.
+        const takesUploads = source !== 'bot';
+        const turnUploads = takesUploads ? (this.pendingUploads.get(botId) ?? []) : [];
         const attachmentSummaries = turnUploads.map(toAttachmentSummary);
         const userBody: TextBody = attachmentSummaries.length === 0
             ? { kind: 'text', text }
             : { kind: 'text', text, attachments: attachmentSummaries };
         const storedBody: TextBody = isQueued ? { ...userBody, isQueued: true } : userBody;
 
-        this.pendingUploads.delete(botId);
+        if (takesUploads) {
+            this.pendingUploads.delete(botId);
+        }
 
         let userMessage: ChatMessage;
 
@@ -1330,7 +1384,7 @@ class ChatService {
         }
 
         if (isQueued) {
-            await this.enqueueTurn(botId, { botId, text, uploads: turnUploads, messageId: userMessage.id, source }, false);
+            await this.enqueueTurn(botId, { botId, text, uploads: turnUploads, messageId: userMessage.id, source, handoff }, false);
 
             // The turn that was running may have ended while the message was saved, so the queue is checked again.
             this.startNextQueuedTurn(botId)
@@ -1340,12 +1394,185 @@ class ChatService {
         }
 
         // The turn runs in the background. Its failures are reported to the chat.
-        this.runTurn({ botId, text, uploads: turnUploads, messageId: userMessage.id, source }, abortController)
+        this.runTurn({ botId, text, uploads: turnUploads, messageId: userMessage.id, source, handoff }, abortController)
             .catch((error: unknown) => {
                 console.error('The chat turn failed outside the conversation', error);
             });
 
         return userMessage;
+    }
+
+    // The bot_send tool. Checks the target, the caps and the chain depth, then starts the target's turn like any message.
+    async handoffFromTool(senderBotId: string, senderDepth: number, input: BotSendInput): Promise<BotSendOutcome> {
+        // Every attempt counts and is reserved before the first await, so parallel calls cannot pass the cap together.
+        const sentThisTurn = this.handoffsSentByTurn.get(senderBotId) ?? 0;
+
+        if (sentThisTurn >= MAX_HANDOFFS_PER_TURN) {
+            return { isError: true, text: `This turn has already sent ${String(MAX_HANDOFFS_PER_TURN)} hand-offs. Wait for their replies, or ask the owner.` };
+        }
+
+        this.handoffsSentByTurn.set(senderBotId, sentThisTurn + 1);
+
+        const bots = await this.botStore.list();
+        const wantedName = input.bot.toLowerCase();
+        const matches = bots.filter(bot => bot.name.toLowerCase() === wantedName);
+        const target = matches[0];
+        const sender = bots.find(bot => bot.id === senderBotId);
+
+        if (target === undefined || sender === undefined) {
+            return { isError: true, text: `No bot is named ${input.bot}.` };
+        }
+
+        if (matches.length > 1) {
+            return { isError: true, text: `More than one bot is named ${input.bot}. The owner must rename one of them.` };
+        }
+
+        if (target.id === senderBotId) {
+            return { isError: true, text: 'A bot cannot send a message to itself.' };
+        }
+
+        const inFlight = this.handoffsInFlight.get(target.id) ?? 0;
+
+        if (this.countQueuedHandoffTurns(target.id) + inFlight >= MAX_HANDOFFS_PER_TURN) {
+            return { isError: true, text: `${target.name} already has ${String(MAX_HANDOFFS_PER_TURN)} hand-offs waiting. Try again later.` };
+        }
+
+        // Held until the send settles, so sends still on their way count toward the target's cap.
+        this.handoffsInFlight.set(target.id, inFlight + 1);
+
+        try {
+            return await this.sendHandoff(sender, target, senderDepth, input.text);
+        } finally {
+            const left = (this.handoffsInFlight.get(target.id) ?? 1) - 1;
+
+            if (left > 0) {
+                this.handoffsInFlight.set(target.id, left);
+            } else {
+                this.handoffsInFlight.delete(target.id);
+            }
+        }
+    }
+
+    private async sendHandoff(sender: Bot, target: Bot, senderDepth: number, text: string): Promise<BotSendOutcome> {
+        const senderBotId = sender.id;
+        const handoffDepth = senderDepth + 1;
+
+        if (handoffDepth > MAX_HANDOFF_DEPTH) {
+            const stopText = `The hand-off to ${target.name} was not sent. A chain allows ${String(MAX_HANDOFF_DEPTH)} hand-offs in a row, so the owner decides the next step.`;
+
+            await this.saveSenderNote(senderBotId, stopText);
+
+            return { isError: true, text: stopText };
+        }
+
+        // The note is saved before the send. A send that does not start adds a second note that says why.
+        await this.saveSenderNote(senderBotId, `${HANDOFF_SENT_PREFIX}${target.name}: ${text}`);
+
+        const handoffText = buildBotHandoffMessage(sender.name, text);
+        const handoffRoute: BotHandoffSource = { senderBotId, depth: handoffDepth };
+        const refusal = await this.startHandoffTurn(target, handoffText, handoffRoute);
+
+        if (refusal !== undefined) {
+            const refusalText = `The hand-off to ${target.name} was not sent: ${refusal}.`;
+
+            await this.saveSenderNote(senderBotId, refusalText);
+
+            return { isError: true, text: refusalText };
+        }
+
+        return { isError: false, text: `Sent to ${target.name}. Its reply will appear in this chat.` };
+    }
+
+    // Starts the target's turn with the hand-off text. Returns why it did not start, or undefined when it did.
+    private async startHandoffTurn(target: Bot, text: string, handoff: BotHandoffSource): Promise<string | undefined> {
+        let sent: ChatMessage | undefined;
+
+        try {
+            sent = await this.sendMessage(target.id, text, 'bot', handoff);
+        } catch (error: unknown) {
+            if (error instanceof BotDeletingError) {
+                return 'the bot is being deleted';
+            }
+
+            throw error;
+        }
+
+        if (sent === undefined) {
+            return 'the bot no longer exists';
+        }
+
+        // A bot that has not finished its Claude setup answers with a reminder, not with a turn.
+        return sent.role === 'user' ? undefined : 'the bot is not set up to take messages yet';
+    }
+
+    // The hand-offs waiting in the bot's queue, not counting the one running. Hand-offs are refused past a cap.
+    countQueuedHandoffTurns(botId: string): number {
+        const waitingTurns = this.queuedTurns.get(botId) ?? [];
+
+        return waitingTurns.filter(turn => turn.source === 'bot').length;
+    }
+
+    // A note in the sender's chat. It is skipped when the sender is being deleted, and a failed save is reported, not thrown.
+    private async saveSenderNote(botId: string, text: string): Promise<void> {
+        if (this.deletingBots.has(botId)) {
+            return;
+        }
+
+        try {
+            await this.saveAndPublish(botId, 'system', { kind: 'text', text });
+        } catch (error: unknown) {
+            reportBackgroundError(error);
+        }
+    }
+
+    // A hand-off that waits in a queue and will not run tells its sender why.
+    private async reportDroppedHandoffs(droppedTurns: QueuedTurn[], targetName: string, reason: string): Promise<void> {
+        const handoffs = droppedTurns.flatMap(turn => (turn.handoff === undefined ? [] : [turn.handoff]));
+
+        const dropNotes = handoffs.map(handoff => this.saveSenderNote(handoff.senderBotId, `The hand-off to ${targetName} was dropped before it started: ${reason}.`));
+
+        await Promise.all(dropNotes);
+    }
+
+    // The reply of a hand-off turn goes back to the sender's chat, as one note from the receiving bot.
+    private async reportHandoffReply(turn: TurnInput, outcome: HandoffOutcome): Promise<void> {
+        const handoff = turn.handoff;
+
+        if (handoff === undefined) {
+            return;
+        }
+
+        const receiver = await this.botStore.getById(turn.botId);
+
+        if (receiver === undefined) {
+            return;
+        }
+
+        const replyText = await this.turnReplyText(turn.botId, handoff.sinceMessageId ?? turn.messageId);
+
+        const replyNote = describeHandoffReply(receiver.name, replyText, outcome);
+
+        await this.saveSenderNote(handoff.senderBotId, replyNote);
+    }
+
+    // The text messages the bot saved after the hand-off message. Tool activity and cards are left out.
+    private async turnReplyText(botId: string, handoffMessageId: string | undefined): Promise<string> {
+        if (handoffMessageId === undefined) {
+            return '';
+        }
+
+        const handoffMessage = await this.messageStore.getById(handoffMessageId);
+
+        if (handoffMessage === undefined) {
+            return '';
+        }
+
+        const recentMessages = await this.messageStore.listByBot(botId, { limit: REPLY_SCAN_LIMIT });
+        const replyTexts = recentMessages
+            .filter(message => message.role === 'assistant' && message.sequence > handoffMessage.sequence)
+            .flatMap(message => readTextOf(message.content));
+
+        return replyTexts.join('\n\n');
     }
 
     // Stop ends the running turn, or cancels a usage limit wait together with the queue behind it.
@@ -1517,6 +1744,7 @@ class ChatService {
         this.reviewSpend.delete(botId);
         this.screenWaitBots.delete(botId);
         this.runningTurns.delete(botId);
+        this.handoffsSentByTurn.delete(botId);
         this.publishTurnState(botId);
         this.startNextQueuedTurn(botId)
             .catch(reportBackgroundError);
@@ -1629,7 +1857,7 @@ class ChatService {
     // After a usage limit, the same message runs again when no session started. Otherwise "Continue." runs in the session.
     private async waitForUsageLimit(turn: TurnInput, agentStarted: boolean, resetsAt: number | undefined): Promise<void> {
         const resumeTurn: TurnInput = agentStarted
-            ? { botId: turn.botId, text: CONTINUE_PROMPT, uploads: [], messageId: undefined, source: turn.source }
+            ? { botId: turn.botId, text: CONTINUE_PROMPT, uploads: [], messageId: undefined, source: turn.source, handoff: carryHandoff(turn) }
             : turn;
 
         await this.enqueueTurn(turn.botId, resumeTurn, true);
@@ -1684,6 +1912,9 @@ class ChatService {
         // The files of the dropped turns, such as a retry the agent never started, go back for the next message.
         this.restoreUploads(botId, droppedUploads);
         this.queuedTurns.delete(botId);
+        const stoppedBot = await this.botStore.getById(botId);
+
+        await this.reportDroppedHandoffs(droppedTurns, stoppedBot?.name ?? 'The bot', 'the owner stopped the bot');
         await this.botStore.deleteQueuedTurnsOfBot(botId);
         await this.botStore.deleteUsageWait(botId);
         const clears = droppedMessageIds.map(messageId => this.clearQueuedFlag(messageId));
@@ -1704,7 +1935,9 @@ class ChatService {
 
     private async runTurn(turn: TurnInput, abortController: AbortController): Promise<void> {
         const { botId, text, uploads } = turn;
-        const turnState: TurnState = { agentStarted: false, isRejectedByLimit: false, rejectedResetsAt: undefined, limit: undefined };
+        const turnState: TurnState = { agentStarted: false, isRejectedByLimit: false, rejectedResetsAt: undefined, limit: undefined, hasError: false };
+        // Set when the turn ends on an error, so its hand-off reply says so.
+        let hasFailed = false;
 
         try {
             const bot = await this.botStore.getById(botId);
@@ -1753,7 +1986,14 @@ class ChatService {
             const browserAllowTools = this.browserAllowStore === undefined || this.browser === undefined ? [] : createBrowserAllowTools(this.browserAllowStore);
             const appTools = this.connectedApps === undefined ? [] : createAppTools(this.connectedApps, botId);
             // The tool asks the owner through the approval gate, so it is offered only when that gate exists.
-            const botTools = this.approvals === undefined ? [] : [createBotCreateTool(input => this.createBotFromTool(botId, input))];
+            // The hand-off depth is the chain's count so far, so a turn that a hand-off started sends one level deeper.
+            const handoffDepth = turn.handoff?.depth ?? 0;
+            const botTools = this.approvals === undefined
+                ? []
+                : [
+                        createBotCreateTool(input => this.createBotFromTool(botId, input)),
+                        createBotSendTool(input => this.handoffFromTool(botId, handoffDepth, input)),
+                    ];
             // The rule list is always offered. A rule change and a bot delete are offered only with the approval gate, since each waits for the owner.
             const ruleTools = this.ruleStore === undefined ? [] : createRuleTools(this.ruleStore, botId, this.approvals !== undefined);
             const botDeleteTools = this.approvals === undefined ? [] : [createBotDeleteTool(() => this.deleteBotFromTool(botId))];
@@ -1806,6 +2046,7 @@ class ChatService {
                     hasWebhooks: this.webhookStore !== undefined,
                     hasWatches: this.watchStore !== undefined,
                     hasGithub: this.githubEnvironment !== undefined,
+                    hasHandoffs: this.approvals !== undefined,
                     hasLimits: this.limitStore !== undefined,
                     ownerRules,
                     helpers: helperKinds,
@@ -1821,17 +2062,29 @@ class ChatService {
 
             // A resumed session that fails before it starts is usually gone, for example
             // after a container rebuild. Start a fresh session once instead of failing every turn.
+            let lastAttempt = firstAttempt;
+
             if (firstAttempt.failureText !== undefined && turnState.limit === undefined) {
                 await this.botStore.setSessionId(botId, null);
-                await this.runAttempt(turnContext, null, turnState);
+                lastAttempt = await this.runAttempt(turnContext, null, turnState);
             }
+
+            hasFailed = lastAttempt.failureText !== undefined;
         } catch (error: unknown) {
+            hasFailed = true;
             const errorBody: TextBody = { kind: 'text', text: describeError(error) };
 
             await this.saveAndPublish(botId, 'system', errorBody);
         } finally {
             try {
                 await this.settleTurnEnd(turn, turnState);
+
+                // A turn that hit a limit reports from its continuation, so the reply is posted once.
+                if (turnState.limit === undefined) {
+                    const handoffOutcome = readHandoffOutcome(abortController.signal.aborted, hasFailed || turnState.hasError);
+
+                    await this.reportHandoffReply(turn, handoffOutcome);
+                }
             } finally {
                 this.finishTurn(botId);
             }
@@ -1933,8 +2186,10 @@ class ChatService {
         // The rule list needs the rule store. A rule change needs the approval gate too, so without it only the list is allowed.
         const ruleToolNames = this.ruleToolNamesAllowed();
         const botDeleteToolNames = this.approvals === undefined ? [] : [BOT_DELETE_TOOL_FULL_NAME];
+        // bot_send is offered only with the approval gate too, since the receiving turn is reviewed like any other.
+        const botSendToolNames = this.approvals === undefined ? [] : [BOT_SEND_TOOL_FULL_NAME];
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...ruleToolNames, ...botDeleteToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames];
     }
 
     private webhookTools(botId: string): CloudbotTool[] {
@@ -2016,6 +2271,10 @@ class ChatService {
                     failureText = agentEvent.message;
 
                     continue;
+                }
+
+                if (agentEvent.type === 'turn_error') {
+                    turnState.hasError = true;
                 }
 
                 await this.handleAgentEvent(botId, agentEvent, toolNamesById);

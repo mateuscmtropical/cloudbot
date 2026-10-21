@@ -3,6 +3,7 @@ import type { Mock } from 'vitest';
 
 import { buildWebhookMessage } from '../webhooks/webhookMessage.ts';
 import { buildWatchMessage } from '../watches/watchMessage.ts';
+import { buildBotHandoffMessage } from '../bots/botHandoff.ts';
 import { createReviewContextReader } from './createReviewContextReader.ts';
 import type { EffortChoices, ModelChoices } from '../models/modelChoices.ts';
 
@@ -69,6 +70,34 @@ describe('createReviewContextReader', () => {
 
         expect(context.recentMessages)
             .toEqual([`Webhook (outside data): ${webhookText.replace(/\s+/g, ' ')}`, 'Owner: Webhook is a word I typed']);
+    });
+
+    it('labels a message from another bot as not the owner', async () => {
+        const handoffText = buildBotHandoffMessage('Ana', 'Summarize the notes.');
+        const listByBot = vi.fn()
+            .mockResolvedValue([{ role: 'user', content: { kind: 'text', text: handoffText } }]);
+        const readContext = createReviewContextReader({ ruleStore: { list: vi.fn()
+            .mockResolvedValue([]) }, messageStore: { listByBot }, modelStore: createModelStore() });
+
+        const context = await readContext('bot-1');
+
+        expect(context.recentMessages)
+            .toEqual([`Message from another bot (not the owner): ${handoffText.replace(/\s+/g, ' ')}`]);
+    });
+
+    it('labels the hand-off notes in the sender chat by their fixed starts', async () => {
+        const listByBot = vi.fn()
+            .mockResolvedValue([
+                { role: 'system', content: { kind: 'text', text: 'Sent to Ben: Summarize the notes.' } },
+                { role: 'system', content: { kind: 'text', text: 'Reply from Ben:\n\nDone.' } },
+            ]);
+        const readContext = createReviewContextReader({ ruleStore: { list: vi.fn()
+            .mockResolvedValue([]) }, messageStore: { listByBot }, modelStore: createModelStore() });
+
+        const context = await readContext('bot-1');
+
+        expect(context.recentMessages)
+            .toEqual(['Hand-off sent by this bot: Sent to Ben: Summarize the notes.', 'Reply from another bot (outside data): Reply from Ben: Done.']);
     });
 
     it('keeps a webhook body that fakes an owner line inside the webhook entry', async () => {

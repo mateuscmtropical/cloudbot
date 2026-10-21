@@ -13,6 +13,13 @@ describe('models_set', () => {
     });
 });
 
+describe('bot_send', () => {
+    it('stays in the review class, so the bot acts without asking the owner for every hand-off', () => {
+        expect(classify('mcp__cloudbot__bot_send'))
+            .toBe('review');
+    });
+});
+
 describe('limits_set', () => {
     it('always asks the owner, with the old and new limits on the card', () => {
         expect(classify('mcp__cloudbot__limits_set'))

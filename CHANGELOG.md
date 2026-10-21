@@ -14,6 +14,12 @@ All notable changes to this project are listed here. The format follows
 - New messages, the streamed reply and panels move in with short transform and opacity animations, and the bot list slides over more softly on a phone. Buttons give a little when pressed. Reduced motion turns these off.
 - The server lets the browser keep the built web app files, whose names change with each build, for a year. The page itself is checked on every visit, so a new version still shows at once. A repeat visit no longer downloads the app again.
 
+### Added
+
+- A bot can send a message or a task to another bot by name, with the `bot_send` tool. The other bot runs it as a new turn under its own rules and approvals. Its reply goes back to the sender's chat. Both chats show the hand-off.
+- A chain of hand-offs allows 3 hand-offs in a row, so 4 bots at most. The owner is told in the sender's chat when a chain stops.
+- A bot sends at most 3 hand-offs in one turn, and a bot can have at most 3 hand-offs waiting for it.
+
 ### Fixed
 
 - The plus in the new bot and attach buttons sits exactly in the center of the round button.

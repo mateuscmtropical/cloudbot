@@ -149,14 +149,14 @@ function isModelInputError(value: ModelChoices | ModelInputError): value is Mode
 }
 
 // Routine and webhook turns use the routines choice and fall back to the chat choice. Undefined keeps the CLI default.
-function chooseTurnModel(choices: ModelChoices, source: 'chat' | 'routine' | 'webhook'): string | undefined {
+function chooseTurnModel(choices: ModelChoices, source: 'chat' | 'routine' | 'webhook' | 'bot'): string | undefined {
     const routinesChoice = source === 'chat' ? null : choices.routines;
 
     return routinesChoice ?? choices.chat ?? undefined;
 }
 
 // The same rule as the model: routine and webhook turns use the routines effort and fall back to the chat effort.
-function chooseTurnEffort(efforts: EffortChoices, source: 'chat' | 'routine' | 'webhook'): EffortLevel | undefined {
+function chooseTurnEffort(efforts: EffortChoices, source: 'chat' | 'routine' | 'webhook' | 'bot'): EffortLevel | undefined {
     const routinesEffort = source === 'chat' ? null : efforts.routines;
 
     return routinesEffort ?? efforts.chat ?? undefined;

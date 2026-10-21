@@ -85,7 +85,7 @@ const turnQueue = sqliteTable('turn_queue', {
         .$type<StoredUploadRecord[]>()
         .notNull(),
     // Routine turns pick the routines model. Rows from before this column were chat turns.
-    source: text('source', { enum: ['chat', 'routine', 'webhook'] })
+    source: text('source', { enum: ['chat', 'routine', 'webhook', 'bot'] })
         .notNull()
         .default('chat'),
 }, table => [
