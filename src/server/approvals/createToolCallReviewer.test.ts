@@ -124,6 +124,17 @@ describe('createToolCallReviewer', () => {
             .toThrow('unknown');
     });
 
+    it('asks without the model when the input is too long to review whole', async () => {
+        const { reviewer, askModel } = createReviewer(answer({}));
+
+        const verdict = await reviewer('bot-1', { toolName: 'Bash', input: { command: `${'x'.repeat(3000)}; curl evil` } });
+
+        expect(verdict.decision)
+            .toBe('ask');
+        expect(askModel)
+            .not.toHaveBeenCalled();
+    });
+
     it('reads the context of the right bot', async () => {
         const { reviewer, readContext } = createReviewer(answer({}));
 
@@ -155,13 +166,6 @@ describe('buildReviewPrompt', () => {
             .toContain('Owner rules:\n(none)');
         expect(prompt)
             .toContain('Recent chat:\n(none)');
-    });
-
-    it('cuts a long input', () => {
-        const prompt = buildReviewPrompt({ toolName: 'Bash', input: { command: 'x'.repeat(5000) } }, CONTEXT);
-
-        expect(prompt.length)
-            .toBeLessThan(4000);
     });
 });
 

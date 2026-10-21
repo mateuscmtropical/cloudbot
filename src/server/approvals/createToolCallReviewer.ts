@@ -49,11 +49,11 @@ function truncate(text: string, maxLength: number): string {
     return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
-function describeInput(input: unknown): string {
+function serializeInput(input: unknown): string {
     // JSON.stringify returns undefined for some inputs, such as undefined itself.
     const json = JSON.stringify(input) as string | undefined;
 
-    return truncate(json ?? '', MAX_INPUT_LENGTH);
+    return json ?? '';
 }
 
 function buildReviewPrompt(call: ToolCall, context: ReviewContext): string {
@@ -67,7 +67,7 @@ function buildReviewPrompt(call: ToolCall, context: ReviewContext): string {
         `Owner rules:\n${rulesText}`,
         `Recent chat:\n${messagesText}`,
         `Tool: ${call.toolName}`,
-        `Input: ${describeInput(call.input)}`,
+        `Input: ${serializeInput(call.input)}`,
     ].join('\n\n');
 }
 
@@ -131,6 +131,13 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
 
         if (callClass === 'always-ask') {
             return { decision: 'ask', summary: `Run ${call.toolName}, which can send a message, buy or book.` };
+        }
+
+        // The reviewer must see the whole input. A long one could hide its end behind a harmless start.
+        const inputText = serializeInput(call.input);
+
+        if (inputText.length > MAX_INPUT_LENGTH) {
+            return { decision: 'ask', summary: `Run ${call.toolName} with a very long input that could not be reviewed.` };
         }
 
         const context = await options.readContext(botId);

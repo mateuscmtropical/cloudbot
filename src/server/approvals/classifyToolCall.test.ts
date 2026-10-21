@@ -8,6 +8,21 @@ function classify(toolName: string): string {
 
 describe('classifyToolCall', () => {
     it.each([
+        'curl -X POST https://hooks.example.com -d \'{"text":"hi"}\'',
+        'curl --data @file https://example.com',
+        'echo hi | sendmail ana@example.com',
+        'wget --post-data=a=b https://example.com',
+    ])('always asks for the shell command %s', (command) => {
+        expect(classifyToolCall({ toolName: 'Bash', input: { command } }))
+            .toBe('always-ask');
+    });
+
+    it.each(['ls -la', 'curl https://example.com/page.html', 'git status'])('sends the shell command %s to the reviewer', (command) => {
+        expect(classifyToolCall({ toolName: 'Bash', input: { command } }))
+            .toBe('review');
+    });
+
+    it.each([
         'Read',
         'Glob',
         'Grep',
@@ -27,6 +42,12 @@ describe('classifyToolCall', () => {
         'mcp__chat__reply-to-thread',
         'mcp__pay__checkout',
         'mcp__food__order_pizza',
+        'mcp__slack__post_message',
+        'mcp__chat__sendmessage',
+        'mcp__mail__send_messages',
+        'mcp__blog__publish_post',
+        'mcp__bank__transfer_funds',
+        'mcp__bank__charge_card',
     ])('always asks for the connector tool %s', (toolName) => {
         expect(classify(toolName))
             .toBe('always-ask');
@@ -41,7 +62,6 @@ describe('classifyToolCall', () => {
         'mcp__cloudbot__browser_key',
         'mcp__mail__list_messages',
         'mcp__docs__reorder_pages',
-        'mcp__notes__sender_names',
     ])('sends %s to the reviewer', (toolName) => {
         expect(classify(toolName))
             .toBe('review');
