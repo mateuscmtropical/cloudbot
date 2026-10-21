@@ -39,6 +39,15 @@ interface ChatRoutesOptions {
 }
 
 // Only plain digits count. Anything else, including 0, a sign or a decimal, is rejected.
+// RFC 5987 leaves out the characters that encodeURIComponent keeps.
+function encodeHeaderFileName(name: string): string {
+    const encodedName = encodeURIComponent(name);
+
+    return encodedName.replaceAll(/['()*!]/g, character => `%${character.charCodeAt(0)
+        .toString(16)
+        .toUpperCase()}`);
+}
+
 function parsePositiveInteger(rawValue: string): number | undefined {
     if (!/^\d+$/.test(rawValue)) {
         return undefined;
@@ -254,7 +263,8 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
         }
 
         const fileStream = createReadStream(sharedFile.absolutePath);
-        const encodedName = encodeURIComponent(sharedFile.name);
+        const encodedName = encodeHeaderFileName(sharedFile.name);
+        const fallbackName = sharedFile.name.replaceAll(/[^\x20-\x7E]|["\\%]/g, '_');
 
         // An error such as a missing copy ends the stream before any byte, so it becomes a 404 below.
         try {
@@ -267,7 +277,7 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
         const lengthText = String(sharedFile.sizeBytes);
 
         context.header('content-length', lengthText);
-        context.header('content-disposition', `attachment; filename*=UTF-8''${encodedName}`);
+        context.header('content-disposition', `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodedName}`);
         context.header('x-content-type-options', 'nosniff');
         context.header('cache-control', 'private, no-store');
 

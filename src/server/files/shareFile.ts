@@ -1,6 +1,6 @@
 import { constants } from 'node:fs';
 import { open, realpath, rm, stat } from 'node:fs/promises';
-import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
@@ -51,7 +51,8 @@ const MIME_TYPES_BY_EXTENSION: Record<string, string> = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 };
 const CREATE_FLAGS = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL;
-const OPEN_FILE_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW;
+// O_NONBLOCK keeps the open of a named pipe from waiting for a writer. The regular file check follows.
+const OPEN_FILE_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
 
 function readMaxShareBytes(): number {
     return DEFAULT_MAX_SHARE_MB * BYTES_PER_MEGABYTE;
@@ -79,7 +80,9 @@ function cleanShareName(requestedName: string): string {
 function isInside(rootDir: string, targetPath: string): boolean {
     const relativePath = relative(rootDir, targetPath);
 
-    return relativePath !== '' && !relativePath.startsWith('..') && !isAbsolute(relativePath);
+    const leavesRoot = relativePath === '..' || relativePath.startsWith(`..${sep}`);
+
+    return relativePath !== '' && !leavesRoot && !isAbsolute(relativePath);
 }
 
 async function resolveRealPath(path: string, failureText: string): Promise<string> {
@@ -123,7 +126,7 @@ async function shareWorkspaceFile(options: ShareWorkspaceFileOptions): Promise<S
         throw new ShareFileError('Only files inside your workspace can be shared.');
     }
 
-    // O_NOFOLLOW and the checks on the open handle keep a swap after the path check from changing what is copied.
+    // The path check above can be outdated when the bot swaps a folder for a link, so the open file is checked again.
     let sourceHandle;
 
     try {
@@ -135,6 +138,12 @@ async function shareWorkspaceFile(options: ShareWorkspaceFileOptions): Promise<S
     const destinationPath = join(options.shareDir, options.fileId);
 
     try {
+        const openedReal = await resolveRealPath(`/proc/self/fd/${String(sourceHandle.fd)}`, 'That file cannot be opened.');
+
+        if (!isInside(workspaceReal, openedReal)) {
+            throw new ShareFileError('Only files inside your workspace can be shared.');
+        }
+
         const sourceStat = await sourceHandle.stat();
 
         if (!sourceStat.isFile()) {

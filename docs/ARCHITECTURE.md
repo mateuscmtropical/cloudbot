@@ -236,8 +236,10 @@ The bot hands a file to the owner with `share_file`, a second tool in the
 `cloudbot` MCP server (`mcp__cloudbot__share_file`). The tool takes one path.
 `shareWorkspaceFile` in `src/server/files/` resolves it against the workspace
 and follows links with `realpath`, so a link that leads out of the workspace is
-refused. It then opens the file with `O_NOFOLLOW`, checks on the open handle
-that it is a regular file of at most 50 MB, and copies it into
+refused. It then opens the file with `O_NOFOLLOW` and `O_NONBLOCK`, so a named
+pipe cannot hang the call. It resolves the open handle through `/proc/self/fd`
+and checks the workspace again, which catches a folder swapped for a link after
+the first check. Then it checks that the file is a regular file of at most 50 MB, and copies it into
 `<dataDir>/shared/<botId>/<fileId>` with mode 0600. The copy lives in the
 private server data, so the bot cannot change it after sharing. The copy stops
 when more than the limit passes, and a failed copy is removed. Refusals reach

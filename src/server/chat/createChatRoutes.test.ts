@@ -631,13 +631,26 @@ describe('shared files', () => {
         expect(response.status)
             .toBe(200);
         expect(response.headers.get('content-disposition'))
-            .toBe('attachment; filename*=UTF-8\'\'sales%20report.csv');
+            .toBe('attachment; filename="sales report.csv"; filename*=UTF-8\'\'sales%20report.csv');
         expect(response.headers.get('content-type'))
             .toBe('text/csv');
         expect(response.headers.get('x-content-type-options'))
             .toBe('nosniff');
         expect(await response.text())
             .toBe('a,b\n');
+    });
+
+    it('encodes quotes and brackets in the download name', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: '', description: '' });
+
+        await seedWorkspaceFile(bot.id, 'it\'s (1).txt', 'x');
+        await chatService.shareFile(bot.id, 'it\'s (1).txt');
+
+        const fileMessage = (await chatService.listMessages(bot.id) ?? []).find(message => message.body.kind === 'file');
+        const response = await app.request(`/api/bots/${bot.id}/messages/${fileMessage?.id ?? ''}/file`);
+
+        expect(response.headers.get('content-disposition'))
+            .toBe('attachment; filename="it\'s (1).txt"; filename*=UTF-8\'\'it%27s%20%281%29.txt');
     });
 
     it('refuses an oversized file and posts no message', async () => {

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -139,5 +140,42 @@ describe('cleanShareName', () => {
             .toBe('file');
         expect(cleanShareName('x'.repeat(300)))
             .toHaveLength(120);
+    });
+});
+
+describe('shareWorkspaceFile edge cases', () => {
+    let rootDir: string;
+    let workspaceDir: string;
+    let shareDir: string;
+
+    beforeEach(async () => {
+        rootDir = await mkdtemp(join(tmpdir(), 'cloudbot-share-edge-'));
+        workspaceDir = join(rootDir, 'workspace');
+        shareDir = join(rootDir, 'shared');
+        await mkdir(workspaceDir);
+        await mkdir(shareDir);
+    });
+
+    afterEach(async () => {
+        await rm(rootDir, { recursive: true, force: true });
+    });
+
+    it('accepts a file whose name starts with two dots', async () => {
+        await writeFile(join(workspaceDir, '..notes.txt'), 'hi');
+
+        const copy = await shareWorkspaceFile({ workspaceDir, requestedPath: '..notes.txt', shareDir, maxBytes: 100, fileId: FILE_ID });
+
+        expect(copy.name)
+            .toBe('..notes.txt');
+    });
+
+    it('refuses a named pipe without waiting for a writer', async () => {
+        execFileSync('mkfifo', [join(workspaceDir, 'pipe')]);
+
+        await expect(shareWorkspaceFile({ workspaceDir, requestedPath: 'pipe', shareDir, maxBytes: 100, fileId: FILE_ID }))
+            .rejects
+            .toThrow('regular files');
+        expect(await readdir(shareDir))
+            .toEqual([]);
     });
 });
