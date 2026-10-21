@@ -117,6 +117,11 @@ describe('App bot list', () => {
             expect(renderedBotName())
                 .toBe('CloudBot');
         });
+        // The subscription starts in an effect after the name shows, so wait until the handler exists.
+        await waitFor(() => {
+            expect(emitEvent.current)
+                .toBeDefined();
+        });
 
         act(() => {
             emitEvent.current?.({ type: 'turn', botId: 'bot-1', isRunning: true });
@@ -236,6 +241,11 @@ describe('App pending files', () => {
         await waitFor(() => {
             expect(renderedBotName())
                 .toBe('CloudBot');
+        });
+        // The subscription starts in an effect after the name shows, so wait until the handler exists.
+        await waitFor(() => {
+            expect(emitEvent.current)
+                .toBeDefined();
         });
 
         // A turn ends, and its list request is still in flight when the upload happens.
