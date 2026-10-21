@@ -26,6 +26,17 @@ afterEach(async () => {
 });
 
 describe('startClaudeLogin', () => {
+    it('runs the login in local mode with CloudBot\'s own config folder', async () => {
+        const spawnProcess = vi.fn(SPAWN_FAKE);
+        const session = startClaudeLogin({ claudePath: 'claude', configDir: '/data/claude-config', spawnProcess });
+
+        SESSIONS.push(session);
+        expect(spawnProcess.mock.calls[0]?.[2]?.env)
+            .toMatchObject({ CLAUDE_CONFIG_DIR: '/data/claude-config' });
+        await session.signInUrl;
+        session.cancel();
+    });
+
     it('wraps sudo in the pseudo terminal with only the bot environment', async () => {
         const spawnProcess = vi.fn(SPAWN_FAKE);
 

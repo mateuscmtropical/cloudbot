@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { ApprovalGate } from '../approvals/ApprovalGate.ts';
@@ -122,6 +121,8 @@ interface ChatServiceOptions {
     dataDir: string;
     // Set when the agent runs as its own user. The runner then prepares the folder under AGENT_WORKSPACE_ROOT.
     agentUser?: string | undefined;
+    // The config folder of CloudBot's own CLI in local mode. Its Claude Code transcripts are removed with a bot.
+    claudeConfigDir?: string | undefined;
     // Caps the bytes a bot's next message may hold. Defaults to CLOUDBOT_MAX_UPLOAD_MB.
     maxUploadBytes?: number | undefined;
     // Caps the size of one file the bot shares. Defaults to 50 MB.
@@ -421,6 +422,7 @@ class ChatService {
     private readonly runner: AgentRunner;
     private readonly dataDir: string;
     private readonly agentUser: string | undefined;
+    private readonly claudeConfigDir: string | undefined;
     private readonly maxPendingBytes: number;
     private readonly uploadRetentionMs: number;
     private readonly maxShareBytes: number;
@@ -471,6 +473,7 @@ class ChatService {
         this.runner = options.runner;
         this.dataDir = options.dataDir;
         this.agentUser = options.agentUser;
+        this.claudeConfigDir = options.claudeConfigDir;
         this.maxPendingBytes = options.maxUploadBytes ?? readMaxUploadBytes(process.env);
         this.uploadRetentionMs = options.uploadRetentionMs ?? readUploadRetentionMs(process.env);
         this.maxShareBytes = options.maxShareBytes ?? readMaxShareBytes();
@@ -981,13 +984,16 @@ class ChatService {
             const workspaceRoot = join(this.dataDir, 'workspaces');
 
             await removeBotDirectory(workspaceRoot, botId);
-            // Claude Code keeps the transcripts and memory of a workspace in the home of the user that runs it.
-            const userHome = homedir();
-            const claudeProjectsRoot = join(userHome, '.claude', 'projects');
-            const workspacePath = this.workspaceFor(botId);
-            const claudeProjectName = encodeProjectPath(workspacePath);
 
-            await removeBotDirectory(claudeProjectsRoot, claudeProjectName);
+            // Claude Code keeps the transcripts and memory of a workspace in its config folder. In local mode that is
+            // CloudBot's own folder, never the owner's ~/.claude.
+            if (this.claudeConfigDir !== undefined) {
+                const claudeProjectsRoot = join(this.claudeConfigDir, 'projects');
+                const workspacePath = this.workspaceFor(botId);
+                const claudeProjectName = encodeProjectPath(workspacePath);
+
+                await removeBotDirectory(claudeProjectsRoot, claudeProjectName);
+            }
         } else {
             await removeAgentWorkspace(this.agentUser, botId);
         }

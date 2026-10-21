@@ -37,7 +37,13 @@ vi.mock('@hono/node-server', () => ({
         return runtime.server;
     },
 }));
-vi.mock('./agent/buildClaudeCommand.ts', () => ({ validateAgentIsolation: vi.fn() }));
+vi.mock('./agent/buildClaudeCommand.ts', async () => {
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const actual: Record<string, unknown> = await vi.importActual('./agent/buildClaudeCommand.ts');
+
+    return { ...actual, validateAgentIsolation: vi.fn(), localClaudeConfigDir: () => path.join(os.tmpdir(), 'cloudbot-main-test-claude-config') };
+});
 vi.mock('./agent/SdkAgentRunner.ts', () => ({ SdkAgentRunner: class {
     readonly testStub = true;
 } }));

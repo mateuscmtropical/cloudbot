@@ -11,6 +11,7 @@ type RunClaudeCommand = (command: string, commandArguments: string[], environmen
 interface ClaudeAuthStatusOptions {
     claudePath: string;
     agentUser?: string;
+    configDir?: string;
     runCommand?: RunClaudeCommand;
 }
 
@@ -33,7 +34,7 @@ function runClaudeCommand(command: string, commandArguments: string[], environme
 
 async function getClaudeAuthStatus(options: ClaudeAuthStatusOptions): Promise<ClaudeAuthStatus> {
     const runCommand = options.runCommand ?? runClaudeCommand;
-    const invocation = buildClaudeCommand(options.claudePath, ['auth', 'status', '--json'], options.agentUser);
+    const invocation = buildClaudeCommand(options.claudePath, ['auth', 'status', '--json'], options.agentUser, options.configDir);
     let output: string;
 
     try {
@@ -65,5 +66,5 @@ async function getClaudeAuthStatus(options: ClaudeAuthStatusOptions): Promise<Cl
     return result;
 }
 
-export { getClaudeAuthStatus };
+export { getClaudeAuthStatus, runClaudeCommand };
 export type { ClaudeAuthStatus, ClaudeAuthStatusOptions, RunClaudeCommand };
