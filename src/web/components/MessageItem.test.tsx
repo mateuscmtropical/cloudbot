@@ -51,3 +51,24 @@ describe('answered setup messages', () => {
             .toBeTruthy();
     });
 });
+
+describe('file messages', () => {
+    afterEach(cleanup);
+
+    it('links to the download of the message with its name and size', () => {
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const body: MessageBody = { kind: 'file', name: 'report q1.pdf', mimeType: 'application/pdf', sizeBytes: 2048, fileId: 'f1' };
+        const message = { id: 'm 1', botId: 'bot', role: 'assistant' as const, sequence: 3, createdAt: 3, body };
+
+        render(<MessageItem message={message} actions={actions} />);
+
+        const link = screen.getByRole('link', { name: 'Download report q1.pdf' });
+
+        expect(link.getAttribute('href'))
+            .toBe('/api/bots/bot/messages/m%201/file');
+        expect(link.getAttribute('download'))
+            .toBe('report q1.pdf');
+        expect(screen.getByText('2.0 KB'))
+            .toBeTruthy();
+    });
+});

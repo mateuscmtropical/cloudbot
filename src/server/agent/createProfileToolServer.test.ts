@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod/v4';
 
+import { ShareFileError } from '../files/shareFile.ts';
 import { BotStore } from '../store/BotStore.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
@@ -8,8 +9,10 @@ import type { Bot } from '../store/types.ts';
 import {
     PROFILE_SERVER_NAME,
     PROFILE_TOOL_SHAPE,
+    SHARE_FILE_TOOL_FULL_NAME,
     UPDATE_PROFILE_TOOL_FULL_NAME,
     createProfileToolServer,
+    createShareFileTool,
     createUpdateProfileTool,
 } from './createProfileToolServer.ts';
 
@@ -158,5 +161,42 @@ describe('createProfileToolServer', () => {
 
         expect(server)
             .toMatchObject({ type: 'sdk', name: PROFILE_SERVER_NAME });
+    });
+});
+
+describe('createShareFileTool', () => {
+    it('is called as mcp__cloudbot__share_file and passes the path to the handler', async () => {
+        const handler = vi.fn(() => Promise.resolve({ name: 'a.pdf', sizeBytes: 12 }));
+        const tool = createShareFileTool(handler);
+        const result = await tool.handler({ path: 'out/a.pdf' }, undefined);
+
+        expect(SHARE_FILE_TOOL_FULL_NAME)
+            .toBe('mcp__cloudbot__share_file');
+        expect(handler)
+            .toHaveBeenCalledWith('out/a.pdf');
+        expect(result.isError)
+            .toBeUndefined();
+        expect(result.content[0])
+            .toEqual({ type: 'text', text: 'Shared a.pdf (12 bytes) in the chat.' });
+    });
+
+    it('returns the refusal text to the model as a tool error', async () => {
+        const tool = createShareFileTool(() => Promise.reject(new ShareFileError('Only files inside your workspace can be shared.')));
+        const result = await tool.handler({ path: '/etc/passwd' }, undefined);
+
+        expect(result.isError)
+            .toBe(true);
+        expect(result.content[0])
+            .toEqual({ type: 'text', text: 'Only files inside your workspace can be shared.' });
+    });
+
+    it('hides the text of an unexpected failure', async () => {
+        const tool = createShareFileTool(() => Promise.reject(new Error('EACCES /var/lib/secret')));
+        const result = await tool.handler({ path: 'a' }, undefined);
+
+        expect(result.isError)
+            .toBe(true);
+        expect(result.content[0])
+            .toEqual({ type: 'text', text: 'The file could not be shared.' });
     });
 });

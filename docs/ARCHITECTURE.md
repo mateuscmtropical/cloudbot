@@ -230,6 +230,29 @@ uploading, and clears only the chips that existed when the message was sent. It
 reloads the pending files when a turn ends, so files put back by a turn show up.
 Pending files live in memory, so a restart drops them.
 
+## Shared files
+
+The bot hands a file to the owner with `share_file`, a second tool in the
+`cloudbot` MCP server (`mcp__cloudbot__share_file`). The tool takes one path.
+`shareWorkspaceFile` in `src/server/files/` resolves it against the workspace
+and follows links with `realpath`, so a link that leads out of the workspace is
+refused. It then opens the file with `O_NOFOLLOW`, checks on the open handle
+that it is a regular file of at most 50 MB, and copies it into
+`<dataDir>/shared/<botId>/<fileId>` with mode 0600. The copy lives in the
+private server data, so the bot cannot change it after sharing. The copy stops
+when more than the limit passes, and a failed copy is removed. Refusals reach
+the model as tool errors, and other failures give a fixed text.
+
+`ChatService.shareFile` then posts a `file` message with the name, type, size
+and file id. The type comes from a short list of extensions, and everything else,
+including html and svg, is `application/octet-stream`.
+`GET /api/bots/:id/messages/:mid/file` finds the file through the message, so a
+download needs the message id and the right bot. It sends the copy with
+`Content-Disposition: attachment`, `nosniff` and `no-store`. A missing copy
+answers 404. The web app shows a download link in the message.
+
+Shared files are not cleaned up yet.
+
 ## Secrets
 
 

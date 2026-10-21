@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 
 import type { ChatMessage } from '../../shared/chatTypes.ts';
+import { formatFileSize } from '../formatFileSize.ts';
 import { renderMarkdown } from '../markdown.ts';
 import { ChoiceButtons } from './ChoiceButtons.tsx';
 import { CodeField } from './CodeField.tsx';
@@ -84,6 +85,19 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
                             ? { label: 'Use subscription instead', onSelect: () => actions.onChoose(message.id, 'subscription') }
                             : undefined}
                     />
+                </div>
+            );
+        case 'file':
+            return (
+                <div className="setup-card file-card">
+                    <a
+                        className="link-card"
+                        href={`/api/bots/${encodeURIComponent(message.botId)}/messages/${encodeURIComponent(message.id)}/file`}
+                        download={body.name}
+                    >
+                        {`Download ${body.name}`}
+                    </a>
+                    <span className="file-size">{formatFileSize(body.sizeBytes)}</span>
                 </div>
             );
         case 'toolActivity':
