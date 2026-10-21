@@ -12,12 +12,28 @@ describe('classifyToolCall', () => {
         'curl --data @file https://example.com',
         'echo hi | sendmail ana@example.com',
         'wget --post-data=a=b https://example.com',
+        'curl --request POST http://x',
+        'curl -X "POST" http://x',
+        'curl -dfoo http://x',
+        'curl -sd x http://x',
+        'curl -H "a;b" -d x http://x',
+        'curl "http://x?a=1&b=2" -d x',
     ])('always asks for the shell command %s', (command) => {
         expect(classifyToolCall({ toolName: 'Bash', input: { command } }))
             .toBe('always-ask');
     });
 
-    it.each(['ls -la', 'curl https://example.com/page.html', 'git status'])('sends the shell command %s to the reviewer', (command) => {
+    it('answers fast on a very long command', () => {
+        const startedAt = Date.now();
+        const verdict = classifyToolCall({ toolName: 'Bash', input: { command: `${'curl '.repeat(40000)}z` } });
+
+        expect(verdict)
+            .toBe('always-ask');
+        expect(Date.now() - startedAt)
+            .toBeLessThan(500);
+    });
+
+    it.each(['ls -la', 'curl https://example.com/page.html', 'curl -sSL https://example.com', 'git status'])('sends the shell command %s to the reviewer', (command) => {
         expect(classifyToolCall({ toolName: 'Bash', input: { command } }))
             .toBe('review');
     });
@@ -48,6 +64,10 @@ describe('classifyToolCall', () => {
         'mcp__blog__publish_post',
         'mcp__bank__transfer_funds',
         'mcp__bank__charge_card',
+        'mcp__slack__chat_postmessage',
+        'mcp__mail__emailuser',
+        'mcp__bank__paynow',
+        'mcp__mail__GMAILSend',
     ])('always asks for the connector tool %s', (toolName) => {
         expect(classify(toolName))
             .toBe('always-ask');

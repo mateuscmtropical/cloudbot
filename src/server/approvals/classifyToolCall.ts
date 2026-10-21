@@ -2,7 +2,7 @@ import type { ToolCall } from '../agent/AgentRunner.ts';
 
 type ToolCallClass = 'skip' | 'always-ask' | 'review';
 
-// Tools that only read, look or hand a result to the owner. They never need a review.
+// Tools that only read, look, hand a result to the owner or edit the bot's own profile, which the owner asks for in the chat. They never need a review.
 const SKIP_TOOL_NAMES = new Set([
     'Read',
     'Glob',
@@ -44,13 +44,29 @@ const ALWAYS_ASK_WORDS = new Set([
 ]);
 
 // Stems that also catch one word names such as sendmessage or plurals such as sends.
-const ALWAYS_ASK_STEMS = ['send', 'reply', 'publish', 'tweet', 'purchase', 'checkout'];
+const ALWAYS_ASK_STEMS = ['send', 'reply', 'post', 'publish', 'tweet', 'email', 'purchase', 'buy', 'pay', 'charge', 'transfer', 'checkout', 'book', 'reserve', 'order'];
 
-// A shell command that sends data out or mails. The reviewer model cannot be trusted alone for these.
-const OUTBOUND_COMMAND_PATTERN = /\b(sendmail|mailx?|msmtp|ssmtp|swaks)\b|\bcurl\b[^|;&]*(\s-X\s*(POST|PUT|PATCH|DELETE)|\s(-d|-F|-T)\b|--data|--form|--upload-file|--json)|\bwget\b[^|;&]*--(post|method)/i;
+const MAIL_COMMAND_PATTERN = /\b(sendmail|mailx?|msmtp|ssmtp|swaks)\b/i;
+const CURL_COMMAND_PATTERN = /\bcurl\b/i;
+// Flags that send a body or change the method, also inside combined short flags such as -sd.
+const CURL_BODY_FLAG_PATTERN = /\s-[a-zA-Z]*[dFTX]|\s--(data|form|upload-file|json|request)/;
+const WGET_POST_PATTERN = /\bwget\b[\s\S]*\s--(post|method)/i;
+// The patterns above are linear, but a very long command is not worth scanning and goes to the owner.
+const MAX_SCANNED_COMMAND_LENGTH = 2000;
+
+function isOutboundCommand(command: string): boolean {
+    if (command.length > MAX_SCANNED_COMMAND_LENGTH) {
+        return true;
+    }
+
+    const isCurlWithBody = CURL_COMMAND_PATTERN.test(command) && CURL_BODY_FLAG_PATTERN.test(command);
+
+    return isCurlWithBody || MAIL_COMMAND_PATTERN.test(command) || WGET_POST_PATTERN.test(command);
+}
 
 function splitIntoWords(toolName: string): string[] {
-    const spaced = toolName.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+    const spaced = toolName.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
     const words = spaced.toLowerCase()
         .split(/[^a-z0-9]+/);
 
@@ -77,7 +93,7 @@ function classifyToolCall(call: ToolCall): ToolCallClass {
 
     const command = readCommand(call.input);
 
-    if (call.toolName === 'Bash' && OUTBOUND_COMMAND_PATTERN.test(command)) {
+    if (call.toolName === 'Bash' && isOutboundCommand(command)) {
         return 'always-ask';
     }
 
