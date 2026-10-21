@@ -249,4 +249,24 @@ describe('ApprovalGate', () => {
         await expect(pending)
             .resolves.toEqual({ isAllowed: true });
     });
+
+    it('refuses an approved call when the turn stopped during the answer', async () => {
+        const abortController = new AbortController();
+        const { gate, chat, posted } = createGate(() => Promise.resolve({ decision: 'ask', summary: 'Send it' }));
+        const pending = gate.review('bot-1', SEND_CALL, abortController.signal);
+
+        await vi.waitFor(() => {
+            expect(posted)
+                .toHaveLength(1);
+        });
+        chat.close.mockImplementationOnce((messageId: string, body: ChoiceBody) => {
+            abortController.abort();
+
+            return Promise.resolve(buildMessage(messageId, body));
+        });
+        await gate.answer('bot-1', 'message-1', 'approve');
+
+        await expect(pending)
+            .resolves.toMatchObject({ isAllowed: false });
+    });
 });

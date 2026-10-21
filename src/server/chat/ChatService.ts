@@ -656,7 +656,8 @@ class ChatService {
         });
         const closes = staleMessages.map(stored => this.updateSetupMessage(stored.id, { ...(stored.content as ChoiceBody), chosenId: 'deny' }));
 
-        await Promise.all(closes);
+        // One card that cannot be closed must not keep the queue from resuming.
+        await Promise.allSettled(closes);
     }
 
     // Clears the usage limit timers. The database keeps the waits, so a new service resumes them.

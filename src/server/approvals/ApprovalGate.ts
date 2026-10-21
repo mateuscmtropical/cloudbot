@@ -164,7 +164,8 @@ class ApprovalGate {
             await this.closeQuietly(posted.id, { ...body, chosenId: 'deny' });
         }
 
-        if (outcome === 'approve') {
+        // An Approve that lands while the turn stops must not let the call run.
+        if (outcome === 'approve' && !isStopped(signal)) {
             return { isAllowed: true };
         }
 
