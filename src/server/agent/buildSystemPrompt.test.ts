@@ -21,6 +21,15 @@ describe('buildSystemPrompt', () => {
             .toContain('CloudBot');
     });
 
+    it('names the document libraries and sends the result with share_file', () => {
+        const prompt = buildSystemPrompt({ name: 'Ada', title: 'Assistant', description: '' });
+
+        expect(prompt)
+            .toContain('openpyxl, python-docx, python-pptx, reportlab, pypdf and matplotlib');
+        expect(prompt)
+            .toContain('then send it with share_file');
+    });
+
     it('tells the bot its memory lives in CLAUDE.md in its workspace', () => {
         const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' });
 

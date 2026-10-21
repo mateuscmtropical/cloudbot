@@ -186,6 +186,16 @@ Chromium runs with `--no-sandbox`, because Docker's default seccomp profile
 blocks the namespaces its sandbox needs. Open choices like this one are listed
 in [OWNER_QUESTIONS.md](OWNER_QUESTIONS.md).
 
+## Document tools
+
+The image installs Python 3 from Debian with `openpyxl`, `python-docx`,
+`python-pptx`, `reportlab`, `pypdf` and `matplotlib`, and `poppler-utils` for
+`pdftotext`. The bot writes spreadsheets, documents, slides, PDFs and charts
+into its workspace with its shell and sends them with `share_file`.
+`buildSystemPrompt` names the libraries. `docker/check-container.sh` imports
+each one as the `bot` user. Open choices are in
+[OWNER_QUESTIONS.md](OWNER_QUESTIONS.md).
+
 ## Storage
 
 SQLite through `node:sqlite`, in the data volume. No native dependencies.

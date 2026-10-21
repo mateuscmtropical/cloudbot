@@ -80,6 +80,13 @@ case "$LIST_OUTPUT" in
 esac
 echo "ok: bot user cannot read or list the data folder"
 
+# The bot builds spreadsheets, documents, PDFs, slides and charts with these libraries.
+docker exec --user bot "$CONTAINER_NAME" python3 -c "import docx, matplotlib, openpyxl, pptx, pypdf, reportlab" \
+    || fail "bot cannot import the document libraries"
+docker exec --user bot "$CONTAINER_NAME" pdftotext -v > /dev/null 2>&1 \
+    || fail "bot cannot run pdftotext"
+echo "ok: bot can use the document libraries and pdftotext"
+
 CLAUDE_PATH="$(docker exec "$CONTAINER_NAME" printenv CLAUDE_PATH)"
 AGENT_USER="$(docker exec "$CONTAINER_NAME" printenv CLOUDBOT_AGENT_USER)"
 [ "$AGENT_USER" = "bot" ] || fail "CLOUDBOT_AGENT_USER must be bot"

@@ -22,6 +22,8 @@ FROM base AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl sudo \
         chromium fonts-dejavu-core fonts-liberation openbox procps x11vnc xterm xvfb \
+        poppler-utils python3 python3-docx python3-matplotlib python3-openpyxl \
+        python3-pptx python3-pypdf python3-reportlab \
     && rm -rf /var/lib/apt/lists/*
 
 # cloudbot runs the server and owns the data. bot runs the Claude Code CLI and
