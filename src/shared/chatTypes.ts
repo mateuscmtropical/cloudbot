@@ -123,7 +123,11 @@ interface BotRule {
     blockedTools: string[];
 }
 
+// Who may act on the bot's desktop.
+type ScreenHolderName = 'bot' | 'person';
+
 export type {
+    ScreenHolderName,
     AttachmentSummary,
     BotRule,
     PendingUpload,

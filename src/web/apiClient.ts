@@ -1,4 +1,4 @@
-import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload } from '../shared/chatTypes.ts';
+import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName } from '../shared/chatTypes.ts';
 
 const API_ROOT = '/api';
 
@@ -169,6 +169,28 @@ async function removeUpload(botId: string, uploadId: string): Promise<void> {
     ensureOk(response, path);
 }
 
+interface ScreenStateResponse {
+    holder: ScreenHolderName;
+}
+
+async function getScreenHolder(): Promise<ScreenHolderName> {
+    const state = await requestJson<ScreenStateResponse>(`${API_ROOT}/desktop/screen`, {});
+
+    return state.holder;
+}
+
+async function takeScreen(): Promise<ScreenHolderName> {
+    const state = await requestJson<ScreenStateResponse>(`${API_ROOT}/desktop/screen/take`, { method: 'POST' });
+
+    return state.holder;
+}
+
+async function releaseScreen(): Promise<ScreenHolderName> {
+    const state = await requestJson<ScreenStateResponse>(`${API_ROOT}/desktop/screen/release`, { method: 'POST' });
+
+    return state.holder;
+}
+
 interface NewRuleRequest {
     kind: BotRule['kind'];
     text: string;
@@ -233,6 +255,9 @@ export {
     uploadAttachments,
     listUploads,
     removeUpload,
+    getScreenHolder,
+    takeScreen,
+    releaseScreen,
     listRules,
     addRule,
     removeRule,

@@ -2,7 +2,14 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import * as apiClient from '../apiClient.ts';
 import { DesktopPanel, buildVncUrl } from './DesktopPanel.tsx';
+
+vi.mock('../apiClient.ts', () => ({
+    getScreenHolder: vi.fn(() => Promise.resolve('bot')),
+    takeScreen: vi.fn(() => Promise.resolve('person')),
+    releaseScreen: vi.fn(() => Promise.resolve('bot')),
+}));
 
 interface FakeClient {
     target: HTMLElement;
@@ -67,6 +74,8 @@ describe('buildVncUrl', () => {
 describe('DesktopPanel', () => {
     beforeEach(() => {
         clients.length = 0;
+        vi.mocked(apiClient.getScreenHolder)
+            .mockResolvedValue('bot');
     });
 
     afterEach(() => {
@@ -106,6 +115,66 @@ describe('DesktopPanel', () => {
             .toHaveLength(2);
         expect(clientAt(0).disconnected)
             .toBe(true);
+    });
+
+    it('takes the screen, allows input and gives it back', async () => {
+        render(<DesktopPanel onClose={() => undefined} />);
+
+        expect(await screen.findByText('The bot has the screen. You can watch.'))
+            .toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Take the screen' }));
+
+        expect(await screen.findByText('You have the screen. The bot is paused.'))
+            .toBeTruthy();
+        expect(clientAt(0).viewOnly)
+            .toBe(false);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Done, take over' }));
+
+        expect(await screen.findByText('The bot has the screen. You can watch.'))
+            .toBeTruthy();
+        expect(clientAt(0).viewOnly)
+            .toBe(true);
+        expect(apiClient.takeScreen)
+            .toHaveBeenCalled();
+        expect(apiClient.releaseScreen)
+            .toHaveBeenCalled();
+    });
+
+    it('opens as the owner when the bot already handed the screen over', async () => {
+        vi.mocked(apiClient.getScreenHolder)
+            .mockResolvedValue('person');
+        render(<DesktopPanel onClose={() => undefined} />);
+
+        expect(await screen.findByText('You have the screen. The bot is paused.'))
+            .toBeTruthy();
+        expect(clientAt(0).viewOnly)
+            .toBe(false);
+    });
+
+    it('keeps the screen and closes the panel on I will keep it', async () => {
+        vi.mocked(apiClient.getScreenHolder)
+            .mockResolvedValue('person');
+
+        const onClose = vi.fn();
+
+        render(<DesktopPanel onClose={onClose} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'I will keep it' }));
+
+        expect(onClose)
+            .toHaveBeenCalled();
+        expect(apiClient.releaseScreen).not.toHaveBeenCalled();
+    });
+
+    it('shows a problem when the screen cannot change hands', async () => {
+        vi.mocked(apiClient.takeScreen)
+            .mockRejectedValueOnce(new Error('offline'));
+        render(<DesktopPanel onClose={() => undefined} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Take the screen' }));
+
+        expect(await screen.findByText('The screen could not change hands. Try again.'))
+            .toBeTruthy();
     });
 
     it('disconnects when closed', () => {
