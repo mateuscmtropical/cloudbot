@@ -111,6 +111,7 @@ desktop?.start();
 const routineScheduler = new RoutineScheduler({
     routineStore: new RoutineStore(opened.db),
     sendMessage: (botId, text) => chatService.sendMessage(botId, text),
+    isReady: () => setup.isDone(),
 });
 
 // Queued messages and usage limit waits from the last run continue before the first request.

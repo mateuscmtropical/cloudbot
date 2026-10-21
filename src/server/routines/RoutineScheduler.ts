@@ -3,6 +3,8 @@ import type { RoutineRecord, RoutineStore } from '../store/RoutineStore.ts';
 interface RoutineSchedulerOptions {
     routineStore: RoutineStore;
     sendMessage: (botId: string, text: string) => Promise<unknown>;
+    // Routines wait while this returns false. ChatService answers a message with a reminder until Claude setup is done.
+    isReady?: () => boolean;
     now?: () => number;
 }
 
@@ -17,6 +19,7 @@ function buildRoutineMessage(routine: RoutineRecord): string {
 class RoutineScheduler {
     private readonly routineStore: RoutineStore;
     private readonly sendMessage: (botId: string, text: string) => Promise<unknown>;
+    private readonly isReady: () => boolean;
     private readonly now: () => number;
     private timer: NodeJS.Timeout | undefined;
     private isChecking = false;
@@ -24,6 +27,7 @@ class RoutineScheduler {
     constructor(options: RoutineSchedulerOptions) {
         this.routineStore = options.routineStore;
         this.sendMessage = options.sendMessage;
+        this.isReady = options.isReady ?? (() => true);
         this.now = options.now ?? (() => Date.now());
     }
 
@@ -52,7 +56,7 @@ class RoutineScheduler {
     // A routine that was due while the server was off runs once. The next run moves
     // forward before the message is sent, so a crash in between cannot repeat it.
     async checkDueRoutines(): Promise<void> {
-        if (this.isChecking) {
+        if (this.isChecking || !this.isReady()) {
             return;
         }
 

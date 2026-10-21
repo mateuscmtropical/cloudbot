@@ -52,6 +52,24 @@ describe('RoutineScheduler', () => {
             .toEqual([[botId, 'Routine "Inbox": Check my inbox.']]);
     });
 
+    it('keeps a due routine for later while it is not ready', async () => {
+        let isReady = false;
+        const waitingScheduler = new RoutineScheduler({ routineStore: store, sendMessage, isReady: () => isReady, now: () => clock });
+
+        await store.add(botId, { name: 'Inbox', prompt: 'Check.', schedule: EVERY_TEN_MINUTES });
+        clock += 10 * MINUTE_MS;
+        await waitingScheduler.checkDueRoutines();
+
+        expect(sent)
+            .toEqual([]);
+
+        isReady = true;
+        await waitingScheduler.checkDueRoutines();
+
+        expect(sent)
+            .toHaveLength(1);
+    });
+
     it('sends nothing before the routine is due or when it is off', async () => {
         const routine = await store.add(botId, { name: 'Inbox', prompt: 'Check.', schedule: EVERY_TEN_MINUTES });
 
