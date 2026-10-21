@@ -21,6 +21,7 @@ RUN pnpm build
 FROM base AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl sudo \
+        chromium fonts-dejavu-core fonts-liberation openbox procps x11vnc xterm xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # cloudbot runs the server and owns the data. bot runs the Claude Code CLI and
@@ -31,9 +32,11 @@ RUN groupadd --system cloudbot \
     && usermod -a -G bot cloudbot \
     && install -d -o cloudbot -g cloudbot -m 0700 /var/lib/cloudbot \
     && install -d -o bot -g bot -m 2770 /var/lib/cloudbot-workspaces \
-    && install -d -o cloudbot -g bot -m 2750 /var/lib/cloudbot-uploads
+    && install -d -o cloudbot -g bot -m 2750 /var/lib/cloudbot-uploads \
+    && install -d -m 1777 /tmp/.X11-unix
 
 COPY --chmod=0440 docker/cloudbot-agent.sudoers /etc/sudoers.d/cloudbot-agent
+COPY --chmod=0755 docker/cloudbot-desktop /usr/local/bin/cloudbot-desktop
 RUN visudo -cf /etc/sudoers.d/cloudbot-agent
 
 # pipefail makes a failed download fail the build instead of piping nothing into bash.
@@ -53,7 +56,8 @@ ENV NODE_ENV=production \
     PORT=3000 \
     CLOUDBOT_DATA_DIR=/var/lib/cloudbot \
     CLOUDBOT_AGENT_USER=bot \
-    CLAUDE_PATH=/home/bot/.local/bin/claude
+    CLAUDE_PATH=/home/bot/.local/bin/claude \
+    CLOUDBOT_DESKTOP_COMMAND=/usr/local/bin/cloudbot-desktop
 
 EXPOSE 3000
 

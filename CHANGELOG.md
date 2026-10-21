@@ -8,6 +8,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Desktop: the image has a virtual screen with Chromium, a terminal and a VNC server, run as the bot user. The server starts it and starts it again when it exits. Chromium and VNC listen on localhost only. Default choices that wait for the owner are in `docs/OWNER_QUESTIONS.md`.
 - File downloads: the bot can send a file from its workspace to the chat with the `share_file` tool. The server copies the file (at most 50 MB, regular files inside the workspace only) and the chat shows a download link. Downloads need the session cookie and are sent as attachments.
 - Shared file cleanup: copies of files the bot shared are removed `CLOUDBOT_UPLOAD_RETENTION_DAYS` days after they were shared, in the same daily job as the upload cleanup. A copy is also removed when its message cannot be saved.
 - Image check: before an attached image goes to Claude as an image block, its header and end marker are checked and its sides must be at most 8000 pixels. A file that fails is still listed by path.

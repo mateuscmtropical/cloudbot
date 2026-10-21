@@ -131,5 +131,29 @@ fi
 docker exec --user cloudbot "$CONTAINER_NAME" rm -rf "$UPLOAD_PROBE"
 echo "ok: bot can read uploads and cannot create, rename or replace files in them"
 
+# The server starts the desktop as bot. Chromium answers on its DevTools port, on localhost only.
+DESKTOP_READY=""
+for _attempt in $(seq "$ATTEMPTS"); do
+    if docker exec --user cloudbot "$CONTAINER_NAME" curl -fsS http://127.0.0.1:9222/json/version 2>/dev/null | grep -q '"Browser"'; then
+        DESKTOP_READY="yes"
+        break
+    fi
+    sleep 1
+done
+[ -n "$DESKTOP_READY" ] || fail "Chromium did not answer on the DevTools port"
+docker exec "$CONTAINER_NAME" test -S /tmp/.X11-unix/X1 || fail "the virtual screen is missing"
+CHROMIUM_USER="$(docker exec "$CONTAINER_NAME" ps -o user= -C chromium | sort -u)"
+[ "$CHROMIUM_USER" = "bot" ] || fail "Chromium runs as '$CHROMIUM_USER', expected 'bot'"
+echo "ok: the desktop runs as bot and Chromium answers on localhost"
+
+if ARGUMENT_OUTPUT="$(docker exec --user cloudbot "$CONTAINER_NAME" sudo -n -u bot -- /usr/local/bin/cloudbot-desktop --extra 2>&1)"; then
+    fail "cloudbot can pass arguments to the desktop script"
+fi
+case "$ARGUMENT_OUTPUT" in
+    *"not allowed"*|*"a password is required"*) ;;
+    *) fail "unexpected sudo desktop argument error: $ARGUMENT_OUTPUT" ;;
+esac
+echo "ok: sudo denies arguments to the desktop script"
+
 docker exec --user cloudbot "$CONTAINER_NAME" rm -f "$PROBE_FILE"
 echo "All container checks passed."

@@ -8,6 +8,7 @@ import { SetupAccess } from './access/SetupAccess.ts';
 import { buildSetupLink, readServerPort } from './access/setupLinkUrl.ts';
 import { ChatService } from './chat/ChatService.ts';
 import { createApp } from './createApp.ts';
+import { DesktopSupervisor, buildDesktopCommand } from './desktop/DesktopSupervisor.ts';
 import { BotStore } from './store/BotStore.ts';
 import { MessageStore } from './store/MessageStore.ts';
 import { ensureDefaultBot } from './store/ensureDefaultBot.ts';
@@ -77,6 +78,12 @@ const setup = new SetupConversation({
 });
 
 chatService.setSetup(setup);
+
+// The image sets CLOUDBOT_DESKTOP_COMMAND. Local development leaves it unset and has no desktop.
+const desktopCommand = buildDesktopCommand(process.env.CLOUDBOT_DESKTOP_COMMAND, agentUser);
+const desktop = desktopCommand === undefined ? undefined : new DesktopSupervisor({ desktopCommand });
+
+desktop?.start();
 // Queued messages and usage limit waits from the last run continue before the first request.
 await chatService.resumeQueue();
 
@@ -117,6 +124,7 @@ const server = serve({ fetch: app.fetch, port }, (address) => {
 
 function shutdown(): void {
     clearInterval(cleanupTimer);
+    desktop?.stop();
     setup.close();
     server.close();
     (server as Server).closeAllConnections();

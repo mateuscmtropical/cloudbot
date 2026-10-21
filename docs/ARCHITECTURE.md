@@ -10,7 +10,7 @@ as planned.
 | Server | `cloudbot` user | HTTP API, chat, setup, vault, task queue, storage |
 | Agent | `bot` user | The `claude` CLI for one conversation, started by the SDK in the server |
 | Key proxy | `cloudbot` user | Adds the API key to requests from the agent, so the agent never holds it |
-| Computer | `bot` user | Desktop, Chromium and noVNC for the bot's screen (planned, v0.2) |
+| Desktop | `bot` user | Virtual screen, Chromium, a terminal and a VNC server, started by the server |
 
 The bot runs as its own Linux user. Files that belong to the server user, such
 as the vault and the database, are not readable by the bot.
@@ -103,6 +103,7 @@ src/
     agent/         Runs one conversation turn through the Claude Agent SDK
     chat/          Chat routes, the turn run and the event stream to the web app
     createApp.ts   Hono app and routes
+    desktop/       Starts the bot's desktop and starts it again when it exits
     main.ts        Entry point
     claudeAuth/    CLI subscription login sessions and sign-in status
     store/         SQLite storage: bots, messages, settings and migrations
@@ -118,6 +119,35 @@ Rules between folders:
 
 - `src/web` never imports from `src/server`. They talk over HTTP only.
 - Shared request, response and message types live in `src/shared`.
+
+## Desktop
+
+The image installs Xvfb, openbox, xterm, Chromium and x11vnc. The script
+`docker/cloudbot-desktop`, installed as `/usr/local/bin/cloudbot-desktop`,
+starts them as `bot` on display `:1` with a 1280 by 800 screen. Chromium keeps
+its profile in `/home/bot/.config/cloudbot-chromium`, so sign-ins survive a
+restart. It listens for the DevTools protocol on `127.0.0.1:9222`. x11vnc
+listens on `127.0.0.1:5900` without a password. Neither port leaves the
+container, because compose exposes only the server port.
+
+The image sets `CLOUDBOT_DESKTOP_COMMAND` to the script path. The server runs
+`sudo -n -u bot -- /usr/local/bin/cloudbot-desktop`, and sudoers allows that
+script only without arguments. `DesktopSupervisor` starts it again when it
+exits, after 2 seconds, then 4, 8 and up to 60. A run of a minute or more
+resets the delay. Without the variable, as in local development, there is no
+desktop. The server passes only `HOME` and `PATH` to sudo, because sudoers
+keeps the `ANTHROPIC_` variables for the CLI. The script's own error messages
+reach the server log as one quoted line.
+
+The script holds a lock, so only one desktop runs. On start it stops parts
+left over from a crash and removes stale X and Chromium locks. It checks every part
+once a second. When one part exits, it stops the others and exits, so the server starts a clean desktop.
+Its log is `/home/bot/.cache/cloudbot-desktop/desktop.log` and starts empty
+each time.
+
+Chromium runs with `--no-sandbox`, because Docker's default seccomp profile
+blocks the namespaces its sandbox needs. Open choices like this one are listed
+in [OWNER_QUESTIONS.md](OWNER_QUESTIONS.md).
 
 ## Storage
 
