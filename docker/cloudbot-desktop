@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Starts the bot's desktop as the bot user: a virtual screen, a window manager,
+# a terminal, Chromium and a VNC server. Everything listens on localhost only.
+# The script exits when one part exits, and the server starts it again.
+#
+# The server runs it through sudo, which allows no arguments.
+
+set -euo pipefail
+
+DISPLAY_NUMBER=1
+SCREEN_WIDTH=1280
+SCREEN_HEIGHT=800
+SCREEN_DEPTH=24
+VNC_PORT=5900
+DEVTOOLS_PORT=9222
+STATE_DIR="$HOME/.cache/cloudbot-desktop"
+LOG_FILE="$STATE_DIR/desktop.log"
+PROFILE_DIR="$HOME/.config/cloudbot-chromium"
+LOCK_FILE="/tmp/cloudbot-desktop.lock"
+X_SOCKET="/tmp/.X11-unix/X$DISPLAY_NUMBER"
+X_LOCK="/tmp/.X$DISPLAY_NUMBER-lock"
+CHILD_PIDS=()
+
+export DISPLAY=":$DISPLAY_NUMBER"
+
+mkdir -p "$STATE_DIR" "$PROFILE_DIR"
+
+# One desktop at a time. A second start fails at once. The children close
+# descriptor 9 (9>&-), so parts left over after a crash do not hold the lock.
+exec 9> "$LOCK_FILE"
+if ! flock -n 9; then
+    echo "The desktop is already running." >&2
+    exit 1
+fi
+
+# The log starts empty on each start so it cannot grow without end.
+: > "$LOG_FILE"
+
+# shellcheck disable=SC2329 # Called by the EXIT trap below.
+stop_children() {
+    if [ "${#CHILD_PIDS[@]}" -gt 0 ]; then
+        kill "${CHILD_PIDS[@]}" 2>/dev/null || true
+        wait 2>/dev/null || true
+    fi
+}
+
+# The server and this script share a process group, so only the started children are stopped.
+trap stop_children EXIT
+trap 'exit 0' TERM INT
+
+# A crash can leave parts of an old desktop running, plus the X lock and
+# Chromium's profile locks. The flock above proves that no other desktop
+# script is running, so all of them are stale.
+pkill -u "$(id -u)" -f "^Xvfb :$DISPLAY_NUMBER " || true
+pkill -u "$(id -u)" -f "^x11vnc -display :$DISPLAY_NUMBER " || true
+pkill -u "$(id -u)" -f -- "--user-data-dir=$PROFILE_DIR" || true
+rm -f "$X_LOCK" "$X_SOCKET"
+rm -f "$PROFILE_DIR/SingletonLock" "$PROFILE_DIR/SingletonSocket" "$PROFILE_DIR/SingletonCookie"
+
+Xvfb ":$DISPLAY_NUMBER" -screen 0 "${SCREEN_WIDTH}x${SCREEN_HEIGHT}x${SCREEN_DEPTH}" -nolisten tcp >> "$LOG_FILE" 2>&1 9>&- &
+CHILD_PIDS+=("$!")
+
+for _attempt in $(seq 50); do
+    [ -S "$X_SOCKET" ] && break
+    sleep 0.1
+done
+if [ ! -S "$X_SOCKET" ]; then
+    echo "The virtual screen did not start. See $LOG_FILE." >&2
+    exit 1
+fi
+
+openbox >> "$LOG_FILE" 2>&1 9>&- &
+CHILD_PIDS+=("$!")
+
+x11vnc -display "$DISPLAY" -localhost -rfbport "$VNC_PORT" -forever -shared -nopw -quiet >> "$LOG_FILE" 2>&1 9>&- &
+CHILD_PIDS+=("$!")
+
+xterm -geometry 100x30+40+40 >> "$LOG_FILE" 2>&1 9>&- &
+CHILD_PIDS+=("$!")
+
+# Docker's default seccomp profile blocks the namespaces Chromium's sandbox needs,
+# so the container is the sandbox. See docs/OWNER_QUESTIONS.md.
+chromium \
+    --no-sandbox \
+    --remote-debugging-port="$DEVTOOLS_PORT" \
+    --user-data-dir="$PROFILE_DIR" \
+    --no-first-run \
+    --no-default-browser-check \
+    --disable-dev-shm-usage \
+    --window-position=0,0 \
+    --window-size="$SCREEN_WIDTH,$SCREEN_HEIGHT" \
+    about:blank >> "$LOG_FILE" 2>&1 9>&- &
+CHILD_PIDS+=("$!")
+
+echo "The desktop is running on display $DISPLAY."
+
+# wait -n returns when the first part exits. The EXIT trap stops the others.
+set +e
+wait -n
+EXIT_CODE=$?
+set -e
+echo "A desktop process exited with code $EXIT_CODE. See $LOG_FILE." >&2
+exit 1
