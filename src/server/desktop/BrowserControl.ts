@@ -57,6 +57,11 @@ const CONTEXT_GONE_PATTERN = /context was destroyed|cannot find context|executio
 const LOAD_POLL_MS = 250;
 const READ_PAGE_EXPRESSION = '({ title: document.title, url: location.href, text: document.body ? document.body.innerText : "" })';
 const READY_STATE_EXPRESSION = 'document.readyState';
+// Runs in an isolated world, so the page's own scripts cannot change what it reads.
+const FOCUS_CHECK_EXPRESSION = '(() => { const field = document.activeElement; return { origin: location.origin, tag: field ? field.tagName : "", type: field && field.tagName === "INPUT" ? field.type : "", autocomplete: field && field.tagName === "INPUT" ? field.autocomplete.trim().toLowerCase() : "" }; })()';
+const ISOLATED_WORLD_NAME = 'cloudbot-secret-check';
+// Fields that are not password inputs but still take a secret. Their autocomplete value says so.
+const SECRET_AUTOCOMPLETE_VALUES = new Set(['current-password', 'new-password', 'one-time-code', 'cc-number', 'cc-csc']);
 
 class BrowserError extends Error {
     constructor(message: string) {
@@ -98,6 +103,21 @@ function readStringField(value: unknown, field: string): string {
 interface WithPageOptions {
     // Only a navigation can get past a dialog that was already open.
     canRecoverFromDialog?: boolean;
+}
+
+async function createIsolatedContext(page: CdpConnection): Promise<number> {
+    const tree = await page.call('Page.getFrameTree');
+    const frameTree: unknown = typeof tree === 'object' && tree !== null ? Reflect.get(tree, 'frameTree') : undefined;
+    const frame: unknown = typeof frameTree === 'object' && frameTree !== null ? Reflect.get(frameTree, 'frame') : undefined;
+    const frameId = readStringField(frame, 'id');
+    const world = await page.call('Page.createIsolatedWorld', { frameId, worldName: ISOLATED_WORLD_NAME });
+    const contextId: unknown = typeof world === 'object' && world !== null ? Reflect.get(world, 'executionContextId') : undefined;
+
+    if (frameId === '' || typeof contextId !== 'number') {
+        throw new BrowserError('The page could not be checked. Try again.');
+    }
+
+    return contextId;
 }
 
 async function readReadyState(page: CdpConnection): Promise<unknown> {
@@ -200,6 +220,39 @@ class BrowserControl {
     typeText(text: string): Promise<void> {
         return this.withPage(async (page) => {
             await page.call('Input.insertText', { text });
+        });
+    }
+
+    // Types a saved secret, but only into a secret field of a page on its site. A text field such as
+    // a search box would put the value in the address, on the screen or in a public post.
+    // The value is never returned or logged.
+    typeSecret(site: string, value: string): Promise<void> {
+        return this.withPage(async (page) => {
+            const contextId = await createIsolatedContext(page);
+            const result = await page.call('Runtime.evaluate', { expression: FOCUS_CHECK_EXPRESSION, returnByValue: true, contextId });
+            const focus = readEvaluatedValue(result);
+            const pageOrigin = readStringField(focus, 'origin');
+
+            if (pageOrigin !== site) {
+                throw new BrowserError(`This secret is only for ${site}, and the page is on ${pageOrigin || 'an unknown site'}. Open the right site first.`);
+            }
+
+            const focusedTag = readStringField(focus, 'tag');
+
+            if (focusedTag === 'IFRAME') {
+                throw new BrowserError('The focused field is inside a frame, which can belong to another site. Click a field on the page itself.');
+            }
+
+            const fieldType = readStringField(focus, 'type');
+            const fieldAutocomplete = readStringField(focus, 'autocomplete');
+            const isSecretField = focusedTag === 'INPUT'
+                && (fieldType === 'password' || SECRET_AUTOCOMPLETE_VALUES.has(fieldAutocomplete));
+
+            if (!isSecretField) {
+                throw new BrowserError('The focused field is not a password, one-time code or card field. Click that field first.');
+            }
+
+            await page.call('Input.insertText', { text: value });
         });
     }
 

@@ -8,6 +8,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- `browser_type_secret`: the server types a saved secret into the focused password, one-time code or card field, only on the site saved with it. The bot never sees the value.
 - Screenshots in the chat: `browser_screenshot` takes `showOwner`, and the screenshot then also appears in the chat. The chat shows a preview of PNG, JPEG, GIF and WEBP files up to 5 MB above the download link.
 - Browser tools: the bot can open web pages, read them, take screenshots, click, type, press keys and scroll in the Chromium on its desktop. Only http and https addresses can be opened, and page content is framed as data for the model.
 - Secrets the bot asks for: with the `request_secret` tool the bot asks the owner for a password, a code or a payment detail. The chat shows a secure form with the https site where the value will be used. The value goes to the vault, tied to the bot and the site, and never reaches the model or the chat history.

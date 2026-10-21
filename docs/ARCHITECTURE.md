@@ -346,7 +346,17 @@ site in the form and saves the value with `BotSecrets` instead of the setup.
 `BotSecrets` (`src/server/secrets/`) stores `{ site, value }` in the vault
 under `BOT_<hash of the bot id>_<NAME>`, so each bot has its own names. The
 form closes and a system message says what was saved, without the value. The
-bot does not see the value. The owner tells the bot to continue. Names that
+bot does not see the value. The owner tells the bot to continue.
+
+`browser_type_secret` takes a saved name. The server reads the value and calls
+`BrowserControl.typeSecret`. In one DevTools connection it creates an isolated
+world, so page scripts cannot change what the check reads. It then checks that
+the page origin is the saved site and that the focused element is a password
+input, or an input whose autocomplete says `current-password`, `new-password`,
+`one-time-code`, `cc-number` or `cc-csc`. A focused frame is refused. Only then
+does it type the value with `Input.insertText`. A search box or a text field is
+refused, so a page cannot get the value into an address, onto the screen or
+into a post. The tool result never holds the value. Names that
 start with `ANTHROPIC_` or `CLAUDE_` are refused. A second answer to a form
 while the first is saved is refused. The setup's recovery ignores forms with
 a site, so a bot form never becomes the setup's API key form.
