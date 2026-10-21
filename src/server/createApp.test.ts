@@ -9,6 +9,7 @@ import { SetupAccess } from './access/SetupAccess.ts';
 import { FakeAgentRunner } from './agent/FakeAgentRunner.ts';
 import { ChatService } from './chat/ChatService.ts';
 import { createApp } from './createApp.ts';
+import { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { MAX_RULES_PER_BOT } from './rules/createRuleRoutes.ts';
 import { RuleStore } from './store/RuleStore.ts';
 import { BotStore } from './store/BotStore.ts';
@@ -308,5 +309,32 @@ describe('createApp', () => {
 
         expect(response.status)
             .toBe(404);
+    });
+
+    it('lets the owner take the screen and give it back', async () => {
+        const screen = new ScreenHolder();
+        const app = createApp({ version: '1.2.3', access, screen });
+        const sessionToken = await signIn(app, access);
+        const post = (path: string): Response | Promise<Response> => app.request(path, { method: 'POST', headers: { cookie: `cloudbot_session=${sessionToken}` } });
+
+        expect(await (await requestWithSession(app, '/api/desktop/screen', sessionToken)).json())
+            .toEqual({ holder: 'bot' });
+        expect(await (await post('/api/desktop/screen/take')).json())
+            .toEqual({ holder: 'person' });
+        expect(screen.holder)
+            .toBe('person');
+        expect(await (await post('/api/desktop/screen/release')).json())
+            .toEqual({ holder: 'bot' });
+        expect(screen.holder)
+            .toBe('bot');
+    });
+
+    it('rejects the screen routes without the cookie', async () => {
+        const screen = new ScreenHolder();
+        const app = createApp({ version: '1.2.3', access, screen });
+        const response = await app.request('/api/desktop/screen/release', { method: 'POST' });
+
+        expect(response.status)
+            .toBe(401);
     });
 });

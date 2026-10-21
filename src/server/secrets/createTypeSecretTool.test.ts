@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BrowserError } from '../desktop/BrowserControl.ts';
 import type { BrowserControl } from '../desktop/BrowserControl.ts';
+import { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import { createTypeSecretTool } from './createTypeSecretTool.ts';
 import type { SecretToolResult } from './createSecretTools.ts';
 
@@ -56,5 +57,26 @@ describe('createTypeSecretTool', () => {
             .toEqual({ content: [{ type: 'text', text: 'This secret is only for https://github.com' }], isError: true });
         expect(failed)
             .toEqual({ content: [{ type: 'text', text: 'The secret could not be typed.' }], isError: true });
+    });
+
+    it('does not type while the owner holds the screen', async () => {
+        const typed: string[] = [];
+        const browser = { typeSecret: (_site: string, value: string) => {
+            typed.push(value);
+
+            return Promise.resolve();
+        }, takeDismissedDialogs: () => [] } as unknown as BrowserControl;
+        const screen = new ScreenHolder();
+        const typeTool = createTypeSecretTool(browser, () => SECRET, screen);
+        const handler = typeTool.handler as unknown as ToolHandler;
+
+        screen.giveToPerson();
+
+        const result = await handler({ name: 'GITHUB_PASSWORD' }, {});
+
+        expect(result.isError)
+            .toBe(true);
+        expect(typed)
+            .toEqual([]);
     });
 });

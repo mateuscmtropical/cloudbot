@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Screen handoff on the server: the bot has a `request_screen` tool that gives the screen to the owner with a note in the chat. While the owner holds the screen, the `browser_` tools and `browser_type_secret` refuse to act. The owner takes or returns the screen with `POST /api/desktop/screen/take` and `POST /api/desktop/screen/release`, and reads the holder with `GET /api/desktop/screen`. The live view drops mouse, keyboard and clipboard input unless the owner holds the screen.
 - Live screen: a Screen button in the conversation header shows the bot's desktop in the chat with noVNC. The view is view only. The server proxies a WebSocket at `/api/desktop/vnc` to x11vnc on `127.0.0.1:5900` and refuses requests without the session cookie.
 - Rules panel: a Rules button in the conversation header opens the owner rules of the bot. The owner can add allow and block rules, name blocked tools and remove rules there.
 - Owner rules: each bot has allow and block rules in plain words, stored on the server and read for every turn. The sentences go into the system prompt, and block rules can name tools that the SDK then refuses. Routes: `GET`, `POST /api/bots/:id/rules` and `DELETE /api/bots/:id/rules/:ruleId`.

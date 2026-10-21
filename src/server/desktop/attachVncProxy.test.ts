@@ -12,6 +12,7 @@ import { openDatabase } from '../store/openDatabase.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { SettingsStore } from '../store/SettingsStore.ts';
 import { attachVncProxy } from './attachVncProxy.ts';
+import { ScreenHolder } from './ScreenHolder.ts';
 
 function listenOnFreePort(server: Server | TcpServer): Promise<number> {
     return new Promise((resolve) => {
@@ -42,8 +43,10 @@ describe('attachVncProxy', () => {
     let vncServer: TcpServer;
     let httpPort: number;
     let sessionToken: string;
+    let screen: ScreenHolder;
 
     beforeEach(async () => {
+        screen = new ScreenHolder();
         opened = await openDatabase(':memory:');
         access = new SetupAccess(new SettingsStore(opened.db));
         vncServer = createTcpServer((connection) => {
@@ -56,7 +59,7 @@ describe('attachVncProxy', () => {
         const vncPort = await listenOnFreePort(vncServer);
 
         httpServer = createServer();
-        attachVncProxy({ server: httpServer, access, vncPort });
+        attachVncProxy({ server: httpServer, access, screen, vncPort });
         httpPort = await listenOnFreePort(httpServer);
 
         const setupCode = await access.issueSetupCode();
@@ -125,7 +128,7 @@ describe('attachVncProxy', () => {
         const deadVncPort = await listenOnFreePort(createTcpServer());
         const secondServer = createServer();
 
-        attachVncProxy({ server: secondServer, access, vncPort: deadVncPort + 1 });
+        attachVncProxy({ server: secondServer, access, screen, vncPort: deadVncPort + 1 });
 
         const secondPort = await listenOnFreePort(secondServer);
         const webSocket = new WebSocket(`ws://127.0.0.1:${String(secondPort)}/api/desktop/vnc`, {
@@ -140,5 +143,55 @@ describe('attachVncProxy', () => {
         expect(await closed)
             .toBe('closed');
         secondServer.close();
+    });
+
+    describe('input while the bot holds the screen', () => {
+        const HANDSHAKE = Buffer.concat([Buffer.from('RFB 003.008\n'), Buffer.from([1, 1])]);
+        const POINTER = Buffer.from([5, 1, 0, 10, 0, 10]);
+        const UPDATE_REQUEST = Buffer.from([3, 0, 0, 0, 0, 0, 5, 0, 5, 0]);
+
+        // The fake desktop echoes the bytes it gets. The test reads them back until the update request arrives.
+        async function sendAndCollect(): Promise<Buffer> {
+            const webSocket = new WebSocket(`ws://127.0.0.1:${String(httpPort)}/api/desktop/vnc`, {
+                headers: { cookie: `cloudbot_session=${sessionToken}` },
+            });
+            let echoed = Buffer.alloc(0);
+            const done = new Promise<void>((resolve) => {
+                webSocket.on('message', (data: Buffer) => {
+                    echoed = Buffer.concat([echoed, data]);
+
+                    if (echoed.includes(UPDATE_REQUEST)) {
+                        resolve();
+                    }
+                });
+            });
+
+            await new Promise<void>((resolve) => {
+                webSocket.on('open', resolve);
+            });
+            webSocket.send(HANDSHAKE);
+            webSocket.send(POINTER);
+            webSocket.send(UPDATE_REQUEST);
+            await done;
+            webSocket.close();
+
+            return echoed;
+        }
+
+        it('drops mouse input from the browser', async () => {
+            const echoed = await sendAndCollect();
+
+            expect(echoed.includes(POINTER))
+                .toBe(false);
+        });
+
+        it('forwards mouse input while a person holds the screen', async () => {
+            screen.giveToPerson();
+
+            const echoed = await sendAndCollect();
+
+            expect(echoed.includes(POINTER))
+                .toBe(true);
+        });
     });
 });

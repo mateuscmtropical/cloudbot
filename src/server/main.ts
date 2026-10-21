@@ -8,6 +8,7 @@ import { SetupAccess } from './access/SetupAccess.ts';
 import { buildSetupLink, readServerPort } from './access/setupLinkUrl.ts';
 import { ChatService } from './chat/ChatService.ts';
 import { createApp } from './createApp.ts';
+import { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { attachVncProxy } from './desktop/attachVncProxy.ts';
 import { BrowserControl, DESKTOP_DEVTOOLS_URL } from './desktop/BrowserControl.ts';
 import { DesktopSupervisor, buildDesktopCommand } from './desktop/DesktopSupervisor.ts';
@@ -59,11 +60,12 @@ const runner = new SdkAgentRunner({ pathToClaudeCodeExecutable: claudePath, envi
 const desktopCommand = buildDesktopCommand(process.env.CLOUDBOT_DESKTOP_COMMAND, agentUser);
 const desktop = desktopCommand === undefined ? undefined : new DesktopSupervisor({ desktopCommand });
 const browser = desktop === undefined ? undefined : new BrowserControl({ devtoolsUrl: DESKTOP_DEVTOOLS_URL });
+const screen = new ScreenHolder();
 const vault = new Vault(dataDir);
 const botSecrets = new BotSecrets(vault);
 const ruleStore = new RuleStore(opened.db);
 const chatService = new ChatService({
-    botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore,
+    botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore, screen,
 });
 const bots = await botStore.list();
 const firstBot = bots[0];
@@ -109,7 +111,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ version, access, chatService, ruleStore });
+const app = createApp({ version, access, chatService, ruleStore, screen });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.
@@ -132,7 +134,7 @@ const server = serve({ fetch: app.fetch, port }, (address) => {
 
 // The live view needs the desktop. Local development has none.
 if (desktop !== undefined) {
-    attachVncProxy({ server: server as Server, access });
+    attachVncProxy({ server: server as Server, access, screen });
 }
 
 function shutdown(): void {
