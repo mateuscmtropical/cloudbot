@@ -471,3 +471,30 @@ describe('ConversationView older messages', () => {
             .toBeNull();
     });
 });
+
+describe('ConversationView rules button', () => {
+    afterEach(() => {
+        cleanup();
+        vi.unstubAllGlobals();
+    });
+
+    it('closes the rules panel when another bot is shown and keeps it closed on return', () => {
+        const firstBot: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', avatarColor: '#3b82f6', lastMessagePreview: '', hasUnread: false };
+        const secondBot: BotSummary = { ...firstBot, id: 'bot-b', name: 'Bia' };
+
+        vi.stubGlobal('fetch', () => Promise.resolve(Response.json([])));
+
+        const view = render(historyElement([], {}, firstBot));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
+
+        expect(screen.getByRole('dialog', { name: 'Rules for Ana' }))
+            .toBeTruthy();
+
+        view.rerender(historyElement([], {}, secondBot));
+        view.rerender(historyElement([], {}, firstBot));
+
+        expect(screen.queryByRole('dialog'))
+            .toBeNull();
+    });
+});

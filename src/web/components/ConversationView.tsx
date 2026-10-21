@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
@@ -6,6 +6,7 @@ import { renderMarkdown } from '../markdown.ts';
 import { Composer } from './Composer.tsx';
 import type { DraftAttachment } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
+import { RulesPanel } from './RulesPanel.tsx';
 import type { MessageActions } from './MessageItem.tsx';
 
 // Within this many pixels of the top, the view asks for the page of older messages.
@@ -83,6 +84,16 @@ function ConversationView({
     const olderAnchorRef = useRef<OlderAnchor | undefined>(undefined);
     const previousIsLoadingRef = useRef(false);
     const botName = bot?.name ?? 'CloudBot';
+    // The id of the bot whose rules are open. Switching to another bot closes the panel.
+    const [rulesBotId, setRulesBotId] = useState<string | undefined>(undefined);
+    const [shownBotId, setShownBotId] = useState(bot?.id);
+
+    // React's pattern for state that follows a prop: reset it during render, not in an effect.
+    if (shownBotId !== bot?.id) {
+        setShownBotId(bot?.id);
+        setRulesBotId(undefined);
+    }
+    const isRulesOpen = bot !== undefined && rulesBotId === bot.id;
     const botId = bot?.id;
 
     // Older messages are added above the ones on screen. The anchor message is kept at the same
@@ -168,7 +179,31 @@ function ConversationView({
                     &#9776;
                 </button>
                 <span className="bot-pill">{botName}</span>
+                {bot === undefined
+                    ? null
+                    : (
+                            <button
+                                type="button"
+                                className="rules-button"
+                                onClick={() => {
+                                    setRulesBotId(isRulesOpen ? undefined : bot.id);
+                                }}
+                            >
+                                Rules
+                            </button>
+                        )}
             </header>
+            {isRulesOpen
+                ? (
+                        <RulesPanel
+                            botId={bot.id}
+                            botName={botName}
+                            onClose={() => {
+                                setRulesBotId(undefined);
+                            }}
+                        />
+                    )
+                : null}
             <div className="message-list" ref={messageListRef} onScroll={handleScroll}>
                 {hasOlderMessages
                     ? (
