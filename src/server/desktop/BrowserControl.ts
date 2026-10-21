@@ -66,8 +66,25 @@ const READY_STATE_EXPRESSION = 'document.readyState';
 // Runs in an isolated world, so the page's own scripts cannot change what it reads.
 const FOCUS_CHECK_EXPRESSION = '(() => { const field = document.activeElement; return { origin: location.origin, tag: field ? field.tagName : "", type: field && field.tagName === "INPUT" ? field.type : "", autocomplete: field && field.tagName === "INPUT" ? (field.autocomplete.trim().toLowerCase().split(/\\s+/).pop() || "") : "" }; })()';
 // Reads what is under the point and what has the focus. It only reads, so the page cannot be changed by it.
-const FIELD_TAGS = '["INPUT", "TEXTAREA", "SELECT"]';
-const CLICK_FOCUS_EXPRESSION = (pointX: number, pointY: number): string => `(() => { const isField = (element) => Boolean(element) && (${FIELD_TAGS}.includes(element.tagName) || element.isContentEditable) && !element.disabled; return { targetIsField: isField(document.elementFromPoint(${String(pointX)}, ${String(pointY)})), focusedIsField: isField(document.activeElement) }; })()`;
+// Only a text field is clicked again, because a second click would toggle a checkbox or press a button twice.
+// The focus is followed into shadow roots and same-origin frames. A frame of another site counts as focused.
+const NON_TEXT_INPUT_TYPES = '["checkbox","radio","button","submit","reset","file","image","color","range","hidden"]';
+const CLICK_FOCUS_EXPRESSION = (pointX: number, pointY: number): string => `(() => {
+    const isText = (element) => Boolean(element) && !element.disabled && !element.readOnly
+        && (element.tagName === "TEXTAREA" || (element.tagName === "INPUT" && !${NON_TEXT_INPUT_TYPES}.includes(element.type)) || element.isContentEditable);
+    const isField = (element) => isText(element) || (Boolean(element) && !element.disabled && element.tagName === "SELECT");
+    const target = document.elementFromPoint(${String(pointX)}, ${String(pointY)});
+    let active = document.activeElement;
+    for (;;) {
+        if (active && active.shadowRoot && active.shadowRoot.activeElement) { active = active.shadowRoot.activeElement; continue; }
+        if (active && active.tagName === "IFRAME") {
+            if (!active.contentDocument) { return { targetIsTextField: isText(target), focusedIsField: true }; }
+            if (active.contentDocument.activeElement) { active = active.contentDocument.activeElement; continue; }
+        }
+        break;
+    }
+    return { targetIsTextField: isText(target), focusedIsField: isField(active) };
+})()`;
 const ISOLATED_WORLD_NAME = 'cloudbot-secret-check';
 // Fields that are not password inputs but still take a secret. The last token of their autocomplete value says so,
 // as in "billing cc-number".
@@ -227,7 +244,7 @@ class BrowserControl {
 
             let focus = await this.readClickFocus(page, pointX, pointY);
 
-            if (focus.targetIsField && !focus.focusedIsField) {
+            if (focus.targetIsTextField && !focus.focusedIsField) {
                 await this.sleep(CLICK_RETRY_DELAY_MS);
                 await this.dispatchClick(page, point);
                 focus = await this.readClickFocus(page, pointX, pointY);
@@ -303,12 +320,24 @@ class BrowserControl {
         await page.call('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
     }
 
-    private async readClickFocus(page: CdpConnection, pointX: number, pointY: number): Promise<{ targetIsField: boolean; focusedIsField: boolean }> {
-        const result = await page.call('Runtime.evaluate', { expression: CLICK_FOCUS_EXPRESSION(pointX, pointY), returnByValue: true });
-        const value = readEvaluatedValue(result);
+    private async readClickFocus(page: CdpConnection, pointX: number, pointY: number): Promise<{ targetIsTextField: boolean; focusedIsField: boolean }> {
+        let value: unknown;
+
+        try {
+            const result = await page.call('Runtime.evaluate', { expression: CLICK_FOCUS_EXPRESSION(pointX, pointY), returnByValue: true });
+
+            value = readEvaluatedValue(result);
+        } catch (error: unknown) {
+            // The click may have started a navigation. That is not a failure, and nothing is clicked again.
+            if (error instanceof CdpError && CONTEXT_GONE_PATTERN.test(error.message)) {
+                return { targetIsTextField: false, focusedIsField: false };
+            }
+
+            throw error;
+        }
 
         return {
-            targetIsField: typeof value === 'object' && value !== null && Reflect.get(value, 'targetIsField') === true,
+            targetIsTextField: typeof value === 'object' && value !== null && Reflect.get(value, 'targetIsTextField') === true,
             focusedIsField: typeof value === 'object' && value !== null && Reflect.get(value, 'focusedIsField') === true,
         };
     }

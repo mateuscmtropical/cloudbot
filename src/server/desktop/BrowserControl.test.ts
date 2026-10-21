@@ -173,8 +173,8 @@ describe('BrowserControl', () => {
 
     it('clicks a field again when the first click left it without the focus', async () => {
         const focusStates = [
-            { targetIsField: true, focusedIsField: false },
-            { targetIsField: true, focusedIsField: true },
+            { targetIsTextField: true, focusedIsField: false },
+            { targetIsTextField: true, focusedIsField: true },
         ];
         const { browser, sockets } = createBrowser(call => (call.method === 'Runtime.evaluate'
             ? { result: { result: { value: focusStates.shift() } } }
@@ -188,7 +188,7 @@ describe('BrowserControl', () => {
 
     it('clicks a field only twice and then reports that nothing has the focus', async () => {
         const { browser, sockets } = createBrowser(call => (call.method === 'Runtime.evaluate'
-            ? { result: { result: { value: { targetIsField: true, focusedIsField: false } } } }
+            ? { result: { result: { value: { targetIsTextField: true, focusedIsField: false } } } }
             : { result: {} }));
 
         await expect(browser.click(10, 20)).resolves.toEqual({ hasFocusedField: false });
@@ -197,8 +197,19 @@ describe('BrowserControl', () => {
             .toHaveLength(2);
     });
 
+    it('does not fail or click again when the click started a navigation', async () => {
+        const { browser, sockets } = createBrowser(call => (call.method === 'Runtime.evaluate'
+            ? { error: { message: 'Execution context was destroyed.' } }
+            : { result: {} }));
+
+        await expect(browser.click(10, 20)).resolves.toEqual({ hasFocusedField: false });
+        expect(actionCalls(sockets.sockets[0])
+            .filter(call => call.params.type === 'mousePressed'))
+            .toHaveLength(1);
+    });
+
     it('does not repeat a click that landed on something that is not a field', async () => {
-        const { browser, sockets } = createBrowser(pageAnswer({ targetIsField: false, focusedIsField: false }));
+        const { browser, sockets } = createBrowser(pageAnswer({ targetIsTextField: false, focusedIsField: false }));
 
         await browser.click(10, 20);
 
