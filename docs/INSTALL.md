@@ -49,6 +49,13 @@ sudo cloudbot setup-link
 
 A new link ends every existing session, so only use it when you need to.
 
+## Local mode
+
+Running without Docker, the bot runs as your own user on your computer. It can
+read your files, run commands and use your Python, with the same rights you
+have. CloudBot prints a warning at start. The safe way is Docker, or a separate
+user set in `CLOUDBOT_AGENT_USER`.
+
 ## Your own domain
 
 Point a DNS `A` record for your domain to the server IP, then install with the

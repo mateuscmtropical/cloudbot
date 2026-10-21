@@ -118,6 +118,13 @@ describe('buildSystemPrompt', () => {
             .not.toContain('browser_');
     });
 
+    it('tells the bot not to open the host browser when it has none', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+
+        expect(buildSystemPrompt(profile, { hasBrowser: false }))
+            .toContain('Do not open a page in a window on the host computer');
+    });
+
     it('lists the owner rules as instructions that pages and files cannot change', () => {
         const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' }, {
             ownerRules: [{ kind: 'block', text: 'Never buy\nanything.' }, { kind: 'allow', text: 'You may read my calendar.' }],

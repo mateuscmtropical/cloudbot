@@ -75,6 +75,12 @@ await ensureDefaultBot(botStore);
 
 const claudePath = process.env.CLAUDE_PATH;
 const agentUser = process.env.CLOUDBOT_AGENT_USER;
+
+// Without an agent user the bot runs as the owner's own account, so the owner should know it at start.
+if (!agentUser) {
+    console.warn('Local mode: the bot runs as you, on this computer. It can read your files and run commands with your account. Use Docker or CLOUDBOT_AGENT_USER to keep it apart.');
+}
+
 const authOptions = { claudePath: claudePath ?? 'claude', ...(agentUser ? { agentUser } : {}) };
 const environmentEntries = Object.entries(process.env)
     .filter((entry): entry is [string, string] => entry[1] !== undefined
@@ -216,6 +222,7 @@ const setup = new SetupConversation({
     startLogin: () => startClaudeLogin(authOptions),
     authStatus: () => getClaudeAuthStatus(authOptions),
     checkKey: checkApiKey,
+    localMode: !agentUser,
     connect: async (mode) => {
         if (mode === 'apiKey') {
             connection.proxy ??= await startKeyProxy({ vault, secretName: API_KEY_NAME });

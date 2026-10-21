@@ -1,13 +1,32 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import type { BigIntStats } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { ShareFileError, cleanShareName, guessMimeType, shareWorkspaceFile } from './shareFile.ts';
+import { ShareFileError, cleanShareName, guessMimeType, isSameFile, shareWorkspaceFile } from './shareFile.ts';
 
 const FILE_ID = '11111111-1111-4111-8111-111111111111';
+
+// Windows only lets an account make file symlinks with Developer Mode or admin rights.
+function canMakeSymlinks(): boolean {
+    const probeDir = mkdtempSync(join(tmpdir(), 'cloudbot-symlink-probe-'));
+
+    try {
+        symlinkSync(join(probeDir, 'target'), join(probeDir, 'link'));
+
+        return true;
+    } catch {
+        return false;
+    } finally {
+        rmSync(probeDir, { recursive: true, force: true });
+    }
+}
+
+const SYMLINKS_ALLOWED = canMakeSymlinks();
 
 describe('shareWorkspaceFile', () => {
     let rootDir: string;
@@ -73,7 +92,7 @@ describe('shareWorkspaceFile', () => {
             .toEqual([]);
     });
 
-    it('refuses a symlink that leads out of the workspace', async () => {
+    it.skipIf(!SYMLINKS_ALLOWED)('refuses a symlink that leads out of the workspace', async () => {
         await writeFile(join(rootDir, 'secret.txt'), 'secret');
         await symlink(join(rootDir, 'secret.txt'), join(workspaceDir, 'link.txt'));
 
@@ -84,7 +103,8 @@ describe('shareWorkspaceFile', () => {
 
     it('refuses a symlinked folder that leads out of the workspace', async () => {
         await writeFile(join(rootDir, 'secret.txt'), 'secret');
-        await symlink(rootDir, join(workspaceDir, 'up'));
+        // A junction works on Windows without special rights, and the type is ignored elsewhere.
+        await symlink(rootDir, join(workspaceDir, 'up'), 'junction');
 
         await expect(share('up/secret.txt'))
             .rejects
@@ -132,6 +152,35 @@ describe('guessMimeType', () => {
     });
 });
 
+describe('isSameFile', () => {
+    it('matches a file with itself and refuses a different file with the same content', async () => {
+        const dir = await mkdtemp(join(tmpdir(), 'cloudbot-same-file-'));
+
+        try {
+            await writeFile(join(dir, 'first.txt'), 'same');
+            await writeFile(join(dir, 'second.txt'), 'same');
+
+            const first = await stat(join(dir, 'first.txt'), { bigint: true });
+            const firstAgain = await stat(join(dir, 'first.txt'), { bigint: true });
+            const second = await stat(join(dir, 'second.txt'), { bigint: true });
+
+            expect(isSameFile(first, firstAgain))
+                .toBe(true);
+            expect(isSameFile(first, second))
+                .toBe(false);
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('never matches when the filesystem reports inode 0 for every file', () => {
+        const zeroInode = { dev: 1n, ino: 0n } as BigIntStats;
+
+        expect(isSameFile(zeroInode, zeroInode))
+            .toBe(false);
+    });
+});
+
 describe('cleanShareName', () => {
     it('removes control characters and falls back to file', () => {
         expect(cleanShareName('a\nb\u0000.txt'))
@@ -169,7 +218,7 @@ describe('shareWorkspaceFile edge cases', () => {
             .toBe('..notes.txt');
     });
 
-    it('refuses a named pipe without waiting for a writer', async () => {
+    it.skipIf(process.platform === 'win32')('refuses a named pipe without waiting for a writer', async () => {
         execFileSync('mkfifo', [join(workspaceDir, 'pipe')]);
 
         await expect(shareWorkspaceFile({ workspaceDir, requestedPath: 'pipe', shareDir, maxBytes: 100, fileId: FILE_ID }))

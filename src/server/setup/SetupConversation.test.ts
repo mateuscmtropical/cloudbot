@@ -55,7 +55,7 @@ describe('setup conversation', () => {
         await rm(dataDir, { recursive: true, force: true });
     });
 
-    async function fixture(start = true): Promise<Fixture> {
+    async function fixture(start = true, localMode = false): Promise<Fixture> {
         const bots = new BotStore(opened.db);
         const bot = await bots.create({ name: 'CloudBot', title: 'Assistant', description: '' });
         const messages = new MessageStore(opened.db);
@@ -88,7 +88,7 @@ describe('setup conversation', () => {
             vault: { delete: (name) => {
                 vault.delete(name);
             }, has: name => vault.has(name), set: (name, value) => { vault.set(name, value); } },
-            checkKey, connect, authStatus, startLogin,
+            checkKey, connect, authStatus, startLogin, localMode,
         });
         const app = createApp({ version: 'test', access, chatService: chat, webRoot: 'missing-web-root' });
 
@@ -205,6 +205,29 @@ describe('setup conversation', () => {
             .toEqual([401, 401, 401]);
     });
 
+    it('says once in local mode that the bot runs as the owner, and not otherwise', async () => {
+        const local = await fixture(true, true);
+        const localHistory = await local.chat.listMessages(local.botId) ?? [];
+        const plain = await fixture(true, false);
+        const plainHistory = await plain.chat.listMessages(plain.botId) ?? [];
+
+        const localLines = localHistory.filter((message) => {
+            const serialized = JSON.stringify(message.body);
+
+            return serialized.includes('Local mode: I run as you');
+        });
+        const plainLines = plainHistory.filter((message) => {
+            const serialized = JSON.stringify(message.body);
+
+            return serialized.includes('Local mode');
+        });
+
+        expect(localLines)
+            .toHaveLength(1);
+        expect(plainLines)
+            .toHaveLength(0);
+    });
+
     it('gives a scripted reminder without storing normal input or starting a turn', async () => {
         const context = await fixture();
         const response = await context.chat.sendMessage(context.botId, CODE);
@@ -229,7 +252,7 @@ describe('setup conversation', () => {
             vault: { delete: (name) => {
                 context.vault.delete(name);
             }, has: name => context.vault.has(name), set: (name, value) => { context.vault.set(name, value); } },
-            checkKey: context.checkKey, startLogin: () => context.session, authStatus: context.authStatus, connect: context.connect,
+            checkKey: context.checkKey, localMode: false, startLogin: () => context.session, authStatus: context.authStatus, connect: context.connect,
         });
         const access = new SetupAccess(context.settings);
 

@@ -26,10 +26,13 @@ interface SetupConversationOptions {
     authStatus: () => Promise<ClaudeAuthStatus>;
     connect: (mode: SetupMode) => Promise<void>;
     checkKey: (key: string) => Promise<number>;
+    // True when no agent user is set, so the bot runs as the owner's account.
+    localMode: boolean;
 }
 
 const SETUP_STATE_KEY = 'claude.setup';
 const API_KEY_NAME = 'ANTHROPIC_API_KEY';
+const LOCAL_MODE_LINE = 'Local mode: I run as you, on this computer, with your files and your account.';
 const LOGIN_FAILURES = {
     timeout: 'Sign-in timed out.',
     cliMissing: 'The Claude CLI is missing.',
@@ -181,6 +184,11 @@ class SetupConversation {
         }
 
         await this.say('Hello! Connect Claude to get started.');
+
+        if (this.options.localMode) {
+            await this.say(LOCAL_MODE_LINE);
+        }
+
         await this.askMode();
     }
 
