@@ -279,6 +279,7 @@ svg {
 
 .menu-button {
     display: none;
+    pointer-events: auto;
 }
 
 /* The sidebar buttons are the ones the owner taps most often to start a bot, so they are larger than the default. */
@@ -312,54 +313,66 @@ svg {
 }
 
 .conversation {
+    position: relative;
     display: flex;
     flex: 1;
     flex-direction: column;
     min-height: 0;
 }
 
+/* No bar: the header floats over the top of the messages. Only the pill and the menu button take clicks. */
 .conversation-header {
-    position: relative;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1;
     display: flex;
     justify-content: center;
     align-items: center;
     padding: 12px 16px;
+    pointer-events: none;
 }
 
-.header-actions {
-    position: absolute;
-    right: 16px;
-    display: flex;
-    gap: 6px;
-}
-
-.header-button {
-    padding: 6px 14px;
-    border: none;
-    border-radius: var(--radius-control);
-    background: var(--color-surface-raised);
-    color: var(--color-text);
-    cursor: pointer;
-}
-
-/* The name stays centered, so it keeps clear of the actions on both sides. The four buttons take about 310px. */
+/* One floating pill with the mascot and the name. No bar sits behind it. */
 .bot-pill {
-    max-width: calc(100% - 640px);
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 100%;
+    padding: 6px 16px 6px 10px;
+    border-radius: 999px;
+    background: var(--color-surface-raised);
+    box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+}
+
+/* The mascot keeps its size when the name is long, so the ellipsis takes the space. */
+.bot-pill .cloud-mascot {
+    flex: none;
+}
+
+.bot-pill-name {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    padding: 6px 14px;
-    border-radius: var(--radius-control);
-    background: var(--color-surface-raised);
     font-weight: 600;
 }
 
+/* Notices and the Screen panel start below the pill. Empty, the wrapper takes no space. */
+.conversation-top:not(:empty) {
+    padding-top: 64px;
+}
+
+/* The top padding starts the messages under the pill. They scroll beneath it, with no strip reserved. */
 .message-list {
     position: relative;
     flex: 1;
     overflow-y: auto;
     overflow-anchor: none;
-    padding: 16px 24px;
+    padding: 72px 24px 16px;
+    scroll-padding-top: 72px;
 }
 
 .load-older-button {
@@ -441,30 +454,6 @@ svg {
 
 .setup-alternative {
     margin-top: 8px;
-}
-
-/* The delete confirmation is a card under the header. Its text takes a full line, so the buttons wrap below it on a phone. */
-.delete-confirm {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    margin: 8px 16px;
-    padding: 12px 14px;
-    border-radius: var(--radius-bubble);
-    background: var(--color-surface);
-}
-
-.delete-confirm p {
-    flex: 1 1 100%;
-    margin: 0;
-    overflow-wrap: anywhere;
-}
-
-.choice-button.is-danger {
-    border-color: var(--color-danger);
-    background: var(--color-danger);
-    color: #fff;
 }
 
 .choice-button.is-selected {
@@ -555,30 +544,6 @@ svg {
     background: var(--color-danger);
 }
 
-/* The header buttons do not fit around a centered name in a narrow column, so they line up after it */
-
-@media (max-width: 1200px) {
-    .conversation-header {
-        gap: 6px;
-    }
-
-    .bot-pill {
-        flex: 0 1 auto;
-        min-width: 0;
-        max-width: none;
-        margin-right: auto;
-    }
-
-    .header-actions {
-        position: static;
-        flex: none;
-    }
-
-    .header-button {
-        padding: 6px 10px;
-    }
-}
-
 /* Narrow screens: the bot list becomes a slide-over */
 
 @media (max-width: 720px) {
@@ -610,30 +575,18 @@ svg {
         left: 12px;
     }
 
-    /* A phone has no room for the name and four buttons in one row, so the buttons take a second row */
-    .conversation-header {
-        flex-wrap: wrap;
-        row-gap: 8px;
-        padding-left: 64px;
-    }
-
+    /* The menu button floats at the left edge, over the messages, not in a bar. The pill stays centered. */
     .menu-button {
         top: 12px;
     }
 
-    .header-actions {
-        flex-basis: 100%;
-        flex-wrap: wrap;
-        justify-content: flex-end;
-        gap: 4px;
-    }
-
-    .header-button {
-        padding: 6px 10px;
+    /* Keeps the pill clear of the menu button on the left and of the page edge on the right. Long names end in an ellipsis. */
+    .bot-pill {
+        max-width: calc(100% - 96px);
     }
 
     .message-list {
-        padding: 16px 12px;
+        padding: 72px 12px 16px;
     }
 
     .composer {
@@ -708,26 +661,6 @@ svg {
     opacity: 0.8;
 }
 
-.rules-panel {
-    margin: 0 16px 12px;
-    padding: 16px;
-    border-radius: var(--radius-bubble);
-    background: var(--color-surface);
-    max-height: 60vh;
-    overflow-y: auto;
-}
-
-.rules-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.rules-header h2 {
-    margin: 0;
-    font-size: 1.05em;
-}
-
 .rules-help {
     color: var(--color-text-muted);
     font-size: 0.9em;
@@ -751,131 +684,11 @@ svg {
     font-weight: 600;
 }
 
-.rule-item.is-block .rule-kind {
-    color: var(--color-danger);
-}
-
-.rule-item.is-allow .rule-kind {
-    color: var(--color-success);
-}
-
-.rule-text {
-    flex: 1;
-    min-width: 0;
-    overflow-wrap: anywhere;
-}
-
 .rule-tools {
     flex-basis: 100%;
     overflow-wrap: anywhere;
     color: var(--color-text-muted);
     font-size: 0.85em;
-}
-
-/* The refused calls of a webhook take a full row under its Created line, in the same muted small text. */
-.webhook-refusals {
-    flex-basis: 100%;
-    min-width: 0;
-    color: var(--color-text-muted);
-    font-size: 0.85em;
-}
-
-.webhook-refusals summary {
-    cursor: pointer;
-}
-
-.webhook-refusals ul {
-    margin: 4px 0 0;
-    padding: 0;
-    list-style: none;
-}
-
-.webhook-refusals li {
-    overflow-wrap: anywhere;
-}
-
-.rules-form {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-}
-
-.rules-form input {
-    flex: 1 1 200px;
-}
-
-/* One row per kind of work: the model label and select, then the effort label and select. */
-.models-form {
-    display: grid;
-    grid-template-columns: max-content minmax(0, 14em) max-content minmax(0, 8em);
-    gap: 8px 12px;
-    align-items: center;
-}
-
-/* Groups the two pairs of a row only for the markup. Its children lay out as grid cells. */
-.model-row {
-    display: contents;
-}
-
-.models-form select {
-    padding: 4px 8px;
-    border: none;
-    border-radius: var(--radius-control);
-    background: var(--color-surface-raised);
-}
-
-.models-form button[type="submit"] {
-    grid-column: 1;
-    justify-self: start;
-}
-
-/* On a phone each label and select pair takes its own line, so the effort follows its model. */
-@media (max-width: 720px) {
-    .models-form {
-        grid-template-columns: max-content minmax(0, 1fr);
-    }
-}
-
-/* Groups form fields only to disable them together. Its children lay out as if it were not there. */
-.plain-fieldset {
-    display: contents;
-}
-
-/* The limits form stacks one block per kind of turn. Each row is a label and a fixed width input, on a phone too. */
-.limits-form {
-    display: block;
-}
-
-.limit-group {
-    margin-top: 12px;
-}
-
-.limit-group-title {
-    margin: 0 0 6px;
-    font-size: 0.95em;
-}
-
-.limit-row {
-    display: grid;
-    grid-template-columns: minmax(0, 14rem) 9rem;
-    gap: 8px 12px;
-    align-items: center;
-    margin-bottom: 6px;
-}
-
-.limit-row input {
-    width: 9rem;
-    max-width: 100%;
-    box-sizing: border-box;
-    padding: 4px 8px;
-    border: none;
-    border-radius: var(--radius-control);
-    background: var(--color-surface-raised);
-}
-
-.limits-form button[type="submit"] {
-    margin-top: 8px;
 }
 
 .rules-problem {
@@ -894,11 +707,6 @@ svg {
     background: var(--color-surface);
 }
 
-.rules-panel .webhook-created {
-    margin: 8px 0;
-    padding: 0;
-}
-
 .webhook-created p {
     flex-basis: 100%;
     margin: 0;
@@ -913,8 +721,7 @@ svg {
     background: var(--color-background);
 }
 
-.webhook-created button,
-.rules-panel button:not(.icon-button) {
+.webhook-created button {
     padding: 4px 12px;
     border: none;
     border-radius: 999px;

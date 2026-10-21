@@ -77,7 +77,13 @@ interface ToolActivityBody {
     summary: string;
 }
 
-type MessageBody = TextBody | ChoiceBody | LinkBody | CodeFieldBody | SecureFormBody | FileBody | ToolActivityBody;
+// The bot handed over its screen. The button opens the Screen panel again, if the owner closed it.
+interface ScreenLinkBody {
+    kind: 'screenLink';
+    text: string;
+}
+
+type MessageBody = TextBody | ChoiceBody | LinkBody | CodeFieldBody | SecureFormBody | FileBody | ToolActivityBody | ScreenLinkBody;
 
 interface ChatMessage {
     id: string;
@@ -126,7 +132,19 @@ interface ChatWebhookUrlEvent {
     url: string;
 }
 
-type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent | ChatWebhookUrlEvent;
+// The bot asked for the screen. The open web app shows the Screen panel for this bot, so the owner sees it at once.
+interface ChatScreenEvent {
+    type: 'screen';
+    botId: string;
+}
+
+// The bot was deleted. The web app drops it from the list. Sent before the bot's listeners are dropped.
+interface ChatBotDeletedEvent {
+    type: 'botDeleted';
+    botId: string;
+}
+
+type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent | ChatWebhookUrlEvent | ChatScreenEvent | ChatBotDeletedEvent;
 
 // A rule the owner set for a bot. Block rules may name tools the bot cannot use.
 interface BotRule {
@@ -162,4 +180,7 @@ export type {
     ChatTextDeltaEvent,
     ChatTurnEvent,
     ChatWebhookUrlEvent,
+    ChatScreenEvent,
+    ChatBotDeletedEvent,
+    ScreenLinkBody,
 };

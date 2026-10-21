@@ -48,5 +48,25 @@ function createRequestScreenTool(requestScreen: ScreenRequestHandler): SdkMcpToo
     );
 }
 
-export { MAX_REASON_LENGTH, REQUEST_SCREEN_TOOL_FULL_NAME, createRequestScreenTool };
+const SCREEN_SHOW_TOOL_NAME = 'screen_show';
+const SCREEN_SHOW_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${SCREEN_SHOW_TOOL_NAME}`;
+const SCREEN_SHOW_DESCRIPTION = 'Open your screen for the owner in the chat, when the owner asks to see it. It hands nothing over and needs no approval.';
+
+// Only opens the Screen panel. The handler is the ChatService's, so the web app is told the panel should open.
+function createScreenShowTool(showScreen: () => void): SdkMcpToolDefinition<Record<string, never>> {
+    return tool(
+        SCREEN_SHOW_TOOL_NAME,
+        SCREEN_SHOW_DESCRIPTION,
+        {},
+        (): Promise<ScreenToolResult> => {
+            showScreen();
+
+            const result = textResult('The screen is open for the owner in the chat.');
+
+            return Promise.resolve(result);
+        },
+    );
+}
+
+export { MAX_REASON_LENGTH, REQUEST_SCREEN_TOOL_FULL_NAME, SCREEN_SHOW_TOOL_FULL_NAME, createRequestScreenTool, createScreenShowTool };
 export type { ScreenRequestHandler, ScreenToolResult };

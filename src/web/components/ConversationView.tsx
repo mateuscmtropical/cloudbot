@@ -9,9 +9,6 @@ import { CloudMascot } from './CloudMascot.tsx';
 import { Composer } from './Composer.tsx';
 import type { DraftAttachment } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
-import { ModelsPanel } from './ModelsPanel.tsx';
-import { RoutinesPanel } from './RoutinesPanel.tsx';
-import { RulesPanel } from './RulesPanel.tsx';
 import { WebhookUrlNotice } from './WebhookUrlNotice.tsx';
 import type { MessageActions } from './MessageItem.tsx';
 
@@ -43,10 +40,8 @@ interface ConversationViewProps {
     isLoadingOlder?: boolean;
     onLoadOlder?: () => void;
     onOpenBotList: () => void;
-    // Deletes the bot after the owner confirms in this view. The app shows the outcome.
-    onDeleteBot: () => void;
-    // False when the bot is the only one, since its delete is always refused. The Delete button is hidden then.
-    canDeleteBot?: boolean;
+    // Goes up each time the bot asks for the screen. The Screen panel opens then, so the owner sees the request at once.
+    screenRequestId?: number | undefined;
     onSend: (text: string) => void;
     onStop: () => void;
     onAttach: (files: File[]) => void;
@@ -97,8 +92,7 @@ function ConversationView({
     isLoadingOlder = false,
     onLoadOlder,
     onOpenBotList,
-    onDeleteBot,
-    canDeleteBot = true,
+    screenRequestId,
     onSend,
     onStop,
     onAttach,
@@ -113,29 +107,20 @@ function ConversationView({
     const olderAnchorRef = useRef<OlderAnchor | undefined>(undefined);
     const previousIsLoadingRef = useRef(false);
     const botName = bot?.name ?? 'CloudBot';
-    // The id of the bot whose rules are open. Switching to another bot closes the panel.
-    const [rulesBotId, setRulesBotId] = useState<string | undefined>(undefined);
-    // The id of the bot whose routines are open. Switching to another bot closes the panel.
-    const [routinesBotId, setRoutinesBotId] = useState<string | undefined>(undefined);
-    // The id of the bot whose models are open. Switching to another bot closes the panel.
-    const [modelsBotId, setModelsBotId] = useState<string | undefined>(undefined);
-    // The id of the bot whose delete confirmation is showing. Switching to another bot hides it.
-    const [confirmDeleteBotId, setConfirmDeleteBotId] = useState<string | undefined>(undefined);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
     const [shownBotId, setShownBotId] = useState(bot?.id);
+    const [shownScreenRequestId, setShownScreenRequestId] = useState(screenRequestId);
 
     // React's pattern for state that follows a prop: reset it during render, not in an effect.
     if (shownBotId !== bot?.id) {
         setShownBotId(bot?.id);
-        setRulesBotId(undefined);
-        setRoutinesBotId(undefined);
-        setModelsBotId(undefined);
-        setConfirmDeleteBotId(undefined);
     }
-    const isRulesOpen = bot !== undefined && rulesBotId === bot.id;
-    const isRoutinesOpen = bot !== undefined && routinesBotId === bot.id;
-    const isModelsOpen = bot !== undefined && modelsBotId === bot.id;
-    const isConfirmingDelete = bot !== undefined && confirmDeleteBotId === bot.id;
+
+    // Each new request from the bot opens the Screen panel, even when the owner had closed it.
+    if (shownScreenRequestId !== screenRequestId) {
+        setShownScreenRequestId(screenRequestId);
+        setIsDesktopOpen(true);
+    }
     const botId = bot?.id;
 
     // Older messages are added above the ones on screen. The anchor message is kept at the same
@@ -220,144 +205,35 @@ function ConversationView({
                 <button type="button" className="icon-button menu-button" aria-label="Show bots" onClick={onOpenBotList}>
                     &#9776;
                 </button>
-                {bot === undefined ? null : <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={28} />}
-                <span className="bot-pill">{botName}</span>
-                {bot === undefined
-                    ? null
-                    : (
-                            <div className="header-actions">
-                                <button
-                                    type="button"
-                                    className="header-button"
-                                    onClick={() => {
-                                        setIsDesktopOpen(!isDesktopOpen);
-                                    }}
-                                >
-                                    Screen
-                                </button>
-                                <button
-                                    type="button"
-                                    className="header-button"
-                                    onClick={() => {
-                                        setRulesBotId(isRulesOpen ? undefined : bot.id);
-                                    }}
-                                >
-                                    Rules
-                                </button>
-                                <button
-                                    type="button"
-                                    className="header-button"
-                                    onClick={() => {
-                                        setRoutinesBotId(isRoutinesOpen ? undefined : bot.id);
-                                    }}
-                                >
-                                    Routines
-                                </button>
-                                <button
-                                    type="button"
-                                    className="header-button"
-                                    onClick={() => {
-                                        setModelsBotId(isModelsOpen ? undefined : bot.id);
-                                    }}
-                                >
-                                    Models
-                                </button>
-                                {canDeleteBot
-                                    ? (
-                                            <button
-                                                type="button"
-                                                className="header-button"
-                                                onClick={() => {
-                                                    setConfirmDeleteBotId(bot.id);
-                                                }}
-                                            >
-                                                Delete
-                                            </button>
-                                        )
-                                    : null}
-                            </div>
-                        )}
+                <div className="bot-pill">
+                    {bot === undefined ? null : <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={28} />}
+                    <span className="bot-pill-name">{botName}</span>
+                </div>
             </header>
-            {isConfirmingDelete
-                ? (
-                        <div className="delete-confirm" role="group" aria-label="Confirm delete">
-                            <p>{`Delete ${botName}? Its chats, rules, routines, watches, webhooks, secrets, workspace and shared files are removed for good.`}</p>
-                            <button
-                                type="button"
-                                className="choice-button is-danger"
-                                onClick={() => {
-                                    setConfirmDeleteBotId(undefined);
-                                    onDeleteBot();
-                                }}
-                            >
-                                Delete
-                            </button>
-                            <button
-                                type="button"
-                                className="choice-button"
-                                onClick={() => {
-                                    setConfirmDeleteBotId(undefined);
-                                }}
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    )
-                : null}
-            {onHideWebhookUrl === undefined
-                ? null
-                : webhookUrls.map(notice => (
-                        <WebhookUrlNotice
-                            key={notice.url}
-                            name={notice.name}
-                            url={notice.url}
-                            onHide={() => { onHideWebhookUrl(notice); }}
-                        />
-                    ))}
-            {isDesktopOpen
-                ? (
-                        <Suspense fallback={<p className="desktop-status">Loading the screen...</p>}>
-                            {createElement(lazyDesktopPanel, {
-                                onClose: () => {
-                                    setIsDesktopOpen(false);
-                                },
-                            })}
-                        </Suspense>
-                    )
-                : null}
-            {isRulesOpen
-                ? (
-                        <RulesPanel
-                            botId={bot.id}
-                            botName={botName}
-                            onClose={() => {
-                                setRulesBotId(undefined);
-                            }}
-                        />
-                    )
-                : null}
-            {isRoutinesOpen
-                ? (
-                        <RoutinesPanel
-                            botId={bot.id}
-                            botName={botName}
-                            onClose={() => {
-                                setRoutinesBotId(undefined);
-                            }}
-                        />
-                    )
-                : null}
-            {isModelsOpen
-                ? (
-                        <ModelsPanel
-                            botId={bot.id}
-                            botName={botName}
-                            onClose={() => {
-                                setModelsBotId(undefined);
-                            }}
-                        />
-                    )
-                : null}
+            {/* Notices and the Screen panel sit below the pill, so their title and Close stay clear of it. Empty when none show. */}
+            <div className="conversation-top">
+                {onHideWebhookUrl === undefined
+                    ? null
+                    : webhookUrls.map(notice => (
+                            <WebhookUrlNotice
+                                key={notice.url}
+                                name={notice.name}
+                                url={notice.url}
+                                onHide={() => { onHideWebhookUrl(notice); }}
+                            />
+                        ))}
+                {isDesktopOpen
+                    ? (
+                            <Suspense fallback={<p className="desktop-status">Loading the screen...</p>}>
+                                {createElement(lazyDesktopPanel, {
+                                    onClose: () => {
+                                        setIsDesktopOpen(false);
+                                    },
+                                })}
+                            </Suspense>
+                        )
+                    : null}
+            </div>
             <div className="message-list" ref={messageListRef} onScroll={handleScroll}>
                 {hasOlderMessages
                     ? (

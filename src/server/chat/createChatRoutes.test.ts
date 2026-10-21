@@ -44,6 +44,14 @@ function describeEvent(event: ChatEvent): string {
         return 'webhookUrl';
     }
 
+    if (event.type === 'screen') {
+        return 'screen';
+    }
+
+    if (event.type === 'botDeleted') {
+        return 'botDeleted';
+    }
+
     return `message:${event.message.role}:${event.message.body.kind}`;
 }
 

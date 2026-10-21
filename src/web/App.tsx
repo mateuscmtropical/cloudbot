@@ -7,7 +7,7 @@ import { deriveMascotState } from './mascotState.ts';
 import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
-import { createBot, deleteBot, listBots, listMessages, RequestFailedError, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload } from './apiClient.ts';
+import { createBot, getScreenHolder, listBots, listMessages, RequestFailedError, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload } from './apiClient.ts';
 import { mergeLoadedUploads } from './attachmentChips.ts';
 import { applyTabIcon } from './tabIcon.ts';
 import { MESSAGE_PAGE_SIZE, mergeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
@@ -89,6 +89,10 @@ function App(): ReactElement {
     const [isOwnerTyping, setIsOwnerTyping] = useState(false);
     // Webhook URLs the bot made, kept in memory only, each until the owner hides it.
     const [webhookUrls, setWebhookUrls] = useState<ChatWebhookUrlEvent[]>([]);
+    // Counts the screen requests of the bot on screen. Each new count opens the Screen panel.
+    const [screenRequestId, setScreenRequestId] = useState(0);
+    // The screen holder seen on the last check. The Screen panel opens only when it changes to the owner.
+    const lastScreenHolderRef = useRef<string | undefined>(undefined);
     const [isBotListOpen, setIsBotListOpen] = useState(false);
     // The connected remote MCP servers panel, opened from the sidebar.
     const [isConnectAppsOpen, setIsConnectAppsOpen] = useState(false);
@@ -198,6 +202,20 @@ function App(): ReactElement {
 
         // Runs on every stream connect, so messages missed during a dropout come back.
         const reloadMessages = (): void => {
+            // The screen may be with the owner already, after a reload or a dropout. The panel opens only when the
+            // holder changes to the owner, so reconnects and bot switches do not reopen a panel the owner closed.
+            getScreenHolder()
+                .then((holder) => {
+                    const wasWithOwner = lastScreenHolderRef.current === 'person';
+
+                    lastScreenHolderRef.current = holder;
+
+                    if (isCurrent && holder === 'person' && !wasWithOwner) {
+                        setScreenRequestId(current => current + 1);
+                    }
+                })
+                .catch(() => undefined);
+
             const generation = nextGeneration(generationsRef.current, selectedBotId);
 
             listMessages(selectedBotId, { limit: MESSAGE_PAGE_SIZE })
@@ -280,6 +298,30 @@ function App(): ReactElement {
                 return;
             }
 
+            // The bot asked for the screen, so the Screen panel opens for the owner.
+            if (event.type === 'screen') {
+                setScreenRequestId(current => current + 1);
+
+                return;
+            }
+
+            // The bot deleted itself. Its row is gone already, so the list that comes back is the right one.
+            if (event.type === 'botDeleted') {
+                listBots()
+                    .then((loadedBots) => {
+                        setBots(loadedBots);
+
+                        if (!loadedBots.some(bot => bot.id === selectedBotIdRef.current)) {
+                            setSelectedBotId(loadedBots[0]?.id);
+                        }
+                    })
+                    .catch(() => {
+                        setErrorText('Could not load your bots.');
+                    });
+
+                return;
+            }
+
             // A stored message ends the block being written, so its draft goes away.
             if (event.type === 'message') {
                 setDraft(emptyDraft);
@@ -318,7 +360,16 @@ function App(): ReactElement {
                 loadPendingUploads(selectedBotId);
 
                 listBots()
-                    .then(setBots)
+                    .then((loadedBots) => {
+                        setBots(loadedBots);
+
+                        // The bot may have deleted itself in this turn. Then the selection moves to the first bot left.
+                        const isSelectedGone = !loadedBots.some(bot => bot.id === selectedBotIdRef.current);
+
+                        if (isSelectedGone) {
+                            setSelectedBotId(loadedBots[0]?.id);
+                        }
+                    })
                     .catch(() => {
                         setErrorText('Could not load your bots.');
                     });
@@ -435,32 +486,6 @@ function App(): ReactElement {
             })
             .catch(() => {
                 setErrorText('Could not create a bot.');
-            });
-    }
-
-    // The conversation view asks the owner to confirm first. The server answers with the reason when it refuses, such as the last bot.
-    function handleDeleteBot(): void {
-        const doomedBot = bots.find(bot => bot.id === selectedBotId);
-
-        if (doomedBot === undefined) {
-            return;
-        }
-
-        const doomedBotId = doomedBot.id;
-
-        deleteBot(doomedBotId)
-            .then(() => {
-                const nextBotId = bots.find(bot => bot.id !== doomedBotId)?.id;
-
-                setBots(previousBots => previousBots.filter(bot => bot.id !== doomedBotId));
-                // The owner may have switched bots while the delete ran, so the selection moves only when it is still the deleted bot.
-                setSelectedBotId(currentBotId => (currentBotId === doomedBotId ? nextBotId : currentBotId));
-                setErrorText(undefined);
-            })
-            .catch((error: unknown) => {
-                const reason = error instanceof RequestFailedError ? error.serverMessage : undefined;
-
-                setErrorText(reason ?? 'Could not delete this bot.');
             });
     }
 
@@ -679,15 +704,21 @@ function App(): ReactElement {
                     attachments={botAttachments}
                     isUploading={isUploading}
                     onRemoveAttachment={handleRemoveAttachment}
-                    actions={{ onChoose: handleChoose, onSubmitCode: handleSubmitCode, onSubmitSecret: handleSubmitSecret }}
+                    actions={{
+                        onChoose: handleChoose,
+                        onSubmitCode: handleSubmitCode,
+                        onSubmitSecret: handleSubmitSecret,
+                        onOpenScreen: () => {
+                            setScreenRequestId(current => current + 1);
+                        },
+                    }}
                     hasOlderMessages={hasOlderMessages}
                     isLoadingOlder={isLoadingOlder}
                     onLoadOlder={handleLoadOlder}
                     onOpenBotList={() => {
                         setIsBotListOpen(true);
                     }}
-                    onDeleteBot={handleDeleteBot}
-                    canDeleteBot={bots.length > 1}
+                    screenRequestId={screenRequestId}
                     webhookUrls={botWebhookUrls}
                     onHideWebhookUrl={(hidden) => {
                         setWebhookUrls(current => current.filter(notice => notice !== hidden));

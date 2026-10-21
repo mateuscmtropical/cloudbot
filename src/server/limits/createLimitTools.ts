@@ -2,6 +2,7 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod/v4';
 
 import type { TurnLimits } from '../../shared/limitTypes.ts';
+import type { ToolCallVerdict } from '../approvals/ApprovalGate.ts';
 import type { CloudbotTool } from '../agent/createProfileToolServer.ts';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
 import type { LimitStore } from '../store/LimitStore.ts';
@@ -60,6 +61,41 @@ function mergeChanges(stored: TurnLimits, changes: LimitChangeArguments): TurnLi
     };
 }
 
+function formatLimit(value: number | null): string {
+    return value === null ? 'none' : String(value);
+}
+
+// The card shows every limit with its old and new value, so the owner sees what the change does.
+function limitCardLines(before: TurnLimits, after: TurnLimits): string[] {
+    const rows: [string, number | null, number | null][] = [
+        ['Chat time (minutes)', before.chat.minutes, after.chat.minutes],
+        ['Chat spending (USD)', before.chat.usd, after.chat.usd],
+        ['Chat steps', before.chat.steps, after.chat.steps],
+        ['Routine time (minutes)', before.routines.minutes, after.routines.minutes],
+        ['Routine spending (USD)', before.routines.usd, after.routines.usd],
+        ['Routine steps', before.routines.steps, after.routines.steps],
+    ];
+
+    return rows.map(([label, old, next]) => `${label}: ${formatLimit(old)} -> ${formatLimit(next)}`);
+}
+
+// The approval card of limits_set. A change that the parser would refuse is refused before the owner is asked.
+async function describeLimitChange(store: Pick<LimitStore, 'get'>, botId: string, input: unknown): Promise<ToolCallVerdict> {
+    const stored = await store.get(botId);
+    const changes: LimitChangeArguments = typeof input === 'object' && input !== null ? input : {};
+    const merged = mergeChanges(stored, changes);
+    const parsed = parseLimitInput(merged);
+
+    if (isLimitInputError(parsed)) {
+        return { decision: 'deny', reason: parsed.error };
+    }
+
+    const cardLines = limitCardLines(stored, parsed);
+    const detail = cardLines.join('\n');
+
+    return { decision: 'ask', summary: 'Change the limits of this bot.', detail };
+}
+
 // The bot id is fixed when the tool is built. Nothing is saved unless the merged limits are valid.
 function createLimitTools(store: Pick<LimitStore, 'get' | 'set'>, botId: string): CloudbotTool[] {
     const setTool = tool(
@@ -84,5 +120,5 @@ function createLimitTools(store: Pick<LimitStore, 'get' | 'set'>, botId: string)
     return [setTool] as CloudbotTool[];
 }
 
-export { LIMITS_SET_TOOL_FULL_NAME, createLimitTools };
+export { LIMITS_SET_TOOL_FULL_NAME, createLimitTools, describeLimitChange };
 export type { LimitToolResult };

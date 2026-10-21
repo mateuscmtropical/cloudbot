@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -49,6 +49,7 @@ const noopActions = {
     onChoose: vi.fn(() => Promise.resolve()),
     onSubmitCode: vi.fn(),
     onSubmitSecret: vi.fn(() => Promise.resolve()),
+    onOpenScreen: vi.fn(),
 };
 
 function conversationElement(messages: ChatMessage[], draftText: string): ReactElement {
@@ -63,7 +64,6 @@ function conversationElement(messages: ChatMessage[], draftText: string): ReactE
             onRemoveAttachment={vi.fn()}
             actions={noopActions}
             onOpenBotList={vi.fn()}
-            onDeleteBot={vi.fn()}
             onSend={vi.fn()}
             onStop={vi.fn()}
             onAttach={vi.fn()}
@@ -169,7 +169,7 @@ function createSequencedMessage(sequence: number): ChatMessage {
 
 type HistoryProps = Pick<ConversationViewProps, 'hasOlderMessages' | 'isLoadingOlder' | 'onLoadOlder'>;
 
-function historyElement(messages: ChatMessage[], historyProps: HistoryProps, bot?: BotSummary): ReactElement {
+function historyElement(messages: ChatMessage[], historyProps: HistoryProps, bot?: BotSummary, screenRequestId?: number): ReactElement {
     return (
         <ConversationView
             bot={bot}
@@ -178,7 +178,7 @@ function historyElement(messages: ChatMessage[], historyProps: HistoryProps, bot
             isRunning={false}
             actions={noopActions}
             onOpenBotList={vi.fn()}
-            onDeleteBot={vi.fn()}
+            screenRequestId={screenRequestId}
             onSend={vi.fn()}
             onStop={vi.fn()}
             onAttach={vi.fn()}
@@ -270,7 +270,6 @@ describe('ConversationView older messages', () => {
                 actions={noopActions}
                 hasOlderMessages
                 onOpenBotList={vi.fn()}
-                onDeleteBot={vi.fn()}
                 onSend={vi.fn()}
                 onStop={vi.fn()}
                 onAttach={vi.fn()}
@@ -300,7 +299,6 @@ describe('ConversationView older messages', () => {
                 actions={noopActions}
                 hasOlderMessages
                 onOpenBotList={vi.fn()}
-                onDeleteBot={vi.fn()}
                 onSend={vi.fn()}
                 onStop={vi.fn()}
                 onAttach={vi.fn()}
@@ -501,43 +499,42 @@ describe('ConversationView older messages', () => {
     });
 });
 
-describe('ConversationView rules button', () => {
+describe('ConversationView header', () => {
     afterEach(() => {
         cleanup();
         vi.unstubAllGlobals();
     });
 
-    it('closes the rules panel when another bot is shown and keeps it closed on return', () => {
-        const firstBot: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false };
-        const secondBot: BotSummary = { ...firstBot, id: 'bot-b', name: 'Bia' };
+    const ana: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false };
 
+    it('shows the bot name in one pill and no header buttons', () => {
+        render(historyElement([], {}, ana));
+
+        expect(screen.getByText('Ana'))
+            .toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Screen' }))
+            .toBeNull();
+        expect(screen.queryByRole('button', { name: 'Rules' }))
+            .toBeNull();
+        expect(screen.queryByRole('button', { name: 'Routines' }))
+            .toBeNull();
+        expect(screen.queryByRole('button', { name: 'Models' }))
+            .toBeNull();
+        expect(screen.queryByRole('button', { name: 'Delete' }))
+            .toBeNull();
+        expect(screen.getByRole('button', { name: 'Show bots' }))
+            .toBeTruthy();
+    });
+
+    it('opens the Screen panel when the bot asks for the screen, and Close hides it', async () => {
         vi.stubGlobal('fetch', () => Promise.resolve(Response.json([])));
 
-        const view = render(historyElement([], {}, firstBot));
+        const view = render(historyElement([], {}, ana));
 
-        fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
-
-        expect(screen.getByRole('dialog', { name: 'Rules for Ana' }))
-            .toBeTruthy();
-
-        view.rerender(historyElement([], {}, secondBot));
-        view.rerender(historyElement([], {}, firstBot));
-
-        expect(screen.queryByRole('dialog'))
+        expect(screen.queryByRole('region', { name: 'Bot screen' }))
             .toBeNull();
-    });
-});
 
-describe('ConversationView screen button', () => {
-    afterEach(() => {
-        cleanup();
-    });
-
-    it('opens the bot screen panel and closes it again', async () => {
-        const bot: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false };
-
-        render(historyElement([], {}, bot));
-        fireEvent.click(screen.getByRole('button', { name: 'Screen' }));
+        view.rerender(historyElement([], {}, ana, 1));
 
         expect(await screen.findByRole('region', { name: 'Bot screen' }))
             .toBeTruthy();
@@ -545,91 +542,6 @@ describe('ConversationView screen button', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
         expect(screen.queryByRole('region', { name: 'Bot screen' }))
-            .toBeNull();
-    });
-});
-
-describe('ConversationView delete confirmation', () => {
-    afterEach(() => {
-        cleanup();
-    });
-
-    const ana: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false };
-
-    function renderWithBot(bot: BotSummary, onDeleteBot: () => void): ReturnType<typeof render> {
-        return render(
-            <ConversationView
-                bot={bot}
-                messages={[]}
-                draftText=""
-                isRunning={false}
-                actions={noopActions}
-                onOpenBotList={vi.fn()}
-                onDeleteBot={onDeleteBot}
-                onSend={vi.fn()}
-                onStop={vi.fn()}
-                onAttach={vi.fn()}
-                attachments={[]}
-                isUploading={false}
-                onRemoveAttachment={vi.fn()}
-            />,
-        );
-    }
-
-    it('asks in the view before deleting, and Cancel keeps the bot', () => {
-        const onDeleteBot = vi.fn();
-
-        renderWithBot(ana, onDeleteBot);
-        fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-
-        expect(screen.getByRole('group', { name: 'Confirm delete' }).textContent)
-            .toContain('Delete Ana?');
-        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-        expect(screen.queryByRole('group', { name: 'Confirm delete' }))
-            .toBeNull();
-        expect(onDeleteBot)
-            .not.toHaveBeenCalled();
-    });
-
-    it('hides the Delete button when the bot is the only one', () => {
-        render(
-            <ConversationView
-                bot={ana}
-                messages={[]}
-                draftText=""
-                isRunning={false}
-                actions={noopActions}
-                onOpenBotList={vi.fn()}
-                onDeleteBot={vi.fn()}
-                canDeleteBot={false}
-                onSend={vi.fn()}
-                onStop={vi.fn()}
-                onAttach={vi.fn()}
-                attachments={[]}
-                isUploading={false}
-                onRemoveAttachment={vi.fn()}
-            />,
-        );
-
-        expect(screen.queryByRole('button', { name: 'Delete' }))
-            .toBeNull();
-    });
-
-    it('deletes only after the owner confirms in the view', () => {
-        const onDeleteBot = vi.fn();
-
-        renderWithBot(ana, onDeleteBot);
-        fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-        const confirmBar = screen.getByRole('group', { name: 'Confirm delete' });
-        const confirmButton = within(confirmBar)
-            .getByRole('button', { name: 'Delete' });
-
-        fireEvent.click(confirmButton);
-
-        expect(onDeleteBot)
-            .toHaveBeenCalledTimes(1);
-        expect(screen.queryByRole('group', { name: 'Confirm delete' }))
             .toBeNull();
     });
 });
