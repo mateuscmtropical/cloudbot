@@ -2,7 +2,9 @@ import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
 import { formatFileSize } from '../formatFileSize.ts';
+import { MESSAGE_MASCOT_SIZE } from '../messageMascot.ts';
 import { renderMarkdown } from '../markdown.ts';
+import type { MascotState } from '../mascotState.ts';
 import { ChoiceButtons } from './ChoiceButtons.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
 import { CodeField } from './CodeField.tsx';
@@ -26,6 +28,10 @@ interface MessageItemProps {
     actions: MessageActions;
     // The bot whose mascot is shown beside an assistant message. Other messages show none.
     mascot?: Pick<BotSummary, 'mascotColor' | 'mascotShape'> | undefined;
+    // Only the last bot message of a run draws the mascot. The others keep the space, so the text lines up.
+    isMascotShown?: boolean | undefined;
+    // The face of the mascot when it is shown. The typing face while the owner types.
+    mascotState?: MascotState | undefined;
 }
 
 function renderBody(message: ChatMessage, actions: MessageActions): ReactElement | null {
@@ -125,7 +131,7 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
     }
 }
 
-function MessageItem({ message, actions, mascot }: MessageItemProps): ReactElement {
+function MessageItem({ message, actions, mascot, isMascotShown = false, mascotState = 'idle' }: MessageItemProps): ReactElement {
     const className = `message message-${message.role}`;
 
     if (mascot === undefined) {
@@ -134,7 +140,9 @@ function MessageItem({ message, actions, mascot }: MessageItemProps): ReactEleme
 
     return (
         <div className={`${className} has-mascot`}>
-            <CloudMascot color={mascot.mascotColor} shape={mascot.mascotShape} state="idle" size={28} tracksPointer={false} />
+            {isMascotShown
+                ? <CloudMascot color={mascot.mascotColor} shape={mascot.mascotShape} state={mascotState} size={MESSAGE_MASCOT_SIZE} />
+                : <span className="mascot-gap" style={{ width: MESSAGE_MASCOT_SIZE }} aria-hidden="true" />}
             {renderBody(message, actions)}
         </div>
     );

@@ -4,6 +4,7 @@ import type { ReactElement } from 'react';
 import type { BotSummary, ChatMessage, ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
 import { renderMarkdown } from '../markdown.ts';
 import type { MascotState } from '../mascotState.ts';
+import { MESSAGE_MASCOT_SIZE, showsMessageMascot } from '../messageMascot.ts';
 import { CloudMascot } from './CloudMascot.tsx';
 import { Composer } from './Composer.tsx';
 import type { DraftAttachment } from './Composer.tsx';
@@ -365,15 +366,24 @@ function ConversationView({
                             </button>
                         )
                     : null}
-                {messages.map(message => (
+                {messages.map((message, index) => (
                     <div key={message.id} data-message-id={message.id}>
-                        <MessageItem message={message} actions={actions} mascot={message.role === 'assistant' ? bot : undefined} />
+                        <MessageItem
+                            message={message}
+                            actions={actions}
+                            mascot={message.role === 'assistant' ? bot : undefined}
+                            isMascotShown={showsMessageMascot(messages, index, { isShown: draftText !== '', botId: bot?.id })}
+                            mascotState={mascotState === 'typing' ? 'typing' : 'idle'}
+                        />
                     </div>
                 ))}
                 {draftText === ''
                     ? null
                     : (
-                            <div className="message message-assistant is-draft">
+                            <div className="message message-assistant is-draft has-mascot">
+                                {bot === undefined
+                                    ? <span className="mascot-gap" style={{ width: MESSAGE_MASCOT_SIZE }} aria-hidden="true" />
+                                    : <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState === 'typing' ? 'typing' : 'idle'} size={MESSAGE_MASCOT_SIZE} />}
                                 <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(draftText) }} />
                             </div>
                         )}
