@@ -17,6 +17,8 @@ import { BrowserControl, DESKTOP_DEVTOOLS_URL } from './desktop/BrowserControl.t
 import { DesktopSupervisor, buildDesktopCommand } from './desktop/DesktopSupervisor.ts';
 import { BotStore } from './store/BotStore.ts';
 import { MessageStore } from './store/MessageStore.ts';
+import { RoutineScheduler } from './routines/RoutineScheduler.ts';
+import { RoutineStore } from './store/RoutineStore.ts';
 import { RuleStore } from './store/RuleStore.ts';
 import { ensureDefaultBot } from './store/ensureDefaultBot.ts';
 import { openDatabase } from './store/openDatabase.ts';
@@ -106,8 +108,14 @@ const setup = new SetupConversation({
 chatService.setSetup(setup);
 desktop?.start();
 
+const routineScheduler = new RoutineScheduler({
+    routineStore: new RoutineStore(opened.db),
+    sendMessage: (botId, text) => chatService.sendMessage(botId, text),
+});
+
 // Queued messages and usage limit waits from the last run continue before the first request.
 await chatService.resumeQueue();
+routineScheduler.start();
 
 function cleanUploads(): void {
     chatService.cleanUploads()
@@ -151,6 +159,7 @@ if (desktop !== undefined) {
 
 function shutdown(): void {
     clearInterval(cleanupTimer);
+    routineScheduler.stop();
     desktop?.stop();
     setup.close();
     server.close();
