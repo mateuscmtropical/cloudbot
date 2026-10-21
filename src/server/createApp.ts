@@ -14,6 +14,8 @@ import type { ChatService } from './chat/ChatService.ts';
 import { createScreenRoutes } from './desktop/createScreenRoutes.ts';
 import type { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { createRuleRoutes } from './rules/createRuleRoutes.ts';
+import { createRoutineRoutes } from './routines/createRoutineRoutes.ts';
+import type { RoutineStore } from './store/RoutineStore.ts';
 import type { RuleStore } from './store/RuleStore.ts';
 
 interface HealthResponse {
@@ -27,6 +29,7 @@ interface AppOptions {
     webRoot?: string;
     chatService?: ChatService;
     ruleStore?: RuleStore;
+    routineStore?: RoutineStore;
     screen?: ScreenHolder;
 }
 
@@ -78,6 +81,13 @@ function createApp(options: AppOptions): Hono {
         const ruleRoutes = createRuleRoutes({ ruleStore: options.ruleStore, hasBot: botId => chatService.hasBot(botId) });
 
         app.route('/', ruleRoutes);
+    }
+
+    if (options.chatService !== undefined && options.routineStore !== undefined) {
+        const chatService = options.chatService;
+        const routineRoutes = createRoutineRoutes({ routineStore: options.routineStore, hasBot: botId => chatService.hasBot(botId) });
+
+        app.route('/', routineRoutes);
     }
 
     if (options.screen !== undefined) {

@@ -11,6 +11,7 @@ import { ChatService } from './chat/ChatService.ts';
 import { createApp } from './createApp.ts';
 import { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { MAX_RULES_PER_BOT } from './rules/createRuleRoutes.ts';
+import { RoutineStore } from './store/RoutineStore.ts';
 import { RuleStore } from './store/RuleStore.ts';
 import { BotStore } from './store/BotStore.ts';
 import { MessageStore } from './store/MessageStore.ts';
@@ -133,6 +134,41 @@ describe('createApp', () => {
 
         expect(response.status)
             .toBe(200);
+    });
+
+    it('lets the owner list and remove a bot\'s routines, and refuses them without the cookie', async () => {
+        const chatService = buildChatService(opened);
+        const routineStore = new RoutineStore(opened.db);
+        const bot = await new BotStore(opened.db)
+            .create({ name: 'Ana', title: 'Assistant', description: '' });
+        const routine = await routineStore.add(bot.id, { name: 'Inbox', prompt: 'Check.', schedule: { kind: 'daily', hour: 8, minute: 0 } });
+        const app = createApp({ version: '1.2.3', access, chatService, routineStore });
+        const sessionToken = await signIn(app, access);
+        const cookie = `cloudbot_session=${sessionToken}`;
+        const withoutCookie = await app.request(`/api/bots/${bot.id}/routines`);
+        const listed = await requestWithSession(app, `/api/bots/${bot.id}/routines`, sessionToken);
+        const unknownBot = await requestWithSession(app, '/api/bots/missing/routines', sessionToken);
+        const removed = await app.request(`/api/bots/${bot.id}/routines/${routine.id}`, { method: 'DELETE', headers: { cookie } });
+        const removedAgain = await app.request(`/api/bots/${bot.id}/routines/${routine.id}`, { method: 'DELETE', headers: { cookie } });
+
+        expect(withoutCookie.status)
+            .toBe(401);
+        expect(await listed.json())
+            .toEqual([{
+                id: routine.id,
+                name: 'Inbox',
+                prompt: 'Check.',
+                schedule: { kind: 'daily', hour: 8, minute: 0 },
+                isEnabled: true,
+                nextRunAt: routine.nextRunAt,
+                lastRunAt: null,
+            }]);
+        expect(unknownBot.status)
+            .toBe(404);
+        expect(removed.status)
+            .toBe(204);
+        expect(removedAgain.status)
+            .toBe(404);
     });
 
     it('lets the owner list, add and remove a bot\'s rules, and refuses them without the cookie', async () => {
