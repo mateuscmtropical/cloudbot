@@ -164,6 +164,16 @@ Status: **open** means the default is in use and waits for the owner.
   and a restart all count as Deny. The owner answers in the chat with Approve
   or Deny. There is no "always allow" button yet.
 - A reviewer that fails asks the owner instead of letting the call run.
-- Which calls are sensitive is decided by a reviewer. None is set yet, so
-  nothing waits until the review agent lands.
+- Which calls are sensitive is decided by the review agent (#72).
 - Other options: a longer wait, or a notification outside the chat.
+
+## Review agent (#72)
+
+- Status: open
+- Default: every call except reading and looking tools is reviewed by a
+  separate model call with no tools. Messages, purchases and bookings always
+  ask the owner. A model that fails asks the owner too.
+- Cost: one extra model call per reviewed call. This uses the same sign-in as
+  the bot.
+- Other options: review only some tools, use a cheaper model, or let the owner
+  pick which actions always ask.

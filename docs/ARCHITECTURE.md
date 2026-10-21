@@ -416,6 +416,39 @@ Open questions live in memory. `ChatService.resumeQueue` closes any that a
 restart left open. Without a `toolCallReviewer` option the gate does not exist
 and no call waits.
 
+### Review agent
+
+`createToolCallReviewer` is the reviewer that `main.ts` gives to the chat
+service. `classifyToolCall` sorts each call first:
+
+- Reading and looking tools skip the review and run. The list is
+  `SKIP_TOOL_NAMES`: `Read`, `Glob`, `Grep`, `LS`, `TodoWrite`, `WebSearch` and
+  the bot's own `browser_open`, `browser_read`, `browser_screenshot`,
+  `browser_scroll`, `request_screen`, `request_secret`, `share_file` and
+  `update_profile`.
+- A connector tool (`mcp__` but not the bot's own server) whose tool name (the part after the server name) has the
+  word send, reply, purchase, buy, pay, checkout, book, booking, reserve or
+  order always answers `ask`. The model is not consulted.
+- A `Bash` command that mails or sends data out (`sendmail`, `curl` with a
+  body or a method other than GET, `wget --post`) also always answers `ask`.
+- A call whose input is longer than 10000 characters answers `ask`, because
+  the model must see the whole input.
+- Every other call goes to the model.
+
+The model is one Claude Agent SDK call with no tools, no settings files, no
+saved session and one turn (`createClaudeReviewModel`). It gets the tool call,
+the owner rules of the bot and the last six chat lines, and answers with a
+JSON object: `category`, `decision`, `summary` and `reason`. A category of
+`send_message`, `purchase` or `booking` always becomes `ask`, whatever the
+decision says. An answer that is not valid JSON, a failed call and a timeout of
+60 seconds all throw, and the approval gate then asks the owner.
+
+The always-ask rule is a name and pattern check, not a proof. A built in tool
+that sends something in a way the patterns miss relies on the model's category.
+
+Each reviewed call costs one extra model call. The review runs as the server
+user, which is safe only because the call has no tools.
+
 ## Setup conversation
 
 `SetupConversation` in `src/server/setup/` writes scripted messages through
