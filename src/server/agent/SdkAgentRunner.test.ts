@@ -210,6 +210,28 @@ describe('buildQueryOptions', () => {
         };
     }
 
+    it('passes the chosen model to the SDK', () => {
+        const options = buildQueryOptions(
+            buildRequest({ model: 'claude-sonnet-4-5' }),
+            { pathToClaudeCodeExecutable: '/usr/local/bin/claude' },
+            abortController,
+        );
+
+        expect(options)
+            .toMatchObject({ model: 'claude-sonnet-4-5' });
+    });
+
+    it('leaves the model to the CLI default when no model is chosen', () => {
+        const options = buildQueryOptions(
+            buildRequest({}),
+            { pathToClaudeCodeExecutable: '/usr/local/bin/claude' },
+            abortController,
+        );
+
+        expect(options)
+            .not.toHaveProperty('model');
+    });
+
     it('resumes the stored session in the bot workspace with partial messages on', () => {
         const options = buildQueryOptions(
             buildRequest({ sessionId: SESSION_ID }),

@@ -2,14 +2,16 @@ import type { ToolCall } from '../agent/AgentRunner.ts';
 import { classifyToolCall } from './classifyToolCall.ts';
 import type { ToolCallReviewer, ToolCallVerdict } from './ApprovalGate.ts';
 
-// Sends one prompt to a model without tools and returns its text answer.
-type ReviewModel = (prompt: string, signal?: AbortSignal) => Promise<string>;
+// Sends one prompt to a model without tools and returns its text answer. The model is the owner's review choice.
+type ReviewModel = (prompt: string, signal?: AbortSignal, model?: string) => Promise<string>;
 
 interface ReviewContext {
     // The owner rules of the bot, as the owner wrote them.
     ownerRules: string[];
     // The last few chat messages as plain lines, oldest first.
     recentMessages: string[];
+    // The model the owner chose for the review. Unset keeps the CLI default.
+    reviewModel?: string;
 }
 
 interface ToolCallReviewerOptions {
@@ -142,7 +144,7 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
 
         const context = await options.readContext(botId);
         const prompt = buildReviewPrompt(call, context);
-        const answerText = await options.askModel(prompt);
+        const answerText = await options.askModel(prompt, undefined, context.reviewModel);
         const answer = parseModelAnswer(answerText);
 
         return toVerdict(answer, call);

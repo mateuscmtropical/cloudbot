@@ -14,6 +14,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Model choice per kind of work: the owner picks a model for chat turns, for routine turns and for the review agent, with `GET` and `PUT /api/bots/:id/models`. An unset choice keeps the CLI default. A choice is an SDK alias (`fable`, `opus`, `sonnet` or `haiku`) or a full `claude-` model id. Routine turns use the routines choice and fall back to the chat choice.
 - Routines panel: the Routines button in the conversation header lists the bot's routines with their prompt, their schedule in UTC, the next run and the last run. Remove deletes a routine from the list. The panel says the bot creates routines when asked in the chat and marks routines that are off.
 - Routines from the chat: the bot has `routine_create`, `routine_list`, `routine_delete` and `routine_set_enabled`, up to 20 routines per bot, with schedules in UTC. The owner can read and remove routines with `GET /api/bots/:id/routines` and `DELETE /api/bots/:id/routines/:routineId`. Creating, deleting and changing a routine go through the review agent. Listing does not.
 - Routine scheduler: every 30 seconds the server checks for due routines and sends each prompt to its bot as a chat message, so the queue, usage waits and approvals apply. A routine missed while the server was off runs once. There is no way to create a routine from the chat yet.

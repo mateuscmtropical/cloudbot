@@ -14,6 +14,7 @@ interface QueuedTurnRecord {
     messageId: string | null;
     text: string;
     uploads: StoredUploadRecord[];
+    source: 'chat' | 'routine';
 }
 
 interface UsageWaitRecord {

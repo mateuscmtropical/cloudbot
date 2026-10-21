@@ -41,6 +41,7 @@ starts.
 - Routines, scheduled from the chat.
 - Event triggers: watch a page, webhooks.
 - Spending and time limits per task and per routine.
+- Choose the model for each kind of work.
 
 ## v0.4: connectors and APIs
 

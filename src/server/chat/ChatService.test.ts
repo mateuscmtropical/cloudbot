@@ -14,6 +14,7 @@ import { BrowserControl } from '../desktop/BrowserControl.ts';
 import { REQUEST_SCREEN_TOOL_FULL_NAME } from '../desktop/createScreenTools.ts';
 import { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import { RuleStore } from '../store/RuleStore.ts';
+import { ModelStore } from '../store/ModelStore.ts';
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
 import { BotSecrets } from '../secrets/BotSecrets.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME } from '../secrets/createSecretTools.ts';
@@ -1729,5 +1730,78 @@ describe('ChatService', () => {
 
         expect(agentService.workspaceFor('bot-1'))
             .toBe('/var/lib/cloudbot-workspaces/bot-1');
+    });
+});
+
+describe('ChatService model choices', () => {
+    let dataDir: string;
+    let opened: OpenedDatabase;
+    let botStore: BotStore;
+    let messageStore: MessageStore;
+    let modelStore: ModelStore;
+
+    beforeEach(async () => {
+        dataDir = await mkdtemp(join(tmpdir(), 'cloudbot-models-'));
+        opened = await openDatabase(':memory:');
+        botStore = new BotStore(opened.db);
+        messageStore = new MessageStore(opened.db);
+        modelStore = new ModelStore(opened.db);
+    });
+
+    afterEach(async () => {
+        opened.close();
+        await rm(dataDir, { recursive: true, force: true });
+    });
+
+    // Sends one message from the given source, waits for its turn and returns the model the runner got.
+    async function runOneTurn(service: ChatService, runner: FakeAgentRunner, botId: string, source: 'chat' | 'routine'): Promise<string | undefined> {
+        const finished = waitForTurnFinish(service, botId);
+
+        await service.sendMessage(botId, 'Hi', source);
+        await finished;
+
+        return runner.receivedRequests[0]?.model;
+    }
+
+    it('runs a routine turn on the routines choice', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore });
+
+        await modelStore.set(bot.id, { chat: 'haiku', routines: 'opus', review: null });
+
+        expect(await runOneTurn(service, runner, bot.id, 'routine'))
+            .toBe('opus');
+    });
+
+    it('runs a chat turn on the chat choice, not the routines one', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore });
+
+        await modelStore.set(bot.id, { chat: 'haiku', routines: 'opus', review: null });
+
+        expect(await runOneTurn(service, runner, bot.id, 'chat'))
+            .toBe('haiku');
+    });
+
+    it('runs a routine turn on the chat choice when no routines choice is set', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore });
+
+        await modelStore.set(bot.id, { chat: 'sonnet', routines: null, review: null });
+
+        expect(await runOneTurn(service, runner, bot.id, 'routine'))
+            .toBe('sonnet');
+    });
+
+    it('leaves the model to the CLI default when nothing is chosen', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore });
+
+        expect(await runOneTurn(service, runner, bot.id, 'routine'))
+            .toBeUndefined();
     });
 });

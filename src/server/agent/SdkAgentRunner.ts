@@ -242,6 +242,7 @@ function buildQueryOptions(
             }
         : {};
     const resumeOption = request.sessionId ? { resume: request.sessionId } : {};
+    const modelOption = request.model === undefined ? {} : { model: request.model };
     // A plain string systemPrompt would replace Claude Code's default prompt, so the bot profile is appended to the preset.
     const systemPromptAppendOption = request.systemPrompt ? { append: request.systemPrompt } : {};
     const systemPromptOption = {
@@ -270,6 +271,7 @@ function buildQueryOptions(
         ...environmentOption,
         ...spawnOption,
         ...resumeOption,
+        ...modelOption,
         ...systemPromptOption,
         ...mcpServersOption,
         ...allowedToolsOption,
