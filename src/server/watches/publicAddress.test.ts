@@ -1,6 +1,47 @@
 import { describe, expect, it } from 'vitest';
 
-import { embeddedIpv4, expandIpv6, isPublicAddress } from './publicAddress.ts';
+import { embeddedIpv4, expandIpv6, isAllowablePrivateAddress, isPublicAddress } from './publicAddress.ts';
+
+describe('isAllowablePrivateAddress', () => {
+    it.each([
+        '10.0.0.5',
+        '172.16.4.1',
+        '192.168.1.20',
+        '100.64.0.9',
+        'fc00::1',
+        'fd12:3456::1',
+        '::ffff:192.168.1.20',
+    ])('allows the private address %s', (address) => {
+        expect(isAllowablePrivateAddress(address))
+            .toBe(true);
+    });
+
+    it.each([
+        '127.0.0.1',
+        '::1',
+        '0.0.0.0',
+        '::',
+        '169.254.169.254',
+        '100.100.100.200',
+        '::ffff:100.100.100.200',
+        '64:ff9b::6464:64c8',
+        '2002:6464:64c8::1',
+        'fe80::1',
+        'fd00:ec2::254',
+        '::ffff:127.0.0.1',
+        '8.8.8.8',
+        '224.0.0.1',
+        'not-an-address',
+    ])('refuses %s', (address) => {
+        expect(isAllowablePrivateAddress(address))
+            .toBe(false);
+    });
+
+    it('refuses a private address this machine answers on', () => {
+        expect(isAllowablePrivateAddress('192.168.1.20', ['192.168.1.20']))
+            .toBe(false);
+    });
+});
 
 describe('isPublicAddress', () => {
     it.each([

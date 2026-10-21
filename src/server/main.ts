@@ -14,8 +14,10 @@ import { createApp } from './createApp.ts';
 import { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { attachVncProxy } from './desktop/attachVncProxy.ts';
 import { BrowserControl, DESKTOP_DEVTOOLS_URL } from './desktop/BrowserControl.ts';
+import { BrowserGate } from './desktop/BrowserGate.ts';
 import { DesktopSupervisor, buildDesktopCommand } from './desktop/DesktopSupervisor.ts';
 import { BotStore } from './store/BotStore.ts';
+import { BrowserAllowStore } from './store/BrowserAllowStore.ts';
 import { MessageStore } from './store/MessageStore.ts';
 import { RoutineScheduler } from './routines/RoutineScheduler.ts';
 import { RoutineStore } from './store/RoutineStore.ts';
@@ -80,6 +82,13 @@ const modelStore = new ModelStore(opened.db);
 const limitStore = new LimitStore(opened.db);
 const webhookStore = new WebhookStore(opened.db);
 const watchStore = new WatchStore(opened.db);
+const browserAllowStore = new BrowserAllowStore(opened.db);
+// The gate is the browser's only way out. It starts before the desktop, so Chromium never runs without it.
+const browserGate = desktop === undefined
+    ? undefined
+    : new BrowserGate({
+            isAllowed: (host, port) => browserAllowStore.isAllowed(host, port),
+        });
 // The review model has no tools, so it runs as the server user. The environment object is shared, so a change of sign-in reaches it.
 const askReviewModel = createClaudeReviewModel({
     pathToClaudeCodeExecutable: claudePath, environment, workingDirectory: dataDir,
@@ -96,6 +105,7 @@ const chatService = new ChatService({
     botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets, ruleStore, routineStore, modelStore, limitStore, screen,
     webhookStore,
     watchStore,
+    browserAllowStore,
     webhookBaseUrl: readPublicBaseUrl(process.env),
     toolCallReviewer,
 });
@@ -124,6 +134,7 @@ const setup = new SetupConversation({
 });
 
 chatService.setSetup(setup);
+await browserGate?.start();
 desktop?.start();
 
 const routineScheduler = new RoutineScheduler({
@@ -189,6 +200,7 @@ function shutdown(): void {
     clearInterval(cleanupTimer);
     routineScheduler.stop();
     desktop?.stop();
+    void browserGate?.close();
     setup.close();
     server.close();
     (server as Server).closeAllConnections();

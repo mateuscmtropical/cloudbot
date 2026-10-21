@@ -2,9 +2,8 @@ import { request as requestHttp } from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import { request as requestHttps } from 'node:https';
 import { lookup } from 'node:dns/promises';
-import { networkInterfaces } from 'node:os';
 
-import { isPublicAddress } from './publicAddress.ts';
+import { isPublicAddress, readLocalAddresses } from './publicAddress.ts';
 import { htmlToVisibleText, normalizeLines } from './pageText.ts';
 
 // The answer to one request. `body` is undefined unless the page is a text page that was read in full.
@@ -44,13 +43,6 @@ const MAX_REDIRECTS = 3;
 const TIMEOUT_MS = 15 * 1000;
 const MAX_PAGE_BYTES = 1024 * 1024;
 const TEXT_TYPES = ['text/html', 'text/plain'];
-
-function readLocalAddresses(): string[] {
-    const networkTable = networkInterfaces();
-    const interfaceLists = Object.values(networkTable);
-
-    return interfaceLists.flatMap(entries => (entries ?? []).map(entry => entry.address));
-}
 
 // The lookup hook answers with the checked addresses only, so a second DNS answer cannot change them.
 // With `all`, Node tries each address in turn (autoSelectFamily), so an IPv6 address the server cannot reach falls back to IPv4.

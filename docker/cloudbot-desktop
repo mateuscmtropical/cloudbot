@@ -4,6 +4,11 @@
 # The script exits when one part exits, and the server starts it again.
 #
 # The server runs it through sudo, which allows no arguments.
+#
+# Chromium sends all its traffic, loopback included, through the SOCKS gate of the
+# server on GATE_PORT. The gate refuses private addresses. Its port must match
+# BROWSER_GATE_PORT in src/server/desktop/BrowserGate.ts. If the gate is down,
+# Chromium has no network, which is the safe result.
 
 set -euo pipefail
 
@@ -13,6 +18,7 @@ SCREEN_HEIGHT=800
 SCREEN_DEPTH=24
 VNC_PORT=5900
 DEVTOOLS_PORT=9222
+GATE_PORT=9224
 STATE_DIR="$HOME/.cache/cloudbot-desktop"
 LOG_FILE="$STATE_DIR/desktop.log"
 PROFILE_DIR="$HOME/.config/cloudbot-chromium"
@@ -89,6 +95,10 @@ chromium \
     --disable-dev-shm-usage \
     --window-position=0,0 \
     --window-size="$SCREEN_WIDTH,$SCREEN_HEIGHT" \
+    --proxy-server="socks5://127.0.0.1:$GATE_PORT" \
+    --proxy-bypass-list="<-loopback>" \
+    --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
+    --webrtc-ip-handling-policy=disable_non_proxied_udp \
     about:blank >> "$LOG_FILE" 2>&1 9>&- &
 CHILD_PIDS+=("$!")
 

@@ -16,6 +16,8 @@ import { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import { RuleStore } from '../store/RuleStore.ts';
 import { ModelStore } from '../store/ModelStore.ts';
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
+import { BROWSER_ALLOW_TOOL_FULL_NAMES } from '../desktop/createBrowserAllowTools.ts';
+import { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
 import { BotSecrets } from '../secrets/BotSecrets.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME } from '../secrets/createSecretTools.ts';
 import { TYPE_SECRET_TOOL_FULL_NAME } from '../secrets/createTypeSecretTool.ts';
@@ -1015,6 +1017,30 @@ describe('ChatService', () => {
         await expect(service.requestScreen('missing-bot', 'Reason')).rejects.toThrow();
         expect(screen.holder)
             .toBe('person');
+    });
+
+    it('allows the browser allow tools only with a browser and an allow store', async () => {
+        const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:1' });
+        const allowStore = new BrowserAllowStore(opened.db);
+        const withStore = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const withoutStore = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const firstService = new ChatService({ botStore, messageStore, runner: withStore, dataDir, browser, browserAllowStore: allowStore });
+        const secondService = new ChatService({ botStore, messageStore, runner: withoutStore, dataDir, browser });
+        const firstFinished = waitForTurnFinish(firstService, bot.id);
+
+        await firstService.sendMessage(bot.id, 'Hi');
+        await firstFinished;
+
+        const secondFinished = waitForTurnFinish(secondService, bot.id);
+
+        await secondService.sendMessage(bot.id, 'Hi');
+        await secondFinished;
+
+        expect(withStore.receivedRequests[0]?.allowedTools)
+            .toEqual(expect.arrayContaining(BROWSER_ALLOW_TOOL_FULL_NAMES));
+        expect(withoutStore.receivedRequests[0]?.allowedTools)
+            .not.toContain(BROWSER_ALLOW_TOOL_FULL_NAMES[0]);
     });
 
     it('allows request_screen only with a browser and a screen', async () => {

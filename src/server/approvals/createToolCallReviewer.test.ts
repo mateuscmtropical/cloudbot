@@ -68,6 +68,26 @@ describe('createToolCallReviewer', () => {
             .not.toHaveBeenCalled();
     });
 
+    it('asks for a private host the browser should reach, and names the host', async () => {
+        const { reviewer, askModel } = createReviewer('unused');
+
+        const verdict = await reviewer('bot-1', { toolName: 'mcp__cloudbot__browser_allow_host', input: { host: '10.0.0.5' } });
+
+        expect(verdict)
+            .toEqual({ decision: 'ask', summary: 'Let the browser reach the private host 10.0.0.5, any port.' });
+        expect(askModel)
+            .not.toHaveBeenCalled();
+    });
+
+    it('names the normalized host and the port on the card', async () => {
+        const { reviewer } = createReviewer('unused');
+
+        const verdict = await reviewer('bot-1', { toolName: 'mcp__cloudbot__browser_allow_host', input: { host: ' Intranet.Test. ', port: 8080 } });
+
+        expect(verdict)
+            .toEqual({ decision: 'ask', summary: 'Let the browser reach the private host intranet.test, port 8080.' });
+    });
+
     it('allows a call the model allows', async () => {
         const { reviewer } = createReviewer(answer({ decision: 'allow' }));
 

@@ -71,6 +71,13 @@
       "when": 1792594824056,
       "tag": "0009_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1792598115176,
+      "tag": "0010_browser_allowed_hosts",
+      "breakpoints": true
     }
   ]
 }

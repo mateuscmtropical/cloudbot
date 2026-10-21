@@ -188,6 +188,54 @@ Chromium runs with `--no-sandbox`, because Docker's default seccomp profile
 blocks the namespaces its sandbox needs. Open choices like this one are listed
 in [OWNER_QUESTIONS.md](OWNER_QUESTIONS.md).
 
+### Network gate
+
+Chromium sends all its traffic through a SOCKS5 gate in the server process,
+`BrowserGate` in `src/server/desktop/BrowserGate.ts`, on `127.0.0.1:9224`. The
+gate speaks SOCKS5 as RFC 1928 defines it, with CONNECT only and no
+authentication. For each request it resolves the name itself, or uses the
+address it was given. It connects only when every address is public by
+`isPublicAddress`, or, for an allowed host, private and allowable by
+`isAllowablePrivateAddress`. It connects to exactly that checked address. A name
+that answers differently later, or a second address in the answer, cannot send
+the bytes somewhere else. The name lookup gives up after 5 seconds.
+
+The SOCKS replies are: 2 for a refused address, 4 when the name has no address
+or the lookup times out, 5 when the connection fails, 7 for a command other than
+CONNECT, and 8 for an unknown address type. Bytes sent before the tunnel opens
+are capped at 64 KB. At most 256 clients are open at once, and a client past
+that is closed. A client that leaves before its tunnel opens stops the session,
+so nothing is connected for it. A server error after start is logged, and the
+gate keeps running.
+
+`docker/cloudbot-desktop` starts Chromium with `--proxy-server` for this port,
+with `--proxy-bypass-list=<-loopback>`, so loopback goes through the gate too,
+and with the WebRTC policy `disable_non_proxied_udp`, so UDP does not skip the
+proxy. The two ports must match. When the gate is down, Chromium has no network.
+
+An allowed host may reach private addresses, such as 10.x, 172.16/12, 192.168.x,
+100.64/10 and fc00::/7, but every address it resolves to is checked. Loopback,
+localhost, this machine's own addresses, 0.0.0.0, link-local (169.254/16 and
+fe80::/10) and the metadata addresses (169.254.169.254 and fd00:ec2::254) can
+never be allowed. `browser_allow_host` refuses those at once, when the host is a
+literal or a localhost name, and the gate refuses them even for an allowed host.
+The table `browser_allowed_hosts` (migration 0010) holds the allowed hosts and
+ports, with port 0 for every port. It is shared by the browser, not kept per
+bot. The bot adds a host with `browser_allow_host`, which always asks the owner
+first, and the approval card shows the normalized host and the port or "any
+port". `browser_allowed_hosts` and `browser_remove_host` do not ask.
+
+A refused request is logged with the time, the host and the port, never the
+path or the data. At most one line is written for each host and port in a
+minute. A failed page load tells the model that the address may be private, and
+the system prompt says the same. A refusal by the gate shows Chromium's
+`net::ERR_SOCKS_CONNECTION_FAILED`, and the model is told to ask the owner before
+using `browser_allow_host`.
+
+The gate sees a host and a port, not the page. It covers the browser only. The
+bot's shell is not behind it. Whether Chromium resolves names itself or leaves
+that to the gate was not checked against a running Chromium here.
+
 ## Document tools
 
 The image installs Python 3 from Debian with `openpyxl`, `python-docx`,
