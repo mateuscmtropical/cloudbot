@@ -9,6 +9,7 @@ import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
 import { createBot, deleteBot, listBots, listMessages, RequestFailedError, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload } from './apiClient.ts';
 import { mergeLoadedUploads } from './attachmentChips.ts';
+import { applyTabIcon } from './tabIcon.ts';
 import { MESSAGE_PAGE_SIZE, mergeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
 
 interface DraftState {
@@ -94,6 +95,8 @@ function App(): ReactElement {
     const [errorText, setErrorText] = useState<string | undefined>(undefined);
     // Chips per bot: files still uploading, and the files the server holds for the next message.
     const [attachmentsByBot, setAttachmentsByBot] = useState<Record<string, DraftAttachment[]>>({});
+    // A reply arrived while the tab was hidden. The tab icon shows a dot until the owner looks at the tab again.
+    const [hasUnreadReply, setHasUnreadReply] = useState(false);
 
     useEffect(() => {
         if (finishedTurn === undefined) {
@@ -108,6 +111,28 @@ function App(): ReactElement {
             clearTimeout(timer);
         };
     }, [finishedTurn]);
+
+    // The tab icon shows the thinking face while the open bot works, and a dot for its unread reply.
+    // Only the open bot has a live stream, so other bots do not change the icon.
+    useEffect(() => {
+        applyTabIcon({ isWorking: runningBotId !== undefined, hasUnreadReply });
+    }, [runningBotId, hasUnreadReply]);
+
+    // Looking at the tab again clears the dot.
+    useEffect(() => {
+        function clearUnreadReply(): void {
+            if (!document.hidden) {
+                setHasUnreadReply(false);
+            }
+        }
+
+        document.addEventListener('visibilitychange', clearUnreadReply);
+
+        return () => {
+            document.removeEventListener('visibilitychange', clearUnreadReply);
+        };
+    }, []);
+
     const messagesRef = useRef<ChatMessage[]>([]);
     const selectedBotIdRef = useRef<string | undefined>(undefined);
     // Checked before the state updates, so a fast second scroll cannot start a duplicate request.
@@ -262,6 +287,11 @@ function App(): ReactElement {
                     ...previousState,
                     messages: upsertLiveMessage(previousState.messages, event.message),
                 }));
+
+                // A reply that arrives while the tab is in the background marks the tab icon until the owner looks.
+                if (event.message.role === 'assistant' && document.hidden) {
+                    setHasUnreadReply(true);
+                }
 
                 return;
             }
