@@ -1,12 +1,11 @@
 // @vitest-environment happy-dom
 import { act, cleanup, render } from '@testing-library/react';
 import type { RenderResult } from '@testing-library/react';
-import { Profiler } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MASCOT_COLORS } from '../../shared/mascot.ts';
 import type { MascotState } from '../mascotState.ts';
-import { CloudMascot } from './CloudMascot.tsx';
+import { CloudMascot, pickBlinkDelayMs } from './CloudMascot.tsx';
 
 const ALL_STATES: MascotState[] = ['idle', 'typing', 'thinking', 'done', 'waiting', 'sleepy', 'error'];
 const ALL_SHAPES = ['puff', 'tall', 'wide', 'bubble'] as const;
@@ -121,37 +120,177 @@ describe('CloudMascot', () => {
             .toBeNull();
     });
 
-    it('keeps 30 message mascots off the pointer, so a pointer move adds no listener and renders nothing', () => {
+    it('shares one pointer listener among 30 mascots', () => {
         setPrefersReducedMotion(false);
 
         const addListener = vi.spyOn(window, 'addEventListener');
-        const onRender = vi.fn();
         const mascots = Array.from({ length: 30 }, (_value, index) => (
-            <CloudMascot key={String(index)} color="blue" shape="puff" state="idle" size={28} tracksPointer={false} />
+            <CloudMascot key={String(index)} color="blue" shape="puff" state="idle" size={28} />
         ));
 
-        render(<Profiler id="messages" onRender={onRender}>{mascots}</Profiler>);
+        render(<>{mascots}</>);
 
-        const rendersAfterMount = onRender.mock.calls.length;
+        const pointerMoveAdds = addListener.mock.calls.filter(call => call[0] === 'pointermove');
 
-        act(() => {
-            window.dispatchEvent(new Event('pointermove'));
-        });
-
-        expect(addListener.mock.calls.some(call => call[0] === 'pointermove'))
-            .toBe(false);
-        expect(onRender.mock.calls.length)
-            .toBe(rendersAfterMount);
+        expect(pointerMoveAdds)
+            .toHaveLength(1);
         addListener.mockRestore();
     });
 
-    it('does not follow the pointer when the owner prefers reduced motion', () => {
+    it('still follows the pointer when the owner prefers reduced motion', () => {
         setPrefersReducedMotion(true);
 
         const { container } = renderMascot('idle');
 
         expect(container.querySelector('.cloud-face')
             ?.getAttribute('data-tracks-pointer'))
-            .toBeNull();
+            .toBe('true');
+    });
+});
+
+// The blink starts after the pause, which is the minimum delay when Math.random returns 0.
+const FIRST_BLINK_DELAY_MS = 2500;
+const BLINK_DURATION_MS = 150;
+
+function isBlinking(container: HTMLElement): boolean {
+    return container.querySelector('.cloud-eyes')
+        ?.getAttribute('data-blinking') === 'true';
+}
+
+describe('pickBlinkDelayMs', () => {
+    it('picks a pause between 2.5 and 6 seconds', () => {
+        expect(pickBlinkDelayMs(0))
+            .toBe(2500);
+        expect(pickBlinkDelayMs(1))
+            .toBe(6000);
+        expect(pickBlinkDelayMs(0.5))
+            .toBe(4250);
+    });
+});
+
+describe('CloudMascot blinking', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        const randomSpy = vi.spyOn(Math, 'random');
+
+        randomSpy.mockReturnValue(0);
+        setPrefersReducedMotion(false);
+    });
+
+    afterEach(() => {
+        cleanup();
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+        setPrefersReducedMotion(false);
+        Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    });
+
+    it('blinks after a random pause and opens the eyes again', () => {
+        const { container } = renderMascot('idle');
+
+        act(() => {
+            vi.advanceTimersByTime(FIRST_BLINK_DELAY_MS);
+        });
+        expect(isBlinking(container))
+            .toBe(true);
+
+        act(() => {
+            vi.advanceTimersByTime(BLINK_DURATION_MS);
+        });
+        expect(isBlinking(container))
+            .toBe(false);
+    });
+
+    it('does not blink on the faces that are not pointer faces', () => {
+        const { container } = renderMascot('thinking');
+
+        act(() => {
+            vi.advanceTimersByTime(10_000);
+        });
+        expect(isBlinking(container))
+            .toBe(false);
+    });
+
+    it('still blinks when the owner prefers reduced motion', () => {
+        setPrefersReducedMotion(true);
+
+        const { container } = renderMascot('idle');
+
+        act(() => {
+            vi.advanceTimersByTime(FIRST_BLINK_DELAY_MS);
+        });
+        expect(isBlinking(container))
+            .toBe(true);
+    });
+
+    it('schedules no blink while the tab is hidden, and blinks again once it shows', () => {
+        Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+
+        const { container } = renderMascot('idle');
+
+        act(() => {
+            vi.advanceTimersByTime(10_000);
+        });
+        expect(isBlinking(container))
+            .toBe(false);
+
+        Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+
+        act(() => {
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+        act(() => {
+            vi.advanceTimersByTime(FIRST_BLINK_DELAY_MS);
+        });
+        expect(isBlinking(container))
+            .toBe(true);
+    });
+});
+
+describe('CloudMascot while the owner types', () => {
+    afterEach(() => {
+        cleanup();
+        setPrefersReducedMotion(false);
+        document.body.innerHTML = '';
+    });
+
+    it('turns the eyes along the focused text box with the caret, and looks down at it', () => {
+        setPrefersReducedMotion(false);
+        document.body.innerHTML = '<textarea id="composer"></textarea>';
+
+        const textarea = document.getElementById('composer') as HTMLTextAreaElement;
+
+        vi.spyOn(textarea, 'getBoundingClientRect')
+            .mockReturnValue({ left: 100, top: 300, width: 200, height: 40, right: 300, bottom: 340, x: 100, y: 300, toJSON: () => ({}) });
+        textarea.focus();
+
+        const { container } = renderMascot('typing');
+        const eyes = container.querySelector<SVGGElement>('.cloud-face > g');
+
+        // Happy-dom has no layout, so the caret reads at the left edge: the eyes turn fully left and look down.
+        expect(eyes?.style.transform)
+            .toBe('translate(-3px, 2px)');
+    });
+
+    it('keeps the eyes on the text box and ignores the pointer while typing', () => {
+        setPrefersReducedMotion(false);
+        document.body.innerHTML = '<textarea id="composer"></textarea>';
+
+        const textarea = document.getElementById('composer') as HTMLTextAreaElement;
+
+        vi.spyOn(textarea, 'getBoundingClientRect')
+            .mockReturnValue({ left: 100, top: 300, width: 200, height: 40, right: 300, bottom: 340, x: 100, y: 300, toJSON: () => ({}) });
+        textarea.focus();
+
+        const { container } = renderMascot('typing');
+        const eyes = container.querySelector<SVGGElement>('.cloud-face > g');
+        const transformBefore = eyes?.style.transform;
+
+        act(() => {
+            window.dispatchEvent(new MouseEvent('pointermove', { clientX: -500, clientY: -500 }));
+        });
+
+        expect(eyes?.style.transform)
+            .toBe(transformBefore);
     });
 });

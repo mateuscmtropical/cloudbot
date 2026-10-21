@@ -160,26 +160,24 @@ svg {
     animation: cloud-bounce 900ms ease-in-out infinite;
 }
 
-.cloud-mascot .cloud-blink {
-    animation: cloud-blink 4s ease-in-out infinite;
+/* The blink is timed by CloudMascot, which sets data-blinking on the eyes for a moment. */
+.cloud-mascot .cloud-eyes {
     transform-box: fill-box;
     transform-origin: center;
+    transition: transform 60ms ease-out;
+}
+
+.cloud-mascot .cloud-eyes[data-blinking='true'] {
+    transform: scaleY(0.1);
 }
 
 .cloud-mascot .cloud-face > g {
     transition: transform 160ms ease-out;
 }
 
-@keyframes cloud-blink {
-    0%,
-    94%,
-    100% {
-        transform: scaleY(1);
-    }
-
-    96% {
-        transform: scaleY(0.1);
-    }
+/* Keeps the space of a mascot that is not shown, so the bubbles above line up with the last one. */
+.mascot-gap {
+    flex-shrink: 0;
 }
 
 @keyframes cloud-bounce {
@@ -193,13 +191,17 @@ svg {
     }
 }
 
+/* Under reduced motion only the easing goes. The eyes still move and blink, and they jump to the new spot. */
 @media (prefers-reduced-motion: reduce) {
-    .cloud-mascot svg,
-    .cloud-mascot .cloud-blink,
-    .cloud-mascot .cloud-face > g {
+    .cloud-mascot svg {
         animation: none !important;
         transition: none !important;
         transform: none !important;
+    }
+
+    .cloud-mascot .cloud-eyes,
+    .cloud-mascot .cloud-face > g {
+        transition: none !important;
     }
 }
 

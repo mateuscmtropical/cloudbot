@@ -903,10 +903,18 @@ knows, in this order: a pending approval card (waiting), a running turn (thinkin
 error note (error). The error note is matched by its exact text: a limit stop, the stall stop, and
 the two fixed turn errors. Any other note leaves the face idle. A turn the owner stopped gets no
 done face. The web app has no event for a usage wait or a routine wait, so the usage limit note is
-matched by its text. Only the selected bot shows the live face. The others show idle. Mascots beside
-messages are always idle and do not track the pointer. On the sidebar and header mascots, the eyes of the
-idle and typing faces follow the pointer through one shared window listener (`src/web/mascotPointer.ts`),
-batched per animation frame.
+matched by its text. Only the selected bot shows the live face. The others show idle. In a run of bot
+messages, only the last one shows the mascot (`src/web/messageMascot.ts`). The bubbles above keep its
+space, so the text lines up. The eyes of the idle and typing faces follow the pointer on every mascot, through
+one shared window listener (`src/web/mascotPointer.ts`), batched per animation frame. While the owner types,
+the eyes turn along the text box with the caret. The caret at the left edge turns them fully left, at the right
+edge fully right, and linearly in between. They look down at the box by 2 units. A hidden mirror of the text box,
+with the same styles and the text before the caret, gives the caret's place, so wrapped lines work. A shared
+document listener on `input` and `selectionchange` (`subscribeToTyping`) measures at once on each change, not in
+an animation frame, so a stalled frame cannot freeze the eyes. The last message mascot follows the caret too,
+and takes the typing face while the owner types. The mascots blink after a random pause of 2.5 to 6 seconds, and no timer runs
+while the tab is hidden. Under `prefers-reduced-motion` the eyes and the blink still run, with no easing
+on the eyes, so they jump. The stylesheet stops the bounce, the squish and the hover motion there.
 
 ## Setup conversation
 

@@ -52,6 +52,43 @@ describe('answered setup messages', () => {
     });
 });
 
+describe('bot messages with a mascot', () => {
+    afterEach(cleanup);
+
+    const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+    const message = { id: 'bot-reply', botId: 'bot', role: 'assistant' as const, sequence: 1, createdAt: 1, body: { kind: 'text' as const, text: 'Hello' } };
+    const mascot = { mascotColor: 'blue' as const, mascotShape: 'puff' as const };
+
+    it('draws the mascot when the message is the last of its run', () => {
+        const { container } = render(<MessageItem message={message} actions={actions} mascot={mascot} isMascotShown />);
+
+        expect(container.querySelector('.cloud-mascot'))
+            .not.toBeNull();
+        expect(container.querySelector('.mascot-gap'))
+            .toBeNull();
+    });
+
+    it('keeps the space of the mascot without drawing it on the other messages of a run', () => {
+        const { container } = render(<MessageItem message={message} actions={actions} mascot={mascot} />);
+
+        expect(container.querySelector('.cloud-mascot'))
+            .toBeNull();
+        expect(container.querySelector('.mascot-gap'))
+            .not.toBeNull();
+        expect(screen.getByText('Hello'))
+            .toBeTruthy();
+    });
+
+    it('shows the typing face on the shown mascot while the owner types', () => {
+        const { container } = render(<MessageItem message={message} actions={actions} mascot={mascot} isMascotShown mascotState="typing" />);
+
+        const shownMascot = container.querySelector('.cloud-mascot');
+
+        expect(shownMascot?.getAttribute('data-state'))
+            .toBe('typing');
+    });
+});
+
 describe('file messages', () => {
     afterEach(cleanup);
 
