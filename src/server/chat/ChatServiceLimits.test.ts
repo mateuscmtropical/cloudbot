@@ -120,7 +120,8 @@ describe('ChatService turn limits', () => {
 
         await service.sendMessage(bot.id, 'Work on this');
         await runner.started;
-        await vi.advanceTimersByTimeAsync(10 * 60 * MINUTE_MS);
+        // Nine minutes is under the stall period, so only a limit could stop the turn here.
+        await vi.advanceTimersByTimeAsync(9 * MINUTE_MS);
 
         expect(service.isTurnRunning(bot.id))
             .toBe(true);
