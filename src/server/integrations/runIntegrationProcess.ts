@@ -59,17 +59,20 @@ const WIPE_SCRIPT = [
     'exit 0',
 ].join('\n');
 
-// The fixed bash wrapper. It reads the secret from the first line of stdin, exports it under the name in $1, and
-// execs the interpreter in $2 with the rest of the arguments. The script is still on stdin after the first line,
-// because bash reads a pipe one byte at a time. Only the name and the interpreter are in argv, never the value.
+// The fixed bash wrapper. $1 is the process limit. It reads the secret from the first line of stdin, exports it under
+// the name in $2, and execs the interpreter in $3 with the rest of the arguments. The script is still on stdin after the
+// first line, because bash reads a pipe one byte at a time. Only the name and the interpreter are in argv, never the value.
+const INTEGRATION_PROCESS_LIMIT = '256';
 const INTEGRATION_WRAPPER = [
     'IFS= read -r KEY_VALUE || exit 1',
-    'if [ -n "$1" ]; then export "$1=$KEY_VALUE"; fi',
+    'if [ -n "$2" ]; then export "$2=$KEY_VALUE"; fi',
     'unset KEY_VALUE',
-    'COMMAND=$2',
-    'shift 2',
+    'PROCESS_LIMIT=$1',
+    'COMMAND=$3',
+    'shift 3',
     // Bounds a fork bomb and a full disk. If a limit cannot be set, the process does not start.
-    'ulimit -u 64 || exit 1',
+    // The process limit counts threads of the whole user, and node alone starts about ten.
+    'ulimit -u "$PROCESS_LIMIT" || exit 1',
     'ulimit -f 65536 || exit 1',
     'exec "$COMMAND" "$@"',
 ].join('\n');
@@ -117,7 +120,7 @@ function asIntegrationUser(integrationUser: string, request: ProcessRequest): Pr
         throw new Error('Invalid secret name for an integration.');
     }
 
-    const args = sudoArgs(integrationUser, BASH, ['-c', INTEGRATION_WRAPPER, 'cloudbot-integration', secretName, request.command, ...request.args]);
+    const args = sudoArgs(integrationUser, BASH, ['-c', INTEGRATION_WRAPPER, 'cloudbot-integration', INTEGRATION_PROCESS_LIMIT, secretName, request.command, ...request.args]);
 
     return { ...request, command: AGENT_SUDO, args, cwd: '/', env: { PATH: INTEGRATION_PATH } };
 }

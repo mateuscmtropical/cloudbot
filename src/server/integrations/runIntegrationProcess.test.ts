@@ -144,7 +144,7 @@ describe('runIntegrationProcess', () => {
         const script = 'console.log(process.env.STORE_API_KEY)';
         const result = await runIntegrationProcess(request('', {
             command: 'bash',
-            args: ['-c', INTEGRATION_WRAPPER, 'cloudbot-integration', 'STORE_API_KEY', 'node', '-'],
+            args: ['-c', INTEGRATION_WRAPPER, 'cloudbot-integration', 'unlimited', 'STORE_API_KEY', 'node', '-'],
             env: { PATH: process.env['PATH'] ?? '' },
             input: composeInput(SECRET_VALUE, Buffer.from(script)),
         }));
@@ -157,7 +157,7 @@ describe('runIntegrationProcess', () => {
     it.skipIf(IS_WINDOWS)('the wrapper caps the process count and the file size before it runs the command', async () => {
         const result = await runIntegrationProcess(request('', {
             command: 'bash',
-            args: ['-c', INTEGRATION_WRAPPER, 'cloudbot-integration', '', 'bash', '-c', 'ulimit -u; ulimit -f'],
+            args: ['-c', INTEGRATION_WRAPPER, 'cloudbot-integration', '64', '', 'bash', '-c', 'ulimit -u; ulimit -f'],
             env: { PATH: process.env['PATH'] ?? '' },
             input: composeInput(undefined, Buffer.alloc(0)),
         }));

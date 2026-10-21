@@ -24,8 +24,9 @@ const NO_OUTPUT: ProcessResult = { exitCode: 0, output: Buffer.alloc(0), timedOu
 const POSTED = 'console.log("posted")';
 
 // The real wrapper runs under bash, without sudo. The sudo line is checked by the argv test in runIntegrationProcess.test.ts.
+// The test user shares its process limit with the test runner, so the limit is lifted here.
 function runOnHost(request: ProcessRequest): ReturnType<typeof runIntegrationProcess> {
-    const wrapperArgs = ['-c', INTEGRATION_WRAPPER, 'cloudbot-integration', request.secretName ?? '', request.command, ...request.args];
+    const wrapperArgs = ['-c', INTEGRATION_WRAPPER, 'cloudbot-integration', 'unlimited', request.secretName ?? '', request.command, ...request.args];
 
     return runIntegrationProcess({ ...request, command: 'bash', args: wrapperArgs, env: { PATH: process.env['PATH'] ?? '' } });
 }
