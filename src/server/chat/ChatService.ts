@@ -1137,8 +1137,6 @@ class ChatService {
         }
     }
 
-    // With a session to resume, a failure before the session starts is held back
-    // and returned as failureText, so the caller can retry without it.
     // request_secret needs the vault. browser_type_secret also needs the browser.
     private createSecretTools(botId: string): CloudbotTool[] {
         const botSecrets = this.botSecrets;
@@ -1164,6 +1162,8 @@ class ChatService {
         return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames];
     }
 
+    // With a session to resume, a failure before the session starts is held back
+    // and returned as failureText, so the caller can retry without it.
     private async runAttempt(turnContext: TurnContext, sessionId: string | null, turnState: TurnState): Promise<AttemptOutcome> {
         const { botId } = turnContext;
         const toolNamesById = new Map<string, string>();
