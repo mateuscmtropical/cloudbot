@@ -124,6 +124,14 @@ interface ChatTextDeltaEvent {
     text: string;
 }
 
+// A tool call of the bot has started. It is not stored, and the web app shows it in the thinking bubble.
+interface ChatToolStartedEvent {
+    type: 'toolStarted';
+    botId: string;
+    // The tool name as the SDK spells it, such as WebFetch or mcp__cloudbot__browser_open.
+    toolName: string;
+}
+
 // A new webhook URL, sent once to the open web app. It is never stored, so the web app keeps it only in memory.
 interface ChatWebhookUrlEvent {
     type: 'webhookUrl';
@@ -144,7 +152,7 @@ interface ChatBotDeletedEvent {
     botId: string;
 }
 
-type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent | ChatWebhookUrlEvent | ChatScreenEvent | ChatBotDeletedEvent;
+type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent | ChatToolStartedEvent | ChatWebhookUrlEvent | ChatScreenEvent | ChatBotDeletedEvent;
 
 // A rule the owner set for a bot. Block rules may name tools the bot cannot use.
 interface BotRule {
