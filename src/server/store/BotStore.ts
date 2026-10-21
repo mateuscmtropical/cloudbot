@@ -57,6 +57,14 @@ class BotStore {
         return insertedBot;
     }
 
+    // Removes the bot row. Every table that keeps per-bot rows cascades from it, so they go too.
+    async delete(botId: string): Promise<void> {
+        const botCondition = eq(bots.id, botId);
+
+        await this.database.delete(bots)
+            .where(botCondition);
+    }
+
     async getById(botId: string): Promise<Bot | undefined> {
         const botCondition = eq(bots.id, botId);
         const rows = await this.database.select()

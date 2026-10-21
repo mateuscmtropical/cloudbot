@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { ApprovalGate } from '../approvals/ApprovalGate.ts';
@@ -61,7 +62,14 @@ import type { MessageStore } from '../store/MessageStore.ts';
 import type { SetupAction, SetupConversation } from '../setup/SetupConversation.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
 import type { StoredUploadRecord } from '../store/schema.ts';
-import type { Bot, Message } from '../store/types.ts';
+import type { Bot, BotProfile, Message } from '../store/types.ts';
+import { BOT_CREATE_TOOL_FULL_NAME, createBotCreateTool } from '../bots/createBotTool.ts';
+import type { BotCreateInput } from '../bots/createBotTool.ts';
+import { encodeProjectPath } from '../bots/claudeProjectFolder.ts';
+import { removeBotDirectory } from '../bots/removeBotDirectory.ts';
+import { prepareAgentWorkspace } from '../agent/prepareAgentWorkspace.ts';
+import { removeAgentWorkspace } from '../bots/removeAgentWorkspace.ts';
+import { BotDeletingError } from '../bots/BotDeletingError.ts';
 import type {
     AttachmentSummary,
     BotSummary,
@@ -75,6 +83,37 @@ import type {
     SecureFormBody,
     TextBody,
 } from '../../shared/chatTypes.ts';
+
+// The profile of a bot made with the "+" button. The owner gives its real name and job in the chat.
+const NEW_BOT_PROFILE: BotProfile = { name: 'New bot', title: 'Your coworker', description: '' };
+const NEW_BOT_GREETING = 'Hi, I am new here. What should I be called, and what job should I do for you?';
+const STOP_WAIT_MS = 30_000;
+const STOP_POLL_MS = 50;
+// The mode of a new bot's CLAUDE.md. The group can write it, so the agent user in agent-user mode can edit its memory.
+const MEMORY_FILE_MODE = 0o660;
+
+// Why a bot was not deleted. 'deleted' is the only success.
+type DeleteBotOutcome = 'deleted' | 'missing' | 'last' | 'setup' | 'stopping' | 'deleting';
+
+// Checks every poll interval until the test passes or the time runs out. Returns whether it passed.
+async function waitUntil(isDone: () => boolean, timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    const check = async (): Promise<boolean> => {
+        if (isDone()) {
+            return true;
+        }
+
+        if (Date.now() >= deadline) {
+            return false;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, STOP_POLL_MS));
+
+        return check();
+    };
+
+    return check();
+}
 
 interface ChatServiceOptions {
     botStore: BotStore;
@@ -121,6 +160,8 @@ interface ChatServiceOptions {
     toolCallReviewer?: ToolCallReviewer | undefined;
     // The variables a bot's turn adds for GitHub, such as the proxy address. Without it git and gh are not routed.
     githubEnvironment?: ((botId: string) => Promise<Record<string, string>>) | undefined;
+    // Stops the GitHub listener of a deleted bot. Without it the listener stays until the server stops.
+    forgetGithub?: ((botId: string) => Promise<void>) | undefined;
 }
 
 interface SharedFileDownload {
@@ -402,6 +443,9 @@ class ChatService {
     private readonly webhookBaseUrl: string | undefined;
     private readonly approvals: ApprovalGate | undefined;
     private readonly githubEnvironment: ((botId: string) => Promise<Record<string, string>>) | undefined;
+    private readonly forgetGithub: ((botId: string) => Promise<void>) | undefined;
+    // Bots whose delete is running. New messages and uploads for them are refused.
+    private readonly deletingBots = new Set<string>();
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
     // The limits and the clock of the running turn of each bot. They are set when the turn starts and cleared when it ends.
@@ -446,6 +490,7 @@ class ChatService {
         this.webhookRefusals = options.webhookRefusals;
         this.webhookDeliveries = options.webhookDeliveries;
         this.githubEnvironment = options.githubEnvironment;
+        this.forgetGithub = options.forgetGithub;
         this.approvals = options.toolCallReviewer === undefined
             ? undefined
             : new ApprovalGate({
@@ -608,6 +653,10 @@ class ChatService {
     // Throws UploadDuringTurnError while the bot is busy, so the pending files stay empty until it is idle.
     // Throws PendingUploadLimitError when the next message would hold too many files or bytes.
     async saveUploads(botId: string, files: File[]): Promise<AttachmentSummary[] | undefined> {
+        if (this.deletingBots.has(botId)) {
+            throw new BotDeletingError();
+        }
+
         const bot = await this.botStore.getById(botId);
 
         if (bot === undefined) {
@@ -767,6 +816,187 @@ class ChatService {
             clearTimeout(timer);
         });
         this.usageWaitTimers.clear();
+    }
+
+    // The "+" button. The new bot asks in its own chat for its name and job, and the owner answers there.
+    async createOwnerBot(): Promise<BotSummary> {
+        const bot = await this.insertBot(NEW_BOT_PROFILE);
+
+        await this.saveAndPublish(bot.id, 'assistant', { kind: 'text', text: NEW_BOT_GREETING });
+
+        return this.summarizeBot(bot);
+    }
+
+    // The bot_create tool. The owner approved the card. The instructions go to the new bot's CLAUDE.md, its memory.
+    // They are not a rule, since a bot wrote them and a rule would be an owner permission.
+    async createBotFromTool(creatorBotId: string, input: BotCreateInput): Promise<BotSummary> {
+        const bot = await this.insertBot({ name: input.name, title: input.title, description: '' });
+        const creator = await this.botStore.getById(creatorBotId);
+        const creatorName = creator?.name ?? 'another bot';
+
+        try {
+            await this.writeFirstMemory(bot.id, `Instructions from ${creatorName} when this bot was made:\n\n${input.instructions}\n`);
+        } catch (error: unknown) {
+            // A bot without its memory file would start without the instructions the owner approved, so it is removed.
+            await this.botStore.delete(bot.id);
+
+            throw error;
+        }
+
+        return this.summarizeBot(bot);
+    }
+
+    private async insertBot(profile: BotProfile): Promise<Bot> {
+        return this.botStore.create(profile);
+    }
+
+    // The new bot's workspace starts with its memory file. The file is created only once. Its mode is set on the open
+    // handle, since the umask would cut the mode given to open. The mode lets the agent user, in the shared group, edit it.
+    private async writeFirstMemory(botId: string, text: string): Promise<void> {
+        const workspace = this.workspaceFor(botId);
+
+        if (this.agentUser === undefined) {
+            await mkdir(workspace, { recursive: true });
+        } else {
+            await prepareAgentWorkspace(workspace);
+        }
+
+        const memoryPath = join(workspace, 'CLAUDE.md');
+        const handle = await open(memoryPath, 'wx');
+
+        try {
+            await handle.chmod(MEMORY_FILE_MODE);
+            await handle.writeFile(text);
+        } finally {
+            await handle.close();
+        }
+    }
+
+    // Deletes the bot and everything of it. The bot is marked as deleting first, so messages, uploads and webhook calls
+    // are refused from now on. The mark is removed when the delete ends, whatever its outcome.
+    // A second delete of a bot already being deleted is refused at once, and it leaves the first delete's mark alone.
+    async deleteBot(botId: string): Promise<DeleteBotOutcome> {
+        if (this.deletingBots.has(botId)) {
+            return 'deleting';
+        }
+
+        this.deletingBots.add(botId);
+
+        let isDeleted = false;
+
+        try {
+            const outcome = await this.removeBot(botId);
+
+            isDeleted = outcome === 'deleted';
+
+            return outcome;
+        } finally {
+            this.deletingBots.delete(botId);
+
+            // A bot that stays had its running turn stopped, and the turns queued behind it were blocked by the mark.
+            // The turn runs in the background, as the other starts do, so the delete does not wait for it.
+            if (!isDeleted) {
+                this.startNextQueuedTurn(botId)
+                    .catch(reportBackgroundError);
+            }
+        }
+    }
+
+    // The delete itself. Its running turn stops first and its queue is dropped.
+    // The bot row goes last, so a failed file removal leaves the bot in place to delete again.
+    private async removeBot(botId: string): Promise<DeleteBotOutcome> {
+        const bot = await this.botStore.getById(botId);
+
+        if (bot === undefined) {
+            return 'missing';
+        }
+
+        // Bots that are being deleted do not count, so two parallel deletes cannot remove the last two bots.
+        const allBots = await this.botStore.list();
+        const survivors = allBots.filter(other => other.id !== botId && !this.deletingBots.has(other.id));
+
+        if (survivors.length === 0) {
+            return 'last';
+        }
+
+        // The Claude setup runs in the first bot's chat, so that bot stays until the setup is done.
+        if (this.setup !== undefined && this.setup.isSetupBot(botId) && !this.setup.isDone()) {
+            return 'setup';
+        }
+
+        this.abortRunningTurn(botId);
+
+        const isStopped = await waitUntil(() => !this.runningTurns.has(botId), STOP_WAIT_MS);
+
+        if (!isStopped) {
+            return 'stopping';
+        }
+
+        const webhooks = this.webhookStore === undefined ? [] : await this.webhookStore.list(botId);
+
+        // The queue, the usage wait and the listeners are dropped only now, after the steps that can fail.
+        // A failed delete then leaves the bot working, with its queue.
+        await this.removeSavedState(botId);
+        webhooks.forEach((webhook) => {
+            this.webhookRefusals?.forget(webhook.id);
+            this.webhookDeliveries?.forget(webhook.id);
+        });
+        this.forgetBotState(botId);
+        await this.botStore.delete(botId);
+        await this.forgetGithub?.(botId);
+
+        return 'deleted';
+    }
+
+    // Aborts the running turn. The turn ends by itself after that, and the queue is left as it is.
+    private abortRunningTurn(botId: string): void {
+        this.runningTurns.get(botId)
+            ?.abort();
+    }
+
+    private forgetBotState(botId: string): void {
+        const usageWaitTimer = this.usageWaitTimers.get(botId);
+
+        if (usageWaitTimer !== undefined) {
+            clearTimeout(usageWaitTimer);
+        }
+
+        this.usageWaitTimers.delete(botId);
+        this.pendingUploads.delete(botId);
+        this.queuedTurns.delete(botId);
+        this.reviewSpend.delete(botId);
+        this.screenWaitBots.delete(botId);
+        this.runningLimits.delete(botId);
+        this.listenersByBot.delete(botId);
+    }
+
+    // The app servers, the secrets, and the folders of the bot. Shared app servers without a token stay.
+    // The agent writes its workspace as its own user, so that folder goes through the fixed script. The uploads and
+    // shared files are written by the server, so the server removes them.
+    private async removeSavedState(botId: string): Promise<void> {
+        await this.connectedApps?.removeSavedBy(botId);
+        this.botSecrets?.removeAll(botId);
+
+        if (this.agentUser === undefined) {
+            const workspaceRoot = join(this.dataDir, 'workspaces');
+
+            await removeBotDirectory(workspaceRoot, botId);
+            // Claude Code keeps the transcripts and memory of a workspace in the home of the user that runs it.
+            const userHome = homedir();
+            const claudeProjectsRoot = join(userHome, '.claude', 'projects');
+            const workspacePath = this.workspaceFor(botId);
+            const claudeProjectName = encodeProjectPath(workspacePath);
+
+            await removeBotDirectory(claudeProjectsRoot, claudeProjectName);
+        } else {
+            await removeAgentWorkspace(this.agentUser, botId);
+        }
+
+        const uploadRoot = this.uploadRoot();
+        const shareRoot = this.shareRoot();
+
+        await removeBotDirectory(uploadRoot, botId);
+        await removeBotDirectory(shareRoot, botId);
     }
 
     async listBots(): Promise<BotSummary[]> {
@@ -958,6 +1188,10 @@ class ChatService {
     // A message sent while the bot is busy is saved as queued and runs after the work ahead of it.
     // The source only picks the model of the turn. Routine messages pass 'routine'.
     async sendMessage(botId: string, text: string, source: TurnSource = 'chat'): Promise<ChatMessage | undefined> {
+        if (this.deletingBots.has(botId)) {
+            throw new BotDeletingError();
+        }
+
         const bot = await this.botStore.getById(botId);
 
         if (bot === undefined) {
@@ -999,6 +1233,11 @@ class ChatService {
         let userMessage: ChatMessage;
 
         try {
+            // A delete may have started while the checks above awaited. Then the message must not be saved.
+            if (this.deletingBots.has(botId)) {
+                throw new BotDeletingError();
+            }
+
             userMessage = await this.saveAndPublish(botId, 'user', storedBody);
         } catch (error: unknown) {
             this.restoreUploads(botId, turnUploads);
@@ -1205,6 +1444,10 @@ class ChatService {
 
     // Adds a turn to the queue. A retry goes in front, so the message it answers runs first.
     private async enqueueTurn(botId: string, turn: TurnInput, isFirst: boolean): Promise<void> {
+        if (this.deletingBots.has(botId)) {
+            throw new BotDeletingError();
+        }
+
         const botTurns = this.queuedTurns.get(botId) ?? [];
         const firstPosition = botTurns[0]?.position ?? 0;
         const lastPosition = botTurns[botTurns.length - 1]?.position ?? 0;
@@ -1216,12 +1459,41 @@ class ChatService {
 
         const queuedTurnRecord = toQueuedTurnRecord(queuedTurn);
 
-        await this.botStore.insertQueuedTurn(queuedTurnRecord);
+        try {
+            await this.botStore.insertQueuedTurn(queuedTurnRecord);
+        } catch (error: unknown) {
+            this.dropQueuedTurn(botId, queuedTurn.id);
+
+            // A delete that ran during the insert can remove the bot first, so the insert fails. That is a refusal.
+            const isBotGone = (await this.botStore.getById(botId)) === undefined;
+
+            if (this.deletingBots.has(botId) || isBotGone) {
+                throw new BotDeletingError();
+            }
+
+            throw error;
+        }
+
+        // A delete that started during the insert has dropped the queue already, so the turn is removed again.
+        if (this.deletingBots.has(botId)) {
+            this.dropQueuedTurn(botId, queuedTurn.id);
+
+            throw new BotDeletingError();
+        }
     }
 
-    // Starts the first queued turn, unless the bot runs a turn or waits for a usage limit.
+    private dropQueuedTurn(botId: string, turnId: string): void {
+        const botTurns = this.queuedTurns.get(botId) ?? [];
+
+        const remainingTurns = botTurns.filter(turn => turn.id !== turnId);
+
+        this.queuedTurns.set(botId, remainingTurns);
+    }
+
+    // Starts the first queued turn, unless the bot runs a turn or waits for a usage limit, or it is being deleted.
+    // A deleted bot has an empty queue, so the check of the queue ends the call as well.
     private async startNextQueuedTurn(botId: string): Promise<void> {
-        if (this.runningTurns.has(botId) || this.usageWaitTimers.has(botId)) {
+        if (this.runningTurns.has(botId) || this.usageWaitTimers.has(botId) || this.deletingBots.has(botId)) {
             return;
         }
 
@@ -1400,11 +1672,13 @@ class ChatService {
             const watchTools = this.watchStore === undefined ? [] : createWatchTools(this.watchStore, botId);
             const browserAllowTools = this.browserAllowStore === undefined || this.browser === undefined ? [] : createBrowserAllowTools(this.browserAllowStore);
             const appTools = this.connectedApps === undefined ? [] : createAppTools(this.connectedApps, botId);
+            // The tool asks the owner through the approval gate, so it is offered only when that gate exists.
+            const botTools = this.approvals === undefined ? [] : [createBotCreateTool(input => this.createBotFromTool(botId, input))];
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools],
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
             const remoteServers = this.connectedApps === undefined ? {} : await this.connectedApps.serverConfigs();
@@ -1558,8 +1832,10 @@ class ChatService {
         const webhookToolNames = this.webhookStore === undefined ? [] : WEBHOOK_TOOL_FULL_NAMES;
         const watchToolNames = this.watchStore === undefined ? [] : WATCH_TOOL_FULL_NAMES;
         const appToolNames = this.connectedApps === undefined ? [] : APP_TOOL_FULL_NAMES;
+        // bot_create is offered only with the approval gate, the same condition as the tool itself.
+        const botCreateToolNames = this.approvals === undefined ? [] : [BOT_CREATE_TOOL_FULL_NAME];
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames];
     }
 
     private webhookTools(botId: string): CloudbotTool[] {
@@ -1722,4 +1998,4 @@ class ChatService {
 }
 
 export { buildScreenshotName, ChatService, DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError };
-export type { ChatEventListener, ChatServiceOptions, MessagePageOptions, SharedFileDownload, TurnSource };
+export type { ChatEventListener, ChatServiceOptions, DeleteBotOutcome, MessagePageOptions, SharedFileDownload, TurnSource };

@@ -36,6 +36,8 @@ const SKIP_TOOL_NAMES = new Set([
 const ALWAYS_ASK_TOOL_NAMES = new Set([
     'mcp__cloudbot__browser_allow_host',
     'mcp__cloudbot__app_connect',
+    // A new bot gets its own workspace and its first instructions, so the owner approves it before it is made.
+    'mcp__cloudbot__bot_create',
     // A new or changed script runs with a secret, so the owner approves the file that is registered.
     'mcp__cloudbot__integration_create',
     'mcp__cloudbot__integration_update',

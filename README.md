@@ -44,6 +44,7 @@ comes back when the job is done or when it needs you.
 - **Set limits.** Optional time, spending and step limits per turn, one set for chat and one for routines. A stopped turn says which limit it hit. The agent and the review agent are each held to the spending limit, so a turn can spend up to twice the limit. The spending is an estimate, and a subscription is not billed by it.
 - **API integrations.** The bot writes a script that calls an outside API and runs it with your key from the vault. The key does not reach the model or the logs, and a changed script waits for your approval.
 - **Connect apps.** The bot adds a remote MCP server by its address when you ask in the chat. A token goes through the secure form and stays in the vault. The Connect apps panel lists the servers and removes one.
+- **Make more bots.** The + button adds a bot, and a bot can make one when you ask. Deleting a bot from its chat removes all of its data.
 - **Work as a team.** Several bots that pass work to each other, group chats
   and a manager bot.
 

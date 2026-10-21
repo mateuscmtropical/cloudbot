@@ -8,10 +8,11 @@ import { bodyLimit } from 'hono/body-limit';
 import { streamSSE } from 'hono/streaming';
 import type { SSEStreamingApi } from 'hono/streaming';
 
-import type { ChatEvent } from '../../shared/chatTypes.ts';
+import type { ChatEvent, ChatMessage } from '../../shared/chatTypes.ts';
 import { MAX_FILES_PER_UPLOAD, readMaxUploadBytes } from '../attachments/saveUpload.ts';
 import { DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError } from './ChatService.ts';
-import type { ChatService, MessagePageOptions } from './ChatService.ts';
+import type { ChatService, DeleteBotOutcome, MessagePageOptions } from './ChatService.ts';
+import { BotDeletingError } from '../bots/BotDeletingError.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
 import type { SetupAction } from '../setup/SetupConversation.ts';
 
@@ -20,6 +21,15 @@ interface ChatErrorResponse {
 }
 
 const BOT_NOT_FOUND: ChatErrorResponse = { error: 'No bot has this id.' };
+const BOT_DELETING: ChatErrorResponse = { error: 'This bot is being deleted.' };
+const DELETE_FAILED: ChatErrorResponse = { error: 'Could not delete this bot. Try again.' };
+// Each refusal has its own text, so the web app can show the owner why.
+const DELETE_REFUSED: Record<Exclude<DeleteBotOutcome, 'deleted' | 'missing'>, ChatErrorResponse> = {
+    deleting: { error: 'This bot is already being deleted.' },
+    last: { error: 'The last bot cannot be deleted.' },
+    setup: { error: 'Finish connecting Claude in this bot\'s chat before you delete it.' },
+    stopping: { error: 'The bot is still stopping. Try again in a moment.' },
+};
 const EMPTY_TEXT: ChatErrorResponse = { error: 'Send a non-empty "text" string.' };
 const INVALID_BEFORE: ChatErrorResponse = { error: '"before" must be a message sequence number, 1 or more.' };
 const INVALID_LIMIT: ChatErrorResponse = { error: '"limit" must be a whole number, 1 or more.' };
@@ -166,6 +176,37 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
         return context.json(bots);
     });
 
+    // The "+" button. The new bot's chat opens with its question about its name and job.
+    routes.post('/api/bots', async (context) => {
+        const bot = await chatService.createOwnerBot();
+
+        return context.json(bot, 201);
+    });
+
+    routes.delete('/api/bots/:id', async (context) => {
+        const botId = context.req.param('id');
+        let outcome: DeleteBotOutcome;
+
+        try {
+            outcome = await chatService.deleteBot(botId);
+        } catch (error: unknown) {
+            // The owner sees only the generic message. The log keeps the error for the operator.
+            console.error('Deleting a bot failed', error);
+
+            return context.json(DELETE_FAILED, 500);
+        }
+
+        if (outcome === 'deleted') {
+            return context.json({ deleted: true });
+        }
+
+        if (outcome === 'missing') {
+            return context.json(BOT_NOT_FOUND, 404);
+        }
+
+        return context.json(DELETE_REFUSED[outcome], 409);
+    });
+
     routes.get('/api/bots/:id/messages', async (context) => {
         const botId = context.req.param('id');
         const beforeText = context.req.query('before');
@@ -204,7 +245,17 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
         }
 
         // A message sent while the bot is busy is queued, so it is accepted with 201 as well.
-        const savedMessage = await chatService.sendMessage(botId, text);
+        let savedMessage: ChatMessage | undefined;
+
+        try {
+            savedMessage = await chatService.sendMessage(botId, text);
+        } catch (error: unknown) {
+            if (error instanceof BotDeletingError) {
+                return context.json(BOT_DELETING, 409);
+            }
+
+            throw error;
+        }
 
         if (savedMessage === undefined) {
             return context.json(BOT_NOT_FOUND, 404);
@@ -242,6 +293,10 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
             } catch (error: unknown) {
                 if (error instanceof UploadDuringTurnError) {
                     return context.json(UPLOAD_DURING_TURN, 409);
+                }
+
+                if (error instanceof BotDeletingError) {
+                    return context.json(BOT_DELETING, 409);
                 }
 
                 if (error instanceof PendingUploadLimitError) {

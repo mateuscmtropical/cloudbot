@@ -5,6 +5,9 @@ Defaults:cloudbot env_keep="ANTHROPIC_BASE_URL ANTHROPIC_API_KEY GH_HOST GH_ENTE
 cloudbot ALL=(bot) NOPASSWD: NOSETENV: /home/bot/.local/bin/claude
 # The empty string allows the desktop script only without arguments.
 cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-desktop ""
+# Deletes the workspace of one bot, since the bot user owns the files the agent made. The script takes only a bot id
+# and checks it, see docker/cloudbot-remove-workspace. No other command is allowed for the bot user.
+cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-remove-workspace *
 # Integrations run as their own user, which cannot read the vault or the workspaces. The server starts a fixed
 # wrapper there, see src/server/integrations/runIntegrationProcess.ts. The secret goes through stdin, not argv.
 # The cleanup after each run (pkill and the wipe of the user's HOME and /tmp files) also runs through this line.

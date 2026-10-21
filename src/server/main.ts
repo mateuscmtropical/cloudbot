@@ -202,7 +202,7 @@ const chatService: ChatService = new ChatService({
     webhookRefusals,
     webhookDeliveries,
     toolCallReviewer,
-    ...(githubProxy === undefined ? {} : { githubEnvironment: botId => githubProxy.environmentFor(botId) }),
+    ...(githubProxy === undefined ? {} : { githubEnvironment: botId => githubProxy.environmentFor(botId), forgetGithub: botId => githubProxy.forget(botId) }),
 });
 const bots = await botStore.list();
 const firstBot = bots[0];

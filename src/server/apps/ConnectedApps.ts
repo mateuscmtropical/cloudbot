@@ -135,6 +135,16 @@ class ConnectedApps {
         return removed;
     }
 
+    // Removes the servers whose token this bot saved, since the token goes with the bot. Servers without a token are shared and stay.
+    async removeSavedBy(botId: string): Promise<void> {
+        const records = await this.deps.store.list();
+        const savedRecords = records.filter(record => record.secretBotId === botId);
+
+        const removals = savedRecords.map(record => this.remove(record.id));
+
+        await Promise.all(removals);
+    }
+
     // The MCP servers of one turn. Each one points at the proxy, never at the server itself.
     async serverConfigs(): Promise<Record<string, McpServerConfig>> {
         const records = await this.deps.store.list();

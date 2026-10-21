@@ -1,4 +1,8 @@
+import { z } from 'zod/v4';
+
 import type { ToolCall } from '../agent/AgentRunner.ts';
+import { BOT_CREATE_SHAPE, BOT_CREATE_TOOL_FULL_NAME } from '../bots/createBotTool.ts';
+import { hasHiddenCode } from '../text/isHiddenCode.ts';
 import { checkCommandFloor } from './commandFloor.ts';
 import { classifyToolCall } from './classifyToolCall.ts';
 import type { EffortLevel } from '../models/modelChoices.ts';
@@ -115,6 +119,27 @@ function readText(value: unknown): string {
     return typeof value === 'string' ? value.trim() : '';
 }
 
+// The card shows the name and the title as JSON strings, so a quote or a hidden character cannot hide in them.
+// The instructions are shown whole, after the other two, since the owner approves them.
+function describeBotCreate(input: unknown): ToolCallVerdict {
+    const parsed = z.object(BOT_CREATE_SHAPE)
+        .safeParse(input);
+
+    if (!parsed.success) {
+        return { decision: 'deny', reason: 'The bot details are not valid. The name and title must be one short line, and the instructions must not be empty.' };
+    }
+
+    const { name, title, instructions } = parsed.data;
+
+    if (hasHiddenCode(name) || hasHiddenCode(title) || hasHiddenCode(instructions)) {
+        return { decision: 'deny', reason: 'The bot details have hidden characters, so the card cannot show them whole.' };
+    }
+
+    const detail = `Name: ${JSON.stringify(name)}\nTitle: ${JSON.stringify(title)}\nInstructions:\n${instructions}`;
+
+    return { decision: 'ask', summary: 'Create a new bot.', detail };
+}
+
 function parseModelAnswer(answerText: string): ModelAnswer {
     const start = answerText.indexOf('{');
     const end = answerText.lastIndexOf('}');
@@ -217,6 +242,10 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
         }
 
         if (callClass === 'always-ask') {
+            if (call.toolName === BOT_CREATE_TOOL_FULL_NAME) {
+                return describeBotCreate(call.input);
+            }
+
             const change = INTEGRATION_CHANGES.get(call.toolName);
 
             if (change !== undefined && options.describeChange !== undefined) {
