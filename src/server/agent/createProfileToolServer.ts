@@ -3,6 +3,7 @@ import type { McpSdkServerConfigWithInstance, SdkMcpToolDefinition } from '@anth
 import { z } from 'zod/v4';
 
 import type { BotStore } from '../store/BotStore.ts';
+import { ShareFileError } from '../files/shareFile.ts';
 import type { BotProfile } from '../store/types.ts';
 
 // The server name is also the key in mcpServers, so the full tool name below depends on it.
@@ -10,6 +11,9 @@ const PROFILE_SERVER_NAME = 'cloudbot';
 const UPDATE_PROFILE_TOOL_NAME = 'update_profile';
 // The model calls the tool by this full name, and allowedTools needs it too.
 const UPDATE_PROFILE_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${UPDATE_PROFILE_TOOL_NAME}`;
+const SHARE_FILE_TOOL_NAME = 'share_file';
+const SHARE_FILE_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${SHARE_FILE_TOOL_NAME}`;
+const SHARE_FILE_DESCRIPTION = 'Send a file from your workspace to the owner in the chat, as a download. Pass the path of the file, relative to your workspace or absolute inside it. Only regular files inside your workspace can be shared.';
 const UPDATE_PROFILE_DESCRIPTION = 'Change this bot\'s name, title or description. Only the fields you pass change.';
 
 // The limits keep a profile short enough to sit in the system prompt without crowding it.
@@ -32,6 +36,15 @@ const PROFILE_TOOL_SHAPE = {
         .max(DESCRIPTION_MAX_LENGTH)
         .optional(),
 };
+
+const SHARE_FILE_TOOL_SHAPE = {
+    path: z.string()
+        .trim()
+        .min(1),
+};
+
+// Copies the file and posts it to the chat. It throws ShareFileError with a message for the model.
+type ShareFileHandler = (path: string) => Promise<{ name: string; sizeBytes: number }>;
 
 interface ProfileToolTextContent {
     type: 'text';
@@ -87,16 +100,48 @@ function createUpdateProfileTool(botStore: BotStore, botId: string): SdkMcpToolD
     );
 }
 
+function createShareFileTool(shareFile: ShareFileHandler): SdkMcpToolDefinition<typeof SHARE_FILE_TOOL_SHAPE> {
+    return tool(
+        SHARE_FILE_TOOL_NAME,
+        SHARE_FILE_DESCRIPTION,
+        SHARE_FILE_TOOL_SHAPE,
+        async (args): Promise<ProfileToolResult> => {
+            try {
+                const shared = await shareFile(args.path);
+
+                return textResult(`Shared ${shared.name} (${String(shared.sizeBytes)} bytes) in the chat.`, false);
+            } catch (error: unknown) {
+                if (error instanceof ShareFileError) {
+                    return textResult(error.message, true);
+                }
+
+                return textResult('The file could not be shared.', true);
+            }
+        },
+    );
+}
+
 // The server is built for one turn and passed as mcpServers[PROFILE_SERVER_NAME].
-function createProfileToolServer(botStore: BotStore, botId: string): McpSdkServerConfigWithInstance {
+// The share_file tool is added only when a handler is given.
+function createProfileToolServer(botStore: BotStore, botId: string, shareFile?: ShareFileHandler): McpSdkServerConfigWithInstance {
     const updateProfileTool = createUpdateProfileTool(botStore, botId);
+    const shareTools = shareFile === undefined ? [] : [createShareFileTool(shareFile)];
 
     return createSdkMcpServer({
         name: PROFILE_SERVER_NAME,
         version: '1.0.0',
-        tools: [updateProfileTool],
+        tools: [updateProfileTool, ...shareTools],
     });
 }
 
-export { PROFILE_SERVER_NAME, PROFILE_TOOL_SHAPE, UPDATE_PROFILE_TOOL_FULL_NAME, createProfileToolServer, createUpdateProfileTool };
-export type { ProfileToolResult };
+export {
+    PROFILE_SERVER_NAME,
+    PROFILE_TOOL_SHAPE,
+    SHARE_FILE_TOOL_FULL_NAME,
+    SHARE_FILE_TOOL_SHAPE,
+    UPDATE_PROFILE_TOOL_FULL_NAME,
+    createProfileToolServer,
+    createShareFileTool,
+    createUpdateProfileTool,
+};
+export type { ProfileToolResult, ShareFileHandler };

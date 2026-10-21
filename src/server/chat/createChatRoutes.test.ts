@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -576,5 +576,126 @@ describe('GET /api/bots/:id/messages paging', () => {
 
         expect(statuses)
             .toEqual(badQueries.map(() => 400));
+    });
+});
+
+describe('shared files', () => {
+    let dataDir: string;
+    let opened: OpenedDatabase;
+    let botStore: BotStore;
+    let messageStore: MessageStore;
+    let chatService: ChatService;
+    let app: Hono;
+
+    beforeEach(async () => {
+        dataDir = await mkdtemp(join(tmpdir(), 'cloudbot-shared-'));
+        opened = await openDatabase(':memory:');
+        botStore = new BotStore(opened.db);
+        messageStore = new MessageStore(opened.db);
+        chatService = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, maxShareBytes: 100 });
+        app = createChatRoutes(chatService);
+    });
+
+    afterEach(async () => {
+        opened.close();
+        await rm(dataDir, { recursive: true, force: true });
+    });
+
+    async function seedWorkspaceFile(botId: string, name: string, content: string): Promise<void> {
+        const workspace = chatService.workspaceFor(botId);
+
+        await mkdir(workspace, { recursive: true });
+        await writeFile(join(workspace, name), content);
+    }
+
+    it('posts a file message and downloads the copy as an attachment', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: '', description: '' });
+        const events: ChatEvent[] = [];
+
+        chatService.subscribe(bot.id, event => events.push(event));
+        await seedWorkspaceFile(bot.id, 'sales report.csv', 'a,b\n');
+
+        const shared = await chatService.shareFile(bot.id, 'sales report.csv');
+        const messages = await chatService.listMessages(bot.id) ?? [];
+        const fileMessage = messages[0];
+
+        expect(shared)
+            .toEqual({ name: 'sales report.csv', sizeBytes: 4 });
+        expect(fileMessage?.body.kind)
+            .toBe('file');
+        expect(events.map(describeEvent))
+            .toEqual(['message:assistant:file']);
+
+        const response = await app.request(`/api/bots/${bot.id}/messages/${fileMessage?.id ?? ''}/file`);
+
+        expect(response.status)
+            .toBe(200);
+        expect(response.headers.get('content-disposition'))
+            .toBe('attachment; filename="sales report.csv"; filename*=UTF-8\'\'sales%20report.csv');
+        expect(response.headers.get('content-type'))
+            .toBe('text/csv');
+        expect(response.headers.get('x-content-type-options'))
+            .toBe('nosniff');
+        expect(await response.text())
+            .toBe('a,b\n');
+    });
+
+    it('encodes quotes and brackets in the download name', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: '', description: '' });
+
+        await seedWorkspaceFile(bot.id, 'it\'s (1).txt', 'x');
+        await chatService.shareFile(bot.id, 'it\'s (1).txt');
+
+        const fileMessage = (await chatService.listMessages(bot.id) ?? []).find(message => message.body.kind === 'file');
+        const response = await app.request(`/api/bots/${bot.id}/messages/${fileMessage?.id ?? ''}/file`);
+
+        expect(response.headers.get('content-disposition'))
+            .toBe('attachment; filename="it\'s (1).txt"; filename*=UTF-8\'\'it%27s%20%281%29.txt');
+    });
+
+    it('refuses an oversized file and posts no message', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: '', description: '' });
+
+        await seedWorkspaceFile(bot.id, 'big.bin', 'x'.repeat(101));
+
+        await expect(chatService.shareFile(bot.id, 'big.bin'))
+            .rejects
+            .toThrow('larger than');
+        expect(await chatService.listMessages(bot.id))
+            .toEqual([]);
+    });
+
+    it('answers 404 for a text message, an unknown message and another bot', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: '', description: '' });
+        const other = await botStore.create({ name: 'Bia', title: '', description: '' });
+        const textMessage = await messageStore.add({ botId: bot.id, role: 'user', kind: 'text', content: { kind: 'text', text: 'hi' } });
+
+        await seedWorkspaceFile(bot.id, 'a.txt', 'x');
+        await chatService.shareFile(bot.id, 'a.txt');
+
+        const fileMessage = (await chatService.listMessages(bot.id) ?? []).find(message => message.body.kind === 'file');
+        const urls = [
+            `/api/bots/${bot.id}/messages/${textMessage.id}/file`,
+            `/api/bots/${bot.id}/messages/nope/file`,
+            `/api/bots/${other.id}/messages/${fileMessage?.id ?? ''}/file`,
+        ];
+        const statuses = await Promise.all(urls.map(async url => (await app.request(url)).status));
+
+        expect(statuses)
+            .toEqual([404, 404, 404]);
+    });
+
+    it('answers 404 when the stored copy is gone', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: '', description: '' });
+
+        await seedWorkspaceFile(bot.id, 'a.txt', 'x');
+        await chatService.shareFile(bot.id, 'a.txt');
+        await rm(chatService.shareDirFor(bot.id), { recursive: true });
+
+        const fileMessage = (await chatService.listMessages(bot.id) ?? []).find(message => message.body.kind === 'file');
+        const response = await app.request(`/api/bots/${bot.id}/messages/${fileMessage?.id ?? ''}/file`);
+
+        expect(response.status)
+            .toBe(404);
     });
 });

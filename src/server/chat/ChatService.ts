@@ -5,11 +5,17 @@ import { join } from 'node:path';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnImage, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
-import { PROFILE_SERVER_NAME, UPDATE_PROFILE_TOOL_FULL_NAME, createProfileToolServer } from '../agent/createProfileToolServer.ts';
+import {
+    PROFILE_SERVER_NAME,
+    SHARE_FILE_TOOL_FULL_NAME,
+    UPDATE_PROFILE_TOOL_FULL_NAME,
+    createProfileToolServer,
+} from '../agent/createProfileToolServer.ts';
 import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from '../agent/prepareAgentWorkspace.ts';
 import { UNSENT_UPLOAD_MAX_AGE_MS, readUploadRetentionMs, removeOldUploads } from '../attachments/cleanUploads.ts';
 import { describeAttachments, readTurnImages } from '../attachments/attachmentPrompt.ts';
 import { readMaxUploadBytes, removeFiles, saveFiles } from '../attachments/saveUpload.ts';
+import { readMaxShareBytes, shareWorkspaceFile } from '../files/shareFile.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
@@ -23,6 +29,7 @@ import type {
     ChatEvent,
     ChatMessage,
     ChatRole,
+    FileBody,
     MessageBody,
     PendingUpload,
     TextBody,
@@ -37,8 +44,17 @@ interface ChatServiceOptions {
     agentUser?: string | undefined;
     // Caps the bytes a bot's next message may hold. Defaults to CLOUDBOT_MAX_UPLOAD_MB.
     maxUploadBytes?: number | undefined;
+    // Caps the size of one file the bot shares. Defaults to 50 MB.
+    maxShareBytes?: number | undefined;
     // How long used files stay. Defaults to CLOUDBOT_UPLOAD_RETENTION_DAYS, or 30 days.
     uploadRetentionMs?: number | undefined;
+}
+
+interface SharedFileDownload {
+    absolutePath: string;
+    name: string;
+    mimeType: string;
+    sizeBytes: number;
 }
 
 interface SessionOption {
@@ -100,6 +116,8 @@ const MAX_MESSAGE_PAGE_LIMIT = 200;
 // The upload root for agent user mode. The image creates it, owned by cloudbot and readable by the bot group.
 const AGENT_UPLOAD_ROOT = '/var/lib/cloudbot-uploads';
 const MAX_PENDING_FILES = 10;
+const SHARE_DIR_MODE = 0o700;
+const FILE_ID_PATTERN = /^[0-9a-f-]{36}$/;
 // Used when the runner reports a limit without a reset time.
 const USAGE_LIMIT_FALLBACK_WAIT_MS = 5 * 60 * 1000;
 // A reset time is kept between these bounds. The minimum stops a retry loop on a past time.
@@ -145,6 +163,8 @@ function previewOf(body: MessageBody): string {
             return body.text.slice(0, PREVIEW_LENGTH);
         case 'toolActivity':
             return body.summary.slice(0, PREVIEW_LENGTH);
+        case 'file':
+            return body.name.slice(0, PREVIEW_LENGTH);
         case 'choice':
         case 'codeField':
         case 'secureForm':
@@ -275,6 +295,7 @@ class ChatService {
     private readonly agentUser: string | undefined;
     private readonly maxPendingBytes: number;
     private readonly uploadRetentionMs: number;
+    private readonly maxShareBytes: number;
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
     private setup: SetupConversation | undefined;
@@ -293,6 +314,7 @@ class ChatService {
         this.agentUser = options.agentUser;
         this.maxPendingBytes = options.maxUploadBytes ?? readMaxUploadBytes(process.env);
         this.uploadRetentionMs = options.uploadRetentionMs ?? readUploadRetentionMs(process.env);
+        this.maxShareBytes = options.maxShareBytes ?? readMaxShareBytes();
     }
 
     // Uploads live outside the agent's writable workspace. The agent reads them and cannot change them.
@@ -302,6 +324,56 @@ class ChatService {
         }
 
         return join(this.dataDir, 'uploads', botId);
+    }
+
+    // Copies of the files the bot shared. They stay in the server's private data, out of the bot's reach.
+    shareDirFor(botId: string): string {
+        return join(this.dataDir, 'shared', botId);
+    }
+
+    // The stored copy behind a file message. Returns undefined when the message is not a file of this bot.
+    async findSharedFile(botId: string, messageId: string): Promise<SharedFileDownload | undefined> {
+        const stored = await this.messageStore.getById(messageId);
+
+        if (stored === undefined || stored.botId !== botId) {
+            return undefined;
+        }
+
+        const body = stored.content as MessageBody;
+
+        if (body.kind !== 'file' || !FILE_ID_PATTERN.test(body.fileId)) {
+            return undefined;
+        }
+
+        const shareDir = this.shareDirFor(botId);
+        const absolutePath = join(shareDir, body.fileId);
+
+        return {
+            absolutePath,
+            name: body.name,
+            mimeType: body.mimeType,
+            sizeBytes: body.sizeBytes,
+        };
+    }
+
+    // Shares one workspace file with the owner. Throws ShareFileError with a message for the model.
+    async shareFile(botId: string, requestedPath: string): Promise<{ name: string; sizeBytes: number }> {
+        const shareDir = this.shareDirFor(botId);
+
+        await mkdir(shareDir, { recursive: true, mode: SHARE_DIR_MODE });
+
+        const copy = await shareWorkspaceFile({
+            workspaceDir: this.workspaceFor(botId),
+            requestedPath,
+            shareDir,
+            maxBytes: this.maxShareBytes,
+            fileId: randomUUID(),
+        });
+        const body: FileBody = { kind: 'file', name: copy.name, mimeType: copy.mimeType, sizeBytes: copy.sizeBytes, fileId: copy.id };
+
+        await this.saveAndPublish(botId, 'assistant', body);
+
+        return { name: copy.name, sizeBytes: copy.sizeBytes };
     }
 
     private uploadRoot(): string {
@@ -849,7 +921,11 @@ class ChatService {
 
             // The profile tool and prompt are built from the bot as it is now, so a
             // change made in the previous turn already applies.
-            const profileServer = createProfileToolServer(this.botStore, botId);
+            const profileServer = createProfileToolServer(
+                this.botStore,
+                botId,
+                requestedPath => this.shareFile(botId, requestedPath),
+            );
             const prompt = uploads.length === 0 ? text : `${text}\n\n${describeAttachments(uploads)}`;
             const images = readTurnImages(uploads);
             // The upload folder is passed on every turn, so earlier uploads stay readable by path.
@@ -913,7 +989,7 @@ class ChatService {
             abortSignal: turnContext.abortController.signal,
             systemPrompt: turnContext.systemPrompt,
             mcpServers: turnContext.mcpServers,
-            allowedTools: [UPDATE_PROFILE_TOOL_FULL_NAME],
+            allowedTools: [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME],
             additionalDirectories: turnContext.additionalDirectories,
             ...sessionOption,
         };
@@ -1008,4 +1084,4 @@ class ChatService {
 }
 
 export { ChatService, DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError };
-export type { ChatEventListener, ChatServiceOptions, MessagePageOptions };
+export type { ChatEventListener, ChatServiceOptions, MessagePageOptions, SharedFileDownload };

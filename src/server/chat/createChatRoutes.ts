@@ -1,3 +1,7 @@
+import { createReadStream } from 'node:fs';
+import { once } from 'node:events';
+import { Readable } from 'node:stream';
+
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -21,6 +25,7 @@ const INVALID_BEFORE: ChatErrorResponse = { error: '"before" must be a message s
 const INVALID_LIMIT: ChatErrorResponse = { error: '"limit" must be a whole number, 1 or more.' };
 const NO_FILE: ChatErrorResponse = { error: 'Send the files as multipart form data.' };
 const NO_PENDING_UPLOAD: ChatErrorResponse = { error: 'No file waiting for the next message has this id.' };
+const NO_SHARED_FILE: ChatErrorResponse = { error: 'No shared file has this message id.' };
 const TOO_LARGE: ChatErrorResponse = { error: 'The upload is larger than CLOUDBOT_MAX_UPLOAD_MB.' };
 const UPLOAD_DURING_TURN: ChatErrorResponse = { error: 'Wait until the reply finishes.' };
 const TOO_MANY_FILES: ChatErrorResponse = { error: `Send at most ${String(MAX_FILES_PER_UPLOAD)} files at once.` };
@@ -34,6 +39,15 @@ interface ChatRoutesOptions {
 }
 
 // Only plain digits count. Anything else, including 0, a sign or a decimal, is rejected.
+// RFC 5987 leaves out the characters that encodeURIComponent keeps.
+function encodeHeaderFileName(name: string): string {
+    const encodedName = encodeURIComponent(name);
+
+    return encodedName.replaceAll(/['()*!]/g, character => `%${character.charCodeAt(0)
+        .toString(16)
+        .toUpperCase()}`);
+}
+
 function parsePositiveInteger(rawValue: string): number | undefined {
     if (!/^\d+$/.test(rawValue)) {
         return undefined;
@@ -238,6 +252,37 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
             }
         },
     );
+
+    routes.get('/api/bots/:id/messages/:mid/file', async (context) => {
+        const botId = context.req.param('id');
+        const messageId = context.req.param('mid');
+        const sharedFile = await chatService.findSharedFile(botId, messageId);
+
+        if (sharedFile === undefined) {
+            return context.json(NO_SHARED_FILE, 404);
+        }
+
+        const fileStream = createReadStream(sharedFile.absolutePath);
+        const encodedName = encodeHeaderFileName(sharedFile.name);
+        const fallbackName = sharedFile.name.replaceAll(/[^\x20-\x7E]|["\\%]/g, '_');
+
+        // An error such as a missing copy ends the stream before any byte, so it becomes a 404 below.
+        try {
+            await once(fileStream, 'open');
+        } catch {
+            return context.json(NO_SHARED_FILE, 404);
+        }
+
+        context.header('content-type', sharedFile.mimeType);
+        const lengthText = String(sharedFile.sizeBytes);
+
+        context.header('content-length', lengthText);
+        context.header('content-disposition', `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodedName}`);
+        context.header('x-content-type-options', 'nosniff');
+        context.header('cache-control', 'private, no-store');
+
+        return context.body(Readable.toWeb(fileStream) as ReadableStream);
+    });
 
     routes.get('/api/bots/:id/uploads', async (context) => {
         const botId = context.req.param('id');

@@ -55,6 +55,15 @@ interface SecureFormBody {
     submitted: boolean;
 }
 
+interface FileBody {
+    kind: 'file';
+    name: string;
+    mimeType: string;
+    sizeBytes: number;
+    // The stored copy. The web app downloads it through the message id.
+    fileId: string;
+}
+
 interface ToolActivityBody {
     kind: 'toolActivity';
     toolName: string;
@@ -62,7 +71,7 @@ interface ToolActivityBody {
     summary: string;
 }
 
-type MessageBody = TextBody | ChoiceBody | LinkBody | CodeFieldBody | SecureFormBody | ToolActivityBody;
+type MessageBody = TextBody | ChoiceBody | LinkBody | CodeFieldBody | SecureFormBody | FileBody | ToolActivityBody;
 
 interface ChatMessage {
     id: string;
@@ -114,6 +123,7 @@ export type {
     ChoiceBody,
     ChoiceOption,
     CodeFieldBody,
+    FileBody,
     LinkBody,
     MessageBody,
     ChatMessageEvent,
