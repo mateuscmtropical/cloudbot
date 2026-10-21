@@ -53,7 +53,8 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
         case 'choice':
             return (
                 <div className="setup-card">
-                    <p>{body.prompt}</p>
+                    {/* The approval card carries a script, so its line breaks and long lines are kept. */}
+                    <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{body.prompt}</p>
                     <ChoiceButtons
                         options={body.options}
                         chosenId={body.chosenId}

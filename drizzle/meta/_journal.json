@@ -92,6 +92,13 @@
       "when": 1792604487921,
       "tag": "0012_connected_apps",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1792606257922,
+      "tag": "0013_api_integrations",
+      "breakpoints": true
     }
   ]
 }

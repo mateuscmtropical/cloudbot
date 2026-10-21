@@ -35,10 +35,12 @@ RUN python3 -m pip install --no-cache-dir --no-deps --break-system-packages pyth
 RUN groupadd --system cloudbot \
     && useradd --system --gid cloudbot --no-create-home --shell /usr/sbin/nologin cloudbot \
     && useradd --create-home --shell /bin/bash bot \
+    && useradd --system --home-dir /var/lib/cloudbot-integrations --shell /usr/sbin/nologin cloudbot-integrations \
     && usermod -a -G bot cloudbot \
     && install -d -o cloudbot -g cloudbot -m 0700 /var/lib/cloudbot \
     && install -d -o bot -g bot -m 2770 /var/lib/cloudbot-workspaces \
     && install -d -o cloudbot -g bot -m 2750 /var/lib/cloudbot-uploads \
+    && install -d -o cloudbot-integrations -g cloudbot-integrations -m 0700 /var/lib/cloudbot-integrations \
     && install -d -m 1777 /tmp/.X11-unix
 
 COPY --chmod=0440 docker/cloudbot-agent.sudoers /etc/sudoers.d/cloudbot-agent
@@ -62,6 +64,7 @@ ENV NODE_ENV=production \
     PORT=3000 \
     CLOUDBOT_DATA_DIR=/var/lib/cloudbot \
     CLOUDBOT_AGENT_USER=bot \
+    CLOUDBOT_INTEGRATION_USER=cloudbot-integrations \
     CLAUDE_PATH=/home/bot/.local/bin/claude \
     CLOUDBOT_DESKTOP_COMMAND=/usr/local/bin/cloudbot-desktop
 

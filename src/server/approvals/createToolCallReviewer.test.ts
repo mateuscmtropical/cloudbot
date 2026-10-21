@@ -4,6 +4,7 @@ import type { Mock } from 'vitest';
 import { buildReviewPrompt, createToolCallReviewer, parseModelAnswer } from './createToolCallReviewer.ts';
 import type { ToolCallReviewer } from './ApprovalGate.ts';
 import type { ReviewContext, ReviewModel } from './createToolCallReviewer.ts';
+import type { ChangeCard, ChangeMode } from '../integrations/IntegrationService.ts';
 
 const CONTEXT: ReviewContext = {
     ownerRules: ['Never email my boss.'],
@@ -184,6 +185,51 @@ describe('createToolCallReviewer', () => {
 
         expect(readContext)
             .toHaveBeenCalledWith('bot-7');
+    });
+});
+
+describe('createToolCallReviewer integration changes', () => {
+    function reviewerWith(describeChange: (botId: string, mode: ChangeMode, input: unknown) => Promise<ChangeCard>): ToolCallReviewer {
+        return createToolCallReviewer({
+            askModel: vi.fn<ReviewModel>(),
+            readContext: () => Promise.resolve(CONTEXT),
+            describeChange,
+        });
+    }
+
+    it('asks the owner with the card text from the describer', async () => {
+        const describeChange = vi.fn<(botId: string, mode: ChangeMode, input: unknown) => Promise<ChangeCard>>(() => Promise.resolve({ ok: true, text: 'Name: "store"\nscript here' }));
+        const input = { name: 'store', sha256: 'a'.repeat(64) };
+        const verdict = await reviewerWith(describeChange)('bot-1', { toolName: 'mcp__cloudbot__integration_create', input });
+
+        expect(verdict)
+            .toEqual({ decision: 'ask', summary: 'Create an API integration.', detail: 'Name: "store"\nscript here' });
+        expect(describeChange)
+            .toHaveBeenCalledWith('bot-1', 'create', input);
+    });
+
+    it('passes the update mode for an update', async () => {
+        const describeChange = vi.fn<(botId: string, mode: ChangeMode, input: unknown) => Promise<ChangeCard>>(() => Promise.resolve({ ok: true, text: 'card' }));
+        const verdict = await reviewerWith(describeChange)('bot-1', { toolName: 'mcp__cloudbot__integration_update', input: {} });
+
+        expect(verdict)
+            .toEqual({ decision: 'ask', summary: 'Change an API integration.', detail: 'card' });
+        expect(describeChange)
+            .toHaveBeenCalledWith('bot-1', 'update', {});
+    });
+
+    it('denies a change whose card cannot be built, with the plain reason', async () => {
+        const verdict = await reviewerWith(() => Promise.resolve({ ok: false, reason: 'The script could not be read.' }))('bot-1', { toolName: 'mcp__cloudbot__integration_update', input: {} });
+
+        expect(verdict)
+            .toEqual({ decision: 'deny', reason: 'The script could not be read.' });
+    });
+
+    it('denies a change when the describer throws, so no approval appears without the script', async () => {
+        const verdict = await reviewerWith(() => Promise.reject(new Error('boom')))('bot-1', { toolName: 'mcp__cloudbot__integration_create', input: {} });
+
+        expect(verdict.decision)
+            .toBe('deny');
     });
 });
 

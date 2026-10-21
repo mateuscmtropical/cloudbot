@@ -4,7 +4,8 @@ import type { ChatMessage, ChoiceBody } from '../../shared/chatTypes.ts';
 type ToolCallVerdict
     = | { decision: 'allow' }
         // The summary is one line for the owner, for example "Send an email to Ana".
-        | { decision: 'ask'; summary: string }
+        // The detail, when set, is shown under it as it is written, with its line breaks.
+        | { decision: 'ask'; summary: string; detail?: string }
         | { decision: 'deny'; reason: string };
 
 // Decides what happens to one tool call. A throw is treated as ask.
@@ -57,10 +58,14 @@ function toOneLine(text: string): string {
     return singleLine.slice(0, MAX_SUMMARY_LENGTH);
 }
 
-function buildApprovalBody(summary: string): ChoiceBody {
+// The detail keeps its line breaks, so the owner reads a script as it is. It is never cut here: the reviewer refuses a card that is too long.
+function buildApprovalBody(summary: string, detail: string | undefined): ChoiceBody {
+    const headline = `The bot wants your approval. ${toOneLine(summary)}`;
+    const prompt = detail === undefined ? headline : `${headline}\n\n${detail}`;
+
     return {
         kind: 'choice',
-        prompt: `The bot wants your approval. ${toOneLine(summary)}`,
+        prompt,
         options: APPROVAL_OPTIONS,
         isApproval: true,
     };
@@ -96,7 +101,7 @@ class ApprovalGate {
             return { isAllowed: false, reason: verdict.reason };
         }
 
-        return this.askOwner(botId, verdict.summary, signal);
+        return this.askOwner(botId, verdict.summary, signal, verdict.detail);
     }
 
     isPending(messageId: string): boolean {
@@ -131,12 +136,12 @@ class ApprovalGate {
         }
     }
 
-    private async askOwner(botId: string, summary: string, signal: AbortSignal): Promise<ToolCallDecision> {
+    private async askOwner(botId: string, summary: string, signal: AbortSignal, detail: string | undefined): Promise<ToolCallDecision> {
         if (signal.aborted) {
             return { isAllowed: false, reason: 'The turn was stopped.' };
         }
 
-        const body = buildApprovalBody(summary);
+        const body = buildApprovalBody(summary, detail);
         const posted = await this.chat.post(botId, body);
 
         // A stop during the post fired its event before the listener existed.

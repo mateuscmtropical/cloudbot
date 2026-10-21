@@ -21,6 +21,10 @@ import { BrowserAllowStore } from './store/BrowserAllowStore.ts';
 import { MessageStore } from './store/MessageStore.ts';
 import { RoutineScheduler } from './routines/RoutineScheduler.ts';
 import { RoutineStore } from './store/RoutineStore.ts';
+import { IntegrationStore } from './store/IntegrationStore.ts';
+import { IntegrationService } from './integrations/IntegrationService.ts';
+import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from './agent/prepareAgentWorkspace.ts';
+import { asIntegrationUser, runCleanup, runIntegrationProcess } from './integrations/runIntegrationProcess.ts';
 import { RuleStore } from './store/RuleStore.ts';
 import { LimitStore } from './store/LimitStore.ts';
 import { ModelStore } from './store/ModelStore.ts';
@@ -118,6 +122,39 @@ const browserGate = desktop === undefined
     : new BrowserGate({
             isAllowed: (host, port) => browserAllowStore.isAllowed(host, port),
         });
+
+// Integrations run as their own user, which cannot read the vault, the workspaces or the bot's shell. They need the
+// agent user too, so their workspace path is the one the chat uses. Otherwise they stay off.
+function readIntegrationUser(agentUserName: string | undefined, integrationUserName: string | undefined): string | undefined {
+    if (integrationUserName === undefined) {
+        console.log('Integrations stay off: CLOUDBOT_INTEGRATION_USER is not set.');
+
+        return undefined;
+    }
+
+    if (agentUserName === undefined) {
+        console.log('Integrations stay off: CLOUDBOT_AGENT_USER is not set, so the workspace path would not match the chat.');
+
+        return undefined;
+    }
+
+    return integrationUserName;
+}
+
+const integrationUser = readIntegrationUser(agentUser, process.env.CLOUDBOT_INTEGRATION_USER);
+const integrationService = integrationUser === undefined
+    ? undefined
+    : new IntegrationService({
+            store: new IntegrationStore(opened.db),
+            secrets: botSecrets,
+            workspaceFor: botId => agentWorkspacePath(botId, AGENT_WORKSPACE_ROOT),
+            run: (request) => {
+                const wrapped = asIntegrationUser(integrationUser, request);
+
+                return runIntegrationProcess(wrapped);
+            },
+            cleanup: () => runCleanup(integrationUser),
+        });
 // The review model has no tools, so it runs as the server user. The environment object is shared, so a change of sign-in reaches it.
 const askReviewModel = createClaudeReviewModel({
     pathToClaudeCodeExecutable: claudePath, environment, workingDirectory: dataDir,
@@ -125,6 +162,8 @@ const askReviewModel = createClaudeReviewModel({
 const toolCallReviewer = createToolCallReviewer({
     askModel: askReviewModel,
     readContext: createReviewContextReader({ ruleStore, messageStore, modelStore }),
+    // The card of an integration change shows its script, so the owner approves what runs. Set only with integrations.
+    describeChange: integrationService === undefined ? undefined : (botId, mode, input) => integrationService.describeChange(botId, mode, input),
     // The review cost counts against the spending limit of the turn that asked for the review.
     reportCost: (botId, costUsd, turnSignal) => {
         chatService.recordReviewCost(botId, costUsd, turnSignal);
@@ -135,6 +174,7 @@ const chatService = new ChatService({
     webhookStore,
     watchStore,
     connectedApps,
+    integrationService,
     browserAllowStore,
     webhookBaseUrl: readPublicBaseUrl(process.env),
     webhookRefusals,
