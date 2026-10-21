@@ -53,6 +53,8 @@ interface SecureFormBody {
     prompt: string;
     secretName: string;
     submitted: boolean;
+    // Set when the bot asked for the secret. The value may be used only on this origin.
+    site?: string;
 }
 
 interface FileBody {

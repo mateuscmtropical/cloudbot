@@ -11,6 +11,7 @@ import {
     UPDATE_PROFILE_TOOL_FULL_NAME,
     createProfileToolServer,
 } from '../agent/createProfileToolServer.ts';
+import type { CloudbotTool } from '../agent/createProfileToolServer.ts';
 import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from '../agent/prepareAgentWorkspace.ts';
 import { UNSENT_UPLOAD_MAX_AGE_MS, readUploadRetentionMs, removeOldUploads } from '../attachments/cleanUploads.ts';
 import { describeAttachments, readTurnImages } from '../attachments/attachmentPrompt.ts';
@@ -18,6 +19,9 @@ import { readMaxUploadBytes, removeFiles, saveFiles } from '../attachments/saveU
 import { readMaxShareBytes, shareWorkspaceFile } from '../files/shareFile.ts';
 import type { BrowserControl } from '../desktop/BrowserControl.ts';
 import { BROWSER_TOOL_FULL_NAMES, createBrowserTools } from '../desktop/createBrowserTools.ts';
+import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
+import type { BotSecrets } from '../secrets/BotSecrets.ts';
+import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
@@ -34,6 +38,7 @@ import type {
     FileBody,
     MessageBody,
     PendingUpload,
+    SecureFormBody,
     TextBody,
 } from '../../shared/chatTypes.ts';
 
@@ -52,6 +57,8 @@ interface ChatServiceOptions {
     uploadRetentionMs?: number | undefined;
     // The browser on the bot's desktop. Without it the bot gets no browser tools.
     browser?: BrowserControl | undefined;
+    // Where the secrets the bot asks for are kept. Without it the bot cannot ask for one.
+    botSecrets?: BotSecrets | undefined;
 }
 
 interface SharedFileDownload {
@@ -311,6 +318,9 @@ class ChatService {
     private readonly uploadRetentionMs: number;
     private readonly maxShareBytes: number;
     private readonly browser: BrowserControl | undefined;
+    private readonly botSecrets: BotSecrets | undefined;
+    // Bot secret forms with an answer in progress, by message id.
+    private readonly answeringForms = new Set<string>();
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
     private readonly runningTurns = new Map<string, AbortController>();
     private setup: SetupConversation | undefined;
@@ -331,6 +341,7 @@ class ChatService {
         this.uploadRetentionMs = options.uploadRetentionMs ?? readUploadRetentionMs(process.env);
         this.maxShareBytes = options.maxShareBytes ?? readMaxShareBytes();
         this.browser = options.browser;
+        this.botSecrets = options.botSecrets;
     }
 
     // Uploads live outside the agent's writable workspace. The agent reads them and cannot change them.
@@ -624,11 +635,81 @@ class ChatService {
     }
 
     async answerSetup(botId: string, messageId: string, action: SetupAction, value: string): Promise<ChatMessage> {
+        // Two answers to one form could both read it as open, so a second answer during the first is refused.
+        if (this.answeringForms.has(messageId)) {
+            throw new SetupAnswerError('This form is being answered.');
+        }
+
+        this.answeringForms.add(messageId);
+
+        try {
+            const botSecretForm = action === 'secret' ? await this.findBotSecretForm(botId, messageId) : undefined;
+
+            if (botSecretForm !== undefined) {
+                return await this.saveBotSecret(botId, messageId, botSecretForm, value);
+            }
+        } finally {
+            this.answeringForms.delete(messageId);
+        }
+
         if (this.setup === undefined) {
             throw new SetupAnswerError('Setup is not active.');
         }
 
         return this.setup.answer(botId, messageId, action, value);
+    }
+
+    // Posts a secure form the bot asked for. Throws BotSecretError with a message for the model.
+    async requestSecret(botId: string, name: string, purpose: string, site: string): Promise<{ site: string }> {
+        assertSecretName(name);
+
+        const origin = parseSecretSite(site);
+        const body: SecureFormBody = { kind: 'secureForm', prompt: purpose, secretName: name, site: origin, submitted: false };
+
+        await this.saveAndPublish(botId, 'assistant', body);
+
+        return { site: origin };
+    }
+
+    // A secure form of this bot that the bot asked for. Setup forms have no site.
+    private async findBotSecretForm(botId: string, messageId: string): Promise<SecureFormBody | undefined> {
+        const stored = await this.messageStore.getById(messageId);
+
+        if (stored === undefined || stored.botId !== botId) {
+            return undefined;
+        }
+
+        const body = stored.content as MessageBody;
+
+        return body.kind === 'secureForm' && body.site !== undefined ? body : undefined;
+    }
+
+    // The value goes only to the vault. The form closes and a short note says what was saved, without the value.
+    private async saveBotSecret(botId: string, messageId: string, form: SecureFormBody, value: string): Promise<ChatMessage> {
+        if (form.submitted) {
+            throw new SetupAnswerError('This form is already answered.');
+        }
+
+        if (this.botSecrets === undefined || form.site === undefined) {
+            throw new SetupAnswerError('Secrets cannot be saved here.');
+        }
+
+        this.botSecrets.save(botId, form.secretName, form.site, value);
+
+        const closedForm: SecureFormBody = { ...form, submitted: true };
+        const message = await this.updateSetupMessage(messageId, closedForm);
+
+        // The secret is saved and the form is closed, so a failed note must not turn the answer into an error.
+        try {
+            await this.saveAndPublish(botId, 'system', {
+                kind: 'text',
+                text: `Saved ${form.secretName} for ${form.site}. Tell the bot to continue.`,
+            });
+        } catch {
+            console.error('Could not post the note for a saved secret.');
+        }
+
+        return message;
     }
 
     async postSetupMessage(botId: string, body: MessageBody): Promise<ChatMessage> {
@@ -999,11 +1080,14 @@ class ChatService {
                         this.browser,
                         pngBase64 => this.shareScreenshot(botId, pngBase64),
                     );
+            const secretTools: CloudbotTool[] = this.botSecrets === undefined
+                ? []
+                : [createRequestSecretTool((name, purpose, site) => this.requestSecret(botId, name, purpose, site))];
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                browserTools,
+                [...browserTools, ...secretTools],
             );
             const prompt = uploads.length === 0 ? text : `${text}\n\n${describeAttachments(uploads)}`;
             const images = readTurnImages(uploads);
@@ -1059,8 +1143,9 @@ class ChatService {
     // Headless turns cannot answer a permission prompt, so the cloudbot tools the bot has are allowed up front.
     private allowedToolNames(): string[] {
         const browserToolNames = this.browser === undefined ? [] : BROWSER_TOOL_FULL_NAMES;
+        const secretToolNames = this.botSecrets === undefined ? [] : [REQUEST_SECRET_TOOL_FULL_NAME];
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...secretToolNames];
     }
 
     private async runAttempt(turnContext: TurnContext, sessionId: string | null, turnState: TurnState): Promise<AttemptOutcome> {

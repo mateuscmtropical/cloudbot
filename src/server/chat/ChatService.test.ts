@@ -12,6 +12,9 @@ import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
 import { PROFILE_SERVER_NAME, SHARE_FILE_TOOL_FULL_NAME, UPDATE_PROFILE_TOOL_FULL_NAME } from '../agent/createProfileToolServer.ts';
 import { BrowserControl } from '../desktop/BrowserControl.ts';
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
+import { BotSecrets } from '../secrets/BotSecrets.ts';
+import { REQUEST_SECRET_TOOL_FULL_NAME } from '../secrets/createSecretTools.ts';
+import { Vault } from '../vault/Vault.ts';
 import { FakeAgentRunner } from '../agent/FakeAgentRunner.ts';
 import type { ScriptedAgentStep } from '../agent/FakeAgentRunner.ts';
 import { BotStore } from '../store/BotStore.ts';
@@ -920,6 +923,99 @@ describe('ChatService', () => {
             .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...BROWSER_TOOL_FULL_NAMES]);
         expect(turnRequest?.systemPrompt)
             .toBe(buildSystemPrompt(bot, { hasBrowser: true }));
+    });
+
+    it('posts a secure form for a secret the bot asks for and offers the tool', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const botSecrets = new BotSecrets(new Vault(join(dataDir, 'vault')));
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, botSecrets });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        expect(runner.receivedRequests[0]?.allowedTools)
+            .toContain(REQUEST_SECRET_TOOL_FULL_NAME);
+        await expect(service.requestSecret(bot.id, 'GITHUB_PASSWORD', 'Sign in to GitHub', 'https://github.com/login'))
+            .resolves.toEqual({ site: 'https://github.com' });
+
+        const storedMessages = (await service.listMessages(bot.id)) ?? [];
+
+        expect(storedMessages.at(-1)?.body)
+            .toEqual({ kind: 'secureForm', prompt: 'Sign in to GitHub', secretName: 'GITHUB_PASSWORD', site: 'https://github.com', submitted: false });
+    });
+
+    it('saves the answer only in the vault, closes the form and refuses a second answer', async () => {
+        const botSecrets = new BotSecrets(new Vault(join(dataDir, 'vault')));
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, botSecrets });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await service.requestSecret(bot.id, 'GITHUB_PASSWORD', 'Sign in to GitHub', 'https://github.com');
+
+        const formMessage = ((await service.listMessages(bot.id)) ?? []).at(-1);
+        const answered = await service.answerSetup(bot.id, formMessage?.id ?? '', 'secret', 'fake-password-1');
+
+        expect(answered.body)
+            .toMatchObject({ kind: 'secureForm', submitted: true });
+        expect(botSecrets.read(bot.id, 'GITHUB_PASSWORD'))
+            .toEqual({ site: 'https://github.com', value: 'fake-password-1' });
+
+        const storedMessages = (await service.listMessages(bot.id)) ?? [];
+
+        expect(storedMessages.at(-1)?.body)
+            .toEqual({ kind: 'text', text: 'Saved GITHUB_PASSWORD for https://github.com. Tell the bot to continue.' });
+        expect(JSON.stringify(storedMessages)).not.toContain('fake-password-1');
+        await expect(service.answerSetup(bot.id, formMessage?.id ?? '', 'secret', 'fake-password-2'))
+            .rejects.toThrow('already answered');
+    });
+
+    it('refuses a second answer that arrives while the first is saved', async () => {
+        const botSecrets = new BotSecrets(new Vault(join(dataDir, 'vault')));
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, botSecrets });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await service.requestSecret(bot.id, 'GITHUB_PASSWORD', 'Sign in to GitHub', 'https://github.com');
+
+        const formMessage = ((await service.listMessages(bot.id)) ?? []).at(-1);
+        const answers = await Promise.allSettled([
+            service.answerSetup(bot.id, formMessage?.id ?? '', 'secret', 'fake-password-1'),
+            service.answerSetup(bot.id, formMessage?.id ?? '', 'secret', 'fake-password-2'),
+        ]);
+
+        expect(answers.map(answer => answer.status))
+            .toEqual(['fulfilled', 'rejected']);
+        expect(botSecrets.read(bot.id, 'GITHUB_PASSWORD')?.value)
+            .toBe('fake-password-1');
+    });
+
+    it('does not answer a bot secret form through another bot', async () => {
+        const botSecrets = new BotSecrets(new Vault(join(dataDir, 'vault')));
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, botSecrets });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const otherBot = await botStore.create({ name: 'Bia', title: 'Assistant', description: '' });
+
+        await service.requestSecret(bot.id, 'GITHUB_PASSWORD', 'Sign in', 'https://github.com');
+
+        const formMessage = ((await service.listMessages(bot.id)) ?? []).at(-1);
+
+        await expect(service.answerSetup(otherBot.id, formMessage?.id ?? '', 'secret', 'fake-password-1'))
+            .rejects.toThrow('Setup is not active');
+        expect(botSecrets.read(otherBot.id, 'GITHUB_PASSWORD'))
+            .toBeUndefined();
+    });
+
+    it('refuses a secret request with an invalid name or a site without https', async () => {
+        const botSecrets = new BotSecrets(new Vault(join(dataDir, 'vault')));
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, botSecrets });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await expect(service.requestSecret(bot.id, 'my password', 'p', 'https://github.com'))
+            .rejects.toThrow('not valid');
+        await expect(service.requestSecret(bot.id, 'PASSWORD', 'p', 'http://github.com'))
+            .rejects.toThrow('must use https');
+        expect((await service.listMessages(bot.id)) ?? [])
+            .toEqual([]);
     });
 
     it('stops a turn without hanging when the stop arrives before the runner starts', async () => {

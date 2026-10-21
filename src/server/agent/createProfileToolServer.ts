@@ -121,13 +121,16 @@ function createShareFileTool(shareFile: ShareFileHandler): SdkMcpToolDefinition<
     );
 }
 
+// Any tool the SDK server takes. Its handler types differ per tool, so the SDK's own element type is used.
+type CloudbotTool = NonNullable<Parameters<typeof createSdkMcpServer>[0]['tools']>[number];
+
 // The server is built for one turn and passed as mcpServers[PROFILE_SERVER_NAME].
 // The share_file tool is added only when a handler is given. Extra tools, such as the browser tools, join the same server.
 function createProfileToolServer(
     botStore: BotStore,
     botId: string,
     shareFile?: ShareFileHandler,
-    extraTools: SdkMcpToolDefinition<z.ZodRawShape>[] = [],
+    extraTools: CloudbotTool[] = [],
 ): McpSdkServerConfigWithInstance {
     const updateProfileTool = createUpdateProfileTool(botStore, botId);
     const shareTools = shareFile === undefined ? [] : [createShareFileTool(shareFile)];
@@ -149,4 +152,4 @@ export {
     createShareFileTool,
     createUpdateProfileTool,
 };
-export type { ProfileToolResult, ShareFileHandler };
+export type { CloudbotTool, ProfileToolResult, ShareFileHandler };

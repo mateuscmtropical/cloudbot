@@ -111,3 +111,20 @@ describe('file messages', () => {
             .toBeNull();
     });
 });
+
+describe('secret forms the bot asks for', () => {
+    afterEach(cleanup);
+
+    it('shows the site where the value will be used', () => {
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()) };
+        const body: MessageBody = { kind: 'secureForm', prompt: 'Sign in to GitHub', secretName: 'GITHUB_PASSWORD', site: 'https://github.com', submitted: false };
+        const message = { id: 'm9', botId: 'bot', role: 'assistant' as const, sequence: 9, createdAt: 9, body };
+
+        render(<MessageItem message={message} actions={actions} />);
+
+        expect(screen.getByText('The bot asks for this. It is for https://github.com, and the bot never sees the value.'))
+            .toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Use subscription instead' }))
+            .toBeNull();
+    });
+});

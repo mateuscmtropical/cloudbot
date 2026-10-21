@@ -20,6 +20,7 @@ import { checkApiKey } from './setup/checkApiKey.ts';
 import { SetupConversation, API_KEY_NAME } from './setup/SetupConversation.ts';
 import { startClaudeLogin } from './claudeAuth/startClaudeLogin.ts';
 import { getClaudeAuthStatus } from './claudeAuth/getClaudeAuthStatus.ts';
+import { BotSecrets } from './secrets/BotSecrets.ts';
 import { Vault } from './vault/Vault.ts';
 import { startKeyProxy } from './vault/KeyProxy.ts';
 import type { KeyProxy } from './vault/KeyProxy.ts';
@@ -51,13 +52,16 @@ const environmentEntries = Object.entries(process.env)
         && !entry[0].startsWith('ANTHROPIC_') && entry[0] !== 'CLAUDE_CODE_OAUTH_TOKEN');
 const environment = Object.fromEntries(environmentEntries);
 const connection: RuntimeConnection = {};
-const vault = new Vault(dataDir);
 const runner = new SdkAgentRunner({ pathToClaudeCodeExecutable: claudePath, environment });
 // The image sets CLOUDBOT_DESKTOP_COMMAND. Local development leaves it unset and has no desktop or browser tools.
 const desktopCommand = buildDesktopCommand(process.env.CLOUDBOT_DESKTOP_COMMAND, agentUser);
 const desktop = desktopCommand === undefined ? undefined : new DesktopSupervisor({ desktopCommand });
 const browser = desktop === undefined ? undefined : new BrowserControl({ devtoolsUrl: DESKTOP_DEVTOOLS_URL });
-const chatService = new ChatService({ botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser });
+const vault = new Vault(dataDir);
+const botSecrets = new BotSecrets(vault);
+const chatService = new ChatService({
+    botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, browser, botSecrets,
+});
 const bots = await botStore.list();
 const firstBot = bots[0];
 

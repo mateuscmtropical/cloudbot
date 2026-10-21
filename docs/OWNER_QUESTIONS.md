@@ -86,8 +86,16 @@ Status: **open** means the default is in use and waits for the owner.
 
 ## Secure form for secrets the bot uses (#44)
 
-- Status: open. No default yet, because it changes the rule that secrets stay
-  out of reach of the bot. Work on this item waits for the owner.
+- Status: open
+- Default: the bot asks with `request_secret` and gives the https site where
+  the value will be used. The value goes to the vault, tied to the bot and the
+  site. The model never sees it. The next step (#51) lets the server type it
+  into the browser only on that site. Names that start with `ANTHROPIC_` or
+  `CLAUDE_` are refused, so a bot form cannot pass for the setup form. Passwords, codes and payment details use the same form.
+- After the owner saves a value, the bot waits until the owner tells it to
+  continue. It does not start a turn on its own.
+- Other options: let the bot read the value, or start the next turn by itself
+  when the form is saved.
 
 ## Permissions in plain language (#45)
 

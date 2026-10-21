@@ -337,6 +337,20 @@ The key proxy listens on 127.0.0.1 and adds the API key to each request to
 Anthropic. The agent gets `ANTHROPIC_BASE_URL` and a dummy key, never the real
 one.
 
+### Secrets the bot asks for
+
+The `request_secret` tool takes a name in capital letters, a purpose and an
+https site. The server posts a secure form with that site. The answer goes
+through the same secret route as the setup form, but `ChatService` sees the
+site in the form and saves the value with `BotSecrets` instead of the setup.
+`BotSecrets` (`src/server/secrets/`) stores `{ site, value }` in the vault
+under `BOT_<hash of the bot id>_<NAME>`, so each bot has its own names. The
+form closes and a system message says what was saved, without the value. The
+bot does not see the value. The owner tells the bot to continue. Names that
+start with `ANTHROPIC_` or `CLAUDE_` are refused. A second answer to a form
+while the first is saved is refused. The setup's recovery ignores forms with
+a site, so a bot form never becomes the setup's API key form.
+
 ## Setup conversation
 
 `SetupConversation` in `src/server/setup/` writes scripted messages through
