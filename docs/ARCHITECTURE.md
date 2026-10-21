@@ -636,6 +636,85 @@ that sends something in a way the patterns miss relies on the model's category.
 Each reviewed call costs one extra model call. The review runs as the server
 user, which is safe only because the call has no tools.
 
+## Command floor
+
+Before any rule, approval or model, `createToolCallReviewer` checks the call
+against a fixed floor (`src/server/approvals/commandFloor.ts`). A match answers
+`deny` with a short reason, and no rule, approval or model choice can lift it.
+
+The floor refuses:
+
+- A recursive delete (`rm -r`) of `/`, `/*`, `/root`, `/home`, the bot home,
+  `~`, `$HOME` or `${HOME}`, the cloudbot data folders `/var/lib/cloudbot`,
+  `/var/lib/cloudbot-workspaces` and `/var/lib/cloudbot-uploads`, also with a
+  trailing `/`, a `/.` or a dot-file glob such as `$HOME/.*`. A `find` with
+  `-delete` or `-exec rm` that starts at one of those folders is refused too,
+  unless it has a filter: `-name`, `-iname`, `-path`, `-mtime` or `-mmin`. A
+  type or size filter does not count.
+- A format (`mkfs`, `mke2fs` or `mkswap` with a `/dev/` argument), a `dd` or
+  `shred` onto a disk device, or `cp` (only its destination), `tee`, `wipefs`,
+  `fdisk`, `sfdisk`, `sgdisk`, `parted` or `blkdiscard` on a disk device, or a
+  redirect onto a disk device. Disk devices are `sd`, `hd`, `vd`, `xvd`, `nvme`,
+  `mmcblk`, `disk`, `loop`, `md`, `dm-`, `mapper` and `zd`. The read-only forms
+  pass: `-l` or `--list` as the first option of `fdisk` or `sfdisk`, and `print`
+  in a `parted` command. Any other option order is refused, such as
+  `fdisk /dev/sda -l`.
+- A fork bomb.
+- Stopping, disabling, masking, restarting or editing the cloudbot service or
+  container: `systemctl` (the value of `-s`, `-p`, `-t` and similar options is
+  skipped), `service cloudbot` or `service cloudbot.service`,
+  `/etc/init.d/cloudbot stop` or `restart`, `pkill` and `killall` with a
+  cloudbot name, and `docker stop|kill|rm|restart|pause` on a container named
+  `cloudbot`, `cloudbot-cloudbot-1` or the same with a number. `docker compose`
+  or `docker-compose` with a stop verb as the subcommand (`down`, `stop`,
+  `rm` and so on) is refused when cloudbot is named anywhere in the command, as
+  a project, a file path or a service. `docker compose exec cloudbot ...` passes.
+- Any write into the unit folder `/etc/systemd/system`: a redirect, `rm`, `tee`,
+  `mv`, `chmod` and similar tools with a path in it, `sed -i` there, and a copy,
+  move or install whose destination is in it. Reading the folder passes, and so
+  does a copy out of it. The Write, Edit and NotebookEdit tools are refused for
+  any path in the folder.
+- Any read, copy or search of the vault files. The vault file names are
+  `vault.key` and `vault.json`. A word that starts with `vault` followed by a
+  dot or a glob character is refused, such as `vault*` or `vault.k*`. The data
+  folder is refused for any glob inside it, such as `/var/lib/cloudbot/v*`, and
+  for the folder itself, except for listing programs: `ls`, `cd`, `stat`, `du`,
+  `df`, `test`, `[`, `mkdir`, `chown`, `chmod`, `tree` and `echo`, and a `find`
+  without `-exec`, `-execdir` or `-delete`. Copying the
+  data folder with `cp`, `tar`, `rsync`, `zip` or `scp` is covered by that too.
+  This applies in a Bash command and in the Read, Grep, Glob, Edit, Write and
+  NotebookEdit tools. Grep and Glob patterns are searches, so they are not
+  checked, but their paths and the Grep glob are.
+
+The reason names the kind of command and never repeats the command, because a
+command may hold a secret.
+
+The floor is a floor, not a shell parser. It splits a command at separators
+(including newlines and backticks), skips simple wrappers such as `sudo`, `env`,
+`ionice` and `timeout` with their common value options and units, skips shell
+keywords such as `then` and `do`, and checks the text of `sh -c`, `bash -c`
+(also `-lc`), `su -c` and `eval` once more. The text after a here-string
+(`bash <<< "..."`) and the text that `echo` or `printf` prints before a pipe
+into `sh` or `bash` are checked the same way. Every part before such a pipe is
+checked, and the shell may come after `sudo`, `env` or a path such as
+`/bin/sh`. A command or file path longer than 20000 characters is refused
+before anything else is read. A check that throws refuses the call with
+"The command could not be checked." It does not see commands built at
+run time, such as variables, `$(...)` or encoded text, arguments that `xargs`
+builds, or a relative path after a change of folder. It does not parse `sudo`
+options beyond the common ones. A mention of a vault file name inside quoted
+text is also refused. The review model is still the check for everything the
+floor does not name.
+
+Known false positives, accepted: a word that starts with `vault.` or `vault*`
+is refused even when it is not a vault file, such as `vault.notes.md`. Any
+`pkill` with a cloudbot argument is refused. A command or heredoc that
+mentions a refused command, such as a commit message, is refused too. A
+`rm` of any file in `/etc/systemd/system`, not only cloudbot's, is refused.
+
+Known gaps: a shell reading a file through a pipe, such as `cat script.sh | sh`,
+is not read. Commands built at run time, listed above, are not seen.
+
 ## Setup conversation
 
 `SetupConversation` in `src/server/setup/` writes scripted messages through
