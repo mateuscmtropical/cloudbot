@@ -8,5 +8,7 @@ export default defineConfig({
     build: {
         outDir: '../../dist/web',
         emptyOutDir: true,
+        // noVNC uses top level await.
+        target: 'esnext',
     },
 });

@@ -73,6 +73,21 @@ function renderConversation(messages: ChatMessage[]): void {
     render(conversationElement(messages, ''));
 }
 
+vi.mock('@novnc/novnc', () => ({
+    default: class FakeRfb {
+        public viewOnly = false;
+        public scaleViewport = false;
+
+        public addEventListener(): void {
+            // The panel only needs the call to succeed.
+        }
+
+        public disconnect(): void {
+            // Nothing to release.
+        }
+    },
+}));
+
 describe('ConversationView message list', () => {
     afterEach(() => {
         cleanup();
@@ -495,6 +510,27 @@ describe('ConversationView rules button', () => {
         view.rerender(historyElement([], {}, firstBot));
 
         expect(screen.queryByRole('dialog'))
+            .toBeNull();
+    });
+});
+
+describe('ConversationView screen button', () => {
+    afterEach(() => {
+        cleanup();
+    });
+
+    it('opens the bot screen panel and closes it again', async () => {
+        const bot: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', avatarColor: '#3b82f6', lastMessagePreview: '', hasUnread: false };
+
+        render(historyElement([], {}, bot));
+        fireEvent.click(screen.getByRole('button', { name: 'Screen' }));
+
+        expect(await screen.findByRole('region', { name: 'Bot screen' }))
+            .toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+        expect(screen.queryByRole('region', { name: 'Bot screen' }))
             .toBeNull();
     });
 });

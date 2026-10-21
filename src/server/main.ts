@@ -8,6 +8,7 @@ import { SetupAccess } from './access/SetupAccess.ts';
 import { buildSetupLink, readServerPort } from './access/setupLinkUrl.ts';
 import { ChatService } from './chat/ChatService.ts';
 import { createApp } from './createApp.ts';
+import { attachVncProxy } from './desktop/attachVncProxy.ts';
 import { BrowserControl, DESKTOP_DEVTOOLS_URL } from './desktop/BrowserControl.ts';
 import { DesktopSupervisor, buildDesktopCommand } from './desktop/DesktopSupervisor.ts';
 import { BotStore } from './store/BotStore.ts';
@@ -128,6 +129,11 @@ const server = serve({ fetch: app.fetch, port }, (address) => {
             console.error('Could not start Claude setup.');
         });
 });
+
+// The live view needs the desktop. Local development has none.
+if (desktop !== undefined) {
+    attachVncProxy({ server: server as Server, access });
+}
 
 function shutdown(): void {
     clearInterval(cleanupTimer);

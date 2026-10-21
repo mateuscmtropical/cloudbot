@@ -130,6 +130,12 @@ restart. It listens for the DevTools protocol on `127.0.0.1:9222`. x11vnc
 listens on `127.0.0.1:5900` without a password. Neither port leaves the
 container, because compose exposes only the server port.
 
+The live view of the screen is a WebSocket at `/api/desktop/vnc`.
+`attachVncProxy` in `src/server/desktop/` answers the HTTP upgrade, checks the
+session cookie, and pipes the frames to x11vnc on `127.0.0.1:5900` as raw
+bytes. Without a valid cookie the upgrade gets a 401. The web app loads noVNC
+only when the owner opens the Screen panel, and sets it to view only.
+
 The image sets `CLOUDBOT_DESKTOP_COMMAND` to the script path. The server runs
 `sudo -n -u bot -- /usr/local/bin/cloudbot-desktop`, and sudoers allows that
 script only without arguments. `DesktopSupervisor` starts it again when it
