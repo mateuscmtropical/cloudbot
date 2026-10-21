@@ -19,6 +19,8 @@ import { readMaxUploadBytes, removeFiles, saveFiles } from '../attachments/saveU
 import { readMaxShareBytes, shareWorkspaceFile } from '../files/shareFile.ts';
 import type { BrowserControl } from '../desktop/BrowserControl.ts';
 import { BROWSER_TOOL_FULL_NAMES, createBrowserTools } from '../desktop/createBrowserTools.ts';
+import { listBlockedToolNames } from '../rules/applyRules.ts';
+import type { RuleStore } from '../rules/RuleStore.ts';
 import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
@@ -60,6 +62,8 @@ interface ChatServiceOptions {
     browser?: BrowserControl | undefined;
     // Where the secrets the bot asks for are kept. Without it the bot cannot ask for one.
     botSecrets?: BotSecrets | undefined;
+    // The owner rules of each bot. Without it turns run with no rules.
+    ruleStore?: RuleStore | undefined;
 }
 
 interface SharedFileDownload {
@@ -114,6 +118,7 @@ interface TurnContext {
     systemPrompt: string;
     mcpServers: NonNullable<TurnRequest['mcpServers']>;
     additionalDirectories: string[];
+    disallowedTools: string[];
 }
 
 type ChatEventListener = (event: ChatEvent) => void;
@@ -320,6 +325,7 @@ class ChatService {
     private readonly maxShareBytes: number;
     private readonly browser: BrowserControl | undefined;
     private readonly botSecrets: BotSecrets | undefined;
+    private readonly ruleStore: RuleStore | undefined;
     // Bot secret forms with an answer in progress, by message id.
     private readonly answeringForms = new Set<string>();
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
@@ -343,6 +349,7 @@ class ChatService {
         this.maxShareBytes = options.maxShareBytes ?? readMaxShareBytes();
         this.browser = options.browser;
         this.botSecrets = options.botSecrets;
+        this.ruleStore = options.ruleStore;
     }
 
     // Uploads live outside the agent's writable workspace. The agent reads them and cannot change them.
@@ -1082,6 +1089,8 @@ class ChatService {
                         pngBase64 => this.shareScreenshot(botId, pngBase64),
                     );
             const secretTools = this.createSecretTools(botId);
+            // Rules are read for each turn, so a rule the owner adds applies to the next message.
+            const rules = await this.ruleStore?.listForBot(botId) ?? [];
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
@@ -1099,7 +1108,8 @@ class ChatService {
                 abortController,
                 workspaceDir,
                 images,
-                systemPrompt: buildSystemPrompt(bot, { hasBrowser: this.browser !== undefined }),
+                systemPrompt: buildSystemPrompt(bot, { hasBrowser: this.browser !== undefined, rules }),
+                disallowedTools: listBlockedToolNames(rules),
                 mcpServers: { [PROFILE_SERVER_NAME]: profileServer },
             };
             const firstAttempt = await this.runAttempt(turnContext, bot.sessionId, turnState);
@@ -1177,6 +1187,7 @@ class ChatService {
             systemPrompt: turnContext.systemPrompt,
             mcpServers: turnContext.mcpServers,
             allowedTools: this.allowedToolNames(),
+            disallowedTools: turnContext.disallowedTools,
             additionalDirectories: turnContext.additionalDirectories,
             ...sessionOption,
         };

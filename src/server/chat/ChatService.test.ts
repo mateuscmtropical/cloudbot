@@ -12,6 +12,7 @@ import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
 import { PROFILE_SERVER_NAME, SHARE_FILE_TOOL_FULL_NAME, UPDATE_PROFILE_TOOL_FULL_NAME } from '../agent/createProfileToolServer.ts';
 import { BrowserControl } from '../desktop/BrowserControl.ts';
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
+import { RuleStore } from '../rules/RuleStore.ts';
 import { BotSecrets } from '../secrets/BotSecrets.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME } from '../secrets/createSecretTools.ts';
 import { TYPE_SECRET_TOOL_FULL_NAME } from '../secrets/createTypeSecretTool.ts';
@@ -906,6 +907,27 @@ describe('ChatService', () => {
             .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME]);
         expect(turnRequest?.systemPrompt)
             .toBe(buildSystemPrompt(bot));
+    });
+
+    it('gives each turn the owner rules and the tools they block', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const ruleStore = new RuleStore(opened.db);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, ruleStore });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await ruleStore.add(bot.id, { kind: 'block', sentence: 'No shell.', blockedTools: ['Bash', 'browser_open'] });
+
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const turnRequest = runner.receivedRequests[0];
+
+        expect(turnRequest?.disallowedTools)
+            .toEqual(['Bash', 'mcp__cloudbot__browser_open']);
+        expect(turnRequest?.systemPrompt)
+            .toContain('- Not allowed: No shell.');
     });
 
     it('adds the browser tools and the browser paragraph when the bot has a browser', async () => {

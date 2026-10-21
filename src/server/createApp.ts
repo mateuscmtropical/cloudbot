@@ -11,6 +11,9 @@ import type { SetupAccess } from './access/SetupAccess.ts';
 
 import { createChatRoutes } from './chat/createChatRoutes.ts';
 import type { ChatService } from './chat/ChatService.ts';
+import { createRuleRoutes } from './rules/createRuleRoutes.ts';
+import type { RuleStore } from './rules/RuleStore.ts';
+import type { BotStore } from './store/BotStore.ts';
 
 interface HealthResponse {
     status: 'ok';
@@ -22,6 +25,9 @@ interface AppOptions {
     access: SetupAccess;
     webRoot?: string;
     chatService?: ChatService;
+    // The owner rules routes need both. Without them the routes are not mounted.
+    botStore?: BotStore;
+    ruleStore?: RuleStore;
 }
 
 const DEFAULT_WEB_ROOT = 'dist/web';
@@ -65,6 +71,12 @@ function createApp(options: AppOptions): Hono {
         const chatRoutes = createChatRoutes(options.chatService);
 
         app.route('/', chatRoutes);
+    }
+
+    if (options.botStore !== undefined && options.ruleStore !== undefined) {
+        const ruleRoutes = createRuleRoutes(options.botStore, options.ruleStore);
+
+        app.route('/', ruleRoutes);
     }
 
     app.get('/setup', async (context) => {

@@ -216,6 +216,17 @@ running server reads the code from the database on each request, so it does
 not need a restart. Run it with the server stopped or the database idle, since
 both processes write to the same SQLite file.
 
+## Owner rules
+
+`RuleStore` in `src/server/rules/` keeps the rules of each bot in the
+`bot_rules` table. A rule has a kind (`allow` or `block`), a sentence and, for
+a block rule, a list of tool names. The owner manages rules through
+`/api/bots/:botId/rules`, behind the session cookie. The bot has no tool for
+it. Before each turn `ChatService` reads the rules of the bot. It adds the
+sentences to the system prompt and passes the blocked tool names to the SDK as
+`disallowedTools`. A name such as `browser_open` becomes
+`mcp__cloudbot__browser_open`. Names such as `Bash` stay as written.
+
 ## Chat
 
 `ChatService` in `src/server/chat/` holds the chat rules. It stores the user

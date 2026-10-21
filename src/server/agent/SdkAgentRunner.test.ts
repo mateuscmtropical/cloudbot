@@ -286,6 +286,21 @@ describe('buildQueryOptions', () => {
         expect(options.systemPrompt).not.toHaveProperty('append');
     });
 
+    it('passes the tools the owner blocked as disallowedTools', () => {
+        const options = buildQueryOptions(buildRequest({ disallowedTools: ['Bash'] }), {}, abortController);
+
+        expect(options)
+            .toMatchObject({ disallowedTools: ['Bash'] });
+    });
+
+    it('leaves out disallowedTools when nothing is blocked', () => {
+        const withEmpty = buildQueryOptions(buildRequest({ disallowedTools: [] }), {}, abortController);
+        const withNone = buildQueryOptions(buildRequest({}), {}, abortController);
+
+        expect(withEmpty).not.toHaveProperty('disallowedTools');
+        expect(withNone).not.toHaveProperty('disallowedTools');
+    });
+
     it('leaves out MCP servers and allowed tools when the request has none', () => {
         const options = buildQueryOptions(buildRequest({}), {}, abortController);
 

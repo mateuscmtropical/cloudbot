@@ -99,4 +99,15 @@ Status: **open** means the default is in use and waits for the owner.
 
 ## Permissions in plain language (#45)
 
-- Status: open. No default yet. Work on this item waits for the owner.
+- Status: open
+- Default: rules live per bot. Only the owner changes them, through routes
+  behind the session cookie. The bot has no tool to change its rules, so a web
+  page cannot talk it into more rights. A rule is a sentence in plain words.
+  Every sentence goes into the bot's system prompt. A block rule can also name
+  tools, such as `Bash` or `browser_open`, and the SDK refuses those through
+  `disallowedTools`. A bot can have up to 50 rules.
+- A call that a rule blocks is refused by the SDK, and the bot continues. A
+  sentence is only a prompt until the review agent of the next roadmap item
+  checks each call against it.
+- Other options: let the bot propose rules for the owner to confirm, or share
+  rules between bots.

@@ -9,6 +9,7 @@ import { SetupAccess } from './access/SetupAccess.ts';
 import { FakeAgentRunner } from './agent/FakeAgentRunner.ts';
 import { ChatService } from './chat/ChatService.ts';
 import { createApp } from './createApp.ts';
+import { RuleStore } from './rules/RuleStore.ts';
 import { BotStore } from './store/BotStore.ts';
 import { MessageStore } from './store/MessageStore.ts';
 import type { OpenedDatabase } from './store/openDatabase.ts';
@@ -129,6 +130,21 @@ describe('createApp', () => {
         const response = await requestWithSession(app, '/api/bots', sessionToken);
 
         expect(response.status)
+            .toBe(200);
+    });
+
+    it('keeps the rules routes behind the session cookie', async () => {
+        const botStore = new BotStore(opened.db);
+        const ruleStore = new RuleStore(opened.db);
+        const app = createApp({ version: '1.2.3', access, botStore, ruleStore });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const withoutCookie = await app.request(`/api/bots/${bot.id}/rules`);
+        const sessionToken = await signIn(app, access);
+        const withCookie = await requestWithSession(app, `/api/bots/${bot.id}/rules`, sessionToken);
+
+        expect(withoutCookie.status)
+            .toBe(401);
+        expect(withCookie.status)
             .toBe(200);
     });
 

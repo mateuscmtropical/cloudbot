@@ -1,6 +1,7 @@
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import { MESSAGE_ROLES } from './messageRoles.ts';
+import { RULE_KINDS } from './ruleKinds.ts';
 
 // The file facts a queued turn needs. The bytes are read back from absolutePath after a restart.
 interface StoredUploadRecord {
@@ -86,5 +87,27 @@ const turnWaits = sqliteTable('turn_waits', {
         .notNull(),
 });
 
-export { bots, messages, settings, turnQueue, turnWaits };
+// One owner rule of a bot. Only the owner writes rows. The bot has no tool for it.
+const botRules = sqliteTable('bot_rules', {
+    id: text('id')
+        .primaryKey(),
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: RULE_KINDS })
+        .notNull(),
+    sentence: text('sentence')
+        .notNull(),
+    // Tool names a block rule turns off. Empty for an allow rule and for a rule that is only a sentence.
+    blockedTools: text('blocked_tools', { mode: 'json' })
+        .$type<string[]>()
+        .notNull(),
+    createdAt: integer('created_at')
+        .notNull(),
+}, table => [
+    index('bot_rules_bot_id')
+        .on(table.botId),
+]);
+
+export { botRules, bots, messages, settings, turnQueue, turnWaits };
 export type { StoredUploadRecord };
