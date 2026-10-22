@@ -162,5 +162,21 @@ case "$ARGUMENT_OUTPUT" in
 esac
 echo "ok: sudo denies arguments to the desktop script"
 
+# A process that left the turn's group with setsid still carries the turn marker, and the helper ends it (#165).
+TURN_MARKER="0123456789abcdef0123456789abcdef"
+# The desktop runs its own short sleeps as bot, so the test process is matched by its exact, unusual command line.
+docker exec --user bot --env "CLOUDBOT_TURN_MARKER=$TURN_MARKER" "$CONTAINER_NAME" sh -c 'setsid sleep 3171 >/dev/null 2>&1 < /dev/null &'
+sleep 1
+docker exec --user bot "$CONTAINER_NAME" pgrep -u bot -f '^sleep 3171$' >/dev/null || fail "the marked test process did not start"
+docker exec --user cloudbot "$CONTAINER_NAME" sudo -n -u bot -- /usr/local/bin/cloudbot-end-turn "$TURN_MARKER" || fail "the end-turn helper failed"
+sleep 1
+if docker exec --user bot "$CONTAINER_NAME" pgrep -u bot -f '^sleep 3171$' >/dev/null; then
+    fail "a marked process outlived the end-turn helper"
+fi
+if docker exec --user cloudbot "$CONTAINER_NAME" sudo -n -u bot -- /usr/local/bin/cloudbot-end-turn "not-a-marker" 2>/dev/null; then
+    fail "the end-turn helper accepted a bad marker"
+fi
+echo "ok: the end-turn helper ends a marked process that left the group, and refuses a bad marker"
+
 docker exec --user cloudbot "$CONTAINER_NAME" rm -f "$PROBE_FILE"
 echo "All container checks passed."
