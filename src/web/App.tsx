@@ -2,13 +2,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatEvent, ChatMessage, ChatWebhookUrlEvent } from '../shared/chatTypes.ts';
+import type { ChannelDetail, ChannelSummary } from '../shared/channelTypes.ts';
 import { BotList } from './components/BotList.tsx';
+import { ChannelView } from './components/ChannelView.tsx';
 import type { MessageActions } from './components/MessageItem.tsx';
 import { deriveMascotState } from './mascotState.ts';
 import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
-import { createBot, getScreenHolder, listBots, listMessages, RequestFailedError, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload } from './apiClient.ts';
+import { createBot, getChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload } from './apiClient.ts';
 import { mergeLoadedUploads } from './attachmentChips.ts';
 import { applyTabIcon } from './tabIcon.ts';
 import { MESSAGE_PAGE_SIZE, mergeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
@@ -84,6 +86,10 @@ function withPaging(
 function App(): ReactElement {
     const [bots, setBots] = useState<BotSummary[]>([]);
     const [selectedBotId, setSelectedBotId] = useState<string | undefined>(undefined);
+    // A channel replaces the bot's conversation while it is selected. Only one of the two is shown.
+    const [selectedChannelId, setSelectedChannelId] = useState<string | undefined>(undefined);
+    const [channels, setChannels] = useState<ChannelSummary[]>([]);
+    const [channelDetail, setChannelDetail] = useState<ChannelDetail | undefined>(undefined);
     const [chatState, setChatState] = useState<ChatState>(emptyChatState);
     const [draft, setDraft] = useState<DraftState>(emptyDraft);
     const [runningBotId, setRunningBotId] = useState<string | undefined>(undefined);
@@ -199,6 +205,62 @@ function App(): ReactElement {
                 setErrorText('Could not load your bots.');
             });
     }, []);
+
+    // The channel list follows the bot list, so a deleted bot's channels are dropped from the roster.
+    useEffect(() => {
+        listChannels()
+            .then(setChannels)
+            .catch(() => {
+                setErrorText('Could not load the channels.');
+            });
+    }, [bots]);
+
+    useEffect(() => {
+        if (selectedChannelId === undefined) {
+            return;
+        }
+
+        let isCurrent = true;
+
+        getChannel(selectedChannelId)
+            .then((detail) => {
+                if (isCurrent) {
+                    setChannelDetail(detail);
+                }
+            })
+            .catch(() => {
+                setErrorText('Could not load this channel.');
+            });
+
+        return () => {
+            isCurrent = false;
+        };
+    }, [selectedChannelId]);
+
+    // While a bot works on the channel, the view reloads so each reply shows as it is posted. It stops when the round ends.
+    const isChannelRoundActive = channelDetail !== undefined && channelDetail.id === selectedChannelId && channelDetail.hasActiveRound;
+
+    useEffect(() => {
+        if (selectedChannelId === undefined || !isChannelRoundActive) {
+            return;
+        }
+
+        const channelId = selectedChannelId;
+        const CHANNEL_POLL_INTERVAL_MS = 2000;
+        const timer = window.setInterval(() => {
+            getChannel(channelId)
+                .then((detail) => {
+                    setChannelDetail(current => (current?.id === channelId ? detail : current));
+                })
+                .catch(() => {
+                    setErrorText('Could not load this channel.');
+                });
+        }, CHANNEL_POLL_INTERVAL_MS);
+
+        return () => {
+            window.clearInterval(timer);
+        };
+    }, [selectedChannelId, isChannelRoundActive]);
 
     useEffect(() => {
         if (selectedBotId === undefined) {
@@ -541,8 +603,51 @@ function App(): ReactElement {
     function handleSelectBot(botId: string): void {
         // The older-load error belongs to the bot it was for, so another bot starts clean.
         setErrorText(previousError => (previousError === OLDER_ERROR_TEXT ? undefined : previousError));
+        setSelectedChannelId(undefined);
         setSelectedBotId(botId);
         setIsBotListOpen(false);
+    }
+
+    function handleSelectChannel(channelId: string): void {
+        setChannelDetail(undefined);
+        setSelectedChannelId(channelId);
+        setIsBotListOpen(false);
+    }
+
+    // The owner's post is stored in the channel. The view reloads so the post shows with its stored author.
+    function handlePostToChannel(text: string): void {
+        if (selectedChannelId === undefined) {
+            return;
+        }
+
+        const channelId = selectedChannelId;
+
+        postChannelMessage(channelId, text)
+            .then(() => getChannel(channelId))
+            .then((detail) => {
+                setChannelDetail(current => (current?.id === channelId ? detail : current));
+            })
+            .catch(() => {
+                setErrorText('Could not post to the channel.');
+            });
+    }
+
+    // Stop ends the whole round of the channel. The view reloads so the stop note and the dropped replies show.
+    function handleStopChannel(): void {
+        if (selectedChannelId === undefined) {
+            return;
+        }
+
+        const channelId = selectedChannelId;
+
+        stopChannel(channelId)
+            .then(() => getChannel(channelId))
+            .then((detail) => {
+                setChannelDetail(current => (current?.id === channelId ? detail : current));
+            })
+            .catch(() => {
+                setErrorText('Could not stop the channel.');
+            });
     }
 
     // The new bot's chat opens at once. Its question about its name and job is the first message there.
@@ -734,8 +839,11 @@ function App(): ReactElement {
                 bots={bots}
                 selectedBotId={selectedBotId}
                 selectedMascotState={liveMascotState}
+                channels={channels}
+                selectedChannelId={selectedChannelId}
                 isOpen={isBotListOpen}
                 onSelectBot={handleSelectBot}
+                onSelectChannel={handleSelectChannel}
                 onNewBot={handleNewBot}
                 onConnectApps={() => {
                     setIsConnectAppsOpen(true);
@@ -768,33 +876,49 @@ function App(): ReactElement {
                     : (
                             <p className="error-banner" role="alert">{errorText}</p>
                         )}
-                <ConversationView
-                    bot={selectedBot}
-                    mascotState={liveMascotState}
-                    onTypingChange={setIsOwnerTyping}
-                    messages={visibleMessages}
-                    draftText={draft.botId === selectedBotId ? draft.text : ''}
-                    isRunning={isRunning}
-                    activeToolName={activeToolName}
-                    attachments={botAttachments}
-                    isUploading={isUploading}
-                    onRemoveAttachment={handleRemoveAttachment}
-                    actions={messageActions}
-                    hasOlderMessages={hasOlderMessages}
-                    isLoadingOlder={isLoadingOlder}
-                    onLoadOlder={handleLoadOlder}
-                    onOpenBotList={() => {
-                        setIsBotListOpen(true);
-                    }}
-                    screenRequestId={screenRequestId}
-                    webhookUrls={botWebhookUrls}
-                    onHideWebhookUrl={(hidden) => {
-                        setWebhookUrls(current => current.filter(notice => notice !== hidden));
-                    }}
-                    onSend={handleSend}
-                    onStop={handleStop}
-                    onAttach={handleAttach}
-                />
+                {selectedChannelId === undefined
+                    ? null
+                    : (
+                            <ChannelView
+                                channel={channelDetail?.id === selectedChannelId ? channelDetail : undefined}
+                                onPost={handlePostToChannel}
+                                onStop={handleStopChannel}
+                                onOpenBotList={() => {
+                                    setIsBotListOpen(true);
+                                }}
+                            />
+                        )}
+                {selectedChannelId === undefined
+                    ? (
+                            <ConversationView
+                                bot={selectedBot}
+                                mascotState={liveMascotState}
+                                onTypingChange={setIsOwnerTyping}
+                                messages={visibleMessages}
+                                draftText={draft.botId === selectedBotId ? draft.text : ''}
+                                isRunning={isRunning}
+                                activeToolName={activeToolName}
+                                attachments={botAttachments}
+                                isUploading={isUploading}
+                                onRemoveAttachment={handleRemoveAttachment}
+                                actions={messageActions}
+                                hasOlderMessages={hasOlderMessages}
+                                isLoadingOlder={isLoadingOlder}
+                                onLoadOlder={handleLoadOlder}
+                                onOpenBotList={() => {
+                                    setIsBotListOpen(true);
+                                }}
+                                screenRequestId={screenRequestId}
+                                webhookUrls={botWebhookUrls}
+                                onHideWebhookUrl={(hidden) => {
+                                    setWebhookUrls(current => current.filter(notice => notice !== hidden));
+                                }}
+                                onSend={handleSend}
+                                onStop={handleStop}
+                                onAttach={handleAttach}
+                            />
+                        )
+                    : null}
             </main>
         </div>
     );

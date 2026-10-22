@@ -93,14 +93,23 @@ function buildChanges(args: ProfileToolArguments): Partial<BotProfile> {
     return { ...nameChange, ...titleChange, ...descriptionChange };
 }
 
+// Gives the reason a new name cannot be used, such as a channel that already has a member with it. Undefined means the name is free.
+type NameConflictCheck = (name: string) => Promise<string | undefined>;
+
 // The bot id is fixed when the tool is built. The model cannot pick another bot.
-function createUpdateProfileTool(botStore: BotStore, botId: string): SdkMcpToolDefinition<typeof PROFILE_TOOL_SHAPE> {
+function createUpdateProfileTool(botStore: BotStore, botId: string, nameConflict?: NameConflictCheck): SdkMcpToolDefinition<typeof PROFILE_TOOL_SHAPE> {
     return tool(
         UPDATE_PROFILE_TOOL_NAME,
         UPDATE_PROFILE_DESCRIPTION,
         PROFILE_TOOL_SHAPE,
         async (args): Promise<ProfileToolResult> => {
             const changes = buildChanges(args);
+            const conflict = changes.name === undefined || nameConflict === undefined ? undefined : await nameConflict(changes.name);
+
+            if (conflict !== undefined) {
+                return textResult(conflict, true);
+            }
+
             const updatedBot = await botStore.updateProfile(botId, changes);
 
             if (updatedBot === undefined) {
@@ -168,8 +177,9 @@ function createProfileToolServer(
     botId: string,
     shareFile?: ShareFileHandler,
     extraTools: CloudbotTool[] = [],
+    nameConflict?: NameConflictCheck,
 ): McpSdkServerConfigWithInstance {
-    const updateProfileTool = createUpdateProfileTool(botStore, botId);
+    const updateProfileTool = createUpdateProfileTool(botStore, botId, nameConflict);
     const setMascotTool = createSetMascotTool(botStore, botId);
     const shareTools = shareFile === undefined ? [] : [createShareFileTool(shareFile)];
 
@@ -193,4 +203,4 @@ export {
     createShareFileTool,
     createUpdateProfileTool,
 };
-export type { CloudbotTool, ProfileToolResult, ShareFileHandler };
+export type { CloudbotTool, NameConflictCheck, ProfileToolResult, ShareFileHandler };

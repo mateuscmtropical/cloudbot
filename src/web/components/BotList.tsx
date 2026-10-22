@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 
 import type { BotSummary } from '../../shared/chatTypes.ts';
+import type { ChannelSummary } from '../../shared/channelTypes.ts';
 import type { MascotState } from '../mascotState.ts';
 import { CloudMascot } from './CloudMascot.tsx';
 import { PlusIcon } from './PlusIcon.tsx';
@@ -10,13 +11,16 @@ interface BotListProps {
     selectedBotId: string | undefined;
     // The face of the selected bot, which is the live one. The other bots show the idle face.
     selectedMascotState: MascotState;
+    channels: ChannelSummary[];
+    selectedChannelId: string | undefined;
     isOpen: boolean;
     onSelectBot: (botId: string) => void;
+    onSelectChannel: (channelId: string) => void;
     onNewBot: () => void;
     onConnectApps: () => void;
 }
 
-function BotList({ bots, selectedBotId, selectedMascotState, isOpen, onSelectBot, onNewBot, onConnectApps }: BotListProps): ReactElement {
+function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, onSelectBot, onSelectChannel, onNewBot, onConnectApps }: BotListProps): ReactElement {
     const className = isOpen ? 'bot-list is-open' : 'bot-list';
 
     return (
@@ -54,6 +58,30 @@ function BotList({ bots, selectedBotId, selectedMascotState, isOpen, onSelectBot
                                 <span className="bot-preview">{bot.lastMessagePreview}</span>
                             </span>
                             {bot.hasUnread ? <span className="unread-dot" aria-label="Unread" /> : null}
+                        </button>
+                    );
+                })}
+                {channels.length === 0 ? null : <p className="channel-section-title">Channels</p>}
+                {channels.map((channel) => {
+                    const isSelected = channel.id === selectedChannelId;
+                    const itemClassName = isSelected ? 'bot-item is-selected' : 'bot-item';
+                    const memberNames = channel.members.map(member => (member.isManager ? `${member.name} (manager)` : member.name));
+                    const rosterText = memberNames.join(', ');
+
+                    return (
+                        <button
+                            key={channel.id}
+                            type="button"
+                            className={itemClassName}
+                            aria-current={isSelected ? 'true' : undefined}
+                            onClick={() => {
+                                onSelectChannel(channel.id);
+                            }}
+                        >
+                            <span className="bot-text">
+                                <span className="bot-name">{channel.name}</span>
+                                <span className="bot-preview">{rosterText}</span>
+                            </span>
                         </button>
                     );
                 })}

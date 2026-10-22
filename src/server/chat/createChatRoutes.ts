@@ -29,6 +29,7 @@ const DELETE_REFUSED: Record<Exclude<DeleteBotOutcome, 'deleted' | 'missing'>, C
     last: { error: 'The last bot cannot be deleted.' },
     setup: { error: 'Finish connecting Claude in this bot\'s chat before you delete it.' },
     stopping: { error: 'The bot is still stopping. Try again in a moment.' },
+    manager: { error: 'This bot manages a channel. Make another member the manager of that channel first.' },
 };
 const EMPTY_TEXT: ChatErrorResponse = { error: 'Send a non-empty "text" string.' };
 const INVALID_BEFORE: ChatErrorResponse = { error: '"before" must be a message sequence number, 1 or more.' };

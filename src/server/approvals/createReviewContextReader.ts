@@ -1,15 +1,19 @@
 import type { RuleStore } from '../store/RuleStore.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
+import type { ChannelMessage, ChannelStore } from '../store/ChannelStore.ts';
 import type { ReviewContext } from './createToolCallReviewer.ts';
 import { isWebhookMessage } from '../webhooks/webhookMessage.ts';
 import { isWatchMessage } from '../watches/watchMessage.ts';
 import { HANDOFF_REPLY_PREFIX, HANDOFF_SENT_PREFIX, isBotHandoffMessage } from '../bots/botHandoff.ts';
+import { CHANNEL_TRANSCRIPT_LIMIT, transcriptLine } from '../channels/channelRound.ts';
 
 interface ReviewContextSources {
     ruleStore: Pick<RuleStore, 'list'>;
     messageStore: Pick<MessageStore, 'listByBot'>;
     modelStore: Pick<ModelStore, 'get' | 'getEfforts'>;
+    // The posts a channel turn is reviewed against. Without it a channel review gets no chat lines, never the bot's own chat.
+    channelStore?: Pick<ChannelStore, 'listRecentMessages'>;
     messageCount?: number;
 }
 
@@ -64,13 +68,40 @@ function toChatLine(message: StoredMessage): string[] {
     return [`${ROLE_LABELS[message.role]}: ${oneLineText}`];
 }
 
-function createReviewContextReader(sources: ReviewContextSources): (botId: string) => Promise<ReviewContext> {
+// A channel post gets the same labels as the channel turn's transcript, so the review reads it the way the bot did.
+function toChannelLine(post: ChannelMessage): string[] {
+    if (post.body.kind !== 'text' || (post.role !== 'user' && post.role !== 'assistant')) {
+        return [];
+    }
+
+    const oneLineText = post.body.text.replace(/\s+/g, ' ');
+
+    return [transcriptLine({ isOwner: post.role === 'user', authorName: post.authorName, text: oneLineText })];
+}
+
+function createReviewContextReader(sources: ReviewContextSources): (botId: string, channelId?: string) => Promise<ReviewContext> {
     const messageCount = sources.messageCount ?? DEFAULT_MESSAGE_COUNT;
 
-    return async (botId) => {
-        const [rules, messages, modelChoices, efforts] = await Promise.all([
+    const readChatLines = async (botId: string): Promise<string[]> => {
+        const messages = await sources.messageStore.listByBot(botId, { limit: messageCount });
+
+        return messages.flatMap(toChatLine);
+    };
+
+    const readChannelLines = async (channelId: string): Promise<string[]> => {
+        if (sources.channelStore === undefined) {
+            return [];
+        }
+
+        const posts = await sources.channelStore.listRecentMessages(channelId, CHANNEL_TRANSCRIPT_LIMIT);
+
+        return posts.flatMap(toChannelLine);
+    };
+
+    return async (botId, channelId) => {
+        const [rules, recentMessages, modelChoices, efforts] = await Promise.all([
             sources.ruleStore.list(botId),
-            sources.messageStore.listByBot(botId, { limit: messageCount }),
+            channelId === undefined ? readChatLines(botId) : readChannelLines(channelId),
             sources.modelStore.get(botId),
             sources.modelStore.getEfforts(botId),
         ]);
@@ -79,7 +110,7 @@ function createReviewContextReader(sources: ReviewContextSources): (botId: strin
 
         return {
             ownerRules: rules.map(rule => `${rule.kind === 'block' ? 'Block' : 'Allow'}: ${rule.text}`),
-            recentMessages: messages.flatMap(toChatLine),
+            recentMessages,
             ...reviewModelOption,
             ...reviewEffortOption,
         };

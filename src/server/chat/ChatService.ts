@@ -52,6 +52,7 @@ import type { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import { TYPE_SECRET_TOOL_FULL_NAME, createTypeSecretTool } from '../secrets/createTypeSecretTool.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
+import type { ChannelStore } from '../store/ChannelStore.ts';
 import type { RuleStore } from '../store/RuleStore.ts';
 import type { RoutineStore } from '../store/RoutineStore.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
@@ -64,12 +65,16 @@ import { SetupAnswerError } from '../setup/SetupConversation.ts';
 import type { StoredUploadRecord } from '../store/schema.ts';
 import type { Bot, BotProfile, Message } from '../store/types.ts';
 import { BOT_CREATE_TOOL_FULL_NAME, createBotCreateTool } from '../bots/createBotTool.ts';
+import { findNameClash } from '../channels/channelCommands.ts';
+import { CHANNEL_TOOL_FULL_NAMES, createChannelTools } from '../channels/createChannelTools.ts';
 import type { BotCreateInput } from '../bots/createBotTool.ts';
 import { BOT_DELETE_TOOL_FULL_NAME, createBotDeleteTool } from '../bots/createBotDeleteTool.ts';
 import { RULE_LIST_TOOL_FULL_NAME, RULE_TOOL_FULL_NAMES, createRuleTools } from '../rules/createRuleTools.ts';
 import { BOT_SEND_TOOL_FULL_NAME, createBotSendTool } from '../bots/createBotSendTool.ts';
 import type { BotSendInput, BotSendOutcome } from '../bots/createBotSendTool.ts';
 import { HANDOFF_SENT_PREFIX, MAX_HANDOFFS_PER_TURN, MAX_HANDOFF_DEPTH, buildBotHandoffMessage, describeHandoffReply } from '../bots/botHandoff.ts';
+import { CHANNEL_TRANSCRIPT_LIMIT, MAX_CHANNEL_TURNS_PER_OWNER_MESSAGE, buildChannelTurnPrompt, buildTranscript } from '../channels/channelRound.ts';
+import type { ChannelRequest, ChannelRound, ChannelTurnSource, TranscriptPost } from '../channels/channelRound.ts';
 import type { HandoffOutcome } from '../bots/botHandoff.ts';
 import { encodeProjectPath } from '../bots/claudeProjectFolder.ts';
 import { removeBotDirectory } from '../bots/removeBotDirectory.ts';
@@ -100,7 +105,7 @@ const STOP_POLL_MS = 50;
 const MEMORY_FILE_MODE = 0o660;
 
 // Why a bot was not deleted. 'deleted' is the only success.
-type DeleteBotOutcome = 'deleted' | 'missing' | 'last' | 'setup' | 'stopping' | 'deleting';
+type DeleteBotOutcome = 'deleted' | 'missing' | 'last' | 'setup' | 'stopping' | 'deleting' | 'manager';
 type RefusedDeleteOutcome = Exclude<DeleteBotOutcome, 'deleted'>;
 
 // The chat and the approval card say why a bot is not deleted, in the owner's words.
@@ -110,6 +115,7 @@ const DELETE_REFUSAL_TEXT: Record<RefusedDeleteOutcome, string> = {
     setup: 'The Claude setup runs in this bot\'s chat, so this bot cannot be deleted until the setup is done.',
     stopping: 'This bot did not stop in time, so it was not deleted. Try again in a moment.',
     deleting: 'This bot is already being deleted.',
+    manager: 'This bot manages a channel. Make another member the manager of that channel first, then delete this bot.',
 };
 
 // Checks every poll interval until the test passes or the time runs out. Returns whether it passed.
@@ -134,6 +140,7 @@ async function waitUntil(isDone: () => boolean, timeoutMs: number): Promise<bool
 
 interface ChatServiceOptions {
     botStore: BotStore;
+    channelStore?: ChannelStore | undefined;
     messageStore: MessageStore;
     runner: AgentRunner;
     dataDir: string;
@@ -215,7 +222,14 @@ interface UsageLimitState {
 }
 
 // Who started a turn. A routine turn uses the routines model choice. A bot hand-off uses the routines choice too.
-type TurnSource = 'chat' | 'routine' | 'webhook' | 'bot';
+type TurnSource = 'chat' | 'routine' | 'webhook' | 'bot' | 'channel';
+
+// A member of a channel, with the name the bot has now.
+interface NamedChannelMember {
+    botId: string;
+    name: string;
+    isManager: boolean;
+}
 
 // The bot that sent a hand-off, and how many hand-offs the chain has reached with this one.
 interface BotHandoffSource {
@@ -233,6 +247,7 @@ interface TurnInput {
     messageId: string | undefined;
     source: TurnSource;
     handoff?: BotHandoffSource | undefined;
+    channel?: ChannelTurnSource | undefined;
 }
 
 // A turn waiting in the queue. Its position orders the queue, so a retry can go in front.
@@ -243,6 +258,7 @@ interface QueuedTurn extends TurnInput {
 
 interface TurnContext {
     botId: string;
+    channel?: ChannelTurnSource | undefined;
     prompt: string;
     abortController: AbortController;
     workspaceDir: string;
@@ -409,6 +425,11 @@ function readTextOf(content: unknown): string[] {
     return body?.kind === 'text' && typeof body.text === 'string' ? [body.text] : [];
 }
 
+// A channel turn uses the bot choice for its model, limit and effort. It is never stored as a queued turn.
+function settingsSource(source: TurnSource): 'chat' | 'routine' | 'webhook' | 'bot' {
+    return source === 'channel' ? 'bot' : source;
+}
+
 function toQueuedTurnRecord(queuedTurn: QueuedTurn): QueuedTurnRecord {
     const storedUploads = queuedTurn.uploads.map(toStoredUpload);
 
@@ -419,7 +440,7 @@ function toQueuedTurnRecord(queuedTurn: QueuedTurn): QueuedTurnRecord {
         messageId: queuedTurn.messageId ?? null,
         text: queuedTurn.text,
         uploads: storedUploads,
-        source: queuedTurn.source,
+        source: queuedTurn.source === 'channel' ? 'bot' : queuedTurn.source,
     };
 }
 
@@ -477,6 +498,7 @@ function reportBackgroundError(error: unknown): void {
 // as a message, so the UI replaces the draft with it and never shows the text twice.
 class ChatService {
     private readonly botStore: BotStore;
+    private readonly channelStore: ChannelStore | undefined;
     private readonly messageStore: MessageStore;
     private readonly runner: AgentRunner;
     private readonly dataDir: string;
@@ -512,6 +534,9 @@ class ChatService {
     // The hand-offs each running turn has sent, by the sender's bot id. Cleared when the turn finishes.
     private readonly handoffsSentByTurn = new Map<string, number>();
     private readonly handoffsInFlight = new Map<string, number>();
+    // The rounds of the channel messages, by round id, and the round each bot's running channel turn belongs to.
+    private readonly channelRounds = new Map<string, ChannelRound>();
+    private readonly channelRunning = new Map<string, string>();
     // The limits and the clock of the running turn of each bot. They are set when the turn starts and cleared when it ends.
     private readonly runningLimits = new Map<string, TurnLimit>();
     private readonly turnDeadlines = new Map<string, TurnDeadline>();
@@ -531,6 +556,7 @@ class ChatService {
 
     constructor(options: ChatServiceOptions) {
         this.botStore = options.botStore;
+        this.channelStore = options.channelStore;
         this.messageStore = options.messageStore;
         this.runner = options.runner;
         this.dataDir = options.dataDir;
@@ -892,6 +918,26 @@ class ChatService {
         return this.summarizeBot(bot);
     }
 
+    // The channel tools of one bot. They need the channel store, and the approval gate is checked by the caller.
+    private channelTools(botId: string): ReturnType<typeof createChannelTools> {
+        if (this.channelStore === undefined) {
+            return [];
+        }
+
+        const deps = {
+            channels: this.channelStore,
+            bots: this.botStore,
+            memberLeft: (channelId: string, memberBotId: string) => this.dropChannelMember(channelId, memberBotId),
+            channelDeleting: (channelId: string) => {
+                this.endChannelRounds(channelId);
+
+                return Promise.resolve();
+            },
+        };
+
+        return createChannelTools(deps, botId);
+    }
+
     // The bot_create tool. The owner approved the card. The instructions go to the new bot's CLAUDE.md, its memory.
     // They are not a rule, since a bot wrote them and a rule would be an owner permission.
     async createBotFromTool(creatorBotId: string, input: BotCreateInput): Promise<BotSummary> {
@@ -1057,6 +1103,13 @@ class ChatService {
 
         if (survivors.length === 0) {
             return 'last';
+        }
+
+        // A bot that manages a channel stays, so the channel never loses its manager.
+        const managedChannels = this.channelStore === undefined ? [] : await this.channelStore.managedChannelNames(botId);
+
+        if (managedChannels.length > 0) {
+            return 'manager';
         }
 
         // The Claude setup runs in the first bot's chat, so that bot stays until the setup is done.
@@ -1403,7 +1456,7 @@ class ChatService {
     }
 
     // The bot_send tool. Checks the target, the caps and the chain depth, then starts the target's turn like any message.
-    async handoffFromTool(senderBotId: string, senderDepth: number, input: BotSendInput): Promise<BotSendOutcome> {
+    async handoffFromTool(senderBotId: string, senderDepth: number, input: BotSendInput, channel?: ChannelTurnSource): Promise<BotSendOutcome> {
         // Every attempt counts and is reserved before the first await, so parallel calls cannot pass the cap together.
         const sentThisTurn = this.handoffsSentByTurn.get(senderBotId) ?? 0;
 
@@ -1412,6 +1465,11 @@ class ChatService {
         }
 
         this.handoffsSentByTurn.set(senderBotId, sentThisTurn + 1);
+
+        // In a channel turn the hand-off goes to a member of the channel, and its reply is posted there.
+        if (channel !== undefined) {
+            return this.channelHandoff(channel, senderBotId, input);
+        }
 
         const bots = await this.botStore.list();
         const wantedName = input.bot.toLowerCase();
@@ -1505,6 +1563,358 @@ class ChatService {
         return sent.role === 'user' ? undefined : 'the bot is not set up to take messages yet';
     }
 
+    // The owner's message starts a round in the channel. An @name at its start sends it to that member, else to the manager.
+    async startChannelRound(channelId: string, ownerText: string, ownerMessageId?: string): Promise<string | undefined> {
+        const members = await this.namedChannelMembers(channelId);
+
+        if (members === undefined) {
+            return undefined;
+        }
+
+        const lowerText = ownerText
+            .trimStart()
+            .toLowerCase();
+        // When two names match, the longer one wins, so "@Ana Lee" goes to "Ana Lee" and not to "Ana".
+        const matchingMembers = members.filter(member => lowerText === `@${member.name.toLowerCase()}` || lowerText.startsWith(`@${member.name.toLowerCase()} `));
+        const addressed = matchingMembers.reduce<NamedChannelMember | undefined>((longest, member) => (longest === undefined || member.name.length > longest.name.length ? member : longest), undefined);
+        const target = addressed ?? members.find(member => member.isManager);
+
+        if (target === undefined) {
+            return undefined;
+        }
+
+        const ownerPost: TranscriptPost = { isOwner: true, authorName: 'You', text: ownerText };
+        const round: ChannelRound = { id: randomUUID(), channelId, ownerPost, ownerMessageId, turnsStarted: 0, isStopped: false };
+
+        this.channelRounds.set(round.id, round);
+
+        const refusal = await this.startChannelTurn(round, target.botId, { kind: 'owner', text: ownerText }, 0);
+
+        // A round that started no turn has nothing to wait for, so it is forgotten at once.
+        if (refusal !== undefined) {
+            this.channelRounds.delete(round.id);
+            await this.postChannelNote(channelId, `The round did not start: ${refusal}.`);
+        }
+
+        return round.id;
+    }
+
+    // Starts a bot's turn for a channel round, or queues it in memory behind the bot's own work. Returns why it did not start.
+    private async startChannelTurn(round: ChannelRound, botId: string, request: ChannelRequest, depth: number): Promise<string | undefined> {
+        // Every read is awaited first. The checks and the count below run with no await between them and the
+        // enqueue or the run, so parallel sends and a Stop during the reads cannot slip past the cap or the stop.
+        const bot = await this.botStore.getById(botId);
+        const channel = await this.channelStore?.getById(round.channelId);
+        const posts = (await this.channelStore?.listRecentMessages(round.channelId, CHANNEL_TRANSCRIPT_LIMIT)) ?? [];
+        const recentRows = posts.flatMap(post => (post.body.kind === 'text' ? [{ messageId: post.id, isOwner: post.role === 'user', authorName: post.authorName, text: post.body.text }] : []));
+
+        if (round.isStopped) {
+            return 'the owner stopped the round';
+        }
+
+        if (round.turnsStarted >= MAX_CHANNEL_TURNS_PER_OWNER_MESSAGE) {
+            return `this round already has ${String(MAX_CHANNEL_TURNS_PER_OWNER_MESSAGE)} bot turns, so the owner decides the next step`;
+        }
+
+        if (bot === undefined || channel === undefined) {
+            return 'the bot or the channel no longer exists';
+        }
+
+        if (this.deletingBots.has(botId)) {
+            return 'the bot is being deleted';
+        }
+
+        round.turnsStarted += 1;
+
+        const transcript = buildTranscript({ ownerPost: round.ownerPost, ownerMessageId: round.ownerMessageId, recentRows });
+        const source: ChannelTurnSource = { channelId: round.channelId, roundId: round.id, depth };
+        const prompt = buildChannelTurnPrompt({ channelName: channel.name, botName: bot.name, transcript, request });
+        const turn: TurnInput = { botId, text: prompt, uploads: [], messageId: undefined, source: 'channel', channel: source };
+
+        if (this.isBusy(botId)) {
+            this.enqueueChannelTurn(botId, turn);
+
+            return undefined;
+        }
+
+        const abortController = new AbortController();
+
+        this.runningTurns.set(botId, abortController);
+        this.publishTurnState(botId);
+        this.runTurn(turn, abortController)
+            .catch(reportBackgroundError);
+
+        return undefined;
+    }
+
+    // A channel turn waits in memory only. It is not stored, so a restart cannot run it as a chat turn.
+    private enqueueChannelTurn(botId: string, turn: TurnInput): void {
+        const botTurns = this.queuedTurns.get(botId) ?? [];
+        const lastPosition = botTurns[botTurns.length - 1]?.position ?? 0;
+        const queuedTurn: QueuedTurn = { ...turn, id: randomUUID(), position: lastPosition + 1 };
+
+        this.queuedTurns.set(botId, [...botTurns, queuedTurn]);
+        this.publishTurnState(botId);
+    }
+
+    // A hand-off inside a channel turn goes to a member of that channel. Its reply is posted in the channel.
+    private async channelHandoff(channel: ChannelTurnSource, senderBotId: string, input: BotSendInput): Promise<BotSendOutcome> {
+        const round = this.channelRounds.get(channel.roundId);
+        const members = await this.namedChannelMembers(channel.channelId);
+        const sender = await this.botStore.getById(senderBotId);
+
+        if (round === undefined || members === undefined || sender === undefined) {
+            return { isError: true, text: 'The channel round is no longer running.' };
+        }
+
+        const wantedName = input.bot
+            .trim()
+            .toLowerCase();
+        const target = members.find(member => member.name.toLowerCase() === wantedName);
+
+        if (target === undefined) {
+            return { isError: true, text: `${input.bot} is not in this channel.` };
+        }
+
+        if (target.botId === senderBotId) {
+            return { isError: true, text: 'A bot cannot send a message to itself.' };
+        }
+
+        const depth = channel.depth + 1;
+
+        if (depth > MAX_HANDOFF_DEPTH) {
+            const stopText = `The hand-off to ${target.name} was not sent. A chain allows ${String(MAX_HANDOFF_DEPTH)} hand-offs in a row, so the owner decides the next step.`;
+
+            await this.postChannelNote(channel.channelId, stopText);
+
+            return { isError: true, text: stopText };
+        }
+
+        if (round.isStopped) {
+            return { isError: true, text: 'The owner stopped the channel round, so the hand-off was not sent.' };
+        }
+
+        // The request is posted in the channel as the sender's post. The target reads it there, in the transcript.
+        const requestText = input.text.replace(/\s+/g, ' ');
+
+        await this.channelStore?.appendMessage(channel.channelId, {
+            authorBotId: sender.id,
+            authorName: sender.name,
+            authorColor: sender.mascotColor,
+            authorShape: sender.mascotShape,
+            role: 'assistant',
+            kind: 'text',
+            body: { kind: 'text', text: requestText },
+        });
+
+        const refusal = await this.startChannelTurn(round, target.botId, { kind: 'bot', fromName: sender.name, text: requestText }, depth);
+
+        if (refusal !== undefined) {
+            const refusalText = `The hand-off to ${target.name} was not sent: ${refusal}.`;
+
+            await this.postChannelNote(channel.channelId, refusalText);
+
+            return { isError: true, text: refusalText };
+        }
+
+        return { isError: false, text: `Sent to ${target.name}. Its reply will appear in this channel.` };
+    }
+
+    // Stop on a channel ends its whole round. Running turns are stopped, queued ones are dropped, and one note is posted.
+    async stopChannelRound(channelId: string): Promise<boolean> {
+        const wasOpen = this.endChannelRounds(channelId);
+
+        if (wasOpen) {
+            await this.postChannelNote(channelId, 'The owner stopped the channel round. Queued replies were dropped.');
+        }
+
+        return wasOpen;
+    }
+
+    // Ends every open round of a channel. Queued turns are dropped and running turns are aborted. No note is posted here.
+    endChannelRounds(channelId: string): boolean {
+        const rounds = [...this.channelRounds.values()].filter(round => round.channelId === channelId && !round.isStopped);
+
+        if (rounds.length === 0) {
+            return false;
+        }
+
+        const roundIdList = rounds.map(round => round.id);
+        const roundIds = new Set(roundIdList);
+
+        rounds.forEach((round) => {
+            round.isStopped = true;
+        });
+
+        [...this.queuedTurns.entries()].forEach(([botId, turns]) => {
+            const keptTurns = turns.filter(turn => turn.channel === undefined || !roundIds.has(turn.channel.roundId));
+
+            this.queuedTurns.set(botId, keptTurns);
+        });
+
+        [...this.channelRunning.entries()].forEach(([botId, roundId]) => {
+            if (roundIds.has(roundId)) {
+                const runningTurn = this.runningTurns.get(botId);
+
+                runningTurn?.abort();
+            }
+        });
+
+        this.forgetIdleRounds(channelId);
+
+        return true;
+    }
+
+    // A channel has work while one of its bots runs a turn or waits with one. The channel view polls while this is true.
+    hasActiveChannelRound(channelId: string): boolean {
+        const isRunning = [...this.channelRunning.values()].some(roundId => this.channelRounds.get(roundId)?.channelId === channelId);
+        const isQueued = [...this.queuedTurns.values()].some(turns => turns.some(turn => turn.channel?.channelId === channelId));
+
+        return isRunning || isQueued;
+    }
+
+    // A round is forgotten once no bot of its channel works on it or waits for it.
+    private releaseChannelRound(botId: string): void {
+        const roundId = this.channelRunning.get(botId);
+
+        this.channelRunning.delete(botId);
+
+        const round = roundId === undefined ? undefined : this.channelRounds.get(roundId);
+
+        if (round !== undefined) {
+            this.forgetIdleRounds(round.channelId);
+        }
+    }
+
+    // Forgets the rounds of a channel once no turn of it runs, waits or is queued. A round with no turn left is dropped.
+    private forgetIdleRounds(channelId: string): void {
+        if (this.hasActiveChannelRound(channelId)) {
+            return;
+        }
+
+        [...this.channelRounds.values()]
+            .filter(candidate => candidate.channelId === channelId)
+            .forEach((candidate) => {
+                this.channelRounds.delete(candidate.id);
+            });
+    }
+
+    // A member that leaves a channel loses its queued channel turns, and its running reply stops. The channel is told.
+    async dropChannelMember(channelId: string, botId: string): Promise<void> {
+        const isChannelTurn = (turn: QueuedTurn): boolean => turn.channel?.channelId === channelId;
+        const queuedTurns = this.queuedTurns.get(botId) ?? [];
+        const droppedTurns = queuedTurns.filter(isChannelTurn);
+        const runningRoundId = this.channelRunning.get(botId);
+        const runningRound = runningRoundId === undefined ? undefined : this.channelRounds.get(runningRoundId);
+        const isRunningInChannel = runningRound?.channelId === channelId;
+
+        if (droppedTurns.length > 0) {
+            const remainingTurns = queuedTurns.filter(turn => !isChannelTurn(turn));
+
+            this.queuedTurns.set(botId, remainingTurns);
+            this.publishTurnState(botId);
+        }
+
+        if (isRunningInChannel) {
+            this.runningTurns.get(botId)
+                ?.abort();
+        }
+
+        if (droppedTurns.length > 0 || isRunningInChannel) {
+            const bot = await this.botStore.getById(botId);
+            const botName = bot?.name ?? 'A bot';
+
+            await this.postChannelNote(channelId, `${botName} left the channel, so its queued or running reply was stopped.`);
+        }
+
+        this.forgetIdleRounds(channelId);
+    }
+
+    // A bot cannot take a name that another member of one of its channels already has, since names route the turns.
+    private async channelNameConflict(botId: string, name: string): Promise<string | undefined> {
+        if (this.channelStore === undefined) {
+            return undefined;
+        }
+
+        const channels = await this.channelStore.list();
+        const bots = await this.botStore.list();
+
+        return findNameClash(channels, bots, botId, name);
+    }
+
+    // The channel of the round that a bot's running turn belongs to, if any.
+    private channelOfRunningTurn(botId: string): string | undefined {
+        const roundId = this.channelRunning.get(botId);
+
+        return roundId === undefined ? undefined : this.channelRounds.get(roundId)?.channelId;
+    }
+
+    // The members of a channel with the names the bots have now. A deleted bot is not listed.
+    private async namedChannelMembers(channelId: string): Promise<NamedChannelMember[] | undefined> {
+        const channel = await this.channelStore?.getById(channelId);
+
+        if (channel === undefined) {
+            return undefined;
+        }
+
+        const bots = await this.botStore.list();
+
+        return channel.members.flatMap((member) => {
+            const bot = bots.find(candidate => candidate.id === member.botId);
+
+            return bot === undefined ? [] : [{ botId: bot.id, name: bot.name, isManager: member.isManager }];
+        });
+    }
+
+    // A channel turn's text is posted in its channel. Its tool cards stay out, and the bot's own chat gets nothing from it.
+    private async saveTurnMessage(botId: string, role: ChatRole, body: MessageBody, channel: ChannelTurnSource | undefined): Promise<void> {
+        if (channel === undefined) {
+            await this.saveAndPublish(botId, role, body);
+
+            return;
+        }
+
+        if (body.kind !== 'text') {
+            return;
+        }
+
+        const bot = await this.botStore.getById(botId);
+
+        // A channel deleted during the turn has no place for its reply, so the reply is dropped.
+        const channelExists = (await this.channelStore?.getById(channel.channelId)) !== undefined;
+
+        if (bot === undefined || !channelExists) {
+            return;
+        }
+
+        await this.channelStore?.appendMessage(channel.channelId, {
+            authorBotId: botId,
+            authorName: bot.name,
+            authorColor: bot.mascotColor,
+            authorShape: bot.mascotShape,
+            role,
+            kind: 'text',
+            body,
+        });
+    }
+
+    // A note from the app in a channel, such as a stop or a dropped reply. A failed save is reported, not thrown.
+    private async postChannelNote(channelId: string, text: string): Promise<void> {
+        try {
+            await this.channelStore?.appendMessage(channelId, {
+                authorBotId: undefined,
+                authorName: 'CloudBot',
+                authorColor: 'blue',
+                authorShape: 'puff',
+                role: 'system',
+                kind: 'text',
+                body: { kind: 'text', text },
+            });
+        } catch (error: unknown) {
+            reportBackgroundError(error);
+        }
+    }
+
     // The hand-offs waiting in the bot's queue, not counting the one running. Hand-offs are refused past a cap.
     countQueuedHandoffTurns(botId: string): number {
         const waitingTurns = this.queuedTurns.get(botId) ?? [];
@@ -1531,7 +1941,15 @@ class ChatService {
 
         const dropNotes = handoffs.map(handoff => this.saveSenderNote(handoff.senderBotId, `The hand-off to ${targetName} was dropped before it started: ${reason}.`));
 
-        await Promise.all(dropNotes);
+        const channelDrops = droppedTurns.flatMap(turn => (turn.channel === undefined ? [] : [turn.channel.channelId]));
+        const channelNotes = channelDrops.map(channelId => this.postChannelNote(channelId, `${targetName}'s queued channel reply was dropped before it started: ${reason}.`));
+
+        // A round that lost its last turn to this drop has nothing left to wait for.
+        channelDrops.forEach((channelId) => {
+            this.forgetIdleRounds(channelId);
+        });
+
+        await Promise.all([...dropNotes, ...channelNotes]);
     }
 
     // The reply of a hand-off turn goes back to the sender's chat, as one note from the receiving bot.
@@ -1607,6 +2025,24 @@ class ChatService {
             ?.setWaitingOnHuman(isWaiting);
         this.stallWatches.get(botId)
             ?.setWaitingOnOwner(isWaiting);
+
+        // A channel turn that waits for the owner is answered in the bot's own chat, so the channel is told where to look.
+        const channelId = this.channelOfRunningTurn(botId);
+
+        if (isWaiting && channelId !== undefined) {
+            this.postChannelWaitNote(botId, channelId)
+                .catch(reportBackgroundError);
+        }
+    }
+
+    private async postChannelWaitNote(botId: string, channelId: string): Promise<void> {
+        const bot = await this.botStore.getById(botId);
+
+        if (bot === undefined) {
+            return;
+        }
+
+        await this.postChannelNote(channelId, `${bot.name} is waiting for your answer in its chat.`);
     }
 
     // The screen came back to the bot, so every bot that waited for it runs its clock again.
@@ -1744,6 +2180,7 @@ class ChatService {
         this.reviewSpend.delete(botId);
         this.screenWaitBots.delete(botId);
         this.runningTurns.delete(botId);
+        this.releaseChannelRound(botId);
         this.handoffsSentByTurn.delete(botId);
         this.publishTurnState(botId);
         this.startNextQueuedTurn(botId)
@@ -1752,6 +2189,11 @@ class ChatService {
 
     // Adds a turn to the queue. A retry goes in front, so the message it answers runs first.
     private async enqueueTurn(botId: string, turn: TurnInput, isFirst: boolean): Promise<void> {
+        // A channel turn is kept in memory only. Stored, it would come back after a restart as a plain bot turn.
+        if (turn.channel !== undefined) {
+            throw new Error('A channel turn is never stored in the turn queue.');
+        }
+
         if (this.deletingBots.has(botId)) {
             throw new BotDeletingError();
         }
@@ -1856,6 +2298,14 @@ class ChatService {
 
     // After a usage limit, the same message runs again when no session started. Otherwise "Continue." runs in the session.
     private async waitForUsageLimit(turn: TurnInput, agentStarted: boolean, resetsAt: number | undefined): Promise<void> {
+        // A channel turn does not wait in the queue. Its round ends here, its queued replies are dropped, and the channel is told.
+        if (turn.channel !== undefined) {
+            this.endChannelRounds(turn.channel.channelId);
+            await this.postChannelNote(turn.channel.channelId, 'The usage limit was reached, so the channel round stopped. Queued replies were dropped.');
+
+            return;
+        }
+
         const resumeTurn: TurnInput = agentStarted
             ? { botId: turn.botId, text: CONTINUE_PROMPT, uploads: [], messageId: undefined, source: turn.source, handoff: carryHandoff(turn) }
             : turn;
@@ -1935,6 +2385,10 @@ class ChatService {
 
     private async runTurn(turn: TurnInput, abortController: AbortController): Promise<void> {
         const { botId, text, uploads } = turn;
+
+        if (turn.channel !== undefined) {
+            this.channelRunning.set(botId, turn.channel.roundId);
+        }
         const turnState: TurnState = { agentStarted: false, isRejectedByLimit: false, rejectedResetsAt: undefined, limit: undefined, hasError: false };
         // Set when the turn ends on an error, so its hand-off reply says so.
         let hasFailed = false;
@@ -1959,7 +2413,8 @@ class ChatService {
 
             // The limits are read for each turn, so a change in the web app applies to the next message.
             const limits = this.limitStore === undefined ? undefined : await this.limitStore.get(botId);
-            const turnLimit = limits === undefined ? NO_LIMIT : chooseTurnLimit(limits, turn.source);
+            const settingsKind = settingsSource(turn.source);
+            const turnLimit = limits === undefined ? NO_LIMIT : chooseTurnLimit(limits, settingsKind);
 
             this.runningLimits.set(botId, turnLimit);
             this.reviewSpend.set(botId, 0);
@@ -1992,7 +2447,8 @@ class ChatService {
                 ? []
                 : [
                         createBotCreateTool(input => this.createBotFromTool(botId, input)),
-                        createBotSendTool(input => this.handoffFromTool(botId, handoffDepth, input)),
+                        createBotSendTool(input => this.handoffFromTool(botId, handoffDepth, input, turn.channel)),
+                        ...this.channelTools(botId),
                     ];
             // The rule list is always offered. A rule change and a bot delete are offered only with the approval gate, since each waits for the owner.
             const ruleTools = this.ruleStore === undefined ? [] : createRuleTools(this.ruleStore, botId, this.approvals !== undefined);
@@ -2002,6 +2458,7 @@ class ChatService {
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
                 [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...ruleTools, ...botDeleteTools],
+                name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
             const remoteServers = this.connectedApps === undefined ? {} : await this.connectedApps.serverConfigs();
@@ -2013,14 +2470,14 @@ class ChatService {
             const ownerRules = this.ruleStore === undefined ? [] : await this.ruleStore.list(botId);
             const blockedToolNames = ownerRules.flatMap(rule => rule.blockedTools);
             const disallowedTools = [...new Set(blockedToolNames)];
-            const toolCallReview = this.createToolCallReview(botId);
+            const toolCallReview = this.createToolCallReview(botId, turn.channel?.channelId);
             const reviewOption = toolCallReview === undefined ? {} : { reviewToolCall: toolCallReview };
             // The model and effort choices are read for each turn, so a change in the web app applies to the next message.
             const modelChoices = this.modelStore === undefined ? undefined : await this.modelStore.get(botId);
             const efforts = this.modelStore === undefined ? undefined : await this.modelStore.getEfforts(botId);
-            const chosenModel = modelChoices === undefined ? undefined : chooseTurnModel(modelChoices, turn.source);
+            const chosenModel = modelChoices === undefined ? undefined : chooseTurnModel(modelChoices, settingsKind);
             const modelOption = chosenModel === undefined ? {} : { model: chosenModel };
-            const chosenEffort = efforts === undefined ? undefined : chooseTurnEffort(efforts, turn.source);
+            const chosenEffort = efforts === undefined ? undefined : chooseTurnEffort(efforts, settingsKind);
             const effortOption = chosenEffort === undefined ? {} : { effort: chosenEffort };
             // A helper exists only for the work the owner chose a model for, and it gets only the tools of that work.
             const helperAgents = modelChoices === undefined
@@ -2035,6 +2492,7 @@ class ChatService {
                 additionalDirectories,
                 agents: helperAgents,
                 botId,
+                channel: turn.channel,
                 prompt,
                 abortController,
                 workspaceDir,
@@ -2105,14 +2563,14 @@ class ChatService {
         }
     }
 
-    private createToolCallReview(botId: string): TurnRequest['reviewToolCall'] {
+    private createToolCallReview(botId: string, channelId?: string): TurnRequest['reviewToolCall'] {
         const approvals = this.approvals;
 
         if (approvals === undefined) {
             return undefined;
         }
 
-        return (call, signal) => approvals.review(botId, call, signal);
+        return (call, signal) => approvals.review(botId, call, signal, channelId);
     }
 
     // Asks the owner in the chat about an action the proxy holds, such as a push. Only a running turn can be asked, so without one the action is refused.
@@ -2183,13 +2641,15 @@ class ChatService {
         const appToolNames = this.connectedApps === undefined ? [] : APP_TOOL_FULL_NAMES;
         // bot_create is offered only with the approval gate, the same condition as the tool itself.
         const botCreateToolNames = this.approvals === undefined ? [] : [BOT_CREATE_TOOL_FULL_NAME];
+        // Channel tools are offered with the approval gate, like bot_create. Removal and deletion wait for the owner there.
+        const channelToolNames = this.channelStore === undefined || this.approvals === undefined ? [] : CHANNEL_TOOL_FULL_NAMES;
         // The rule list needs the rule store. A rule change needs the approval gate too, so without it only the list is allowed.
         const ruleToolNames = this.ruleToolNamesAllowed();
         const botDeleteToolNames = this.approvals === undefined ? [] : [BOT_DELETE_TOOL_FULL_NAME];
         // bot_send is offered only with the approval gate too, since the receiving turn is reviewed like any other.
         const botSendToolNames = this.approvals === undefined ? [] : [BOT_SEND_TOOL_FULL_NAME];
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames];
     }
 
     private webhookTools(botId: string): CloudbotTool[] {
@@ -2277,7 +2737,7 @@ class ChatService {
                     turnState.hasError = true;
                 }
 
-                await this.handleAgentEvent(botId, agentEvent, toolNamesById);
+                await this.handleAgentEvent(botId, agentEvent, toolNamesById, turnContext.channel);
             }
         } catch (error: unknown) {
             if (!isResumeAttempt || hasSession) {
@@ -2290,7 +2750,7 @@ class ChatService {
         return { failureText };
     }
 
-    private async handleAgentEvent(botId: string, agentEvent: AgentEvent, toolNamesById: Map<string, string>): Promise<void> {
+    private async handleAgentEvent(botId: string, agentEvent: AgentEvent, toolNamesById: Map<string, string>, channel: ChannelTurnSource | undefined): Promise<void> {
         switch (agentEvent.type) {
             case 'session':
                 await this.botStore.setSessionId(botId, agentEvent.sessionId);
@@ -2299,7 +2759,7 @@ class ChatService {
             case 'text': {
                 const textBody: TextBody = { kind: 'text', text: agentEvent.text };
 
-                await this.saveAndPublish(botId, 'assistant', textBody);
+                await this.saveTurnMessage(botId, 'assistant', textBody, channel);
 
                 return;
             }
@@ -2317,19 +2777,22 @@ class ChatService {
                     summary: agentEvent.output,
                 };
 
-                await this.saveAndPublish(botId, 'assistant', toolBody);
+                await this.saveTurnMessage(botId, 'assistant', toolBody, channel);
 
                 return;
             }
             case 'turn_error': {
                 const errorBody: TextBody = { kind: 'text', text: agentEvent.message };
 
-                await this.saveAndPublish(botId, 'system', errorBody);
+                await this.saveTurnMessage(botId, 'system', errorBody, channel);
 
                 return;
             }
             case 'text_delta':
-                this.publish(botId, { type: 'textDelta', botId, text: agentEvent.text });
+                // A channel turn's partial text is not shown in the bot's own chat.
+                if (channel === undefined) {
+                    this.publish(botId, { type: 'textDelta', botId, text: agentEvent.text });
+                }
 
                 return;
             case 'turn_limit': {

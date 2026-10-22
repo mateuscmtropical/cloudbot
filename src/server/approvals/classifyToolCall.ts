@@ -30,6 +30,7 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__app_remove',
     'mcp__cloudbot__integration_list',
     'mcp__cloudbot__rule_list',
+    'mcp__cloudbot__channel_list',
     'mcp__cloudbot__screen_show',
 ]);
 
@@ -46,6 +47,13 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
     // Rules are permissions, and a deleted bot is gone for good, so the owner approves both in the chat.
     'mcp__cloudbot__rule_change',
     'mcp__cloudbot__bot_delete',
+    // A new channel, a new member and a new manager change who takes part, so the owner approves each one.
+    'mcp__cloudbot__channel_create',
+    'mcp__cloudbot__channel_add',
+    'mcp__cloudbot__channel_set_manager',
+    // Removing a member or deleting a channel changes who takes part, and deletes its messages, so the owner approves each one.
+    'mcp__cloudbot__channel_remove',
+    'mcp__cloudbot__channel_delete',
     // Limits decide how much a turn may spend, so the owner approves each change with its old and new values.
     'mcp__cloudbot__limits_set',
 ]);

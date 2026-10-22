@@ -40,7 +40,8 @@ interface ReviewContext {
 
 interface ToolCallReviewerOptions {
     askModel: ReviewModel;
-    readContext: (botId: string) => Promise<ReviewContext>;
+    // A channel turn passes its channel id, so the review reads the channel's posts instead of the bot's chat.
+    readContext: (botId: string, channelId?: string) => Promise<ReviewContext>;
     // Called with the estimated cost of each review call, the bot whose turn asked for it, and that turn's signal.
     reportCost?: (botId: string, costUsd: number, turnSignal?: AbortSignal) => void;
     // Builds the approval card of an integration create or update: the whole script, the secret's site and the hash.
@@ -277,7 +278,7 @@ function withHandoffDetail(verdict: ToolCallVerdict, input: unknown): ToolCallVe
 // Skips harmless calls, always asks for connector tools that send, buy or book, and lets a model judge the rest.
 // A model that fails or answers badly throws, and the approval gate then asks the owner.
 function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallReviewer {
-    return async (botId, call, signal) => {
+    return async (botId, call, signal, channelId) => {
         // The floor runs before anything else. No rule, approval or model choice can lift it.
         const floorReason = checkCommandFloor(call);
 
@@ -331,7 +332,7 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
             return { decision: 'ask', summary: `Run ${call.toolName} with a very long input that could not be reviewed.` };
         }
 
-        const context = await options.readContext(botId);
+        const context = await options.readContext(botId, channelId);
         const prompt = buildReviewPrompt(call, context);
         const reportReviewCost = (costUsd: number): void => {
             options.reportCost?.(botId, costUsd, signal);

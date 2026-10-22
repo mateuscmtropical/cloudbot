@@ -21,6 +21,7 @@ import { buildLocalBrowserCommand, buildLocalBrowserTools, createLocalBrowserSpa
 import { BrowserGate } from './desktop/BrowserGate.ts';
 import { DesktopSupervisor, buildDesktopCommand } from './desktop/DesktopSupervisor.ts';
 import { BotStore } from './store/BotStore.ts';
+import { ChannelStore } from './store/ChannelStore.ts';
 import { BrowserAllowStore } from './store/BrowserAllowStore.ts';
 import { MessageStore } from './store/MessageStore.ts';
 import { RoutineScheduler } from './routines/RoutineScheduler.ts';
@@ -74,6 +75,7 @@ const opened = await openDatabase(databaseFilePath);
 const settings = new SettingsStore(opened.db);
 const access = new SetupAccess(settings);
 const botStore = new BotStore(opened.db);
+const channelStore = new ChannelStore(opened.db);
 const messageStore = new MessageStore(opened.db);
 
 await ensureDefaultBot(botStore);
@@ -217,7 +219,7 @@ const askReviewModel = createClaudeReviewModel({
 });
 const toolCallReviewer = createToolCallReviewer({
     askModel: askReviewModel,
-    readContext: createReviewContextReader({ ruleStore, messageStore, modelStore }),
+    readContext: createReviewContextReader({ ruleStore, messageStore, modelStore, channelStore }),
     // The card of an integration change shows its script, so the owner approves what runs. Set only with integrations.
     describeChange: integrationService === undefined ? undefined : (botId, mode, input) => integrationService.describeChange(botId, mode, input),
     // The rule card and the bot delete check read the stores and the chat service, which is defined below. The calls happen later, in a turn.
@@ -249,7 +251,7 @@ const githubProxy: GithubProxy | undefined = githubCertificate === undefined
             bundleFile: githubCertificate.bundleFile,
         });
 const chatService: ChatService = new ChatService({
-    botStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, ruleStore, routineStore, modelStore, limitStore, screen,
+    botStore, channelStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, ruleStore, routineStore, modelStore, limitStore, screen,
     webhookStore,
     watchStore,
     connectedApps,
@@ -349,7 +351,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ version, access, chatService, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ version, access, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.
