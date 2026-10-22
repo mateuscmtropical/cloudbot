@@ -16,6 +16,7 @@ import { readWorkspaceMemoryBlock } from './readWorkspaceMemory.ts';
 import { TURN_MARKER_VARIABLE, createTurnMarker, endTurnLeftovers } from './endTurnLeftovers.ts';
 import { mapCliMessage, rememberResetsAt, withResetsAt } from './mapCliMessage.ts';
 import type { CliMessage } from './mapCliMessage.ts';
+import { isClaudeModel } from '../models/modelChoices.ts';
 
 type SpawnFunction = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 type SignalAction = 'TERM' | 'KILL';
@@ -83,7 +84,7 @@ function buildInterruptMessage(requestId: string): string {
 // The variadic --disallowedTools and --add-dir come last, so the next flag ends their values.
 function buildCliArguments(request: TurnRequest, files: CliTurnFiles): string[] {
     const resumeArgs = request.sessionId ? ['--resume', request.sessionId] : [];
-    const modelArgs = request.model === undefined ? [] : ['--model', request.model];
+    const modelArgs = request.model === undefined || !isClaudeModel(request.model) ? [] : ['--model', request.model];
     const effortArgs = request.effort === undefined ? [] : ['--effort', request.effort];
     const systemPromptArgs = files.systemPromptPath === undefined ? [] : ['--append-system-prompt-file', files.systemPromptPath];
     const agentArgs = files.agentsPath === undefined ? [] : ['--agents', files.agentsPath];

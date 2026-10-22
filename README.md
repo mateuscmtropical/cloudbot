@@ -66,7 +66,7 @@ with Claude.
 | --- | --- | --- | --- |
 | Claude | Claude Code | Claude account, code pasted back | Anthropic |
 | ChatGPT | Codex | ChatGPT account, device code | OpenAI |
-| Gemini | Gemini CLI | Google account, code pasted back | Google AI Studio |
+| Gemini | Antigravity CLI for a subscription, Gemini CLI for a key | Google account, code pasted back | Google AI Studio |
 | GitHub Copilot | Copilot CLI | GitHub account, device code | none |
 | Cursor | Cursor CLI | Cursor account, link | none |
 | Grok | Grok Build | xAI account, device code | xAI, run on opencode |

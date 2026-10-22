@@ -1,9 +1,11 @@
 import { join } from 'node:path';
 
 import { AcpEngine } from '../agent/AcpEngine.ts';
+import { AgyEngine } from '../agent/AgyEngine.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from '../agent/AgentRunner.ts';
 import { signalProcessTree } from '../agent/ClaudeCliEngine.ts';
+import type { SpawnFunction } from '../agent/ClaudeCliEngine.ts';
 import { PROVIDER_AGENT_WRAPPER, wrapperAgentLaunch } from '../agent/codexAgentLaunch.ts';
 import type { LoopbackToolServer } from '../agent/createLoopbackToolServer.ts';
 import type { ProviderApiKey, ProviderMethod, ProviderSignIn } from '../setup/SetupConversation.ts';
@@ -24,6 +26,8 @@ interface AcpSignInSpec {
     optionLabel?: string | undefined;
     // True for a provider that needs no sign-in, like the free opencode models.
     isFree?: boolean | undefined;
+    // True for the Gemini subscription, which signs in to the Antigravity CLI. Its status comes from the wrapper.
+    usesAgy?: boolean | undefined;
 }
 
 interface AcpApiKeySpec {
@@ -87,7 +91,8 @@ const ACP_PROVIDERS: AcpProviderSpec[] = [
         label: 'Gemini',
         protectedFolders: ['.gemini'],
         askModeId: 'default',
-        signIn: { site: 'Google', authMethodId: 'oauth-personal', needsCode: true },
+        // Google refuses the Gemini CLI for a personal subscription now, so the sign-in runs the Antigravity CLI (agy).
+        signIn: { site: 'Google', needsCode: true, usesAgy: true },
         apiKey: {
             site: 'Google AI Studio',
             secretName: 'GEMINI_API_KEY',
@@ -228,6 +233,20 @@ async function checkKeyAt(url: string, keyHeader: KeyHeader, key: string, badKey
     return response.status === badKeyStatus ? 401 : response.status;
 }
 
+// Asks the wrapper whether the provider keeps a sign-in. It ends with 0 when it does.
+function readWrapperStatus(launch: { spawnFunction: SpawnFunction }, provider: AcpProviderId): Promise<boolean> {
+    const child = launch.spawnFunction(PROVIDER_AGENT_WRAPPER, [provider, 'status'], { stdio: 'ignore', env: { PATH: process.env.PATH ?? '' } });
+
+    return new Promise((resolve) => {
+        child.once('error', () => {
+            resolve(false);
+        });
+        child.once('exit', (code) => {
+            resolve(code === 0);
+        });
+    });
+}
+
 // Runs a turn with the sign-in or the key, whichever way the owner connected the provider last.
 function methodRunner(signInRunner: AgentRunner | undefined, keyRunner: AgentRunner | undefined, method: () => Promise<ProviderMethod | undefined>): AgentRunner {
     return {
@@ -260,7 +279,11 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
         const command = launch === undefined ? localPath : PROVIDER_AGENT_WRAPPER;
         const args = launch === undefined ? LOCAL_ACP_ARGS[spec.id] : [spec.id, 'acp'];
         const home = join(options.dataDir, 'providers', spec.id, 'home');
-        const signInEngine = spec.signIn === undefined
+        // The Gemini subscription runs on agy, which has no ACP mode. It needs the Docker wrapper, so local mode has none.
+        const agyEngine = spec.signIn?.usesAgy === true && launch !== undefined
+            ? new AgyEngine({ label: spec.label, command: PROVIDER_AGENT_WRAPPER, args: [spec.id, 'agy'], launch, loopback: options.loopback, protectedFolders: [...spec.protectedFolders, '.agents'] })
+            : undefined;
+        const signInEngine = spec.signIn === undefined || spec.signIn.usesAgy === true
             ? undefined
             : new AcpEngine({
                     label: spec.label, command, args, homeFor: () => home, loopback: options.loopback, launch,
@@ -287,6 +310,10 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
 
         let checkedAt = 0;
         const isSignedIn = async (): Promise<boolean | undefined> => {
+            if (spec.signIn?.usesAgy === true) {
+                return launch === undefined ? false : readWrapperStatus(launch, spec.id);
+            }
+
             if (signInEngine === undefined) {
                 return false;
             }
@@ -329,7 +356,7 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
         }
 
         engines[spec.id] = {
-            runner: methodRunner(signInEngine, keyEngine, () => options.methodFor(spec.id)),
+            runner: methodRunner(agyEngine ?? signInEngine, keyEngine, () => options.methodFor(spec.id)),
             isConnected: async () => {
                 const method = await options.methodFor(spec.id);
 

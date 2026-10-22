@@ -190,7 +190,7 @@ describe('AcpEngine', () => {
         const initialize = agents[0]?.sent.find(message => message.method === 'initialize');
 
         expect(events)
-            .toEqual([{ type: 'session', sessionId: 'session-1' }, { type: 'text_delta', text: 'Hi' }, { type: 'turn_finished' }]);
+            .toEqual([{ type: 'session', sessionId: 'session-1' }, { type: 'text_delta', text: 'Hi' }, { type: 'text', text: 'Hi' }, { type: 'turn_finished' }]);
         expect(initialize?.params?.clientCapabilities)
             .toEqual({ fs: { readTextFile: false, writeTextFile: false }, terminal: false });
     });
@@ -245,7 +245,7 @@ describe('AcpEngine', () => {
         expect(agents[0]?.sent.some(message => message.method === 'session/new'))
             .toBe(false);
         expect(events)
-            .toEqual([{ type: 'session', sessionId: 'session-1' }, { type: 'text_delta', text: 'Hi' }, { type: 'turn_finished' }]);
+            .toEqual([{ type: 'session', sessionId: 'session-1' }, { type: 'text_delta', text: 'Hi' }, { type: 'text', text: 'Hi' }, { type: 'turn_finished' }]);
     });
 
     it('refuses calls over the step limit and stops the turn', async () => {

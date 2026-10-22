@@ -195,6 +195,11 @@ describe('ApprovalGate', () => {
             expect(posted)
                 .toHaveLength(1);
         });
+        // The owner sees which call it is, since no review describes it.
+        expect(posted[0]?.prompt)
+            .toContain('Tool: send_email.');
+        expect(posted[0]?.prompt)
+            .toContain('ana@example.com');
         await gate.answer('bot-1', 'message-1', 'deny');
         await pending;
     });
