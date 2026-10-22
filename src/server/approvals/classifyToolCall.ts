@@ -1,4 +1,5 @@
 import type { ToolCall } from '../agent/AgentRunner.ts';
+import { EMAIL_SEND_TOOL_FULL_NAME, EMAIL_SETUP_TOOL_FULL_NAME } from '../email/emailToolNames.ts';
 
 type ToolCallClass = 'skip' | 'always-ask' | 'review';
 
@@ -47,11 +48,15 @@ const SKIP_TOOL_NAMES = new Set([
     // Listing reads the provider status. Connecting only posts the provider list, and the owner signs in on the provider's page.
     'mcp__cloudbot__provider_list',
     'mcp__cloudbot__provider_connect',
+    'mcp__cloudbot__email_status',
 ]);
 
 // Letting the browser reach a private host always needs the owner's approval, whatever the rules say.
 // A new outside server, and the tools it brings, always need the owner's approval too.
 const ALWAYS_ASK_TOOL_NAMES = new Set([
+    // These calls have fixed cards, so an owner always sees the exact mail or mailbox settings.
+    EMAIL_SEND_TOOL_FULL_NAME,
+    EMAIL_SETUP_TOOL_FULL_NAME,
     'mcp__cloudbot__browser_allow_host',
     'mcp__cloudbot__app_connect',
     // A new bot gets its own workspace and its first instructions, so the owner approves it before it is made.

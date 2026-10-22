@@ -108,6 +108,58 @@ describe('createToolCallReviewer', () => {
             .not.toHaveBeenCalled();
     });
 
+    it('always asks for email with every recipient and the full approved text on the card', async () => {
+        const { reviewer, askModel } = createReviewer('unused');
+        const input = {
+            to: ['to@example.com'],
+            cc: ['cc@example.com'],
+            bcc: ['bcc@example.com'],
+            subject: 'Hello',
+            text: 'The complete body.\nKeep every line.',
+        };
+
+        const verdict = await reviewer('bot-1', { toolName: 'mcp__cloudbot__email_send', input });
+
+        expect(verdict)
+            .toEqual({
+                decision: 'ask',
+                summary: 'Send an email.',
+                detail: 'To: to@example.com\nCc: cc@example.com\nBcc: bcc@example.com\nSubject: "Hello"\n\nText:\nThe complete body.\nKeep every line.',
+            });
+        expect(askModel)
+            .not.toHaveBeenCalled();
+    });
+
+    it('always asks before connecting an email account, without exposing a password', async () => {
+        const { reviewer, askModel } = createReviewer('unused');
+
+        const verdict = await reviewer('bot-1', {
+            toolName: 'mcp__cloudbot__email_setup',
+            input: {
+                address: 'bot@example.com',
+                username: 'bot-user',
+                imapHost: 'imap.example.com',
+                imapPort: 993,
+                smtpHost: 'smtp.example.com',
+                smtpPort: 465,
+                smtpSecure: true,
+            },
+        });
+
+        expect(verdict.decision)
+            .toBe('ask');
+        if (verdict.decision === 'ask') {
+            expect(verdict.detail)
+                .toContain('Address: bot@example.com');
+            expect(verdict.detail)
+                .toContain('IMAP: imap.example.com:993');
+            expect(verdict.detail)
+                .not.toContain('password-value');
+        }
+        expect(askModel)
+            .not.toHaveBeenCalled();
+    });
+
     it('asks for a private host the browser should reach, and names the host', async () => {
         const { reviewer, askModel } = createReviewer('unused');
 

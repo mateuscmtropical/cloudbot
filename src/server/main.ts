@@ -78,6 +78,12 @@ import { createPushSender } from './push/createPushSender.ts';
 import { loadOrCreateVapidKeys } from './push/loadVapidKeys.ts';
 import { PushNotifier } from './push/PushNotifier.ts';
 import { readPushSubject } from './push/readPushSubject.ts';
+import { EmailAccountStore } from './store/EmailAccountStore.ts';
+import { EmailAccountService } from './email/EmailAccountService.ts';
+import { EmailPasswordStore } from './email/EmailPasswordStore.ts';
+import { ImapEmailReader } from './email/ImapEmailReader.ts';
+import { EmailPoller } from './email/EmailPoller.ts';
+import { SmtpEmailSender } from './email/SmtpEmailSender.ts';
 
 interface RuntimeConnection {
     proxy?: KeyProxy;
@@ -163,6 +169,10 @@ const noBrowserReason = localTools.noBrowserReason;
 const screen = new ScreenHolder();
 const vault = new Vault(dataDir);
 const botSecrets = new BotSecrets(vault);
+const emailAccountStore = new EmailAccountStore(opened.db);
+const emailPasswordStore = new EmailPasswordStore(vault);
+const emailAccountService = new EmailAccountService(emailAccountStore, emailPasswordStore);
+const emailSender = new SmtpEmailSender(emailAccountService);
 const ruleStore = new RuleStore(opened.db);
 const routineStore = new RoutineStore(opened.db);
 const taskStore = new TaskStore(opened.db);
@@ -359,7 +369,7 @@ if (codexPath !== undefined && chatgptSignIn !== undefined && openaiKeyProxy !==
 const providerRunner = new ProviderRunner({ engines, providerFor: botId => providerChoices.forBot(botId) });
 const chatService: ChatService = new ChatService({
     notifyOwner: notice => pushNotifier.notify(notice),
-    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, ruleStore, routineStore, taskStore, modelStore, limitStore, screen,
+    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     templateGallery,
     providerTools: {
@@ -473,10 +483,20 @@ const watchScheduler = new WatchScheduler({
     isReady: () => setup.isDone(),
 });
 
+const emailPoller = new EmailPoller({
+    accountStore: emailAccountStore,
+    passwordStore: emailPasswordStore,
+    reader: new ImapEmailReader(),
+    sendMessage: (botId, text, emailDeliveryId) => chatService.sendEmailTask(botId, text, emailDeliveryId),
+    postNotice: (botId, text, emailDeliveryId) => chatService.postEmailNotice(botId, text, emailDeliveryId),
+    isReady: () => setup.isDone(),
+});
+
 // Queued messages and usage limit waits from the last run continue before the first request.
 await chatService.resumeQueue();
 routineScheduler.start();
 watchScheduler.start();
+emailPoller.start();
 
 function cleanUploads(): void {
     chatService.cleanUploads()
@@ -529,6 +549,8 @@ if (desktop !== undefined) {
 function shutdown(): void {
     clearInterval(cleanupTimer);
     routineScheduler.stop();
+    watchScheduler.stop();
+    emailPoller.stop();
     desktop?.stop();
     localBrowser?.stop();
     gateController.abort();

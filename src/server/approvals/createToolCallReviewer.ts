@@ -13,6 +13,8 @@ import type { EffortLevel } from '../models/modelChoices.ts';
 import type { ToolCallReviewer, ToolCallVerdict } from './ApprovalGate.ts';
 import { normalizeHost } from '../desktop/browserHost.ts';
 import type { ChangeCard, ChangeMode } from '../integrations/IntegrationService.ts';
+import { EMAIL_SEND_TOOL_FULL_NAME, EMAIL_SETUP_TOOL_FULL_NAME } from '../email/emailToolNames.ts';
+import { describeEmailSend, describeEmailSetup } from '../email/emailApproval.ts';
 
 // The input of browser_allow_host, as the card reads it. Both fields come from the model, so they are checked.
 interface AllowHostInput {
@@ -60,6 +62,9 @@ interface ToolCallReviewerOptions {
     describeBotDelete?: ((botId: string) => Promise<BotDeleteCheck>) | undefined;
     // Builds the card of a limit change, with the old and new value of each limit.
     describeLimitChange?: ((botId: string, input: unknown) => Promise<ToolCallVerdict>) | undefined;
+    // Email cards show the complete message or mailbox settings. Invalid or oversized cards are refused.
+    describeEmailSend?: (input: unknown) => ToolCallVerdict;
+    describeEmailSetup?: (input: unknown) => ToolCallVerdict;
 }
 
 interface BotDeleteAllowed {
@@ -303,6 +308,14 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
         }
 
         if (callClass === 'always-ask') {
+            if (call.toolName === EMAIL_SEND_TOOL_FULL_NAME) {
+                return (options.describeEmailSend ?? describeEmailSend)(call.input);
+            }
+
+            if (call.toolName === EMAIL_SETUP_TOOL_FULL_NAME) {
+                return (options.describeEmailSetup ?? describeEmailSetup)(call.input);
+            }
+
             if (call.toolName === BOT_CREATE_TOOL_FULL_NAME) {
                 return describeBotCreate(call.input);
             }
