@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SetupAccess } from './access/SetupAccess.ts';
 import { FakeAgentRunner } from './agent/FakeAgentRunner.ts';
 import { ChatService } from './chat/ChatService.ts';
+import { CLEANUP_RETRIES } from './chat/testCleanup.ts';
 import { createApp } from './createApp.ts';
 import { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { MAX_RULES_PER_BOT } from './rules/createRuleRoutes.ts';
@@ -87,7 +88,7 @@ describe('createApp', () => {
 
         const directories = createdDirectories.splice(0);
 
-        await Promise.all(directories.map(directory => rm(directory, { recursive: true, force: true })));
+        await Promise.all(directories.map(directory => rm(directory, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES })));
     });
 
     it('answers the health route with the version and no cookie', async () => {
