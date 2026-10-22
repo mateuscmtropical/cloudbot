@@ -1141,6 +1141,19 @@ The worker keys a notification by bot and kind (`botId:kind`) and sets `renotify
 
 Limits. There is no notification for a usage limit, a stall or an owner Stop. A dead subscription is removed when the push service reports it gone.
 
+## Telegram
+
+`TelegramBridge` lets the owner talk to a bot from Telegram. It uses the official Bot API (https://core.telegram.org/bots/api) with `getUpdates` long polling, so the server needs no public address and no webhook.
+
+- The owner makes a Telegram bot with @BotFather. The bot asks for its token with `request_secret`, name `TELEGRAM_BOT_TOKEN`, site `https://api.telegram.org`. The token is read from the vault for each poll and is used only when its site is that one. The token is part of every request address, so no log line or error names the address.
+- `telegram_connect` posts a one-time code of 8 characters in the web chat. The model never sees it. The code works for 10 minutes. Five wrong codes end it.
+- The account that sends `/start <code>` in a private chat becomes the only one the bot answers. Its user id and chat id are kept in `settings` under `telegram.link.<botId>`. The next update offset is kept under `telegram.offset.<botId>` and is saved after a batch is handled, so a restart does not pass a handled message to the bot again. Messages from anyone else, and anything from a group, get no answer at all.
+- A text from the owner goes to the bot like a chat message, so it shows in the web chat too. While a turn that Telegram started is running, each assistant text message of the bot is sent back, in order, cut into parts of 4096 characters (the Bot API limit for `sendMessage`).
+- During such a turn, an open approval card or a screen hand-off sends one fixed line to Telegram that says to open the web app. The line never holds the card text and has no buttons, so nothing is answered from Telegram. A card that is published again, such as after it was answered, sends nothing more.
+- `telegram_disconnect` forgets the link and the offset. Deleting the bot does too. A restart polls again for every saved link.
+
+Limits. Text only. Approval cards, files and screenshots stay in the web app. Turns run one after the other, so when the owner writes on Telegram while a web turn runs, the replies of that web turn go to Telegram too, and the ones of the Telegram turn may not. Replies go back until the bot is idle with an empty queue. One Telegram bot token serves one CloudBot bot, since Telegram lets only one poll read its updates.
+
 ## Bot hand-offs
 
 A bot passes a message or a task to another bot with `bot_send`, found by the target's name. The tool is offered only with the approval gate. Its handler is `ChatService.handoffFromTool`. It refuses an unknown name, a name shared by two bots, and the sending bot itself.
@@ -1272,8 +1285,12 @@ a restart. The runner environment receives its `ANTHROPIC_BASE_URL` and a dummy
 key. Subscription mode receives no API key or proxy URL. Server environment
 API credentials are removed before constructing the runner environment.
 
-The same conversation connects the other providers. The list shows a
-subscription and an API key option for each installed provider that has them.
+The same conversation connects the other providers. The first card has one
+choice per installed provider. A provider with both ways asks Subscription or
+API key next, and one with a single way starts it. A choice that starts a
+sign-in carries `opensLink`, so the web page opens an empty tab inside the tap
+and puts the link in it when the link message arrives. If the CLI prints a
+refused code after the owner pasted one, the sign-in is stopped and fails.
 A CLI sign-in posts the link and the device code that the CLI prints, or a code
 field when the provider's page shows a code to paste back (Gemini). A key goes
 through the secure form, is checked with one request to the provider's model
@@ -1348,7 +1365,7 @@ key, a call through the key proxy to a fake upstream that logged the header:
 
 | Provider | Command | Sign-in | Key route |
 | --- | --- | --- | --- |
-| Gemini | `gemini --acp` | `acp-login.js` runs `authenticate oauth-personal` with `NO_BROWSER`, the owner pastes Google's code | `GEMINI_API_KEY` and `GOOGLE_GEMINI_BASE_URL`, header `x-goog-api-key` |
+| Gemini | `agy` headless for a subscription, `gemini --acp` for a key | `agy-login.js`, see below | `GEMINI_API_KEY` and `GOOGLE_GEMINI_BASE_URL`, header `x-goog-api-key` |
 | GitHub Copilot | `copilot --acp --stdio` | `copilot login --device-code` | none, the token cannot go through a proxy |
 | Cursor | `cursor-agent acp` | `agent login` with `NO_OPEN_BROWSER`, link only | none, same reason |
 | Grok | `grok agent stdio` | `grok login --device-auth` | the ACP agent takes only a Grok account, so an xAI key runs `opencode acp` with the `xai` provider at the proxy |
@@ -1356,6 +1373,34 @@ key, a call through the key proxy to a fake upstream that logged the header:
 | Qwen | `qwen --acp --auth-type openai` | none, the free account sign-in was removed | `OPENAI_API_KEY` and `OPENAI_BASE_URL` at DashScope's compatible mode |
 | Kimi | `kimi acp` | `kimi login` | `KIMI_MODEL_NAME`, `KIMI_MODEL_API_KEY` and `KIMI_MODEL_BASE_URL` |
 | opencode | `opencode acp` | none, free models only | none |
+
+Google ended Gemini CLI sign-ins for personal accounts and points them to the
+Antigravity CLI (`agy`), so a Gemini subscription runs on `AgyEngine`, not on
+ACP:
+
+- `agy` has no login command. `agy-login.js` starts its screen under
+  `script(1)`, picks Google, prints the link once and passes the pasted code.
+  The sign-in is saved when `~/.gemini/antigravity-cli/antigravity-oauth-token`
+  exists, which is also the status check.
+- A turn runs `agy --input-format stream-json --output-format stream-json`
+  through `cloudbot-provider gemini agy`. The wrapper writes a `PreToolUse`
+  hook to `~/.gemini/config/hooks.json` and adds the loopback server as the
+  `cloudbot` MCP server with the turn token.
+- The hook (`agy-hook.js`) sends each call to the loopback `approve` tool,
+  which runs the turn's review. `allow` answers `auto_approve`, anything else
+  answers `deny`. Headless `agy` refuses every call it cannot ask about, so a
+  call runs only after a review.
+- The engine maps agy names (`run_command`, `write_file` and the rest) to the
+  kinds the rules read, refuses agy's own schedules, workflows, messages and
+  subagents, and refuses calls that name `.gemini` or `.agents`.
+- `agy` sees no argument names for MCP tools, so the prompt lists the bot
+  tools with theirs. A Gemini model id without a level takes it from the
+  effort, so `gemini-3.8-flash` at low runs `gemini-3.8-flash-low`.
+- The conversation id comes from the `init` line and resumes with
+  `--conversation`.
+
+ACP and agy stream a reply in pieces. The engines join them and send the whole
+text once, so the chat saves it.
 
 Gemini, Cursor and Grok need `authenticate` before a session. The engine
 sends the cached method, and an error means the provider is not signed in. The

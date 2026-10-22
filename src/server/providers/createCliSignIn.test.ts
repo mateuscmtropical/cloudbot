@@ -117,6 +117,22 @@ describe('createCliSignIn', () => {
         });
     });
 
+    it('stops and says so when the CLI refuses the pasted code', async () => {
+        const { signIn, logins, signals } = makeSignIn(() => Promise.resolve(false));
+
+        const session = signIn.start();
+
+        logins[0]?.stderr.write('Failed to authenticate with user code. Retrying...\nhttps://github.com/login/device B8CF-3B47\n');
+        session.submitCode?.('4/0Ab');
+        logins[0]?.stderr.write('Failed to authenticate with authorization code:invalid_grant\n');
+        logins[0]?.emit('exit', null);
+
+        expect(signals)
+            .toEqual(['KILL']);
+        expect(await session.finished)
+            .toEqual({ ok: false, reason: 'Copilot did not accept the code. Try again with a new code.' });
+    });
+
     it('kills the CLI when the owner cancels', async () => {
         const { signIn, logins, signals } = makeSignIn(() => Promise.resolve(true));
 

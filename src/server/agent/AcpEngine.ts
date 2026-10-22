@@ -369,10 +369,22 @@ class AcpEngine implements AgentRunner {
             }
         };
 
+        // ACP sends a reply only in chunks. The chat shows them live and saves only full text, so the chunks are
+        // joined and sent as one text before the next other event.
+        const reply = { text: '' };
         const push = (event: AgentEvent): void => {
-            if (!queue.writableEnded) {
-                queue.write(event);
+            if (queue.writableEnded) {
+                return;
             }
+
+            if (event.type === 'text_delta') {
+                reply.text = `${reply.text}${event.text}`;
+            } else if (event.type !== 'activity' && reply.text !== '') {
+                queue.write({ type: 'text', text: reply.text });
+                reply.text = '';
+            }
+
+            queue.write(event);
         };
         const send = (message: Record<string, unknown>): void => {
             child.stdin?.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);

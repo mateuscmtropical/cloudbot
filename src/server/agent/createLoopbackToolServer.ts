@@ -413,6 +413,18 @@ async function answerPrompt(turn: TurnState, args: unknown): Promise<LoopbackToo
     return decisionResult({ behavior: 'allow', updatedInput: input });
 }
 
+async function answerOwnPrompt(turn: TurnState, args: unknown): Promise<LoopbackToolResult> {
+    const parsed = approveArgumentsSchema.safeParse(args);
+
+    if (!parsed.success || isApproveTool(parsed.data.tool_name)) {
+        return decisionResult({ behavior: 'deny', message: REVIEW_FAILED_REASON });
+    }
+
+    const refusal = await reviewOwnCall(turn, parsed.data.tool_name, parsed.data.input ?? {});
+
+    return decisionResult(refusal === undefined ? { behavior: 'allow' } : { behavior: 'deny', message: refusal });
+}
+
 async function answerMcp(serverName: string, turn: TurnState, body: string, response: ServerResponse): Promise<void> {
     const parsedJson = parseJson(body);
     const parsedBody = jsonRpcRequestSchema.safeParse(parsedJson);
@@ -469,7 +481,8 @@ async function answerMcp(serverName: string, turn: TurnState, body: string, resp
 
     if (request.method === 'tools/call') {
         if (params.name === APPROVE_TOOL_NAME) {
-            const result = await answerPrompt(turn, params.arguments);
+            // An engine whose CLI sends no call id asks through a hook of its own, such as agy, so the call is reviewed as it is.
+            const result = turn.grant.reviewsEachCall === true ? await answerOwnPrompt(turn, params.arguments) : await answerPrompt(turn, params.arguments);
 
             writeJson(response, 200, { jsonrpc: '2.0', id, result });
 
