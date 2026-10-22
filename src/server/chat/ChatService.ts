@@ -78,8 +78,10 @@ import { findNameClash } from '../channels/channelCommands.ts';
 import { createStreamMasker, maskSensitiveNumbers } from '../sensitive/sensitiveNumbers.ts';
 import type { StreamMasker } from '../sensitive/sensitiveNumbers.ts';
 import { CHANNEL_TOOL_FULL_NAMES, createChannelTools } from '../channels/createChannelTools.ts';
-import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_SHAPE, BOT_IMPORT_TOOL_FULL_NAME, createBotExportTool, createBotImportTool } from '../bots/createBotTemplateTools.ts';
+import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_SHAPE, BOT_IMPORT_TEXT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME, createBotExportTool, createBotImportTextTool, createBotImportTool } from '../bots/createBotTemplateTools.ts';
 import type { ExportedTemplate, ImportedBot } from '../bots/createBotTemplateTools.ts';
+import { describeBotImportDraft, parseBotImportDraft, readExternalBotFile } from '../bots/externalBotImport.ts';
+import type { BotImportDraft } from '../bots/externalBotImport.ts';
 import { buildBotTemplate, describeBotTemplate, parseBotTemplate, serializeBotTemplate, templateFileName } from '../bots/botTemplate.ts';
 import type { BotTemplate } from '../bots/botTemplate.ts';
 import { GALLERY_INSTALL_SHAPE, createGalleryInstallTool, createGalleryListTool, createGalleryShareTool, describeGalleryListing, galleryToolFullNames } from '../bots/createGalleryTools.ts';
@@ -845,17 +847,29 @@ class ChatService {
         const uploadDir = this.uploadDirFor(botId);
         const read = await readBotTemplateFile(filePath, uploadDir);
 
-        if (!read.ok) {
-            throw new Error(read.reason);
+        if (read.ok) {
+            const isApproved = this.takePendingTemplateCard(botId, filePath, read.digest);
+
+            if (!isApproved) {
+                throw new Error('The template file changed after the owner was shown it. Attach it again and ask.');
+            }
+
+            return this.createBotFromTemplate(read.template);
         }
 
-        const isApproved = this.takePendingTemplateCard(botId, filePath, read.digest);
+        const externalRead = await readExternalBotFile(filePath, uploadDir);
+
+        if (!externalRead.ok) {
+            throw new Error(externalRead.reason);
+        }
+
+        const isApproved = this.takePendingTemplateCard(botId, filePath, externalRead.digest);
 
         if (!isApproved) {
-            throw new Error('The template file changed after the owner was shown it. Attach it again and ask.');
+            throw new Error('The imported file changed after the owner was shown its draft. Attach it again and ask.');
         }
 
-        return this.createBotFromTemplate(read.template);
+        return this.createBotFromImportTool(externalRead.draft);
     }
 
     // Makes the bot and its rules and routines. A half made bot is removed, so it never starts without what the owner approved.
@@ -886,13 +900,27 @@ class ChatService {
         const uploadDir = this.uploadDirFor(botId);
         const read = await readBotTemplateFile(parsed.data.path, uploadDir);
 
-        if (!read.ok) {
-            return { decision: 'deny', reason: read.reason };
+        if (read.ok) {
+            this.addPendingTemplateCard(botId, parsed.data.path, read.digest);
+
+            return { decision: 'ask', summary: 'Create a bot from a template.', detail: describeBotTemplate(read.template) };
         }
 
-        this.addPendingTemplateCard(botId, parsed.data.path, read.digest);
+        const externalRead = await readExternalBotFile(parsed.data.path, uploadDir);
 
-        return { decision: 'ask', summary: 'Create a bot from a template.', detail: describeBotTemplate(read.template) };
+        if (!externalRead.ok) {
+            return { decision: 'deny', reason: externalRead.reason };
+        }
+
+        const detail = describeBotImportDraft(externalRead.draft);
+
+        if (detail === undefined) {
+            return { decision: 'deny', reason: 'The imported bot draft could not be shown in full.' };
+        }
+
+        this.addPendingTemplateCard(botId, parsed.data.path, externalRead.digest);
+
+        return { decision: 'ask', summary: 'Create a bot from imported instructions.', detail };
     }
 
     private requireGallery(): TemplateGallery {
@@ -1402,6 +1430,27 @@ class ChatService {
         }
 
         return this.summarizeBot(bot);
+    }
+
+    async createBotFromImportTool(input: BotImportDraft): Promise<ImportedBot> {
+        const parsed = parseBotImportDraft(input);
+
+        if (!parsed.ok) {
+            throw new Error(parsed.reason);
+        }
+
+        const draft = parsed.draft;
+        const bot = await this.insertBot({ name: draft.name, title: draft.title, description: draft.description });
+
+        try {
+            await this.writeFirstMemory(bot.id, `Instructions imported from another platform and approved by the owner:\n\n${draft.instructions}\n`);
+        } catch (error: unknown) {
+            await this.botStore.delete(bot.id);
+
+            throw error;
+        }
+
+        return { name: bot.name };
     }
 
     private async insertBot(profile: BotProfile): Promise<Bot> {
@@ -2997,7 +3046,7 @@ class ChatService {
                         ...this.channelTools(botId),
                     ];
             // Export is always offered. Import makes a bot, so it is offered only with the approval gate, like bot_create.
-            const templateTools = [createBotExportTool(() => this.exportBotFromTool(botId)), ...(this.approvals === undefined ? [] : [createBotImportTool(filePath => this.importBotFromTool(botId, filePath))]), ...this.galleryTools(botId)];
+            const templateTools = [createBotExportTool(() => this.exportBotFromTool(botId)), ...(this.approvals === undefined ? [] : [createBotImportTool(filePath => this.importBotFromTool(botId, filePath)), createBotImportTextTool(draft => this.createBotFromImportTool(draft))]), ...this.galleryTools(botId)];
             // The rule list is always offered. A rule change and a bot delete are offered only with the approval gate, since each waits for the owner.
             const ruleTools = this.ruleStore === undefined ? [] : createRuleTools(this.ruleStore, botId, this.approvals !== undefined);
             const botDeleteTools = this.approvals === undefined ? [] : [createBotDeleteTool(() => this.deleteBotFromTool(botId))];
@@ -3222,7 +3271,7 @@ class ChatService {
         const botCreateToolNames = [BOT_CREATE_TOOL_FULL_NAME];
         // Channel tools are offered with the approval gate, like bot_create. Removal and deletion wait for the owner there.
         const channelToolNames = this.channelStore === undefined ? [] : CHANNEL_TOOL_FULL_NAMES;
-        const templateToolNames = [BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME];
+        const templateToolNames = [BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME, BOT_IMPORT_TEXT_TOOL_FULL_NAME];
         // The rule list needs the rule store. A rule change needs the approval gate too, so without it only the list is allowed.
         const ruleToolNames = this.ruleToolNamesAllowed();
         const botDeleteToolNames = [BOT_DELETE_TOOL_FULL_NAME];

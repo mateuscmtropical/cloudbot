@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME } from '../bots/createBotTemplateTools.ts';
+import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TEXT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME } from '../bots/createBotTemplateTools.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildPng } from '../attachments/testImages.ts';
@@ -1017,8 +1017,12 @@ describe('ChatService', () => {
 
         expect(withGate.receivedRequests[0]?.allowedTools)
             .toContain(BOT_CREATE_TOOL_FULL_NAME);
+        expect(withGate.receivedRequests[0]?.allowedTools)
+            .toContain(BOT_IMPORT_TEXT_TOOL_FULL_NAME);
         expect(withoutGate.receivedRequests[0]?.allowedTools)
             .not.toContain(BOT_CREATE_TOOL_FULL_NAME);
+        expect(withoutGate.receivedRequests[0]?.allowedTools)
+            .not.toContain(BOT_IMPORT_TEXT_TOOL_FULL_NAME);
     });
 
     it('writes the instructions of a new bot to its CLAUDE.md and adds no rule', async () => {
@@ -1089,7 +1093,7 @@ describe('ChatService', () => {
         const turnRequest = runner.receivedRequests[0];
 
         expect(turnRequest?.allowedTools)
-            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...BROWSER_TOOL_FULL_NAMES, BOT_CREATE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME, BOT_DELETE_TOOL_FULL_NAME, BOT_SEND_TOOL_FULL_NAME]);
+            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...BROWSER_TOOL_FULL_NAMES, BOT_CREATE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME, BOT_IMPORT_TEXT_TOOL_FULL_NAME, BOT_DELETE_TOOL_FULL_NAME, BOT_SEND_TOOL_FULL_NAME]);
         expect(turnRequest?.systemPrompt)
             .toBe(buildSystemPrompt(bot, { hasBrowser: true, hasHandoffs: true }));
     });
