@@ -138,11 +138,11 @@ describe('buildSystemPrompt', () => {
             .toContain('then send it with share_file');
     });
 
-    it('tells the bot its memory lives in CLAUDE.md in its workspace', () => {
+    it('tells the bot its memory lives in MEMORY.md in its workspace', () => {
         const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' });
 
         expect(prompt)
-            .toContain('CLAUDE.md in your workspace');
+            .toContain('MEMORY.md in your workspace');
     });
 
     it('leaves out an empty description without a blank paragraph', () => {

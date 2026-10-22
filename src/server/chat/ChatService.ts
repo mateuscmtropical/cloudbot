@@ -10,6 +10,7 @@ import type { BotDeleteCheck } from '../approvals/createToolCallReviewer.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnImage, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
+import { MEMORY_FILE_NAME, readWorkspaceMemoryBlock } from '../agent/readWorkspaceMemory.ts';
 import { AGENT_TOOL_NAME, buildHelperAgents } from '../agent/buildHelperAgents.ts';
 import type { HelperKind } from '../agent/buildHelperAgents.ts';
 import {
@@ -150,7 +151,7 @@ const NEW_BOT_PROFILE: BotProfile = { name: 'New bot', title: 'Your coworker', d
 const NEW_BOT_GREETING = 'Hi, I am new here. What should I be called, and what job should I do for you?';
 const STOP_WAIT_MS = 30_000;
 const STOP_POLL_MS = 50;
-// The mode of a new bot's CLAUDE.md. The group can write it, so the agent user in agent-user mode can edit its memory.
+// The mode of a new bot's MEMORY.md. The group can write it, so the agent user in agent-user mode can edit its memory.
 const MEMORY_FILE_MODE = 0o660;
 
 // Why a bot was not deleted. 'deleted' is the only success.
@@ -1487,7 +1488,7 @@ class ChatService {
         return createChannelTools(deps, botId);
     }
 
-    // The bot_create tool. The owner approved the card. The instructions go to the new bot's CLAUDE.md, its memory.
+    // The bot_create tool. The owner approved the card. The instructions go to the new bot's MEMORY.md, its memory.
     // They are not a rule, since a bot wrote them and a rule would be an owner permission.
     async createBotFromTool(creatorBotId: string, input: BotCreateInput): Promise<BotSummary> {
         const bot = await this.insertBot({ name: input.name, title: input.title, description: '' });
@@ -1542,7 +1543,7 @@ class ChatService {
             await prepareAgentWorkspace(workspace);
         }
 
-        const memoryPath = join(workspace, 'CLAUDE.md');
+        const memoryPath = join(workspace, MEMORY_FILE_NAME);
         const handle = await open(memoryPath, 'wx');
 
         try {
@@ -3448,6 +3449,29 @@ class ChatService {
             const allBots = await this.botStore.list();
             const otherBotNames = allBots.filter(otherBot => otherBot.id !== botId)
                 .map(otherBot => otherBot.name);
+            const memoryAccess = this.agentUser === undefined ? undefined : { agentUser: this.agentUser, botId };
+            // The framed memory goes in the system prompt for every engine, since no provider CLI loads MEMORY.md itself.
+            const memoryBlock = await readWorkspaceMemoryBlock(workspaceDir, memoryAccess);
+            const profilePrompt = buildSystemPrompt(bot, {
+                hasBrowser: this.browser !== undefined,
+                hasRoutines: this.routineStore !== undefined,
+                hasTasks: this.taskStore !== undefined,
+                hasModels: this.modelStore !== undefined,
+                hasWebhooks: this.webhookStore !== undefined,
+                hasWatches: this.watchStore !== undefined,
+                hasGithub: this.githubEnvironment !== undefined,
+                hasHandoffs: this.approvals !== undefined,
+                otherBotNames,
+                hasLimits: this.limitStore !== undefined,
+                hasNotifications: this.notifyOwner !== undefined,
+                hasPasskeys: this.passkeys !== undefined,
+                hasEmail: this.emailAccountService !== undefined && this.emailSender !== undefined,
+                hasWhatsApp: this.whatsapp !== undefined,
+                ownerRules,
+                skills,
+                canChangeSkills: this.approvals !== undefined,
+                helpers: helperKinds,
+            });
             const turnContext: TurnContext = {
                 additionalDirectories,
                 agents: helperAgents,
@@ -3457,26 +3481,7 @@ class ChatService {
                 abortController,
                 workspaceDir,
                 images,
-                systemPrompt: buildSystemPrompt(bot, {
-                    hasBrowser: this.browser !== undefined,
-                    hasRoutines: this.routineStore !== undefined,
-                    hasTasks: this.taskStore !== undefined,
-                    hasModels: this.modelStore !== undefined,
-                    hasWebhooks: this.webhookStore !== undefined,
-                    hasWatches: this.watchStore !== undefined,
-                    hasGithub: this.githubEnvironment !== undefined,
-                    hasHandoffs: this.approvals !== undefined,
-                    otherBotNames,
-                    hasLimits: this.limitStore !== undefined,
-                    hasNotifications: this.notifyOwner !== undefined,
-                    hasPasskeys: this.passkeys !== undefined,
-                    hasEmail: this.emailAccountService !== undefined && this.emailSender !== undefined,
-                    hasWhatsApp: this.whatsapp !== undefined,
-                    ownerRules,
-                    skills,
-                    canChangeSkills: this.approvals !== undefined,
-                    helpers: helperKinds,
-                }),
+                systemPrompt: memoryBlock === undefined ? profilePrompt : `${profilePrompt}\n\n${memoryBlock}`,
                 disallowedTools,
                 reviewToolCall,
                 ...modelOption,

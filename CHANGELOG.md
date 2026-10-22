@@ -39,6 +39,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- A bot remembers what it saved on every provider, not only on Claude. The memory file is now `MEMORY.md`, and CloudBot adds it to each turn for every engine. A workspace with the old `CLAUDE.md` gets it renamed on the next turn. In Docker the file is read as the agent user, so memory that the agent saved with private file permissions still loads.
 - An approval card for a Gemini bot's own tool, such as a message to another bot, no longer expires after 3 minutes. The card is now asked in agy's hook, which waits for the owner.
 - An owner who connected only Gemini no longer gets an approval card for every tool call. When Claude is not signed in, the tool call review runs on Gemini through agy, with every tool refused.
 - A bot now knows the names of the owner's other bots, so a request to message the bot called CloudBot reaches it with bot_send instead of being read as the app.

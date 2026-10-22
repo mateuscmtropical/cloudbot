@@ -85,7 +85,7 @@ Four volumes keep your data across updates:
 |---|---|
 | `cloudbot-data` | The database and the vault |
 | `cloudbot-home` | The bot home: the sign-in and sessions of every provider CLI |
-| `cloudbot-workspaces` | Each bot's workspace, with its memory in `CLAUDE.md` |
+| `cloudbot-workspaces` | Each bot's workspace, with its memory in `MEMORY.md` |
 | `cloudbot-uploads` | Files attached in chat. The bot can read them but cannot change them |
 
 The provider CLIs come with the image and do not update themselves, so a new

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Prints one bot's memory file as the bot user. An agent may write the file with mode 600, so the server cannot read
+# it itself. The server runs this through sudo, with the bot id as the only argument, and stops it after a few seconds.
+#
+# The id must match the pattern the server checks, so no other path can be named. A workspace that still has the old
+# CLAUDE.md and no MEMORY.md gets it renamed. A link or a non-file prints nothing. The output stops one byte past
+# 64 KB, so the server can tell that the file was cut.
+
+set -euo pipefail
+
+WORKSPACE_ROOT=/var/lib/cloudbot-workspaces
+MAX_BYTES=65537
+
+if [ "$#" -ne 1 ]; then
+    echo "Give one bot id." >&2
+    exit 2
+fi
+
+bot_id="$1"
+
+if [[ ! "$bot_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Invalid bot id." >&2
+    exit 2
+fi
+
+workspace="$WORKSPACE_ROOT/$bot_id"
+memory="$workspace/MEMORY.md"
+legacy="$workspace/CLAUDE.md"
+
+if [[ ! -e "$memory" && ! -L "$memory" && -f "$legacy" && ! -L "$legacy" ]]; then
+    mv -n -- "$legacy" "$memory"
+fi
+
+if [[ -L "$memory" || ! -f "$memory" ]]; then
+    exit 0
+fi
+
+head -c "$MAX_BYTES" -- "$memory"
