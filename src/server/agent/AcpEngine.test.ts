@@ -23,6 +23,7 @@ interface FakeOptions {
     capabilities?: Record<string, unknown>;
     failAuthenticate?: boolean;
     failNewSession?: string;
+    sessionResult?: Record<string, unknown>;
     onPrompt?: (agent: FakeAcpAgent, promptId: number) => void;
 }
 
@@ -101,7 +102,7 @@ class FakeAcpAgent extends EventEmitter {
                 return;
             }
 
-            this.say({ id: message.id, result: { sessionId: 'session-1' } });
+            this.say({ id: message.id, result: this.options.sessionResult ?? { sessionId: 'session-1' } });
         }
 
         if (message.method === 'session/set_mode') {
@@ -354,6 +355,34 @@ describe('AcpEngine', () => {
 
         expect(reviewToolCall.mock.calls.map(call => (call as unknown[])[0]))
             .toEqual([{ toolName: 'Bash', input: { command: 'rm x' } }, { toolName: 'Bash', input: { command: 'ls' } }]);
+    });
+
+    it('reviews a Kimi style question by its title and the command it shows', async () => {
+        const reviewToolCall = vi.fn((): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: false, reason: 'no' }));
+        const { engine } = makeEngine({
+            onPrompt: (agent, promptId) => {
+                askPermission(agent, 905, { toolCallId: '0:c1', title: 'Bash', content: [{ type: 'content', content: { type: 'text', text: 'Requesting approval to Running: touch /tmp/x' } }] });
+                void agent.answerTo(905)
+                    .then(() => {
+                        agent.say({ id: promptId, result: { stopReason: 'end_turn' } });
+                    });
+            },
+        });
+
+        await collect(engine.runTurn(makeRequest({ reviewToolCall })));
+
+        expect(reviewToolCall.mock.calls.map(call => (call as unknown[])[0]))
+            .toEqual([{ toolName: 'Bash', input: { command: 'Requesting approval to Running: touch /tmp/x' } }]);
+    });
+
+    it('stops a turn when the session starts in a mode that approves calls by itself', async () => {
+        const { engine, agents } = makeEngine({ sessionResult: { sessionId: 'session-1', modes: { currentModeId: 'yolo', availableModes: [] } } });
+        const events = await collect(engine.runTurn(makeRequest()));
+
+        expect(events.at(-1))
+            .toMatchObject({ type: 'turn_error', message: 'Gemini started in a mode that runs tools without asking, so the turn was stopped.' });
+        expect(agents[0]?.sent.some(message => message.method === 'session/prompt'))
+            .toBe(false);
     });
 
     it('maps each ACP tool kind to the CloudBot rule that reviews it', () => {

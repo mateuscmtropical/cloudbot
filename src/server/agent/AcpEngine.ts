@@ -60,6 +60,7 @@ interface AcpToolCall {
     status?: string;
     rawInput?: unknown;
     locations?: { path?: string }[];
+    content?: unknown;
 }
 
 interface AcpPermissionOption {
@@ -75,6 +76,8 @@ const ACP_PROTOCOL_VERSION = 1;
 const DEFAULT_REVIEW_TIMEOUT_MS = 65 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 120 * 1000;
 const AUTHENTICATE_TIMEOUT_MS = 30 * 1000;
+// Mode names that approve tool calls without asking, such as yolo, auto, autoEdit or accept-edits.
+const SELF_APPROVING_MODE = /yolo|auto|accept|bypass|allow|trust/i;
 const CANCEL_GRACE_MS = 8000;
 const PRIVATE_FOLDER_MODE = 0o700;
 // The input fields that hold the text a file edit writes, not a path or a command.
@@ -92,33 +95,57 @@ function readString(record: Record<string, unknown>, ...names: string[]): string
     return typeof found === 'string' ? found : undefined;
 }
 
+// The text a question shows, such as Kimi's "Requesting approval to Running: <command>". Some agents put the command
+// only there. A diff gives its path, not its text.
+function readContentText(toolCall: AcpToolCall): string | undefined {
+    const items = Array.isArray(toolCall.content) ? toolCall.content as unknown[] : [];
+    const texts = items.map((item) => {
+        const record = readRecord(item);
+        const inner = readRecord(record.content);
+
+        return record.type === 'diff' ? readString(record, 'path') : readString(inner, 'text');
+    })
+        .filter(text => text !== undefined);
+
+    return texts.length === 0 ? undefined : texts.join('\n');
+}
+
+// Agents that send no kind, or `other`, name the tool in the title, such as Kimi's Bash or Write.
+const KIND_BY_TITLE: Record<string, string> = {
+    bash: 'execute', shell: 'execute', run_shell_command: 'execute',
+    write: 'edit', edit: 'edit', write_file: 'edit',
+    read: 'read', read_file: 'read',
+    grep: 'search', glob: 'search', grep_search: 'search',
+    fetchurl: 'fetch', web_fetch: 'fetch',
+};
+
 // The ACP tool kind decides which CloudBot rule reviews the call, so the command floor checks commands and paths
-// the same way as for Claude. A kind the engine does not know is reviewed under its own name.
+// the same way as for Claude. A kind the engine does not know is reviewed under its own name, with all it shows.
 function toReviewedCall(toolCall: AcpToolCall): ToolCall {
     const input = readRecord(toolCall.rawInput);
     const path = toolCall.locations?.[0]?.path ?? readString(input, 'path', 'file_path', 'filePath', 'filepath', 'absolute_path', 'abs_path', 'file');
     const title = toolCall.title ?? '';
+    const shown = readContentText(toolCall);
 
     switch (toolCall.kind) {
         case 'execute':
-            return { toolName: 'Bash', input: { command: readString(input, 'command', 'cmd', 'script') ?? title } };
+            return { toolName: 'Bash', input: { command: readString(input, 'command', 'cmd', 'script') ?? shown ?? title } };
         case 'edit':
-            return { toolName: 'Write', input: { ...input, file_path: path ?? '' } };
+            return { toolName: 'Write', input: { ...input, file_path: path ?? shown ?? '' } };
         case 'delete':
-            return { toolName: 'Bash', input: { command: `rm -- ${path ?? title}` } };
+            return { toolName: 'Bash', input: { command: `rm -- ${path ?? shown ?? title}` } };
         case 'move':
-            return { toolName: 'Bash', input: { command: `mv -- ${title}` } };
+            return { toolName: 'Bash', input: { command: `mv -- ${shown ?? title}` } };
         case 'read':
-            return { toolName: 'Read', input: { file_path: path ?? title } };
+            return { toolName: 'Read', input: { file_path: path ?? shown ?? title } };
         case 'search':
-            return { toolName: 'Grep', input: { pattern: readString(input, 'pattern', 'query') ?? title, ...(path === undefined ? {} : { path }) } };
+            return { toolName: 'Grep', input: { pattern: readString(input, 'pattern', 'query') ?? shown ?? title, ...(path === undefined ? {} : { path }) } };
         case 'fetch':
-            return { toolName: 'WebFetch', input: { url: readString(input, 'url') ?? title } };
+            return { toolName: 'WebFetch', input: { url: readString(input, 'url') ?? shown ?? title } };
         default:
-            return { toolName: `acp__${toolCall.name ?? 'other'}`, input: { title, input } };
+            return { toolName: `acp__${toolCall.name ?? 'other'}`, input: { title, input, ...(shown === undefined ? {} : { shown }) } };
     }
 }
-
 // Some agents send an unset field as null, which must not replace what an earlier update said.
 function dropMissing(record: Record<string, unknown>): Record<string, unknown> {
     const entries = Object.entries(record)
@@ -137,13 +164,22 @@ function mergeCall(known: AcpToolCall | undefined, newer: AcpToolCall): AcpToolC
     return { ...known, ...dropMissing(newer as Record<string, unknown>), rawInput: { ...knownInput, ...newerInput } };
 }
 
-// A call with no kind but a command is reviewed as the command it is, so the command floor sees it.
+// A call with no kind, or `other`, gets the kind its title names, or `execute` when it carries a command.
 function withKind(toolCall: AcpToolCall): AcpToolCall {
+    const isUnknown = toolCall.kind === undefined || toolCall.kind === null || toolCall.kind === 'other';
+
+    if (!isUnknown) {
+        return toolCall;
+    }
+
+    const titleName = (toolCall.title ?? '').trim()
+        .toLowerCase();
+    const byTitle = KIND_BY_TITLE[titleName];
     const input = readRecord(toolCall.rawInput);
     const command = readString(input, 'command', 'cmd', 'script');
-    const hasNoKind = toolCall.kind === undefined || toolCall.kind === null;
+    const kind = byTitle ?? (command === undefined ? undefined : 'execute');
 
-    return hasNoKind && command !== undefined ? { ...toolCall, kind: 'execute' } : toolCall;
+    return kind === undefined ? toolCall : { ...toolCall, kind };
 }
 
 function escapeForPattern(text: string): string {
@@ -157,7 +193,7 @@ function namesProtectedFolder(toolCall: AcpToolCall, protectedFolders: string[])
     const kept = Object.entries(rawInput)
         .filter(([name]) => !EDIT_TEXT_FIELDS.has(name));
     const input = Object.fromEntries(kept);
-    const named = { title: toolCall.title, locations: toolCall.locations, input };
+    const named = { title: toolCall.title, locations: toolCall.locations, input, shown: readContentText(toolCall) };
     const text = JSON.stringify(named)
         .replaceAll('\\\\', '/')
         // Escaped line breaks and tabs in the JSON text separate words as spaces do.
@@ -176,6 +212,16 @@ function namesProtectedFolder(toolCall: AcpToolCall, protectedFolders: string[])
 
         return pattern.test(text);
     });
+}
+
+// The current mode of a new or loaded session, from its modes or its mode config option.
+function readModeId(result: Record<string, unknown> | undefined): string | undefined {
+    const modes = readRecord(result?.modes);
+    const options = Array.isArray(result?.configOptions) ? result.configOptions as unknown[] : [];
+    const modeOption = options.map(option => readRecord(option))
+        .find(option => option.category === 'mode');
+
+    return readString(modes, 'currentModeId') ?? (modeOption === undefined ? undefined : readString(modeOption, 'currentValue'));
 }
 
 function pickOption(options: AcpPermissionOption[], isAllowed: boolean): string | undefined {
@@ -526,6 +572,7 @@ class AcpEngine implements AgentRunner {
                 : [];
             const sessionParams = { cwd: request.workspaceDir, mcpServers };
             let sessionId = canLoad ? request.sessionId : undefined;
+            let startMode: string | undefined;
 
             if (sessionId !== undefined) {
                 isLoading = true;
@@ -533,6 +580,7 @@ class AcpEngine implements AgentRunner {
 
                 isLoading = false;
                 sessionId = loaded.error === undefined ? sessionId : undefined;
+                startMode = readModeId(loaded.result);
             }
 
             if (sessionId === undefined) {
@@ -550,9 +598,17 @@ class AcpEngine implements AgentRunner {
                 }
 
                 sessionId = createdId;
+                startMode = readModeId(created.result);
             }
 
             currentSessionId = sessionId;
+
+            // A CLI whose asking mode is not known yet must not run a turn in a mode that approves calls by itself.
+            if (this.options.askModeId === undefined && startMode !== undefined && SELF_APPROVING_MODE.test(startMode)) {
+                push({ type: 'turn_error', message: `${this.options.label} started in a mode that runs tools without asking, so the turn was stopped.`, isUsageLimit: false });
+
+                return;
+            }
 
             if (this.options.askModeId !== undefined) {
                 const modeSet = await call('session/set_mode', { sessionId, modeId: this.options.askModeId });

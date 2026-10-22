@@ -1247,9 +1247,21 @@ other provider runs on `AcpEngine`, which speaks the Agent Client Protocol
 - The bot's tools come from the loopback server as an http MCP server with a
   Bearer token. The CLI sends no call id, so the loopback server reviews each
   call itself before it runs (`reviewsEachCall`).
-- A CLI that starts in a mode that does not ask is set to its asking mode with
-  `session/set_mode` (Mistral Vibe starts in `accept-edits`, so it gets `ask`).
-  opencode gets `{"permission":{"*":"ask"}}` in `OPENCODE_CONFIG_CONTENT`.
+- Each turn sets the asking mode with `session/set_mode`: `default` for
+  Gemini, Qwen and Kimi, `ask` for Mistral Vibe. Qwen Code starts in `auto`,
+  where a model approves calls, and Vibe in `accept-edits`. opencode gets
+  `{"permission":{"*":"ask"}}` in `OPENCODE_CONFIG_CONTENT`. A CLI without a
+  known asking mode (Copilot, Cursor, Grok) that starts in a mode named like
+  yolo, auto or accept ends the turn before the prompt.
+- Kimi and Qwen send `kind: other` with the tool name in the title, and Kimi
+  puts the command only in the question text. A call with no kind or `other`
+  takes the kind its title names (`Bash`, `Write`, `run_shell_command` and so
+  on), and its command or path falls back to the question text.
+- The wrapper sets `KIMI_DISABLE_CRON=1`, so Kimi's `CronCreate` cannot run a
+  prompt outside a turn. A Kimi subagent's calls still come as questions.
+- Checked with a fake model server that asked each CLI for a shell command and
+  a file write: opencode, Qwen, Kimi and Mistral asked first and nothing ran
+  after a refusal. Qwen's `write_file` ran without asking before the mode fix.
 - A turn resumes the session with `session/load` when the CLI supports it. The
   replayed history is dropped.
 - A stop sends `session/cancel`, then TERM and KILL to the process group.

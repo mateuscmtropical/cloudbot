@@ -86,6 +86,7 @@ const ACP_PROVIDERS: AcpProviderSpec[] = [
         id: 'gemini',
         label: 'Gemini',
         protectedFolders: ['.gemini'],
+        askModeId: 'default',
         signIn: { site: 'Google', authMethodId: 'oauth-personal', needsCode: true },
         apiKey: {
             site: 'Google AI Studio',
@@ -156,6 +157,8 @@ const ACP_PROVIDERS: AcpProviderSpec[] = [
         id: 'qwen',
         label: 'Qwen',
         protectedFolders: ['.qwen'],
+        // Qwen Code starts in auto, where a model approves calls by itself.
+        askModeId: 'default',
         apiKey: {
             site: 'Alibaba Cloud Model Studio',
             secretName: 'DASHSCOPE_API_KEY',
@@ -169,6 +172,7 @@ const ACP_PROVIDERS: AcpProviderSpec[] = [
         id: 'kimi',
         label: 'Kimi',
         protectedFolders: ['.kimi', '.kimi-code'],
+        askModeId: 'default',
         signIn: { site: 'Kimi' },
         apiKey: {
             site: 'the Moonshot AI platform',

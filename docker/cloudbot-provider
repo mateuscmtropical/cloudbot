@@ -15,6 +15,8 @@ fi
 umask 077
 # The CLIs are root-owned copies, so an update check could only fail. These turn it off where the CLI offers it.
 export NO_UPDATE_NOTIFIER=1 OPENCODE_DISABLE_AUTOUPDATE=1 COPILOT_AUTO_UPDATE=false KIMI_CODE_NO_AUTO_UPDATE=1
+# Kimi Code can schedule prompts with CronCreate. A schedule would run outside CloudBot's turns, so it is off.
+export KIMI_DISABLE_CRON=1
 # A CLI that wants to open a browser prints the link instead, which the server reads from the sign-in output.
 export BROWSER=/usr/local/bin/cloudbot-print-url NO_BROWSER=true NO_OPEN_BROWSER=1
 LOGIN=/usr/local/lib/cloudbot/acp-login.js
