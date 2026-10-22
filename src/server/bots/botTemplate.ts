@@ -149,6 +149,13 @@ function buildBotTemplate(source: BotTemplateSource): BotTemplate {
 
 // One line for a schedule, in the same words the owner would use.
 function describeSchedule(schedule: RoutineSchedule): string {
+    if (schedule.kind === 'once') {
+        const atText = new Date(schedule.at)
+            .toISOString();
+
+        return `once at ${atText}`;
+    }
+
     if (schedule.kind === 'interval') {
         return `every ${String(schedule.everyMinutes)} minutes`;
     }

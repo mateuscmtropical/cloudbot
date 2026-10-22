@@ -60,6 +60,13 @@ describe('parseSchedule', () => {
             .toEqual({ kind: 'daily', hour: 23, minute: 59 });
         expect(parseSchedule({ kind: 'weekly', weekday: 0, hour: 0, minute: 0, extra: 1 }))
             .toEqual({ kind: 'weekly', weekday: 0, hour: 0, minute: 0 });
+        expect(parseSchedule({ kind: 'once', at: 1_800_000_000_000 }))
+            .toEqual({ kind: 'once', at: 1_800_000_000_000 });
+    });
+
+    it('keeps the time of a once routine as its next run', () => {
+        expect(computeNextRun({ kind: 'once', at: 1_800_000_000_000 }, 1_900_000_000_000))
+            .toBe(1_800_000_000_000);
     });
 
     it.each([
@@ -75,6 +82,9 @@ describe('parseSchedule', () => {
         { kind: 'weekly', weekday: 7, hour: 8, minute: 0 },
         { kind: 'weekly', hour: 8, minute: 0 },
         { kind: 'monthly', hour: 8, minute: 0 },
+        { kind: 'once' },
+        { kind: 'once', at: Number.NaN },
+        { kind: 'once', at: '2026-01-31T18:30:00Z' },
     ])('refuses %j', (input) => {
         expect(parseSchedule(input))
             .toBeUndefined();

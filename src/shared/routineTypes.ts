@@ -2,7 +2,8 @@
 type RoutineSchedule
     = | { kind: 'interval'; everyMinutes: number }
         | { kind: 'daily'; hour: number; minute: number }
-        | { kind: 'weekly'; weekday: number; hour: number; minute: number };
+        | { kind: 'weekly'; weekday: number; hour: number; minute: number }
+        | { kind: 'once'; at: number };
 
 // A routine as the API shows it. Times are milliseconds since the epoch.
 interface BotRoutine {

@@ -17,6 +17,11 @@ describe('describeSchedule', () => {
         expect(describeSchedule({ kind: 'weekly', weekday: 1, hour: 9, minute: 5 }))
             .toBe('Every Monday at 09:05 UTC');
     });
+
+    it('says the UTC date and time of a once routine', () => {
+        expect(describeSchedule({ kind: 'once', at: Date.UTC(2026, 9, 21, 13, 0) }))
+            .toBe('Once at 2026-10-21 13:00 UTC');
+    });
 });
 
 describe('formatRunTime', () => {

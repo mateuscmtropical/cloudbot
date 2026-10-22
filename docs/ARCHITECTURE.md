@@ -1033,6 +1033,16 @@ read only when it is a 200 with a `text/html` or `text/plain` type, and
 reading stops past 1 MB. The request has a 15 second limit. Tests inject the
 resolver and the request, so no test reaches the network.
 
+## Once routines
+
+A routine with the schedule `{kind: "once", at}` runs one time. The tool takes
+`at` as a UTC date and time and stores it in milliseconds. A time that has
+passed or cannot be read is refused. `computeNextRun` gives back `at` itself,
+and `markRun` turns the routine off when it runs, so it never runs again. A
+once time that passed while the server was off runs once at the next check,
+like any missed routine. Turning it back on runs it at the next check. A bot
+template leaves once routines out, since they are reminders for one time.
+
 ## Morning brief and check-ins
 
 Both are routines, so the bot sets them up with `routine_create` and the
