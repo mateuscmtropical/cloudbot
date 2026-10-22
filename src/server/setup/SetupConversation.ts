@@ -79,6 +79,7 @@ type ProviderMethod = 'signIn' | 'apiKey';
 interface ProviderOption {
     id: string;
     label: string;
+    opensLink?: boolean;
 }
 
 interface SetupConversationOptions {
@@ -106,6 +107,7 @@ interface SetupConversationOptions {
 
 const SETUP_STATE_KEY = 'claude.setup';
 const KEY_CHOICE_PREFIX = 'key:';
+const PROVIDER_CHOICE_PREFIX = 'provider:';
 const API_KEY_NAME = 'ANTHROPIC_API_KEY';
 const LOCAL_MODE_LINE = 'Local mode: I run as you, on this computer, with your files and your account.';
 const NO_BROWSER_LINE = 'This computer has no browser for me, so I cannot browse. Install Chrome, Chromium or Edge to give me one.';
@@ -221,21 +223,55 @@ class SetupConversation {
         });
     }
 
-    // Each provider shows its sign-in first and its API key next to it.
+    // One choice per provider. The way to use it, subscription or API key, is asked next.
     private providerOptions(): ProviderOption[] {
         const signIns = this.options.signIns ?? [];
         const apiKeys = this.options.apiKeys ?? [];
         const ids = [...new Set([...signIns.map(signIn => signIn.id), ...apiKeys.map(apiKey => apiKey.id)])];
-        const otherOptions = ids.flatMap((id) => {
+        const otherOptions = ids.map((id) => {
             const signIn = this.signInById(id);
             const apiKey = this.apiKeyById(id);
-            const signInOption = signIn === undefined ? [] : [{ id, label: signIn.optionLabel ?? `${signIn.label} subscription` }];
-            const keyOption = apiKey === undefined ? [] : [{ id: `${KEY_CHOICE_PREFIX}${id}`, label: `${apiKey.label} API key` }];
+            // A provider with only a sign-in keeps its own wording, such as opencode free models.
+            const onlySignInLabel = apiKey === undefined ? signIn?.optionLabel : undefined;
+            const label = onlySignInLabel ?? signIn?.label ?? apiKey?.label ?? id;
 
-            return [...signInOption, ...keyOption];
+            // A provider with only a sign-in starts it at once, so the web page opens a tab for the link.
+            return apiKey === undefined ? { id: `${PROVIDER_CHOICE_PREFIX}${id}`, label, opensLink: true } : { id: `${PROVIDER_CHOICE_PREFIX}${id}`, label };
         });
 
-        return [{ id: 'subscription', label: 'Claude subscription' }, { id: 'apiKey', label: 'Claude API key' }, ...otherOptions];
+        return [{ id: `${PROVIDER_CHOICE_PREFIX}claude`, label: 'Claude' }, ...otherOptions];
+    }
+
+    // The ways a provider can be used. A provider with one way starts it at once.
+    private async chooseProvider(id: string): Promise<void> {
+        if (id === 'claude') {
+            await this.ask({ kind: 'choice', prompt: 'How would you like to use Claude?', options: [{ id: 'subscription', label: 'Subscription', opensLink: true }, { id: 'apiKey', label: 'API key' }] });
+
+            return;
+        }
+
+        const signIn = this.signInById(id);
+        const apiKey = this.apiKeyById(id);
+
+        if (signIn !== undefined && apiKey !== undefined) {
+            await this.ask({ kind: 'choice', prompt: `How would you like to use ${signIn.label}?`, options: [{ id, label: 'Subscription', opensLink: true }, { id: `${KEY_CHOICE_PREFIX}${id}`, label: 'API key' }] });
+
+            return;
+        }
+
+        if (signIn !== undefined) {
+            await this.beginSignIn(signIn);
+
+            return;
+        }
+
+        if (apiKey !== undefined) {
+            await this.askSecret(apiKey);
+        }
+    }
+
+    private isKnownProvider(id: string): boolean {
+        return id === 'claude' || this.signInById(id) !== undefined || this.apiKeyById(id) !== undefined;
     }
 
     private cancelSessions(): void {
@@ -396,6 +432,16 @@ class SetupConversation {
                 return;
             }
 
+            const chosenProvider = body?.kind === 'choice' && body.chosenId?.startsWith(PROVIDER_CHOICE_PREFIX) === true
+                ? body.chosenId.slice(PROVIDER_CHOICE_PREFIX.length)
+                : undefined;
+
+            if (chosenProvider !== undefined && this.isKnownProvider(chosenProvider)) {
+                await this.chooseProvider(chosenProvider);
+
+                return;
+            }
+
             // A provider list from an older version misses the newer providers, so it is closed and posted again.
             const currentIds = this.providerOptions()
                 .map(option => option.id)
@@ -493,13 +539,15 @@ class SetupConversation {
 
         const signIn = action === 'choice' ? this.signInById(value) : undefined;
         const chosenKey = action === 'choice' ? this.apiKeyByChoice(value) : undefined;
+        const providerChoice = action === 'choice' && value.startsWith(PROVIDER_CHOICE_PREFIX) ? value.slice(PROVIDER_CHOICE_PREFIX.length) : undefined;
+        const chosenProvider = providerChoice !== undefined && this.isKnownProvider(providerChoice) ? providerChoice : undefined;
         const keyProvider = action === 'secret' && this.state.keyFor !== undefined ? this.apiKeyById(this.state.keyFor) : undefined;
 
         if (action === 'choice' && value === 'signOut' && !signingOut) {
             throw new SetupAnswerError('Choose a provider.');
         }
 
-        if (action === 'choice' && value !== 'subscription' && value !== 'apiKey' && signIn === undefined && chosenKey === undefined && !signingOut) {
+        if (action === 'choice' && value !== 'subscription' && value !== 'apiKey' && signIn === undefined && chosenKey === undefined && chosenProvider === undefined && !signingOut) {
             throw new SetupAnswerError('Choose a provider.');
         }
 
@@ -540,6 +588,8 @@ class SetupConversation {
         try {
             if (signingOut) {
                 await this.signOutOfClaude();
+            } else if (chosenProvider !== undefined) {
+                await this.chooseProvider(chosenProvider);
             } else if (signIn !== undefined) {
                 await this.beginSignIn(signIn);
             } else if (chosenKey !== undefined) {

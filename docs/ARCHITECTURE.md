@@ -111,6 +111,7 @@ src/
     main.ts        Entry point
     claudeAuth/    CLI subscription login sessions and sign-in status
     models/        Model choices per kind of work: validation and routes
+    skills/        Skills: input checks, the bot tools and the approval card
     push/          Web Push: VAPID keys, payload encryption, sender and notifier, routes and the bot tool
     store/         SQLite storage: bots, messages, settings and migrations
     vault/         Encrypted secrets, secure form route and key proxy
@@ -646,6 +647,59 @@ into a post. The tool result never holds the value.
 
 Known gaps: the body of a file passed to a Bash command is not scanned, only the command text. Bash coverage is best effort: only curl with a body, wget with post, mail commands and GitHub CLI writes are seen, not other ways to send data from a shell, such as python or nc. A number split across two tool calls, such as one call per group, is not seen. Other message kinds, such as choices and links, are not masked.
 
+## Skills
+
+A skill is written steps for a task, with a short name and a one-line description. `SkillStore` keeps them in the
+`bot_skills` table, one name per bot, and deleting a bot deletes its skills. They are not files in the workspace, so the
+bot cannot change a skill without the owner's card.
+
+The bot has four tools (`skills/createSkillTools.ts`). `skill_list` and `skill_read` skip the review, since the text was
+already approved. `skill_add` and `skill_remove` are in the always-ask list and are offered only with the approval gate.
+`describeSkillChange` builds the card. An add shows the name, the description and the whole text, and each line of the
+text starts with `> `, so a line of the text can never look like a line of the card. It says when the skill replaces
+one with the same name. A name that is not 1 to 40 lowercase letters, digits or hyphens, a description that is empty,
+longer than 200 characters or more than one line, a text that is empty or longer than 12000 characters (the card size
+of other cards), hidden characters (every format character, category Cf, and also variation selectors, the combining grapheme joiner,
+the Mongolian selectors, the Khmer inherent vowels and the Hangul fillers), tabs, unusual spaces, runs of more than 8 spaces, and a 51st skill are refused before the
+owner is asked. Without the approval gate the prompt does not name `skill_add` or `skill_remove`.
+
+Limits: a very long line still wraps on the card, as on every card, so the `> ` prefix guards line breaks, not screen
+wrapping. Two approved adds that run at the same time can pass the 50 limit by one, and a card that said "Add" can
+replace a skill that another approved add saved in between. The tool checks the input again when it runs.
+
+Each turn reads the skills, and the system prompt names each one with its description and tells the bot to read a skill
+with `skill_read` before a task it covers. A skill from a link works by the bot fetching the page with its usual tools
+and passing the text to `skill_add`, so the card still shows every word. A bot export does not carry its skills yet.
+
+### Teaching a skill by recording the screen
+
+`screen_record` hands the screen to the owner, as `request_screen` does, and starts a `ScreenRecorder`
+(`desktop/ScreenRecorder.ts`) on its own page connection. The recorder adds a CDP binding with a random name and a page
+script, for the open page and every page that loads after it. The script reports clicks, changed fields and form
+submits, and `Page.frameNavigated` gives the page opens. A page open keeps only the origin and the path, since the
+query and the fragment often hold tokens.
+
+A field is secret when its type is password or hidden, or when its autocomplete hint, name, id, label or placeholder
+has a word such as password, code, token, card, cvc, pin, senha, código, cartão or cpf. A secret field is recorded only
+as "typed a secret into <field>", and its value never leaves the page. A field is never labeled by its value, so a
+password cannot become a label either. A card, CPF or SSN number in typed text or in a label is masked. Labels and text
+are cut to 80 and 200 characters, and a recording keeps at most 200 steps.
+
+The shared screen has one recording at a time. The slot is taken before the recorder starts, so two starts at the same
+moment cannot both run. If the owner gets the screen for something else while the recorder starts, the recording is
+dropped. While a recording runs, another bot's `request_screen` is refused, so the owner's work is never recorded for
+the wrong bot. It ends when the owner gives the screen back, and its steps are kept
+in memory for the bot that asked, until its next recording or its deletion. `screen_recording` gives the bot the steps
+as numbered, quoted lines, marked as data from web pages. The bot then writes them as a skill and saves it with
+`skill_add`, so the owner reads and fixes every step on the card. Both tools skip the review: one hands the screen to
+the owner, the other reads what the owner did.
+
+Limits: the binding is a global of the page, and its random name does not hide it. A page script can call it to add
+steps, fill the 200 steps with its own, or stop the recorder seeing anything. So a step is what the page reported, and
+the owner checks every step on the skill card. Frames that were already open when the recording started, popups and new
+tabs are not recorded. A one-time code typed into a field with no secret hint is recorded as text. Typing that does not fire a change event, such as in some custom editors, and actions outside the browser
+are not recorded. A restart drops a running recording and the kept steps.
+
 ## Owner rules
 
 `RuleStore` keeps the owner's rules in the `bot_rules` table. Each row has the
@@ -1144,6 +1198,19 @@ The worker keys a notification by bot and kind (`botId:kind`) and sets `renotify
 
 Limits. There is no notification for a usage limit, a stall or an owner Stop. A dead subscription is removed when the push service reports it gone.
 
+## Telegram
+
+`TelegramBridge` lets the owner talk to a bot from Telegram. It uses the official Bot API (https://core.telegram.org/bots/api) with `getUpdates` long polling, so the server needs no public address and no webhook.
+
+- The owner makes a Telegram bot with @BotFather. The bot asks for its token with `request_secret`, name `TELEGRAM_BOT_TOKEN`, site `https://api.telegram.org`. The token is read from the vault for each poll and is used only when its site is that one. The token is part of every request address, so no log line or error names the address.
+- `telegram_connect` posts a one-time code of 8 characters in the web chat. The model never sees it. The code works for 10 minutes. Five wrong codes end it.
+- The account that sends `/start <code>` in a private chat becomes the only one the bot answers. Its user id and chat id are kept in `settings` under `telegram.link.<botId>`. The next update offset is kept under `telegram.offset.<botId>` and is saved after a batch is handled, so a restart does not pass a handled message to the bot again. Messages from anyone else, and anything from a group, get no answer at all.
+- A text from the owner goes to the bot like a chat message, so it shows in the web chat too. While a turn that Telegram started is running, each assistant text message of the bot is sent back, in order, cut into parts of 4096 characters (the Bot API limit for `sendMessage`).
+- During such a turn, an open approval card or a screen hand-off sends one fixed line to Telegram that says to open the web app. The line never holds the card text and has no buttons, so nothing is answered from Telegram. A card that is published again, such as after it was answered, sends nothing more.
+- `telegram_disconnect` forgets the link and the offset. Deleting the bot does too. A restart polls again for every saved link.
+
+Limits. Text only. Approval cards, files and screenshots stay in the web app. Turns run one after the other, so when the owner writes on Telegram while a web turn runs, the replies of that web turn go to Telegram too, and the ones of the Telegram turn may not. Replies go back until the bot is idle with an empty queue. One Telegram bot token serves one CloudBot bot, since Telegram lets only one poll read its updates.
+
 ## Bot hand-offs
 
 A bot passes a message or a task to another bot with `bot_send`, found by the target's name. The tool is offered only with the approval gate. Its handler is `ChatService.handoffFromTool`. It refuses an unknown name, a name shared by two bots, and the sending bot itself.
@@ -1275,8 +1342,12 @@ a restart. The runner environment receives its `ANTHROPIC_BASE_URL` and a dummy
 key. Subscription mode receives no API key or proxy URL. Server environment
 API credentials are removed before constructing the runner environment.
 
-The same conversation connects the other providers. The list shows a
-subscription and an API key option for each installed provider that has them.
+The same conversation connects the other providers. The first card has one
+choice per installed provider. A provider with both ways asks Subscription or
+API key next, and one with a single way starts it. A choice that starts a
+sign-in carries `opensLink`, so the web page opens an empty tab inside the tap
+and puts the link in it when the link message arrives. If the CLI prints a
+refused code after the owner pasted one, the sign-in is stopped and fails.
 A CLI sign-in posts the link and the device code that the CLI prints, or a code
 field when the provider's page shows a code to paste back (Gemini). A key goes
 through the secure form, is checked with one request to the provider's model
@@ -1351,7 +1422,7 @@ key, a call through the key proxy to a fake upstream that logged the header:
 
 | Provider | Command | Sign-in | Key route |
 | --- | --- | --- | --- |
-| Gemini | `gemini --acp` | `acp-login.js` runs `authenticate oauth-personal` with `NO_BROWSER`, the owner pastes Google's code | `GEMINI_API_KEY` and `GOOGLE_GEMINI_BASE_URL`, header `x-goog-api-key` |
+| Gemini | `agy` headless for a subscription, `gemini --acp` for a key | `agy-login.js`, see below | `GEMINI_API_KEY` and `GOOGLE_GEMINI_BASE_URL`, header `x-goog-api-key` |
 | GitHub Copilot | `copilot --acp --stdio` | `copilot login --device-code` | none, the token cannot go through a proxy |
 | Cursor | `cursor-agent acp` | `agent login` with `NO_OPEN_BROWSER`, link only | none, same reason |
 | Grok | `grok agent stdio` | `grok login --device-auth` | the ACP agent takes only a Grok account, so an xAI key runs `opencode acp` with the `xai` provider at the proxy |
@@ -1359,6 +1430,34 @@ key, a call through the key proxy to a fake upstream that logged the header:
 | Qwen | `qwen --acp --auth-type openai` | none, the free account sign-in was removed | `OPENAI_API_KEY` and `OPENAI_BASE_URL` at DashScope's compatible mode |
 | Kimi | `kimi acp` | `kimi login` | `KIMI_MODEL_NAME`, `KIMI_MODEL_API_KEY` and `KIMI_MODEL_BASE_URL` |
 | opencode | `opencode acp` | none, free models only | none |
+
+Google ended Gemini CLI sign-ins for personal accounts and points them to the
+Antigravity CLI (`agy`), so a Gemini subscription runs on `AgyEngine`, not on
+ACP:
+
+- `agy` has no login command. `agy-login.js` starts its screen under
+  `script(1)`, picks Google, prints the link once and passes the pasted code.
+  The sign-in is saved when `~/.gemini/antigravity-cli/antigravity-oauth-token`
+  exists, which is also the status check.
+- A turn runs `agy --input-format stream-json --output-format stream-json`
+  through `cloudbot-provider gemini agy`. The wrapper writes a `PreToolUse`
+  hook to `~/.gemini/config/hooks.json` and adds the loopback server as the
+  `cloudbot` MCP server with the turn token.
+- The hook (`agy-hook.js`) sends each call to the loopback `approve` tool,
+  which runs the turn's review. `allow` answers `auto_approve`, anything else
+  answers `deny`. Headless `agy` refuses every call it cannot ask about, so a
+  call runs only after a review.
+- The engine maps agy names (`run_command`, `write_file` and the rest) to the
+  kinds the rules read, refuses agy's own schedules, workflows, messages and
+  subagents, and refuses calls that name `.gemini` or `.agents`.
+- `agy` sees no argument names for MCP tools, so the prompt lists the bot
+  tools with theirs. A Gemini model id without a level takes it from the
+  effort, so `gemini-3.8-flash` at low runs `gemini-3.8-flash-low`.
+- The conversation id comes from the `init` line and resumes with
+  `--conversation`.
+
+ACP and agy stream a reply in pieces. The engines join them and send the whole
+text once, so the chat saves it.
 
 Gemini, Cursor and Grok need `authenticate` before a session. The engine
 sends the cached method, and an error means the provider is not signed in. The

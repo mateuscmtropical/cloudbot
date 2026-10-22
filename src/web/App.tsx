@@ -17,6 +17,8 @@ import { mergeLoadedUploads } from './attachmentChips.ts';
 import { applyTabIcon } from './tabIcon.ts';
 import { MESSAGE_PAGE_SIZE, mergeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
 import { withoutToolRows } from './thinkingBubble.ts';
+import { openSignInTab, settleSignInTab, SIGN_IN_TAB_WAIT_MS } from './signInTab.ts';
+import type { SignInTab } from './signInTab.ts';
 import { describePushResult, disablePushNotifications, enablePushNotifications, readNotificationTarget, useNotificationOpen } from './pushClient.ts';
 import type { NotificationTarget } from './pushClient.ts';
 import { DISABLE_NOTIFICATIONS_CHOICE_ID, ENABLE_NOTIFICATIONS_CHOICE_ID } from '../shared/pushTypes.ts';
@@ -228,6 +230,17 @@ function App(): ReactElement {
     // A layout effect, so the ref matches the committed list before any later event or response reads it.
     useLayoutEffect(() => {
         messagesRef.current = messages;
+    }, [messages]);
+
+    // The tab opened by a tap on a sign-in choice, waiting for its link.
+    const signInTabRef = useRef<SignInTab | undefined>(undefined);
+
+    useEffect(() => {
+        const signInTab = signInTabRef.current;
+
+        if (signInTab !== undefined && settleSignInTab(signInTab, messages)) {
+            signInTabRef.current = undefined;
+        }
     }, [messages]);
 
     useEffect(() => {
@@ -938,6 +951,22 @@ function App(): ReactElement {
 
                         setErrorText(serverMessage ?? 'Could not turn on notifications. Try again.');
                     });
+            }
+
+            const option = card?.body.kind === 'choice' ? card.body.options.find(choice => choice.id === choiceId) : undefined;
+
+            if (option?.opensLink === true) {
+                const lastSequence = messagesRef.current.at(-1)?.sequence ?? 0;
+                const signInTab = openSignInTab(lastSequence);
+
+                signInTabRef.current?.tab.close();
+                signInTabRef.current = signInTab;
+                setTimeout(() => {
+                    if (signInTabRef.current === signInTab) {
+                        signInTab?.tab.close();
+                        signInTabRef.current = undefined;
+                    }
+                }, SIGN_IN_TAB_WAIT_MS);
             }
 
             const choicePromise = submitChoice(selectedBotId, messageId, choiceId);

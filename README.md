@@ -46,7 +46,10 @@ comes back when the job is done or when it needs you.
 - **API integrations.** The bot writes a script that calls an outside API and runs it with your key from the vault. The key does not reach the model or the logs, and a changed script waits for your approval.
 - **Connect apps.** The bot adds a remote MCP server by its address when you ask in the chat. A token goes through the secure form and stays in the vault. The Connect apps panel lists the servers and removes one.
 - **Tell you when it is done.** Install the web app on your phone and ask a bot in the chat to turn on notifications. It posts a card with a button, and your browser asks for permission when you tap it. You get a notification when a turn finishes, when an approval waits and when the bot needs your screen. It shows the bot's name and a short line, never the text of a message. On an iPhone, add CloudBot to the home screen first. Notifications need HTTPS or localhost.
+- **Talk from Telegram.** Make a Telegram bot with @BotFather and ask your bot in the chat to connect Telegram. It asks for the token through the secure form, then posts a one-time code in the chat. Send `/start` and the code to your Telegram bot. From then on only your Telegram account can talk to the bot there, and it answers there. Text only for now. Approvals still happen in the web app, and Telegram tells you when one waits.
 - **Make more bots.** The + button adds a bot, and a bot can make one when you ask. Deleting a bot from its chat removes all of its data.
+- **Teach it skills.** Ask a bot to learn a skill, or give it a link to one. It writes the steps as a skill, and you approve the whole text on a card before it is saved. The bot reads a skill when a task needs it. Ask it to list or remove its skills.
+- **Teach it by showing.** Ask a bot to learn a task from you. It hands you its screen and records the browser while you do the task once. What you type into a password or another secret field is never recorded. Then it writes the steps as a skill, and you approve or fix them on the card.
 - **Copy a bot.** Ask a bot to export itself and you get a template file in the chat. Attach that file and ask for a new bot from it. You see the whole template before the bot is made. Secrets, sign-ins, webhook addresses, shared files and learned memory are never in the file. Its routines start turned off.
 - **Import a bot.** Paste instructions from another platform or attach a `.txt`, `.md` or JSON export. CloudBot prepares a name, description and instruction draft for you to approve in the chat. The instructions become memory text only. Platform actions, tools, skills, files, credentials, approval settings and routines are not imported. Recognizable credential values in the draft are redacted.
 - **Share templates.** The template gallery lists public bot templates from a GitHub repository. Ask a bot to list them, to install one by its file name, or to share your bot there once GitHub is connected. The share opens a pull request from your fork of the gallery. You approve each card first. Set `CLOUDBOT_GALLERY_REPO` to read another repository.
@@ -66,7 +69,7 @@ with Claude.
 | --- | --- | --- | --- |
 | Claude | Claude Code | Claude account, code pasted back | Anthropic |
 | ChatGPT | Codex | ChatGPT account, device code | OpenAI |
-| Gemini | Gemini CLI | Google account, code pasted back | Google AI Studio |
+| Gemini | Antigravity CLI for a subscription, Gemini CLI for a key | Google account, code pasted back | Google AI Studio |
 | GitHub Copilot | Copilot CLI | GitHub account, device code | none |
 | Cursor | Cursor CLI | Cursor account, link | none |
 | Grok | Grok Build | xAI account, device code | xAI, run on opencode |
@@ -132,15 +135,16 @@ address, and the Docker image sets `HOST=0.0.0.0`.
 
 After opening the owner link, the first bot asks which provider to connect.
 This is a scripted conversation that works before any provider is connected.
-The list has a subscription and an API key option for each provider that
-offers them.
+Pick a provider, then pick Subscription or API key. A provider with only one
+way skips the second question. On the web page, a sign-in opens in a new tab.
 
 - **Claude subscription:** open the sign-in link, sign in on Anthropic's page
   and paste its code into the code field. CloudBot passes it to the official
   CLI and checks sign-in status. The code is never stored or logged.
 - **Other subscriptions:** CloudBot starts the CLI's own login and posts its
   link, with the device code when the CLI shows one. For Gemini, Google's page
-  shows a code that you paste back. The sign-in is checked when the CLI ends.
+  shows a code that you paste back. If Google refuses the code, the chat says
+so and shows the providers again. The sign-in is checked when the CLI ends.
 - **API key:** paste the key into the secure form. CloudBot sends one cheap
   request to the provider to check it, then stores it only in the encrypted
   vault. The Anthropic key is saved without that check. Turns use the key

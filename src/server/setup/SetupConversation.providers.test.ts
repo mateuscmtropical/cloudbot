@@ -153,14 +153,37 @@ describe('setup conversation with other providers', () => {
 
         expect(choice.body)
             .toEqual(expect.objectContaining({ options: [
-                { id: 'subscription', label: 'Claude subscription' },
-                { id: 'apiKey', label: 'Claude API key' },
-                { id: 'chatgpt', label: 'ChatGPT subscription' },
-                { id: 'gemini', label: 'Gemini subscription' },
-                { id: 'key:gemini', label: 'Gemini API key' },
+                { id: 'provider:claude', label: 'Claude' },
+                { id: 'provider:chatgpt', label: 'ChatGPT', opensLink: true },
+                { id: 'provider:gemini', label: 'Gemini' },
             ] }));
         expect(context.setup.isDone())
             .toBe(false);
+    });
+
+    it('asks how to use a provider that has two ways', async () => {
+        const context = await fixture();
+        const choice = await latest(context, 'choice');
+
+        await context.chat.answerSetup(context.botId, choice.id, 'choice', 'provider:gemini');
+        const ways = await latest(context, 'choice');
+
+        expect(ways.body)
+            .toMatchObject({ prompt: 'How would you like to use Gemini?', options: [
+                { id: 'gemini', label: 'Subscription', opensLink: true },
+                { id: 'key:gemini', label: 'API key' },
+            ] });
+    });
+
+    it('goes straight to the sign-in of a provider that has one way', async () => {
+        const context = await fixture();
+        const choice = await latest(context, 'choice');
+
+        await context.chat.answerSetup(context.botId, choice.id, 'choice', 'provider:chatgpt');
+        const link = await latest(context, 'link');
+
+        expect(link.body)
+            .toMatchObject({ url: 'https://auth.openai.com/codex/device' });
     });
 
     it('signs in to ChatGPT with the code on the page, then closes the code', async () => {

@@ -62,6 +62,8 @@ interface ToolCallReviewerOptions {
     describeBotDelete?: ((botId: string) => Promise<BotDeleteCheck>) | undefined;
     // Builds the card of a limit change, with the old and new value of each limit.
     describeLimitChange?: ((botId: string, input: unknown) => Promise<ToolCallVerdict>) | undefined;
+    // Builds the verdict of a skill change: the card with the whole skill text, or a refusal.
+    describeSkillChange?: ((botId: string, change: 'add' | 'remove', input: unknown) => Promise<ToolCallVerdict>) | undefined;
     // Email cards show the complete message or mailbox settings. Invalid or oversized cards are refused.
     describeEmailSend?: (input: unknown) => ToolCallVerdict;
     describeEmailSetup?: (input: unknown) => ToolCallVerdict;
@@ -92,7 +94,11 @@ const ALLOW_HOST_TOOL_NAME = 'mcp__cloudbot__browser_allow_host';
 const RULE_CHANGE_TOOL_NAME = 'mcp__cloudbot__rule_change';
 const BOT_DELETE_TOOL_NAME = 'mcp__cloudbot__bot_delete';
 const LIMITS_SET_TOOL_NAME = 'mcp__cloudbot__limits_set';
-const BOT_DELETE_DETAIL = 'Its chats, rules, routines, watches, webhooks, secrets, workspace and shared files are removed for good.';
+const SKILL_CHANGES = new Map<string, 'add' | 'remove'>([
+    ['mcp__cloudbot__skill_add', 'add'],
+    ['mcp__cloudbot__skill_remove', 'remove'],
+]);
+const BOT_DELETE_DETAIL = 'Its chats, rules, skills, routines, watches, webhooks, secrets, workspace and shared files are removed for good.';
 const CHECK_MISSING_VERDICT: ToolCallVerdict = { decision: 'deny', reason: 'This change could not be checked, so it was not approved.' };
 const HIDDEN_NAME_REASON = 'The bot name has hidden characters, so the card cannot show it whole.';
 
@@ -343,6 +349,12 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
 
             if (call.toolName === RULE_CHANGE_TOOL_NAME) {
                 return options.describeRuleChange === undefined ? CHECK_MISSING_VERDICT : options.describeRuleChange(botId, call.input);
+            }
+
+            const skillChange = SKILL_CHANGES.get(call.toolName);
+
+            if (skillChange !== undefined) {
+                return options.describeSkillChange === undefined ? CHECK_MISSING_VERDICT : options.describeSkillChange(botId, skillChange, call.input);
             }
 
             if (call.toolName === LIMITS_SET_TOOL_NAME) {

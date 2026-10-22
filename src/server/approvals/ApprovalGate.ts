@@ -47,6 +47,7 @@ const APPROVAL_OPTIONS = [
     { id: 'deny', label: 'Deny' },
 ];
 const REVIEW_FAILED_SUMMARY = 'Run a tool call that could not be reviewed.';
+const MAX_FAILED_DETAIL_LENGTH = 4000;
 const OWNER_DENIED_REASON = 'The owner denied this action, so it was not run. Do not try it again or another way. Tell the owner it was not done.';
 
 // A function call keeps TypeScript from narrowing the flag, which can change during an await.
@@ -148,8 +149,12 @@ class ApprovalGate {
         try {
             return await this.reviewer(botId, call, signal, channelId);
         } catch {
-            // A reviewer that fails must not let the call through, so the owner decides.
-            return { decision: 'ask', summary: REVIEW_FAILED_SUMMARY };
+            // A reviewer that fails must not let the call through, so the owner decides. The card shows the whole call,
+            // or says it is too long, so the owner never approves a call they cannot read.
+            const input = JSON.stringify(call.input ?? {}, null, 2);
+            const detail = input.length > MAX_FAILED_DETAIL_LENGTH ? 'The input is too long to show here.' : input;
+
+            return { decision: 'ask', summary: `${REVIEW_FAILED_SUMMARY} Tool: ${call.toolName}.`, detail };
         }
     }
 

@@ -18,6 +18,9 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__browser_screenshot',
     'mcp__cloudbot__browser_scroll',
     'mcp__cloudbot__request_screen',
+    // Recording hands the screen to the owner, who does the task. Reading the recording only reads those steps.
+    'mcp__cloudbot__screen_record',
+    'mcp__cloudbot__screen_recording',
     'mcp__cloudbot__routine_list',
     'mcp__cloudbot__webhook_list',
     'mcp__cloudbot__watch_list',
@@ -31,6 +34,9 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__app_remove',
     'mcp__cloudbot__integration_list',
     'mcp__cloudbot__rule_list',
+    // Skills are text the owner already approved, so listing and reading them needs no review.
+    'mcp__cloudbot__skill_list',
+    'mcp__cloudbot__skill_read',
     'mcp__cloudbot__channel_list',
     // The board is the bot's own notes. Moving a task to Blocked tells the owner in the chat, so the move needs no review.
     'mcp__cloudbot__task_add',
@@ -74,6 +80,9 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
     // Rules are permissions, and a deleted bot is gone for good, so the owner approves both in the chat.
     'mcp__cloudbot__rule_change',
     'mcp__cloudbot__bot_delete',
+    // A skill is steps the bot will follow, so the owner reads and approves the whole text, and each removal.
+    'mcp__cloudbot__skill_add',
+    'mcp__cloudbot__skill_remove',
     // A new channel, a new member and a new manager change who takes part, so the owner approves each one.
     'mcp__cloudbot__channel_create',
     'mcp__cloudbot__channel_add',

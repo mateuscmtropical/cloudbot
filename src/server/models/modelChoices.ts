@@ -1,7 +1,8 @@
 // The aliases the claude CLI takes in its --model option.
 const MODEL_ALIASES: readonly string[] = ['fable', 'opus', 'sonnet', 'haiku'];
-// Full model ids start with "claude-". The pattern keeps any other text away from the CLI.
-const MODEL_ID_PATTERN = /^claude-[a-z0-9.-]+$/;
+// Full model ids start with "claude-", or with "gemini-" for a Gemini subscription on agy, such as
+// gemini-3.8-flash-low. The pattern keeps any other text away from the CLI.
+const MODEL_ID_PATTERN = /^(claude|gemini)-[a-z0-9.-]+$/;
 const MAX_MODEL_LENGTH = 100;
 // The first three kinds pick the model of a turn. browsing and documents are helper agents, and a null
 // choice for either one means the bot has no helper for that work.
@@ -62,6 +63,11 @@ function isValidModel(value: string): boolean {
     return MODEL_ALIASES.includes(value) || MODEL_ID_PATTERN.test(value);
 }
 
+// The claude CLI gets only its own models. A Gemini choice leaves it on its default.
+function isClaudeModel(value: string): boolean {
+    return MODEL_ALIASES.includes(value) || value.startsWith('claude-');
+}
+
 function isValidChoice(value: unknown): boolean {
     if (value === undefined || value === null) {
         return true;
@@ -85,7 +91,7 @@ function parseModelInput(payload: unknown): ModelChoices | ModelInputError {
     const firstInvalidKind = invalidKinds[0];
 
     if (firstInvalidKind !== undefined) {
-        return { error: `The ${firstInvalidKind} model must be null, an alias such as haiku or sonnet, or a full model id that starts with claude-.` };
+        return { error: `The ${firstInvalidKind} model must be null, an alias such as haiku or sonnet, or a full model id that starts with claude- or gemini-.` };
     }
 
     return {
@@ -161,5 +167,5 @@ function chooseTurnEffort(efforts: EffortChoices, source: 'chat' | 'routine' | '
     return routinesEffort ?? efforts.chat ?? undefined;
 }
 
-export { EFFORT_LEVELS, MODEL_ALIASES, MODEL_ID_PATTERN, chooseTurnEffort, chooseTurnModel, isModelInputError, parseEffortInput, parseModelInput, toEffortChoice, toEffortFields };
+export { EFFORT_LEVELS, MODEL_ALIASES, MODEL_ID_PATTERN, chooseTurnEffort, chooseTurnModel, isClaudeModel, isModelInputError, parseEffortInput, parseModelInput, toEffortChoice, toEffortFields };
 export type { EffortChoices, EffortFields, EffortLevel, ModelChoices, ModelInputError, ModelKind };

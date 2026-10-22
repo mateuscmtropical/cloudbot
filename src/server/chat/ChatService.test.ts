@@ -16,6 +16,8 @@ import { BrowserControl } from '../desktop/BrowserControl.ts';
 import { REQUEST_SCREEN_TOOL_FULL_NAME } from '../desktop/createScreenTools.ts';
 import { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import { RuleStore } from '../store/RuleStore.ts';
+import { SkillStore } from '../store/SkillStore.ts';
+import { SKILL_ADD_TOOL_FULL_NAME, SKILL_LIST_TOOL_FULL_NAME, SKILL_READ_TOOL_FULL_NAME, SKILL_TOOL_FULL_NAMES } from '../skills/createSkillTools.ts';
 import { ModelStore } from '../store/ModelStore.ts';
 import { BOT_CREATE_TOOL_FULL_NAME } from '../bots/createBotTool.ts';
 import { BOT_DELETE_TOOL_FULL_NAME } from '../bots/createBotDeleteTool.ts';
@@ -1023,6 +1025,36 @@ describe('ChatService', () => {
             .not.toContain(BOT_CREATE_TOOL_FULL_NAME);
         expect(withoutGate.receivedRequests[0]?.allowedTools)
             .not.toContain(BOT_IMPORT_TEXT_TOOL_FULL_NAME);
+    });
+
+    it('lists the approved skills in the prompt and offers the skill changes only with the approval gate', async () => {
+        const skillStore = new SkillStore(opened.db);
+        const toolCallReviewer = vi.fn(() => Promise.resolve({ decision: 'ask' as const, summary: 'Add a skill.' }));
+        const withGate = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const withGateService = new ChatService({ botStore, messageStore, runner: withGate, dataDir, toolCallReviewer, skillStore });
+        const withoutGate = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const withoutGateService = new ChatService({ botStore, messageStore, runner: withoutGate, dataDir, skillStore });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await skillStore.save(bot.id, { name: 'weekly-report', description: 'Writes the weekly report.', text: 'Step 1.' });
+        const finished = waitForTurnFinish(withGateService, bot.id);
+
+        await withGateService.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const finishedWithout = waitForTurnFinish(withoutGateService, bot.id);
+
+        await withoutGateService.sendMessage(bot.id, 'Hi');
+        await finishedWithout;
+
+        expect(withGate.receivedRequests[0]?.systemPrompt)
+            .toContain('- weekly-report: Writes the weekly report.');
+        expect(withGate.receivedRequests[0]?.allowedTools)
+            .toEqual(expect.arrayContaining(SKILL_TOOL_FULL_NAMES));
+        expect(withoutGate.receivedRequests[0]?.allowedTools)
+            .toEqual(expect.arrayContaining([SKILL_LIST_TOOL_FULL_NAME, SKILL_READ_TOOL_FULL_NAME]));
+        expect(withoutGate.receivedRequests[0]?.allowedTools)
+            .not.toContain(SKILL_ADD_TOOL_FULL_NAME);
     });
 
     it('writes the instructions of a new bot to its CLAUDE.md and adds no rule', async () => {

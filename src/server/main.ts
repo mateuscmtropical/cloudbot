@@ -44,6 +44,8 @@ import { IntegrationService } from './integrations/IntegrationService.ts';
 import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from './agent/prepareAgentWorkspace.ts';
 import { asIntegrationUser, runCleanup, runIntegrationProcess } from './integrations/runIntegrationProcess.ts';
 import { RuleStore } from './store/RuleStore.ts';
+import { SkillStore } from './store/SkillStore.ts';
+import { describeSkillChange } from './skills/describeSkillChange.ts';
 import { LimitStore } from './store/LimitStore.ts';
 import { ModelStore } from './store/ModelStore.ts';
 import { WebhookStore } from './store/WebhookStore.ts';
@@ -80,6 +82,9 @@ import { createPushSender } from './push/createPushSender.ts';
 import { loadOrCreateVapidKeys } from './push/loadVapidKeys.ts';
 import { PushNotifier } from './push/PushNotifier.ts';
 import { readPushSubject } from './push/readPushSubject.ts';
+import { TELEGRAM_API_ORIGIN, createTelegramApi } from './telegram/TelegramApi.ts';
+import { TelegramBridge } from './telegram/TelegramBridge.ts';
+import { TELEGRAM_TOKEN_SECRET_NAME } from './telegram/createTelegramTools.ts';
 import { EmailAccountStore } from './store/EmailAccountStore.ts';
 import { EmailAccountService } from './email/EmailAccountService.ts';
 import { EmailPasswordStore } from './email/EmailPasswordStore.ts';
@@ -190,6 +195,7 @@ const emailPasswordStore = new EmailPasswordStore(vault);
 const emailAccountService = new EmailAccountService(emailAccountStore, emailPasswordStore);
 const emailSender = new SmtpEmailSender(emailAccountService);
 const ruleStore = new RuleStore(opened.db);
+const skillStore = new SkillStore(opened.db);
 const routineStore = new RoutineStore(opened.db);
 const taskStore = new TaskStore(opened.db);
 const modelStore = new ModelStore(opened.db);
@@ -284,6 +290,7 @@ const toolCallReviewer = createToolCallReviewer({
     describeChange: integrationService === undefined ? undefined : (botId, mode, input) => integrationService.describeChange(botId, mode, input),
     // The rule card and the bot delete check read the stores and the chat service, which is defined below. The calls happen later, in a turn.
     describeRuleChange: (botId, input) => describeRuleChange(ruleStore, botId, input),
+    describeSkillChange: (botId, change, input) => describeSkillChange(skillStore, botId, change, input),
     describeLimitChange: (botId, input) => describeLimitChange(limitStore, botId, input),
     describeBotDelete: botId => chatService.describeBotDelete(botId),
     describeBotImport: (botId, input) => chatService.describeBotImport(botId, input),
@@ -383,9 +390,30 @@ if (codexPath !== undefined && chatgptSignIn !== undefined && openaiKeyProxy !==
 }
 
 const providerRunner = new ProviderRunner({ engines, providerFor: botId => providerChoices.forBot(botId) });
+
+// The token is used only for the Telegram API site the owner saved it for.
+function readTelegramToken(botId: string): string | undefined {
+    const secret = botSecrets.read(botId, TELEGRAM_TOKEN_SECRET_NAME);
+
+    return secret?.site === TELEGRAM_API_ORIGIN ? secret.value : undefined;
+}
+
+const telegramBridge = new TelegramBridge({
+    chat: {
+        sendMessage: (botId, text) => chatService.sendMessage(botId, text),
+        subscribe: (botId, listener) => chatService.subscribe(botId, listener),
+        postNotice: async (botId, text) => {
+            await chatService.postSetupMessage(botId, { kind: 'text', text });
+        },
+    },
+    settings,
+    readToken: readTelegramToken,
+    createApi: token => createTelegramApi(token),
+});
 const chatService: ChatService = new ChatService({
     notifyOwner: notice => pushNotifier.notify(notice),
-    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, routineStore, taskStore, modelStore, limitStore, screen,
+    telegram: telegramBridge,
+    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, skillStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     templateGallery,
     providerTools: {
@@ -407,6 +435,8 @@ const chatService: ChatService = new ChatService({
 });
 const bots = await botStore.list();
 const firstBot = bots[0];
+
+const botIds = bots.map(bot => bot.id);
 
 if (firstBot === undefined) {
     throw new Error('The default bot is missing.');
@@ -459,6 +489,7 @@ const setup = new SetupConversation({
 });
 
 chatService.setSetup(setup);
+await telegramBridge.resume(botIds);
 await appProxy.start();
 await connectedApps.start();
 
@@ -572,6 +603,7 @@ function shutdown(): void {
     gateController.abort();
     void browserGate?.close();
     void appProxy.close();
+    void telegramBridge.close();
     void githubProxy?.close();
     // The certificate's public folder is removed on exit. Its key was only on disk in a private folder while openssl ran.
     if (githubCertificate !== undefined) {
