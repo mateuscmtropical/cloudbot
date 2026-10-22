@@ -11,6 +11,11 @@
     --color-success: #3fb27f;
     /* A veil of the text color. It lightens a dark control and darkens a light one, on any background. */
     --color-hover: color-mix(in srgb, var(--color-text) 12%, transparent);
+    /* The spacing scale. See Layout in docs/CODING_STANDARDS.md. */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
     --radius-bubble: 18px;
     --radius-control: 999px;
     --sidebar-width: 320px;
@@ -493,13 +498,18 @@ svg {
 }
 
 .setup-card p {
-    margin: 0 0 8px;
+    margin: 0 0 var(--space-2);
+}
+
+/* The approval card carries a script, so its line breaks are kept. */
+.card-text {
+    white-space: pre-wrap;
 }
 
 .choice-buttons {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-2);
 }
 
 .choice-button,
@@ -513,8 +523,13 @@ svg {
     text-decoration: none;
 }
 
+/* A link is inline, so its padding would not push the line. As a block it sits under the text like a button. */
+.link-card {
+    display: inline-block;
+}
+
 .setup-alternative {
-    margin-top: 8px;
+    margin-top: var(--space-2);
 }
 
 .choice-button.is-selected {
@@ -526,7 +541,7 @@ svg {
 .setup-form {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: center;
 }
 
