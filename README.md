@@ -132,15 +132,16 @@ address, and the Docker image sets `HOST=0.0.0.0`.
 
 After opening the owner link, the first bot asks which provider to connect.
 This is a scripted conversation that works before any provider is connected.
-The list has a subscription and an API key option for each provider that
-offers them.
+Pick a provider, then pick Subscription or API key. A provider with only one
+way skips the second question. On the web page, a sign-in opens in a new tab.
 
 - **Claude subscription:** open the sign-in link, sign in on Anthropic's page
   and paste its code into the code field. CloudBot passes it to the official
   CLI and checks sign-in status. The code is never stored or logged.
 - **Other subscriptions:** CloudBot starts the CLI's own login and posts its
   link, with the device code when the CLI shows one. For Gemini, Google's page
-  shows a code that you paste back. The sign-in is checked when the CLI ends.
+  shows a code that you paste back. If Google refuses the code, the chat says
+so and shows the providers again. The sign-in is checked when the CLI ends.
 - **API key:** paste the key into the secure form. CloudBot sends one cheap
   request to the provider to check it, then stores it only in the encrypted
   vault. The Anthropic key is saved without that check. Turns use the key
