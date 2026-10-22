@@ -16,6 +16,7 @@ import { openDatabase } from '../store/openDatabase.ts';
 import type { ChatEvent } from '../../shared/chatTypes.ts';
 import type { TurnLimits } from '../../shared/limitTypes.ts';
 import { ChatService } from './ChatService.ts';
+import { CLEANUP_RETRIES } from './testCleanup.ts';
 
 const MINUTE_MS = 60_000;
 const NO_LIMITS: TurnLimits = {
@@ -90,7 +91,7 @@ describe('ChatService turn limits', () => {
     afterEach(async () => {
         vi.useRealTimers();
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     it('stops a turn at its time limit and names the limit and its value', async () => {
