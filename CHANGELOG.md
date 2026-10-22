@@ -6,6 +6,16 @@ All notable changes to this project are listed here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- The Claude CLI and every helper agent now disallow built-in tools for CLI schedules, cloud triggers, notifications, messaging, workflows, worktrees, design sync and other CLI-only services.
+
+### Added
+
+- A template gallery in a public GitHub repository, mateuscmtropical/cloudbot-templates by default. The bot lists its templates with gallery_list, which reads one index file and shows each name, title, description and blocked tools. Set CLOUDBOT_GALLERY_REPO to read another repository.
+- gallery_install makes a bot from a gallery template. The owner sees the whole template on the approval card first, and the same checks as an import apply. The card works for ten minutes and for one install.
+- gallery_share opens a pull request to the gallery from a fork of it in the bot owner's GitHub account. It needs GitHub connected for the bot, and the owner approves the exact file first. The card says when the file replaces an existing one.
+
 ### Changed
 
 - Yellow is no longer a bot color. Its dark shade read as brown, so bots and channel posts that had it are now orange. New bots and the mascot tool never pick yellow. A stored color the app does not know shows as blue instead of breaking the mascot.
@@ -42,6 +52,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- The bot's mascot shows only beside its latest message, so it no longer stays on an earlier reply above the owner's message.
 - A background process that a command started in its own session no longer keeps running after the turn ends. Each turn marks its processes, and the marked ones are ended when it is over.
 - The plus in the new bot and attach buttons sits exactly in the center of the round button.
 - `share_file` works on Windows and macOS. The file must stay inside the workspace, and the opened file must be the one the path leads to, checked by file identity. Linux uses the same check. On Windows the open does not refuse links, so the realpath and identity check are the guard there.

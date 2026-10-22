@@ -1105,6 +1105,20 @@ Imported routines start turned off, and the bot gets no secrets. A secret it nee
 
 Skipped in this version: the template does not carry the bot's shared files, its learned memory, or any routine state such as its last run.
 
+## Template gallery
+
+The gallery is a folder of template files, templates/<name>.json, in a public GitHub repository. It is mateuscmtropical/cloudbot-templates unless CLOUDBOT_GALLERY_REPO names another one.
+
+TemplateGallery (bots/templateGallery.ts) reads and writes the gallery through one transport (bots/galleryTransport.ts). The transport calls only https://api.github.com. It resolves the host, refuses the request unless every address is public, as the page watches do, and sends one request to those addresses with pinnedFetch. Redirects are not followed, and an answer over 1 MB is refused. Reads send no token.
+
+gallery_list reads one file, templates/index.json, so a listing costs one GitHub read. The index must be a list of at most 200 rows. Each row is checked on its own, with the same field checks as a template, and a row that fails is skipped. A good listing is kept for an hour. A failed read is never kept. A 403 or 429 answer says GitHub is limiting the reads, and to try later. Descriptions are cut to 200 characters. The reply shows the name, title, description and blocked tools of each template, as quoted text. Only blocked tools are listed, since a template has no field for the tools it uses.
+
+gallery_install takes a file name from the list, which must match templates/<name>.json with lowercase letters, digits and hyphens. The file is read again for the card, and its SHA-256 is kept with the card. The install runs only when the file still has that digest. The card works for ten minutes and for one install. While a card waits, a new card for the same file with other bytes is refused, so the answer to the first card can never approve bytes shown only on a second one. The share card follows the same rule. Once the card has expired, the bot says the card expired and asks for a new one. The bot is then made by the same path as bot_import.
+
+gallery_share exports the bot with the same function as bot_export. The card shows the exact file text and its path, and says when the file replaces an existing one. A file longer than 12000 characters is refused, so the owner always sees all of it. It needs the bot's GITHUB_TOKEN, saved for https://github.com. Without it the share is refused before any card. After the owner answers, the share forks the gallery into the token owner's account and waits for the fork to answer, up to six tries two seconds apart. It creates a branch in the fork at the gallery's head commit, not at the fork's head, so the pull request holds only the approved file and its index row, and nothing is written to the fork's default branch. The fork shares the gallery's objects, so it can point a branch at that commit. If GitHub refuses that, nothing is shared. On that branch it adds the file and lists it in templates/index.json. Then it opens a pull request from the fork. If a later step fails, the branch is deleted. A repository name with . or .. segments is refused when the setting is read.
+
+Limits of this version. A card is kept in memory, so a restart cancels it. A denied card is not removed, so a card with other content for the same file can be asked again only after ten minutes. A token whose owner already owns the gallery repository cannot fork it, so that share is refused by GitHub. Template text from the gallery is data from outside. The bot reads it only in the listing, and the install card shows the owner what the bot will create.
+
 ## Bots
 
 The "+" button calls `POST /api/bots`. The server makes a bot named "New bot" and posts a question in its chat, which asks for the name and the job. The owner answers there, and the bot sets them with `update_profile`. The bot's `bot_create` tool makes a bot from a name, a title and first instructions. The instructions are written to the new bot's CLAUDE.md as its first memory, under a header that names the bot that made it. They are not a rule, since a bot wrote them and a rule would be an owner permission. The tool is in the always-ask list, so the owner approves a card with the name, the title and the whole instructions before anything is made. The card refuses hidden characters, and a name or title that is not one short line. Every bot uses the same Claude sign-in and the same key proxy. Nothing of the key is copied into a bot.
@@ -1187,6 +1201,20 @@ API credentials are removed before constructing the runner environment.
 The server runs the `claude` CLI installed by Anthropic's installer
 (`CLAUDE_PATH`). Sign-in, status and the agent all use that one
 CLI. See [provider terms](PROVIDER_TERMS.md).
+
+Each turn passes an explicit built-in tool list to `--tools`. It includes the
+shell, file, web and helper tools CloudBot uses, and does not include
+`NotebookEdit`. The CLI still offers `ToolSearch`, which only loads the schema
+of a tool, so it is not an ask rule. The turn also passes a fixed `--disallowedTools` list:
+`CronCreate`, `CronDelete`, `CronList`, `ScheduleWakeup`, `RemoteTrigger`,
+`PushNotification`, `SendMessage`, `ListAgents`, `Workflow`, `Monitor`,
+`EnterWorktree`, `ExitWorktree`, `DesignSync`, `ReportFindings`, `TaskStop`,
+`NotebookEdit`, `PowerShell` and `Skill`. This keeps scheduling, cloud
+triggers, notifications, CLI messaging, workflows, worktrees, design sync and
+other CLI-only actions out of the bot's tool set. Each helper agent gets the
+same list alongside the owner's blocked tools. MCP tools from CloudBot and the
+owner remain available through their existing review path. CloudBot does not
+load CLI skills, so `Skill` stays disallowed.
 
 The bot profile reaches the agent in two ways. `buildSystemPrompt` turns the
 name, title and description into a prompt that is appended to Claude Code's

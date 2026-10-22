@@ -59,6 +59,8 @@ import { ConnectedApps } from './apps/ConnectedApps.ts';
 import { GithubProxy } from './github/GithubProxy.ts';
 import { createLoopbackCertificate, removeLoopbackCertificate } from './github/loopbackCertificate.ts';
 import { readGithubToken } from './github/githubRouting.ts';
+import { TemplateGallery, readGalleryRepo } from './bots/templateGallery.ts';
+import { createDefaultGalleryTransport } from './bots/galleryTransport.ts';
 import { checkAppUrl, defaultAppAddressDeps } from './apps/appAddress.ts';
 import type { AllowedPrivateHost } from './apps/appAddress.ts';
 import { ConnectedAppStore } from './store/ConnectedAppStore.ts';
@@ -243,6 +245,8 @@ const toolCallReviewer = createToolCallReviewer({
     describeLimitChange: (botId, input) => describeLimitChange(limitStore, botId, input),
     describeBotDelete: botId => chatService.describeBotDelete(botId),
     describeBotImport: (botId, input) => chatService.describeBotImport(botId, input),
+    describeGalleryInstall: (botId, input) => chatService.describeGalleryInstall(botId, input),
+    describeGalleryShare: botId => chatService.describeGalleryShare(botId),
     // The review cost counts against the spending limit of the turn that asked for the review.
     reportCost: (botId, costUsd, turnSignal) => {
         chatService.recordReviewCost(botId, costUsd, turnSignal);
@@ -276,10 +280,13 @@ const pushNotifier = new PushNotifier({
     send: createPushSender(),
     subject: readPushSubject(process.env),
 });
+// The public gallery of templates. CLOUDBOT_GALLERY_REPO points it at another repository, such as a fork.
+const templateGallery = new TemplateGallery({ repo: readGalleryRepo(process.env.CLOUDBOT_GALLERY_REPO), transport: createDefaultGalleryTransport() });
 const chatService: ChatService = new ChatService({
     notifyOwner: notice => pushNotifier.notify(notice),
     botStore, channelStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, ruleStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
+    templateGallery,
     watchStore,
     connectedApps,
     integrationService,

@@ -84,7 +84,7 @@ interface TurnState {
 }
 
 // Built-in tools the CLI may offer. --tools takes this list, and every entry is also an ask rule, so each call is decided.
-const BUILTIN_TOOLS = ['Bash', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'Task', 'WebFetch', 'WebSearch', 'Write'];
+const BUILTIN_TOOLS = ['Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Task', 'WebFetch', 'WebSearch', 'Write'];
 // The CLI calls the Task tool Agent in its prompt call, so the alias is asked as well and matched to Task.
 const TOOL_NAME_ALIASES: Record<string, string> = { Agent: 'Task' };
 // Built-in tools whose description argument is only a label for the person.
