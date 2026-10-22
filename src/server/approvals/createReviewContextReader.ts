@@ -8,6 +8,7 @@ import { isWatchMessage } from '../watches/watchMessage.ts';
 import { HANDOFF_REPLY_PREFIX, HANDOFF_SENT_PREFIX, isBotHandoffMessage } from '../bots/botHandoff.ts';
 import { CHANNEL_TRANSCRIPT_LIMIT, transcriptLine } from '../channels/channelRound.ts';
 import { TASK_BLOCKED_NOTICE_PREFIX } from '../../shared/taskTypes.ts';
+import { isEmailMessage } from '../email/emailMessage.ts';
 
 interface ReviewContextSources {
     ruleStore: Pick<RuleStore, 'list'>;
@@ -22,6 +23,7 @@ const DEFAULT_MESSAGE_COUNT = 6;
 const ROLE_LABELS = { user: 'Owner', assistant: 'Bot', system: 'System' };
 const WEBHOOK_LABEL = 'Webhook (outside data)';
 const WATCH_LABEL = 'Page watch (outside data)';
+const EMAIL_LABEL = 'Email (outside data)';
 const HANDOFF_LABEL = 'Message from another bot (not the owner)';
 const HANDOFF_REPLY_LABEL = 'Reply from another bot (outside data)';
 const HANDOFF_SENT_LABEL = 'Hand-off sent by this bot';
@@ -51,6 +53,10 @@ function toChatLine(message: StoredMessage): string[] {
     // A page watch message carries page text from outside, so it is labeled the same way.
     if (message.role === 'user' && isWatchMessage(content.text)) {
         return [`${WATCH_LABEL}: ${oneLineText}`];
+    }
+
+    if (message.role === 'user' && isEmailMessage(content.text)) {
+        return [`${EMAIL_LABEL}: ${oneLineText}`];
     }
 
     // A message from another bot is not the owner either.

@@ -19,6 +19,7 @@ interface NewMessage {
     role: MessageRole;
     kind: string;
     content: unknown;
+    emailDeliveryId?: string | undefined;
 }
 
 interface ListMessagesOptions {

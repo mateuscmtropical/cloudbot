@@ -712,9 +712,9 @@ describe('setup conversation', () => {
         const remote = await context.chat.sendMessage(other.id, SECRET);
 
         expect(local?.body)
-            .toEqual({ kind: 'text', text: 'Finish connecting Claude above to start chatting.' });
+            .toEqual({ kind: 'text', text: 'Finish connecting an AI provider above to start chatting.' });
         expect(remote?.body)
-            .toEqual({ kind: 'text', text: 'Finish connecting Claude in the CloudBot conversation to start chatting.' });
+            .toEqual({ kind: 'text', text: 'Finish connecting an AI provider in the CloudBot conversation to start chatting.' });
         expect(JSON.stringify(await context.chat.listMessages(other.id))).not.toContain(SECRET);
     });
 

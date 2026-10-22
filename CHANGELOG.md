@@ -6,6 +6,22 @@ All notable changes to this project are listed here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- The Claude CLI and every helper agent now disallow built-in tools for CLI schedules, cloud triggers, notifications, messaging, workflows, worktrees, design sync and other CLI-only services.
+
+### Added
+
+- Import pasted instructions or attached plain text, Markdown and common JSON assistant exports. The owner approves the full profile and memory draft in chat. Platform tools, skills, files, credentials, approval settings and routines are not imported.
+- The mascot hops from its bot row into the latest message when the owner opens a chat. The 780 ms animation leaves the layout in place, keeps text clear and skips reduced motion or layouts where the list and chat are not side by side.
+- Each bot runs on the AI provider the owner picks: Claude, ChatGPT (Codex), Gemini, GitHub Copilot, Cursor, Grok, Mistral, Qwen, Kimi or the free opencode models. The setup chat lists a subscription and an API key option for each installed provider that has them. Ask a bot to switch and its next message starts a new conversation on the new provider. Ask it to connect another provider and the list comes back in the setup chat.
+- A subscription sign-in runs the provider CLI's own login. The chat shows its link and device code, or a code field when the provider's page shows a code to paste back. CloudBot never sees the credentials.
+- An API key for OpenAI, Gemini, xAI, Mistral, Qwen (Alibaba Cloud Model Studio) or Kimi (Moonshot AI) goes through the secure form. CloudBot checks it with one request to the provider, keeps it in the vault and sends it through a local key proxy, so the bot only sees a dummy key. An xAI key runs on opencode, since the Grok CLI takes only a Grok account.
+- Providers other than Claude and ChatGPT run over the Agent Client Protocol. Every tool the CLI asks to run goes through the same review as a Claude tool, and a call that names a CLI's sign-in or config folder is refused. The Docker image installs every CLI at a pinned version where possible, owned by root, and starts them through a fixed wrapper.
+- A template gallery in a public GitHub repository, mateuscmtropical/cloudbot-templates by default. The bot lists its templates with gallery_list, which reads one index file and shows each name, title, description and blocked tools. Set CLOUDBOT_GALLERY_REPO to read another repository.
+- gallery_install makes a bot from a gallery template. The owner sees the whole template on the approval card first, and the same checks as an import apply. The card works for ten minutes and for one install.
+- gallery_share opens a pull request to the gallery from a fork of it in the bot owner's GitHub account. It needs GitHub connected for the bot, and the owner approves the exact file first. The card says when the file replaces an existing one.
+
 ### Changed
 
 - Yellow is no longer a bot color. Its dark shade read as brown, so bots and channel posts that had it are now orange. New bots and the mascot tool never pick yellow. A stored color the app does not know shows as blue instead of breaking the mascot.
@@ -21,6 +37,7 @@ All notable changes to this project are listed here. The format follows
 ### Added
 
 - Talk to a bot from Telegram. The owner saves a Telegram bot token through the secure form and sends a one-time code from the chat to the Telegram bot. Only that Telegram account can then talk to the bot, in a private chat, and the replies to its messages come back there. Text only for now.
+- A bot can connect its own mailbox with owner-provided IMAP and SMTP settings. The password goes from a secure chat form into the vault. New mail arrives as an outside-data task, with delivery ids persisted across restarts. Every outgoing email waits for owner approval of all recipients, the subject and the full text. Attachments are not supported.
 - The message box has a microphone button in browsers with speech recognition, such as Chrome and Edge. The spoken words are added to the text in the box. The browser's speech service turns the audio into text, and the app never receives the audio.
 - The web app installs on a phone or computer as an app, with the cloud mascot as its icon. It has a web app manifest and a small service worker that caches nothing.
 - Push notifications. Ask a bot in the chat to turn them on, and it posts a card with a button. The browser asks for permission only after you tap the button. A notification comes when a turn finishes, when an approval waits and when the bot hands over its screen. It shows the bot's name and a short neutral line, never the text of a message. Tapping it opens that bot and message. A tab that already shows the bot gets a silent one that closes at once. A bot sends at most one "finished" notification a minute, and none for a webhook. Ask the bot to turn them off and it posts a card that removes this browser. Browsers use their own push services (Google, Mozilla, Apple or Windows), and CloudBot sends only to those. The push key is made once in the data folder and never leaves the server.
@@ -38,10 +55,13 @@ All notable changes to this project are listed here. The format follows
 - A request with a body must be `application/json`, or `multipart/form-data` on the upload route. Other types get a 415.
 - Every response sends a Content Security Policy that allows only the app's own files, `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer` and same-origin opener and resource policies. Images from other sites, such as in bot replies, no longer load.
 - The setup link and the start log use the address the server really listens on, `127.0.0.1` by default, and not `localhost`.
+- The Codex engine gives each bot a `CODEX_HOME` and a separate `HOME` beside it, both mode 0700, so `~` cannot reach the Codex config or sign-in. A command or file change that names the Codex home or a `.codex/` folder is declined without a review. File-change paths are resolved through symlinks, and a path that cannot be resolved is declined. Shell commands do not get `CODEX_HOME`. The check is a floor, not a parser: a path the command builds at run time, for example from `HOME` beside the Codex home, still reaches the review.
+- The Codex engine also serves the bot's own tools through the loopback server. Codex reads the token from `CLOUDBOT_TOOLS_TOKEN`, never from its command line, and `shell_environment_policy.exclude` keeps the token out of every shell command. Each tool call is reviewed like a Claude tool call, and an allowed call runs once.
 
 ### Fixed
 
 - Telegram no longer sends the same message to the bot twice after a restart. The poll resumes from the saved update offset, and a disconnect forgets it.
+- The bot's mascot shows only beside its latest message, so it no longer stays on an earlier reply above the owner's message.
 - A background process that a command started in its own session no longer keeps running after the turn ends. Each turn marks its processes, and the marked ones are ended when it is over.
 - The plus in the new bot and attach buttons sits exactly in the center of the round button.
 - `share_file` works on Windows and macOS. The file must stay inside the workspace, and the opened file must be the one the path leads to, checked by file identity. Linux uses the same check. On Windows the open does not refuse links, so the realpath and identity check are the guard there.

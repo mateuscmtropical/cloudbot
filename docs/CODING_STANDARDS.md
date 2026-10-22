@@ -111,6 +111,18 @@ const tracks = await Promise.all(tracksPromises);
 - A blank line before `return` and after a block of declarations (lint).
 - Run `pnpm lint:fix` before committing.
 
+## Layout
+
+- Spacing comes from the scale in `src/web/styles.css`: `--space-1` (4px),
+  `--space-2` (8px), `--space-3` (12px) and `--space-4` (16px). New styles use
+  these tokens, not raw pixel values.
+- Inside a chat card the gap between parts is `--space-2`. Text sits on top
+  and the controls go under it, the same way in every card.
+- A control in a card is a block, an inline block or a flex item. A bare
+  inline link ignores its own vertical padding and touches the text above.
+- Groups of controls are flex rows with `gap`, not margins on each control.
+- Colors and radii come from the tokens in `:root` too.
+
 ## Comments
 
 Write comments for the reason behind the code, not for what the code says.

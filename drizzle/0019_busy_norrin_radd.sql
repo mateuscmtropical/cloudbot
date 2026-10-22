@@ -1,0 +1,1 @@
+ALTER TABLE `messages` ADD `email_task_handled_at` integer;

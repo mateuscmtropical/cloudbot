@@ -3,7 +3,8 @@
 CloudBot does not sell, resell or pay for Claude usage. You connect your own
 Claude subscription or your own Anthropic API key, and your agreement with
 Anthropic applies to all usage. Anthropic can limit or close an account that
-breaks its terms.
+breaks its terms. The other providers work the same way, see
+[other providers](#other-providers).
 
 This page is not legal advice. It says how CloudBot runs Claude and quotes what
 Anthropic publishes.
@@ -50,3 +51,24 @@ read on 2026-10-20:
 
 Anthropic has not reviewed CloudBot. For your own case, Anthropic tells you to
 [contact sales](https://www.anthropic.com/contact-sales).
+
+## Other providers
+
+The same rules hold for every other provider. CloudBot does not sell, resell
+or pay for their usage either.
+
+- CloudBot runs the provider's official CLI, installed from the provider's own
+  npm package or install script and never modified. The versions are pinned in
+  `docker/Dockerfile`.
+- **Subscription.** CloudBot starts the CLI's own login command and posts the
+  link and code that it prints. You sign in on the provider's page. The CLI
+  stores the credentials in the agent user's home, and CloudBot does not read,
+  copy or store them. CloudBot never asks for your password.
+- **API key.** The key stays in the vault and reaches the provider through the
+  local key proxy, as with Anthropic.
+- Your agreement with each provider applies. A plan made for one person at a
+  keyboard may limit bots that run on their own, shared use or automated use.
+  Read the provider's terms before you connect a subscription, and prefer an
+  API key when the terms ask for one.
+
+None of these providers has reviewed CloudBot.
