@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { asc, eq } from 'drizzle-orm';
 
-import { randomMascot } from '../../shared/mascot.ts';
+import { randomMascot, readMascotColor } from '../../shared/mascot.ts';
 import type { MascotChoice } from '../../shared/mascot.ts';
 import { bots, turnQueue, turnWaits } from './schema.ts';
 import type { StoredUploadRecord } from './schema.ts';
@@ -54,7 +54,7 @@ class BotStore {
             throw new Error('Inserting a bot returned no row');
         }
 
-        return insertedBot;
+        return { ...insertedBot, mascotColor: readMascotColor(insertedBot.mascotColor) };
     }
 
     // Removes the bot row. Every table that keeps per-bot rows cascades from it, so they go too.
@@ -70,8 +70,13 @@ class BotStore {
         const rows = await this.database.select()
             .from(bots)
             .where(botCondition);
+        const bot = rows[0];
 
-        return rows[0];
+        if (bot === undefined) {
+            return undefined;
+        }
+
+        return { ...bot, mascotColor: readMascotColor(bot.mascotColor) };
     }
 
     async list(): Promise<Bot[]> {
@@ -81,7 +86,7 @@ class BotStore {
             .from(bots)
             .orderBy(oldestFirst, byIdAscending);
 
-        return rows;
+        return rows.map(row => ({ ...row, mascotColor: readMascotColor(row.mascotColor) }));
     }
 
     // Only the fields present in `changes` are written, so a partial update never overwrites the others.

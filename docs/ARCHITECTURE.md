@@ -978,7 +978,7 @@ In agent-user mode the workspace belongs to the agent user, so the server cannot
 
 ## Bot mascot
 
-Each bot has a mascot: a cloud body in one of ten colors and one of four shapes, drawn
+Each bot has a mascot: a cloud body in one of nine colors and one of four shapes, drawn
 in SVG by `src/web/components/CloudMascot.tsx`, with a white face. The color and shape are
 columns of `bots` (`mascot_color`, `mascot_shape`, migration 0011), chosen at random by
 `BotStore.create` and changed by the `profile_set_mascot` tool. `src/shared/mascot.ts` holds the palette.

@@ -84,6 +84,14 @@ describe('CloudMascot', () => {
             .toBe(3);
     });
 
+    it('fills a stored color that the palette no longer has with blue, so the bot still shows', () => {
+        const { container } = renderMascot('idle', 'puff', 'yellow' as never);
+
+        expect(container.querySelector('.cloud-body')
+            ?.getAttribute('fill'))
+            .toBe(MASCOT_COLORS.blue);
+    });
+
     it('fills the body with the color of the palette, and any color can show any face', () => {
         const { container } = renderMascot('done', 'wide', 'mint');
 

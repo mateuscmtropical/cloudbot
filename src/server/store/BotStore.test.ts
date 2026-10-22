@@ -19,6 +19,22 @@ describe('BotStore', () => {
         opened.close();
     });
 
+    it('reads a stored color that is no longer in the palette as blue, on every read path', async () => {
+        const created = await store.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        opened.sqlite.prepare('UPDATE bots SET mascot_color = \'yellow\' WHERE id = ?')
+            .run(created.id);
+
+        expect(await store.getById(created.id))
+            .toMatchObject({ mascotColor: 'blue' });
+        expect(await store.list())
+            .toEqual([expect.objectContaining({ id: created.id, mascotColor: 'blue' })]);
+        expect(await store.updateProfile(created.id, { description: 'Helps' }))
+            .toMatchObject({ mascotColor: 'blue' });
+        expect(await store.updateMascot(created.id, { shape: 'wide' }))
+            .toMatchObject({ mascotColor: 'blue', mascotShape: 'wide' });
+    });
+
     it('lists queued turns in position order, including ones put in front', async () => {
         const bot = await store.create({ name: 'Ana', title: 'Assistant', description: '' });
         const back = { id: 'back', botId: bot.id, position: 1, messageId: 'm2', text: 'second', uploads: [], source: 'chat' as const };

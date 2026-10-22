@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
 import type { MascotColorName, MascotShape } from '../../shared/mascot.ts';
+import { readMascotColor } from '../../shared/mascot.ts';
 import type { MessageBody, ChatRole } from '../../shared/chatTypes.ts';
 import { channelMembers, channelMessages, channels } from './schema.ts';
 import type { AppDatabase, StoreOptions } from './types.ts';
@@ -283,7 +284,7 @@ class ChannelStore {
                 createdAt: row.createdAt,
                 authorBotId: row.authorBotId ?? undefined,
                 authorName: row.authorName,
-                authorColor: row.authorColor,
+                authorColor: readMascotColor(row.authorColor),
                 authorShape: row.authorShape,
                 role: row.role,
                 kind: row.kind,
