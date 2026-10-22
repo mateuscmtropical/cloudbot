@@ -1,0 +1,362 @@
+# Threat model
+
+This page says what CloudBot defends, against whom, and where the defense
+stops. It describes `main` with the Agent SDK engine. The engine change in
+[#154](https://github.com/mateuscmtropical/cloudbot/issues/154) is pending.
+See [Pending change](#pending-change-the-cli-engine).
+
+[ARCHITECTURE.md](ARCHITECTURE.md) explains how each part works. This page
+links to it instead of repeating it. To report a problem, read the
+[security policy](../SECURITY.md).
+
+## Who is trusted
+
+| Who or what | Trust |
+|---|---|
+| The owner, holding the session cookie | Trusted |
+| The CloudBot server code | Trusted |
+| The bot, which is a model plus everything it runs | Not trusted. It can be misled. |
+| Text from outside: web pages, files, webhook bodies, page watches, replies from connected apps, messages from other bots | Not trusted. It is data, never instructions. |
+| A stranger on the internet | Reaches only the public routes |
+
+The main threat is prompt injection. Text that the bot reads can talk it into
+acting against the owner. CloudBot assumes this will sometimes work. So the
+protections sit outside the model: separate Unix users, the vault, proxies, an
+address gate, a command floor and owner approvals.
+
+The public routes are `/api/health`, `/setup` (needs the one-time code),
+`/hooks/<token>` (needs the webhook token) and the static web app files. Every
+other `/api` route needs the session cookie.
+
+## Layers at a glance
+
+| Layer | What it stops | What it does not stop |
+|---|---|---|
+| Separate Unix users | The bot reading the vault, the database and the shared file copies | The bot using its own home, the workspaces, the browser profile and the network |
+| Vault and proxies | The bot reading the API key, the GitHub token, app tokens and the secrets it asked for | The bot using those proxies |
+| Address gate | The browser, page watches and connected apps reaching private addresses | The bot's shell and the CLI's own WebFetch tool |
+| Owner rules | Tools the owner named in a block rule | Intent that no tool name captures |
+| Command floor | A fixed list of destructive commands and reads of the vault files | Commands built at run time |
+| Review agent | Calls a model judges unsafe. Sends, purchases and bookings always ask. | A model that is fooled |
+| Owner approval | Any call that waits for the owner | An owner who approves without reading |
+| Turn limits | Runaway time, steps and spending | Anything, while the limits are unset. That is the default. |
+
+## What the bot can reach
+
+### Docker mode
+
+Docker is the supported way to run CloudBot. See
+[Docker](ARCHITECTURE.md#docker) for the details.
+
+The server runs as the `cloudbot` user. The bot runs as the `bot` user. Each
+turn the server starts the `claude` CLI through `sudo -n -u bot`, with only a
+few environment variables. The data folder `/var/lib/cloudbot` is mode 700 and
+belongs to `cloudbot`. The CI check `docker/check-container.sh` proves that
+`bot` cannot read a file the server user wrote there.
+
+The bot can:
+
+- Run commands and edit files as `bot`.
+- Read and write `/home/bot`. That holds the Claude login of a subscription,
+  the CLI sessions and the Chromium profile with every site the bot or the
+  owner signed in to.
+- Read and write the workspaces of all bots. They share one Unix account, so
+  workspaces do not isolate bots from each other.
+- Read the upload folders. It cannot change them.
+- Open any outbound network connection. Nothing filters the shell's traffic.
+- Reach the services that listen on loopback inside the container. They have no
+  login of their own. The server's own port needs the session cookie.
+- Use the tools that CloudBot gives it. Each one is listed in
+  [ARCHITECTURE.md](ARCHITECTURE.md).
+
+The bot cannot:
+
+- Read the vault, the database or the shared file copies in the data folder.
+- Become root or another user. The sudoers file names the server user only.
+- Reach the host. The container is not privileged, mounts no Docker socket and
+  mounts only its own named volumes. Compose publishes ports 80 and 443 of
+  Caddy and exposes the server port only to the Caddy container.
+- Read the server's environment. The agent gets `HOME`, a fixed `PATH`, the
+  addresses of its proxies and dummy keys.
+
+### Local mode
+
+Without `CLOUDBOT_AGENT_USER` the bot runs as your own account on your own
+computer. CloudBot prints a warning at start. A server with `NODE_ENV` set to
+`production` refuses to start without an agent user, and the Docker image sets
+both. Local mode is for development.
+
+- The bot can read and change anything your account can.
+- The bot gets your environment, minus every `ANTHROPIC_` variable and
+  `CLAUDE_CODE_OAUTH_TOKEN`. Other tokens in your environment reach it.
+- The vault files are in the data folder, which your account can read. The vault
+  keeps nothing from the bot here. Only the floor, which refuses commands that
+  name `vault.key` or `vault.json`, stands in the way.
+- The floor protects the Docker data folders by their fixed paths. It does not
+  guard your own data folder against a delete.
+- CloudBot's Claude login lives in `<data dir>/claude-config`, so it never
+  replaces the login of your own Claude Code.
+- The browser tools use an installed Chrome, Chromium or Edge with its own
+  profile in the data folder. It goes through the same gate as in Docker. See
+  [Local browser](ARCHITECTURE.md#local-browser).
+
+Setting `CLOUDBOT_AGENT_USER` outside Docker gives the user separation without
+the container. Then the local browser stays off, because Chrome would run as
+the server user.
+
+## What the vault and the proxies keep from the bot
+
+| Secret | Where it lives | How the bot uses it | What the bot never gets |
+|---|---|---|---|
+| Anthropic API key | The vault | Through the key proxy | The key. It gets the proxy address and a dummy key. |
+| GitHub token | The vault, per bot | Through `GithubProxy` for `git` and `gh` | The token. A token saved for another site is never sent. |
+| Token of a connected app | The vault, per bot | Through `AppProxy` | The token and the server address |
+| Integration secret | The vault, per bot | Through a script that runs as `cloudbot-integrations` | The value. It is removed from the output. |
+| Password, code or card the bot asked for | The vault, per bot and per site | `browser_type_secret` types it | The value, in the chat, in a tool result or in a log |
+
+How each one works is in [Secrets](ARCHITECTURE.md#secrets),
+[GitHub](ARCHITECTURE.md#github), [Connected apps](ARCHITECTURE.md#connected-apps)
+and [API integrations](ARCHITECTURE.md#api-integrations).
+
+The vault encrypts each value with AES-256-GCM and a new random IV. The key is
+32 random bytes in `vault.key`, next to `vault.json`. Both files are mode 600.
+The encryption alone helps only when someone gets `vault.json` without
+`vault.key`. The real protection is the Unix permission on the data folder.
+
+The key proxy sends the bot's requests to Anthropic's API and adds the key. It
+sends nothing to any other address.
+
+A secret that the bot asked for with `request_secret` is saved with an https
+site. `browser_type_secret` types it only when the page origin is that site and
+the focused element is a password, one-time code or card field. A search box or
+a text field is refused. Names that start with `ANTHROPIC_` or `CLAUDE_` are
+refused, so a bot form cannot pass for the setup form.
+
+The subscription login is not in the vault. The `claude` CLI keeps it in the
+home of the `bot` user. CloudBot never reads, copies or stores it. The bot
+runs as the same user, so in Docker its shell can read those files.
+
+## What stops the bot from doing harm
+
+Every tool call goes through a `PreToolUse` hook before it runs. See
+[Tool call approval](ARCHITECTURE.md#tool-call-approval). A failure of the hook
+refuses the call. It never lets it through.
+
+### Owner rules
+
+The owner writes rules in plain language. Each sentence goes into the system
+prompt. A block rule can also name tools, such as `Bash(rm:*)`. Those go to the
+SDK as `disallowedTools`, and a hook refuses them for helper agents too. Only
+the owner can change rules through the web app. The bot can propose a change
+with a tool, and the owner approves it. A rule that names no tool is advice to
+the model and not a barrier. A misspelled tool name blocks nothing. See
+[Owner rules](ARCHITECTURE.md#owner-rules).
+
+### Command floor
+
+Before any rule, approval or model, a fixed floor refuses a short list of
+commands. It cannot be lifted by a rule, an approval or a model choice. It
+refuses:
+
+- A recursive delete of the disk root, the homes or the CloudBot data folders.
+- A format of a disk, or a write to a disk device.
+- A fork bomb.
+- Stopping, disabling or editing the CloudBot service or container.
+- Any write into `/etc/systemd/system`.
+- Any read, copy or search of the vault files.
+
+The floor is a floor and not a shell parser. See
+[Command floor](ARCHITECTURE.md#command-floor) for the full list and for what it
+does not see.
+
+### Review agent
+
+After the floor, `classifyToolCall` sorts the call:
+
+- Reading tools, tools that only change the bot's own profile or ask the owner
+  for something, and handing work to a helper run without a review. Each helper
+  call is reviewed on its own.
+- A connector tool whose name has a word like send, reply, purchase, buy, pay,
+  checkout, book or order always asks the owner. So does a `Bash` command that
+  mails or posts data out, and a call with an input over 10000 characters.
+- A few CloudBot tools always ask the owner: allowing a private host, connecting
+  an app, creating or deleting a bot, creating or changing an integration,
+  changing a rule and changing a limit.
+- Every other call goes to the review model.
+
+The review model is one call with no tools, no settings files, no saved session
+and one turn. It sees the call, the owner rules and the last six chat lines.
+Webhook bodies, page watches and messages from other bots are labeled as not the
+owner. It answers with a category and a decision. A message, a purchase or a
+booking always becomes a question for the owner. An answer that is not valid, a
+failed call and a timeout of 60 seconds all send the question to the owner. See
+[Review agent](ARCHITECTURE.md#review-agent).
+
+### Owner approval
+
+A question is a card in the chat with Approve and Deny. The call waits at most
+one hour. Silence, Stop and a restart all count as Deny. A reviewer that fails
+asks the owner and never lets the call run.
+
+Some cards show the whole content, so the owner reads what will run:
+
+- A script of an integration, in full, with its hash.
+- The name, title and instructions of a new bot.
+- The text of a hand-off to another bot.
+- A rule or limit change, with old and new values.
+- A write to GitHub, such as a push, with every ref or the whole request body.
+
+These cards are refused, and not cut, when they are too long to show whole or
+when they have hidden characters. So the text on the card is the text that runs.
+
+### Turn limits
+
+Each bot can have a time, spending and step limit per turn. They are off until
+the owner sets them. A turn that sends no event for 10 minutes is always
+stopped. See [Turn limits](ARCHITECTURE.md#turn-limits).
+
+## The address gate
+
+One check, `isPublicAddress`, refuses loopback, private, link-local, CGNAT,
+multicast and reserved addresses. It also refuses the cloud metadata addresses
+and the addresses of the server itself. An IPv6 address that carries an IPv4
+address is checked as that IPv4 address. Each user of the check resolves the
+name once, checks every address and connects to exactly the address it checked.
+
+| Path | Guard |
+|---|---|
+| Browser | The SOCKS5 gate `BrowserGate`. Chromium has no other way out. The tools stay off until a self-check passes. |
+| Page watches | `fetchWatchedPage`. Only http and https, at most 3 redirects, each hop checked again. |
+| Connected apps | `checkAppUrl` when the app is added and `AppProxy` again on every request |
+| GitHub | `GithubProxy` forwards only to GitHub |
+| Integrations | No gate. The owner approves the script, and the run uses its own user. |
+| The bot's shell and the CLI's WebFetch tool | No gate |
+
+The owner can allow one private host for the browser with `browser_allow_host`.
+It always asks. Loopback, this machine, link-local and metadata addresses can
+never be allowed. See [Network gate](ARCHITECTURE.md#network-gate) and
+[Page watches](ARCHITECTURE.md#page-watches).
+
+## Who can talk to CloudBot
+
+### The owner
+
+On start, a server with no session prints a setup link with a one-time code of
+256 random bits. Opening it sets a session cookie (`HttpOnly`, `Secure`,
+`SameSite=Strict`, one year) and the code stops working. Request origin checks
+are pending ([#167](https://github.com/mateuscmtropical/cloudbot/issues/167)).
+Only SHA-256 hashes of
+the code and the token are stored, and they are compared in constant time.
+There is one session at a time. A new link ends the old session. The first
+person to open the link becomes the owner, so open it soon after the install.
+See [Access](ARCHITECTURE.md#access).
+
+The live screen sockets also need the cookie, and they refuse an `Origin` that
+is not the server's own host or the host of `CLOUDBOT_PUBLIC_URL`. The Screen
+panel is view only unless the owner holds the screen.
+
+### Webhooks
+
+The URL of a webhook is `<public address>/hooks/<token>`. The token is 32
+random bytes, and only its SHA-256 hash is stored. The URL is shown once, only
+in the web app. It never reaches the model, the chat history or the log. A call
+is refused with 413 above 64 KB, and with 429 above 30 calls a minute for all
+the webhooks of one bot, or when 10 webhook messages already wait. The body
+reaches the bot marked as outside data, and the review reads it as not the
+owner. There is no signature check, so the token is the only secret. See
+[Webhooks](ARCHITECTURE.md#webhooks).
+
+### Other bots
+
+A hand-off from another bot is a user message labeled as not the owner. The
+receiving turn runs under its own rules, review and approvals, so a bot cannot
+use another bot to skip a block. A chain is at most 4 bots long. See
+[Bot hand-offs](ARCHITECTURE.md#bot-hand-offs).
+
+### The web app
+
+Markdown from the bot is rendered with raw HTML shown as text, images shown as
+text, and only http, https and mailto links kept. Downloads of shared files use
+`Content-Disposition: attachment` and `nosniff`, and unknown types are served as
+`application/octet-stream`. See [Shared files](ARCHITECTURE.md#shared-files).
+
+## Known limits
+
+These are accepted today. A report about one of them is out of scope in the
+[security policy](../SECURITY.md).
+
+### The bot's environment
+
+- The shell is not behind the address gate. It can reach whatever the container
+  can reach, such as private networks and the provider's metadata address. The
+  CLI's WebFetch tool is not behind the gate either. Both go through the review
+  like other tools.
+- All bots share one Unix account. They can read each other's workspaces, the
+  upload folders, the Chromium profile and the environment of each other's
+  shell. One bot can use another bot's GitHub access for reads. Only writes ask
+  the owner.
+- The Chromium profile holds the sessions of sites that were signed in. The bot
+  can read it, and it can drive the browser.
+- The subscription login is readable by the bot in Docker.
+- Chromium runs with `--no-sandbox`, because Docker's default seccomp profile
+  blocks the namespaces its sandbox needs. See
+  [OWNER_QUESTIONS.md](OWNER_QUESTIONS.md).
+- The bot can use the API key through the key proxy outside the turn limits.
+  The limits count the spending that the SDK reports.
+- The memory of a bot is `CLAUDE.md` in its workspace, and the bot writes it.
+  Text from a web page can end up there and come back in later turns.
+
+### The checks
+
+- The floor does not see commands built at run time, such as variables,
+  `$(...)` or encoded text. It does not read a script piped into a shell. It
+  also refuses some harmless commands. See
+  [Command floor](ARCHITECTURE.md#command-floor).
+- The review is a model reading text that the bot wrote. It can be wrong or
+  misled. The always-ask rule for connectors is a name and pattern check and not
+  a proof.
+- A card for a call that the model reviewed shows one sentence. The model wrote
+  it, and the owner does not see the raw input. The cards listed under
+  [Owner approval](#owner-approval) show the whole content.
+- An approved script of an integration can send its secret to any address it can
+  reach. The runner has more limits, listed in
+  [API integrations](ARCHITECTURE.md#api-integrations), and it has not been run
+  end to end on a real host.
+- The spending limit holds the agent and the review agent separately, so a turn
+  can spend up to twice the limit. Secure input does not pause the time limit.
+- These rest on the SDK documentation and were not checked against a live CLI:
+  that the SDK enforces `disallowedTools` inside a helper agent, and that
+  helper calls reach the review hook.
+
+### Access
+
+- Anyone who has a webhook URL can start bot turns, up to the rate limit. Treat
+  the URL like a password and delete a webhook that leaked.
+- There is no passkey or password. The session cookie is the only login, and it
+  lasts a year unless a new setup link ends it.
+- Security headers on the page are pending
+  ([#167](https://github.com/mateuscmtropical/cloudbot/issues/167)).
+- Request origin checks are pending
+  ([#167](https://github.com/mateuscmtropical/cloudbot/issues/167)).
+- Delivery ids of webhooks live in memory, so a restart forgets them and the
+  same call can be queued again.
+
+### The supply chain
+
+- The image installs the `claude` CLI with Anthropic's installer, and the CLI
+  updates itself. Known limit, fix pending
+  ([#154](https://github.com/mateuscmtropical/cloudbot/issues/154)).
+- `docker/install.sh` runs with `curl | sudo bash`, and `cloudbot update` pulls
+  `main` with `git pull --ff-only`. Nothing checks a signature.
+
+## Pending change: the CLI engine
+
+Issue [#154](https://github.com/mateuscmtropical/cloudbot/issues/154) moves
+CloudBot from the Agent SDK to the official `claude` CLI in headless mode.
+Approvals keep working the same way for the owner. This page is checked again
+when it merges.
+
+## Changing this page
+
+A change that touches a protection above updates this page in the same pull
+request. A new known limit goes in the list.

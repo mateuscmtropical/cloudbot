@@ -152,6 +152,12 @@ The setup link is in the logs (`docker compose -f docker/compose.yaml logs cloud
 To print a new one, run
 `docker compose -f docker/compose.yaml exec cloudbot node dist/server/newSetupLink.js`.
 
+## Security
+
+The [threat model](docs/THREAT_MODEL.md) says what the bot can reach, what stops
+it and where the protections end. To report a vulnerability, read the
+[security policy](SECURITY.md). Do not open a public issue for it.
+
 ## License
 
 [MIT](LICENSE)
