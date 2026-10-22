@@ -80,6 +80,51 @@ describe('answerCodexRequest', () => {
             .toEqual([]);
     });
 
+    it('declines when the turn stopped before or during the review, even when the review allows', async () => {
+        const stopped = new AbortController();
+
+        stopped.abort();
+        const before = { ...makeContext(allow), signal: stopped.signal };
+        const during = new AbortController();
+        const stopsDuring = {
+            ...makeContext(allow),
+            signal: during.signal,
+            reviewToolCall: () => {
+                during.abort();
+
+                return Promise.resolve<ToolCallDecision>({ isAllowed: true });
+            },
+        };
+
+        const early = await answerCodexRequest('item/commandExecution/requestApproval', commandRequest('ls'), before);
+        const late = await answerCodexRequest('item/commandExecution/requestApproval', commandRequest('ls'), stopsDuring);
+
+        expect([early, late])
+            .toEqual([{ result: { decision: 'decline' } }, { result: { decision: 'decline' } }]);
+        expect(before.calls)
+            .toEqual([]);
+    });
+
+    it('declines a patch that Codex replaced while it was reviewed', async () => {
+        const reviewed: CodexThreadItem = { type: 'fileChange', id: 'call_2', status: 'inProgress', changes: [{ path: '/work/a.txt', kind: { type: 'add' }, diff: 'safe\n' }] };
+        const newer: CodexThreadItem = { type: 'fileChange', id: 'call_2', status: 'inProgress', changes: [{ path: '/work/a.txt', kind: { type: 'add' }, diff: 'other\n' }] };
+        let current = reviewed;
+        const context = {
+            ...makeContext(allow),
+            findItem: () => current,
+            reviewToolCall: () => {
+                current = newer;
+
+                return Promise.resolve<ToolCallDecision>({ isAllowed: true });
+            },
+        };
+
+        const answer = await answerCodexRequest('item/fileChange/requestApproval', { itemId: 'call_2', reason: null, grantRoot: null }, context);
+
+        expect(answer)
+            .toEqual({ result: { decision: 'decline' } });
+    });
+
     it('declines a retry outside the sandbox and a network grant without a review', async () => {
         const context = makeContext(allow);
         const requests = [

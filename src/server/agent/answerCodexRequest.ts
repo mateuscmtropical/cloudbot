@@ -77,7 +77,13 @@ function unwrapShellCommand(command: string): string {
 }
 
 // A review that throws, or does not answer in time, is a refusal. A Codex call is never let through by a failure.
+// A stop before or during the review is a refusal too. A review that answers without looking at the signal, such as a
+// rule match, could otherwise allow a call after the turn was stopped.
 async function reviewInTime(call: ToolCall, context: CodexRequestContext): Promise<boolean> {
+    if (isStopped(context.signal)) {
+        return false;
+    }
+
     const timeoutController = new AbortController();
     const reviewSignal = AbortSignal.any([context.signal, timeoutController.signal]);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -92,10 +98,17 @@ async function reviewInTime(call: ToolCall, context: CodexRequestContext): Promi
         .catch(() => false);
 
     try {
-        return await Promise.race([reviewed, timedOut]);
+        const isAllowed = await Promise.race([reviewed, timedOut]);
+
+        return isAllowed && !isStopped(context.signal);
     } finally {
         clearTimeout(timer);
     }
+}
+
+// Reads the flag at call time. A check after an await is not narrowed to the value read before it.
+function isStopped(signal: AbortSignal): boolean {
+    return signal.aborted;
 }
 
 // Only a plain command is reviewed. A write to the input of a running command (writeStdin) is declined.
@@ -153,8 +166,11 @@ async function answerFileChange(params: Record<string, unknown>, context: CodexR
         async (previous, call) => (await previous) && reviewInTime(call, context),
         allAllowedSoFar,
     );
+    // Codex may send a newer patch (item/fileChange/patchUpdated) while the review runs. The accept would then apply
+    // changes nobody reviewed, so a patch that changed during its review is declined.
+    const isSamePatch = itemId !== undefined && context.findItem(itemId) === item;
 
-    return isAllowed ? ACCEPT_COMMAND : DECLINE_COMMAND;
+    return isAllowed && isSamePatch ? ACCEPT_COMMAND : DECLINE_COMMAND;
 }
 
 // A tool call question names the server and the arguments, but not the tool or the call. It is matched to the started
