@@ -784,7 +784,17 @@ Limits:
 
 With any MCP server, Codex also offers `list_mcp_resources`, `list_mcp_resource_templates` and `read_mcp_resource`, with no approval. The loopback server has no resources, so they read nothing. On a gated address the app proxy refuses every `resources/*` request before it leaves CloudBot. A body that is not JSON and a batch with a tool call are refused too. Claude turns keep the plain address. The canary checks that a refused connected tool never runs, an allowed one runs once, and no resource request reaches the server.
 
-Not covered yet: commands that Codex starts in their own session may outlive a stop, as with the Claude engine (#165). Also the spending limit (Codex reports tokens, not dollars), the owner's model choices, the agent user, sign-in and the setup choice.
+Not covered yet: commands that Codex starts in their own session may outlive a stop, as with the Claude engine (#165). Also the spending limit (Codex reports tokens, not dollars), the owner's model choices, the agent user and the setup choice.
+
+### Codex sign-in (not wired yet)
+
+`src/server/codexAuth` signs a bot in to ChatGPT by device code, in the bot's own `codex app-server` and `CODEX_HOME`.
+
+- `startCodexLogin` sends `account/login/start` with type `chatgptDeviceCode` and returns the `verificationUrl` and `userCode` for the chat. The owner signs in on OpenAI's page. Only an https page is accepted. The sign-in ends on `account/login/completed`. A cancel, an exit or CloudBot's own 15 minute limit sends `account/login/cancel` and closes the app server.
+- `getCodexAuthStatus` reads `account/read` without a token refresh and keeps only the account type, never the email or plan.
+- `signOutCodex` runs `account/logout` and then checks that the bot is signed out.
+- Codex keeps the tokens in the bot's `CODEX_HOME`. CloudBot never reads them, never logs or stores the user code, and never uses the token or key sign-in types.
+- Shapes come from `codex app-server generate-ts` of codex-cli 0.163.0. `account/read` and `account/logout` were checked against the real binary on a signed-out home. The device code start was not run for real, since that would reach OpenAI.
 
 ## Webhooks
 
