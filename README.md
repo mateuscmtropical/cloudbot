@@ -66,6 +66,12 @@ CloudBot never talks to Claude on its own. It runs Anthropic's tools:
 Read [provider terms](docs/PROVIDER_TERMS.md) before you use a subscription
 with CloudBot.
 
+## Voice input
+
+In browsers with speech recognition, such as Chrome and Edge, the message box has a microphone button. Press it to speak, and the words go into the message box. Press it again to stop.
+
+Chrome and Edge send the audio to their speech service to turn it into text. The app never receives the audio. The browser asks for microphone permission only when you press the button.
+
 ## Development
 
 You need Node 24 or newer and pnpm 10.

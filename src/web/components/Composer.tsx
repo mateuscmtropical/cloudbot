@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent, ReactElement } from 'react';
 
+import { joinVoiceText, useVoiceInput } from '../voiceInput.ts';
 import { PlusIcon } from './PlusIcon.tsx';
 
 interface DraftAttachment {
@@ -25,6 +26,34 @@ interface ComposerProps {
 function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop, onAttach, onRemoveAttachment, onTypingChange }: ComposerProps): ReactElement {
     const [draft, setDraft] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
+    // The text typed before the mic was pressed. Spoken words are added after it, and the owner edits all of it before sending.
+    const draftBeforeVoiceRef = useRef('');
+    const voice = useVoiceInput({
+        language: navigator.language,
+        onStart: () => {
+            draftBeforeVoiceRef.current = draft;
+        },
+        onTranscript: (transcript) => {
+            // An empty result changes nothing, so the draft keeps what the owner typed.
+            if (transcript.trim() === '') {
+                return;
+            }
+
+            const nextDraft = joinVoiceText(draftBeforeVoiceRef.current, transcript);
+
+            setDraft(nextDraft);
+            onTypingChange?.(nextDraft.trim().length > 0);
+        },
+    });
+    const stopListening = voice.stopListening;
+
+    // Another bot's chat must not receive the words of this one, so listening ends when the bot changes.
+    useEffect(() => {
+        return () => {
+            stopListening();
+        };
+    }, [botName, stopListening]);
+
     const trimmedDraft = draft.trim();
     // Send waits for uploads in flight, so their files reach this message and not the next one.
     const canSend = trimmedDraft.length > 0 && !isUploading;
@@ -36,6 +65,9 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
             return;
         }
 
+        // Listening ends first, and the text before the mic is forgotten, so words still being heard cannot come back.
+        stopListening();
+        draftBeforeVoiceRef.current = '';
         onSend(trimmedDraft);
         setDraft('');
         onTypingChange?.(false);
@@ -102,11 +134,29 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
                     placeholder={`Message ${botName}`}
                     value={draft}
                     onChange={(event) => {
+                        // Typing takes over from the mic, so listening stops before the typed text is kept.
+                        stopListening();
                         setDraft(event.target.value);
                         onTypingChange?.(event.target.value.trim().length > 0);
                     }}
                     onKeyDown={handleKeyDown}
                 />
+                {voice.isSupported
+                    ? (
+                            <button
+                                type="button"
+                                className={voice.isListening ? 'icon-button voice-button is-listening' : 'icon-button voice-button'}
+                                aria-label="Voice input"
+                                aria-pressed={voice.isListening}
+                                onClick={voice.toggle}
+                            >
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <rect x="9" y="3" width="6" height="12" rx="3" />
+                                    <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+                                </svg>
+                            </button>
+                        )
+                    : null}
                 {showStop
                     ? (
                             <button type="button" className="send-button is-stop" aria-label="Stop" onClick={onStop}>
@@ -123,6 +173,7 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
                             </button>
                         )}
             </div>
+            <p className="voice-status" role="status">{voice.statusText ?? ''}</p>
         </>
     );
 }
