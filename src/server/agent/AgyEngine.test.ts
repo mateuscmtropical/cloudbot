@@ -97,7 +97,9 @@ describe.skipIf(process.platform === 'win32')('AgyEngine', () => {
         });
 
         const sessionId = '18a96424-429a-4c7c-9ac0-08967cd7d51a';
-        const tool = { name: 'models_set', description: 'Sets models.', inputSchema: { chat: z.string() }, handler: () => Promise.resolve({ content: [] }) };
+        const tool = { name: 'models_set', description: 'Sets models.', inputSchema: { chat: z.string(), schedule: z.object({ kind: z.enum(['interval', 'daily']), everyMinutes: z.number()
+            .optional() })
+            .optional() }, handler: () => Promise.resolve({ content: [] }) };
         const turn = engine.runTurn({ botId: 'bot', workspaceDir, prompt: 'Hi', sessionId, model: 'opus', effort: 'low', tools: [tool], abortSignal: new AbortController().signal });
         const events: AgentEvent[] = [];
         const reading = (async () => {
@@ -126,9 +128,9 @@ describe.skipIf(process.platform === 'win32')('AgyEngine', () => {
 
         const sent = JSON.parse(written.join('')) as { message: { content: { text: string }[] } };
 
-        // agy does not see the argument names of MCP tools, so the prompt lists them before the owner's message.
+        // agy does not see the arguments of MCP tools, so the prompt lists them with their types before the owner's message.
         expect(sent.message.content[0]?.text)
-            .toMatch(/- models_set\(chat\)\n\nHi$/);
+            .toMatch(/- models_set \{chat: string, schedule\?: \{kind: "interval"\|"daily", everyMinutes\?: number\}\}\n\nHi$/);
         expect(environments[0])
             .toMatchObject({ CLOUDBOT_AGY_CONVERSATION: sessionId, CLOUDBOT_AGY_EFFORT: 'low', CLOUDBOT_AGY_REVIEW_URL: 'http://127.0.0.1:4100/mcp' });
         // A Claude model name is not an agy model, so it is not passed.

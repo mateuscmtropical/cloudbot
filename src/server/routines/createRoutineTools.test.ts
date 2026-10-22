@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { z } from 'zod/v4';
 
 import { BotStore } from '../store/BotStore.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
@@ -81,6 +82,19 @@ describe('createRoutineTools', () => {
             .toBe(true);
         await expect(store.list(botId))
             .resolves.toEqual([]);
+    });
+
+    it('refuses an unknown schedule key in the arguments, so the bot learns its name', () => {
+        const tools = createRoutineTools(store, botId) as unknown as { name: string; inputSchema: z.ZodRawShape }[];
+        const shape = tools.find(candidate => candidate.name === 'routine_create')?.inputSchema ?? {};
+        const schema = z.object(shape);
+        const wrong = schema.safeParse({ name: 'Inbox', prompt: 'x', schedule: { kind: 'interval', hours: 3 } });
+        const right = schema.safeParse({ name: 'Inbox', prompt: 'x', schedule: { kind: 'interval', everyMinutes: 180 } });
+
+        expect(wrong.error?.issues[0]?.message)
+            .toContain('hours');
+        expect(right.success)
+            .toBe(true);
     });
 
     it('refuses a routine over the limit', async () => {
