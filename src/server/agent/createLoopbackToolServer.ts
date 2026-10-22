@@ -496,11 +496,11 @@ async function answerMcp(serverName: string, turn: TurnState, body: string, resp
 
                 return;
             }
-        }
 
-        // A client that gave up during a long review already saw a failure and may ask again, so the call does not run.
-        if (response.socket?.destroyed !== false) {
-            return;
+            // A client that gave up during a long review already saw a failure and may ask again, so the call does not run.
+            if (response.socket?.destroyed !== false) {
+                return;
+            }
         }
 
         // The turn may have been released while the body was read. The handler never runs then.

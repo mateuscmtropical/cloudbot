@@ -10,6 +10,7 @@ import { signalProcessTree } from './ClaudeCliEngine.ts';
 import type { SignalAction, SpawnFunction } from './ClaudeCliEngine.ts';
 import type { LoopbackToolServer, LoopbackTurn } from './createLoopbackToolServer.ts';
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
+import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
 
 interface AcpEngineOptions {
     // The name the chat shows, such as Gemini.
@@ -54,7 +55,7 @@ interface AcpMessage {
 interface AcpToolCall {
     toolCallId?: string;
     title?: string;
-    kind?: string;
+    kind?: string | null;
     name?: string;
     status?: string;
     rawInput?: unknown;
@@ -73,8 +74,11 @@ interface PendingRequest {
 const ACP_PROTOCOL_VERSION = 1;
 const DEFAULT_REVIEW_TIMEOUT_MS = 65 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 120 * 1000;
+const AUTHENTICATE_TIMEOUT_MS = 30 * 1000;
 const CANCEL_GRACE_MS = 8000;
 const PRIVATE_FOLDER_MODE = 0o700;
+// The input fields that hold the text a file edit writes, not a path or a command.
+const EDIT_TEXT_FIELDS = new Set(['content', 'text', 'new_string', 'old_string', 'newText', 'oldText', 'new_str', 'old_str']);
 const REVIEW_FAILED_REASON = 'CloudBot could not review this call, so it was refused.';
 
 function readRecord(value: unknown): Record<string, unknown> {
@@ -92,12 +96,12 @@ function readString(record: Record<string, unknown>, ...names: string[]): string
 // the same way as for Claude. A kind the engine does not know is reviewed under its own name.
 function toReviewedCall(toolCall: AcpToolCall): ToolCall {
     const input = readRecord(toolCall.rawInput);
-    const path = toolCall.locations?.[0]?.path ?? readString(input, 'path', 'file_path', 'filePath', 'absolute_path');
+    const path = toolCall.locations?.[0]?.path ?? readString(input, 'path', 'file_path', 'filePath', 'filepath', 'absolute_path', 'abs_path', 'file');
     const title = toolCall.title ?? '';
 
     switch (toolCall.kind) {
         case 'execute':
-            return { toolName: 'Bash', input: { command: readString(input, 'command', 'cmd') ?? title } };
+            return { toolName: 'Bash', input: { command: readString(input, 'command', 'cmd', 'script') ?? title } };
         case 'edit':
             return { toolName: 'Write', input: { ...input, file_path: path ?? '' } };
         case 'delete':
@@ -115,19 +119,31 @@ function toReviewedCall(toolCall: AcpToolCall): ToolCall {
     }
 }
 
-function dropUndefined(toolCall: AcpToolCall): AcpToolCall {
-    const entries = Object.entries(toolCall)
-        .filter(([, value]) => value !== undefined);
+// Some agents send an unset field as null, which must not replace what an earlier update said.
+function dropMissing(record: Record<string, unknown>): Record<string, unknown> {
+    const entries = Object.entries(record)
+        .filter(([, value]) => value !== undefined && value !== null);
 
     return Object.fromEntries(entries);
+}
+
+// Joins what is known about a call with what a newer message says. The input is joined one level deep, so a
+// message that carries only part of it keeps the command or path from before.
+function mergeCall(known: AcpToolCall | undefined, newer: AcpToolCall): AcpToolCall {
+    const knownInput = readRecord(known?.rawInput);
+    const newerRecord = readRecord(newer.rawInput);
+    const newerInput = dropMissing(newerRecord);
+
+    return { ...known, ...dropMissing(newer as Record<string, unknown>), rawInput: { ...knownInput, ...newerInput } };
 }
 
 // A call with no kind but a command is reviewed as the command it is, so the command floor sees it.
 function withKind(toolCall: AcpToolCall): AcpToolCall {
     const input = readRecord(toolCall.rawInput);
-    const command = readString(input, 'command', 'cmd');
+    const command = readString(input, 'command', 'cmd', 'script');
+    const hasNoKind = toolCall.kind === undefined || toolCall.kind === null;
 
-    return toolCall.kind === undefined && command !== undefined ? { ...toolCall, kind: 'execute' } : toolCall;
+    return hasNoKind && command !== undefined ? { ...toolCall, kind: 'execute' } : toolCall;
 }
 
 function escapeForPattern(text: string): string {
@@ -136,7 +152,13 @@ function escapeForPattern(text: string): string {
 
 // This is a floor, not a parser. A path the command builds at run time gets past it, and the review still sees it.
 function namesProtectedFolder(toolCall: AcpToolCall, protectedFolders: string[]): boolean {
-    const text = JSON.stringify(toolCall)
+    // The text a file edit writes is left out, so a README line or a .gitignore entry that names a folder is reviewed.
+    const rawInput = readRecord(toolCall.rawInput);
+    const kept = Object.entries(rawInput)
+        .filter(([name]) => !EDIT_TEXT_FIELDS.has(name));
+    const input = Object.fromEntries(kept);
+    const named = { title: toolCall.title, locations: toolCall.locations, input };
+    const text = JSON.stringify(named)
         .replaceAll('\\\\', '/')
         // Escaped line breaks and tabs in the JSON text separate words as spaces do.
         .replaceAll(/\\[nrt]/g, ' ')
@@ -196,6 +218,18 @@ class AcpEngine implements AgentRunner {
     async* runTurn(request: TurnRequest): AsyncGenerator<AgentEvent> {
         if (request.abortSignal.aborted) {
             return;
+        }
+
+        // The agent user runs in the bot's shared workspace, which only the server can make, as for the Claude engine.
+        if (this.options.launch !== undefined) {
+            try {
+                await prepareAgentWorkspace(request.workspaceDir);
+            } catch (error: unknown) {
+                console.error('Could not prepare the agent workspace:', error);
+                yield { type: 'turn_error', message: 'Could not prepare the agent workspace. Please try again.', isUsageLimit: false };
+
+                return;
+            }
         }
 
         const tools = request.tools ?? [];
@@ -282,7 +316,10 @@ class AcpEngine implements AgentRunner {
         const knownCalls = new Map<string, AcpToolCall>();
         const remember = (toolCall: AcpToolCall): void => {
             if (toolCall.toolCallId !== undefined) {
-                knownCalls.set(toolCall.toolCallId, { ...knownCalls.get(toolCall.toolCallId), ...dropUndefined(toolCall) });
+                const before = knownCalls.get(toolCall.toolCallId);
+                const merged = mergeCall(before, toolCall);
+
+                knownCalls.set(toolCall.toolCallId, merged);
             }
         };
 
@@ -294,8 +331,8 @@ class AcpEngine implements AgentRunner {
         const send = (message: Record<string, unknown>): void => {
             child.stdin?.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
         };
-        // A prompt runs as long as the turn and its reviews, so only the other requests get the answer timeout.
-        const call = (method: string, params: Record<string, unknown>, hasTimeout = true): Promise<AcpMessage> => {
+        // A prompt runs as long as the turn and its reviews, so it passes 0 for no answer timeout.
+        const call = (method: string, params: Record<string, unknown>, timeoutMs = REQUEST_TIMEOUT_MS): Promise<AcpMessage> => {
             const id = nextId;
 
             nextId += 1;
@@ -308,14 +345,15 @@ class AcpEngine implements AgentRunner {
             const failed = exited.then(() => ({ error: { message: `${this.options.label} stopped.` } }));
             const first = Promise.race([answered, failed]);
 
-            return hasTimeout ? withTimeout(first, REQUEST_TIMEOUT_MS, { error: { message: `${this.options.label} did not answer.` } }) : first;
+            return timeoutMs > 0 ? withTimeout(first, timeoutMs, { error: { message: `${this.options.label} did not answer.` } }) : first;
         };
 
         const answerPermission = async (id: string | number, params: Record<string, unknown>): Promise<void> => {
             const asked = readRecord(params.toolCall) as AcpToolCall;
             // A permission question may carry only part of the call. The tool_call updates before it hold the rest.
             const known = asked.toolCallId === undefined ? undefined : knownCalls.get(asked.toolCallId);
-            const toolCall = withKind({ ...known, ...dropUndefined(asked) });
+            const merged = mergeCall(known, asked);
+            const toolCall = withKind(merged);
             const options = Array.isArray(params.options) ? params.options as AcpPermissionOption[] : [];
 
             permissionCount += 1;
@@ -469,7 +507,8 @@ class AcpEngine implements AgentRunner {
             const notSignedIn = `${this.options.label} is not signed in. Ask me to connect ${this.options.label}.`;
 
             if (this.options.authMethodId !== undefined) {
-                const authenticated = await call('authenticate', { methodId: this.options.authMethodId });
+                // Without a cached sign-in, Gemini and Grok wait for an interactive login here, so a short wait means not signed in.
+                const authenticated = await call('authenticate', { methodId: this.options.authMethodId }, AUTHENTICATE_TIMEOUT_MS);
 
                 if (authenticated.error !== undefined) {
                     push({ type: 'turn_error', message: notSignedIn, isUsageLimit: false });
@@ -502,7 +541,8 @@ class AcpEngine implements AgentRunner {
 
                 if (createdId === undefined) {
                     const reason = created.error?.message ?? '';
-                    const needsSignIn = /auth|sign|login/i.test(reason);
+                    // Mistral Vibe answers `Missing API key` before its sign-in.
+                    const needsSignIn = /auth|sign|login|api key/i.test(reason);
 
                     push({ type: 'turn_error', message: needsSignIn ? notSignedIn : `${this.options.label} could not start a session.`, isUsageLimit: false });
 
@@ -540,7 +580,7 @@ class AcpEngine implements AgentRunner {
                 return;
             }
 
-            const prompted = await call('session/prompt', { sessionId, prompt: [{ type: 'text', text: `${instructions}${request.prompt}` }, ...images] }, false);
+            const prompted = await call('session/prompt', { sessionId, prompt: [{ type: 'text', text: `${instructions}${request.prompt}` }, ...images] }, 0);
 
             if (prompted.error !== undefined) {
                 const reason = prompted.error.message ?? '';

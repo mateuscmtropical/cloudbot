@@ -15,6 +15,7 @@ import type { CodexFileChange, CodexMessage, CodexRequestId, CodexThreadItem, Co
 import type { LoopbackToolServer, LoopbackTurn } from './createLoopbackToolServer.ts';
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
 import { mapCodexNotification, mapCodexTurnEnd, readItem } from './mapCodexNotification.ts';
+import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
 import { codexAgentLaunch } from './codexAgentLaunch.ts';
 import { writeCodexTurnImages } from './writeCodexTurnImages.ts';
 import type { CodexTurnImages } from './writeCodexTurnImages.ts';
@@ -230,6 +231,18 @@ class CodexEngine implements AgentRunner {
         const codexHome = this.options.codexHomeFor(request.botId);
         const userHome = codexUserHomeFor(codexHome);
         const isAgent = this.options.agentUser !== undefined;
+
+        // The agent user runs in the bot's shared workspace, which only the server can make, as for the Claude engine.
+        if (isAgent) {
+            try {
+                await prepareAgentWorkspace(request.workspaceDir);
+            } catch (error: unknown) {
+                console.error('Could not prepare the agent workspace:', error);
+                yield { type: 'turn_error', message: 'Could not prepare the agent workspace. Please try again.', isUsageLimit: false };
+
+                return;
+            }
+        }
 
         // The agent user's wrapper makes its own CODEX_HOME. The server only prepares the local one.
         if (!isAgent) {

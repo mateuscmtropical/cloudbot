@@ -33,6 +33,8 @@ interface AcpApiKeySpec {
     keyHeader: KeyHeader;
     // A cheap call that answers 401 or 403 for a wrong key.
     checkUrl: string;
+    // Google answers a wrong key with 400 API_KEY_INVALID instead of 401.
+    badKeyStatus?: number | undefined;
     // The variables that point the CLI at the key proxy. The key the CLI sees is a placeholder.
     environment: (proxyUrl: string) => Record<string, string>;
     // A key that runs on another CLI, like an xAI key on opencode, since Grok Build takes only a Grok account over ACP.
@@ -91,6 +93,7 @@ const ACP_PROVIDERS: AcpProviderSpec[] = [
             upstreamUrl: 'https://generativelanguage.googleapis.com',
             keyHeader: { name: 'x-goog-api-key', prefix: '' },
             checkUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
+            badKeyStatus: 400,
             environment: proxyUrl => ({ GEMINI_API_KEY: PLACEHOLDER_KEY, GOOGLE_GEMINI_BASE_URL: proxyUrl }),
         },
     },
@@ -215,11 +218,10 @@ function readLocalAcpPaths(environment: NodeJS.ProcessEnv): Partial<Record<AcpPr
     return Object.fromEntries(entries);
 }
 
-async function checkKeyAt(url: string, keyHeader: KeyHeader, key: string): Promise<number> {
+async function checkKeyAt(url: string, keyHeader: KeyHeader, key: string, badKeyStatus?: number): Promise<number> {
     const response = await fetch(url, { headers: { [keyHeader.name]: `${keyHeader.prefix}${key}` }, redirect: 'manual' });
 
-    // Google answers a wrong key with 400 API_KEY_INVALID. The model lists take no other input, so a 400 is the key.
-    return response.status === 400 ? 401 : response.status;
+    return response.status === badKeyStatus ? 401 : response.status;
 }
 
 // Runs a turn with the sign-in or the key, whichever way the owner connected the provider last.
@@ -318,7 +320,7 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
         if (keySpec !== undefined && keyEngine !== undefined) {
             apiKeys.push({
                 id: spec.id, label: spec.label, site: keySpec.site, secretName: keySpec.secretName,
-                checkKey: key => checkKeyAt(keySpec.checkUrl, keySpec.keyHeader, key),
+                checkKey: key => checkKeyAt(keySpec.checkUrl, keySpec.keyHeader, key, keySpec.badKeyStatus),
             });
         }
 
@@ -337,6 +339,12 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
     });
 
     await Promise.all(built);
+
+    // The providers are built at the same time, so the lists are put back in the fixed order for the setup chat.
+    const order = (id: string): number => ACP_PROVIDERS.findIndex(spec => spec.id === id);
+
+    signIns.sort((first, second) => order(first.id) - order(second.id));
+    apiKeys.sort((first, second) => order(first.id) - order(second.id));
 
     return {
         engines,

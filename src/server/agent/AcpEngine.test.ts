@@ -331,6 +331,9 @@ describe('AcpEngine', () => {
 
         expect(found)
             .toEqual(touching.map(() => true));
+        // The text an edit writes is not a path, so a .gitignore line goes to the review.
+        expect(namesProtectedFolder({ kind: 'edit', locations: [{ path: '/work/.gitignore' }], rawInput: { content: '.gemini/\n' } }, folders))
+            .toBe(false);
     });
 
     it('reviews a question that carries only the call id as the call its update described', async () => {
@@ -338,7 +341,7 @@ describe('AcpEngine', () => {
         const { engine } = makeEngine({
             onPrompt: (agent, promptId) => {
                 agent.say({ method: 'session/update', params: { sessionId: 'session-1', update: { sessionUpdate: 'tool_call', toolCallId: 't3', kind: 'execute', title: 'Remove', rawInput: { command: 'rm x' } } } });
-                askPermission(agent, 903, { toolCallId: 't3' });
+                askPermission(agent, 903, { toolCallId: 't3', kind: null, rawInput: { description: 'x' } });
                 askPermission(agent, 904, { toolCallId: 't4', rawInput: { command: 'ls' } });
                 void Promise.all([agent.answerTo(903), agent.answerTo(904)])
                     .then(() => {
