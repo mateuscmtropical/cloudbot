@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { ReactElement, SyntheticEvent } from 'react';
 
+import { ChatCard } from './ChatCard.tsx';
+
 interface CodeFieldProps {
     prompt: string;
     placeholder: string;
@@ -24,8 +26,7 @@ function CodeField({ prompt, placeholder, submitted, onSubmit }: CodeFieldProps)
     }
 
     return (
-        <div className="setup-card">
-            <p>{prompt}</p>
+        <ChatCard text={prompt}>
             {submitted
                 ? (
                         <p className="setup-done">This code field is closed.</p>
@@ -44,7 +45,7 @@ function CodeField({ prompt, placeholder, submitted, onSubmit }: CodeFieldProps)
                             <button type="submit" disabled={trimmedCode.length === 0}>Send code</button>
                         </form>
                     )}
-        </div>
+        </ChatCard>
     );
 }
 

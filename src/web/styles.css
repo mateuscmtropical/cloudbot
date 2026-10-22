@@ -461,6 +461,11 @@ svg {
     margin: 0 0 var(--space-2);
 }
 
+/* The approval card carries a script, so its line breaks are kept. */
+.card-text {
+    white-space: pre-wrap;
+}
+
 .choice-buttons {
     display: flex;
     flex-wrap: wrap;
