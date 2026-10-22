@@ -81,7 +81,11 @@ import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_SHAPE, BOT_IMPORT_TOOL_FULL_NAME,
 import type { ExportedTemplate, ImportedBot } from '../bots/createBotTemplateTools.ts';
 import { buildBotTemplate, describeBotTemplate, parseBotTemplate, serializeBotTemplate, templateFileName } from '../bots/botTemplate.ts';
 import type { BotTemplate } from '../bots/botTemplate.ts';
+import { GALLERY_INSTALL_SHAPE, createGalleryInstallTool, createGalleryListTool, createGalleryShareTool, describeGalleryListing, galleryToolFullNames } from '../bots/createGalleryTools.ts';
+import { GalleryError, digestOf } from '../bots/templateGallery.ts';
+import type { FetchedTemplate, TemplateGallery } from '../bots/templateGallery.ts';
 import { readBotTemplateFile } from '../bots/readBotTemplateFile.ts';
+import { readGithubToken } from '../github/githubRouting.ts';
 import type { BotCreateInput } from '../bots/createBotTool.ts';
 import { BOT_DELETE_TOOL_FULL_NAME, createBotDeleteTool } from '../bots/createBotDeleteTool.ts';
 import { RULE_LIST_TOOL_FULL_NAME, RULE_TOOL_FULL_NAMES, createRuleTools } from '../rules/createRuleTools.ts';
@@ -174,6 +178,7 @@ interface ChatServiceOptions {
     browser?: BrowserControl | undefined;
     // Where the secrets the bot asks for are kept. Without it the bot cannot ask for one.
     botSecrets?: BotSecrets | undefined;
+    templateGallery?: TemplateGallery | undefined;
     // Who holds the screen. With a browser it gives the bot the request_screen tool.
     screen?: ScreenHolder | undefined;
     // The owner's rules for each bot. Without it turns run without rules.
@@ -378,6 +383,36 @@ function toChatMessage(storedMessage: Message): ChatMessage {
     };
 }
 
+// The export file with the name of its bot. The gallery shares the same text the owner sees in the card.
+interface BuiltExport {
+    name: string;
+    fileName: string;
+    text: string;
+}
+
+// A share card longer than this would not show the owner the whole file, so the share is refused.
+const MAX_SHARE_CARD_CHARS = 12000;
+const NO_GITHUB_FOR_SHARE_MESSAGE = 'Sharing needs GitHub connected for this bot. Ask the owner to save a GitHub token as GITHUB_TOKEN in the secure form, with the site https://github.com, then ask again.';
+const CARD_EXPIRED_MESSAGE = 'The card expired, ask again.';
+const CARD_CHANGED_MESSAGE = 'The template changed after the owner was shown it. Ask again.';
+const CARD_WAITING_MESSAGE = 'An earlier card for this shows other content and is still open. Wait for the owner to answer it, or ask again in ten minutes.';
+
+// Each card for a gallery install or share has its own key, so a card for one never answers for another.
+function galleryInstallKey(botId: string, file: string): string {
+    return ['install', botId, file].join('\n');
+}
+
+function galleryShareKey(botId: string): string {
+    return ['share', botId].join('\n');
+}
+
+function describeGalleryError(error: unknown): string {
+    if (error instanceof GalleryError) {
+        return error.message;
+    }
+
+    return 'The template gallery could not be read right now. Try again later.';
+}
 // How long a template card waits for the owner's answer before its file can no longer be imported.
 const TEMPLATE_CARD_TTL_MS = 10 * 60 * 1000;
 
@@ -573,6 +608,7 @@ class ChatService {
     private readonly maxShareBytes: number;
     private readonly browser: BrowserControl | undefined;
     private readonly botSecrets: BotSecrets | undefined;
+    private readonly templateGallery: TemplateGallery | undefined;
     private readonly screen: ScreenHolder | undefined;
     // Bot secret forms with an answer in progress, by message id.
     private readonly answeringForms = new Set<string>();
@@ -639,6 +675,7 @@ class ChatService {
         this.maxShareBytes = options.maxShareBytes ?? readMaxShareBytes();
         this.browser = options.browser;
         this.botSecrets = options.botSecrets;
+        this.templateGallery = options.templateGallery;
         this.screen = options.screen;
         this.ruleStore = options.ruleStore;
         this.routineStore = options.routineStore;
@@ -777,6 +814,16 @@ class ChatService {
 
     // Exports the bot as a template file, shared in the chat. Only the template's fields go into it.
     async exportBotFromTool(botId: string): Promise<ExportedTemplate> {
+        const exported = await this.buildExport(botId);
+        const bytes = Buffer.from(exported.text, 'utf8');
+
+        await this.storeSharedBytes(botId, exported.fileName, 'application/json', bytes);
+
+        return { name: exported.name };
+    }
+
+    // The bot's template as the file text, checked the way an import checks it. Nothing else of the bot is read.
+    private async buildExport(botId: string): Promise<BuiltExport> {
         const bot = await this.botStore.getById(botId);
 
         if (bot === undefined) {
@@ -801,12 +848,7 @@ class ChatService {
             throw new Error(`This bot cannot be exported. ${check.reason}`);
         }
 
-        const fileName = templateFileName(bot.name);
-        const bytes = Buffer.from(text, 'utf8');
-
-        await this.storeSharedBytes(botId, fileName, 'application/json', bytes);
-
-        return { name: bot.name };
+        return { name: bot.name, fileName: templateFileName(bot.name), text };
     }
 
     // Creates a bot from a template the owner approved. The file must match a card shown for it in the last few minutes.
@@ -824,13 +866,16 @@ class ChatService {
             throw new Error('The template file changed after the owner was shown it. Attach it again and ask.');
         }
 
-        const template = read.template;
+        return this.createBotFromTemplate(read.template);
+    }
+
+    // Makes the bot and its rules and routines. A half made bot is removed, so it never starts without what the owner approved.
+    private async createBotFromTemplate(template: BotTemplate): Promise<ImportedBot> {
         const bot = await this.insertBot({ name: template.name, title: template.title, description: template.description });
 
         try {
             await this.applyTemplate(bot.id, template);
         } catch (error: unknown) {
-            // A half made bot would start without what the owner approved, so it is removed.
             await this.botStore.delete(bot.id);
 
             throw error;
@@ -859,6 +904,180 @@ class ChatService {
         this.addPendingTemplateCard(botId, parsed.data.path, read.digest);
 
         return { decision: 'ask', summary: 'Create a bot from a template.', detail: describeBotTemplate(read.template) };
+    }
+
+    private requireGallery(): TemplateGallery {
+        if (this.templateGallery === undefined) {
+            throw new Error('The template gallery is not set up on this CloudBot.');
+        }
+
+        return this.templateGallery;
+    }
+
+    // The gallery's token for sharing is the bot's own GitHub token. A token saved for another site counts as none.
+    private galleryToken(botId: string): string | undefined {
+        if (this.botSecrets === undefined) {
+            return undefined;
+        }
+
+        try {
+            return readGithubToken(this.botSecrets, botId);
+        } catch {
+            return undefined;
+        }
+    }
+
+    // Tools of the gallery. Listing needs no owner. Install and share wait for the owner, so they need the approval gate.
+    private galleryTools(botId: string): CloudbotTool[] {
+        if (this.templateGallery === undefined) {
+            return [];
+        }
+
+        const listTool = createGalleryListTool(() => this.listGallery());
+
+        if (this.approvals === undefined) {
+            return [listTool];
+        }
+
+        const installTool = createGalleryInstallTool(file => this.installGalleryTemplate(botId, file));
+
+        if (this.botSecrets === undefined) {
+            return [listTool, installTool];
+        }
+
+        const shareTool = createGalleryShareTool(() => this.shareGalleryTemplate(botId));
+
+        return [listTool, installTool, shareTool];
+    }
+
+    private galleryToolNames(): string[] {
+        if (this.templateGallery === undefined) {
+            return [];
+        }
+
+        return galleryToolFullNames({ canAskOwner: this.approvals !== undefined, canShare: this.approvals !== undefined && this.botSecrets !== undefined });
+    }
+
+    private async listGallery(): Promise<string> {
+        const gallery = this.requireGallery();
+        const entries = await gallery.listTemplates();
+        const repoName = gallery.repository();
+
+        return describeGalleryListing(repoName, entries);
+    }
+
+    // The install card shows the whole template from the gallery. Its digest binds the install to these bytes.
+    async describeGalleryInstall(botId: string, input: unknown): Promise<ToolCallVerdict> {
+        const parsed = z.object(GALLERY_INSTALL_SHAPE)
+            .safeParse(input);
+
+        if (!parsed.success) {
+            return { decision: 'deny', reason: 'The gallery file name is not valid. Use a file name from the gallery list.' };
+        }
+
+        const gallery = this.requireGallery();
+        let fetched: FetchedTemplate;
+
+        try {
+            fetched = await gallery.fetchTemplate(parsed.data.file);
+        } catch (error: unknown) {
+            return { decision: 'deny', reason: describeGalleryError(error) };
+        }
+
+        const installKey = galleryInstallKey(botId, fetched.file);
+
+        if (!gallery.rememberCard(installKey, fetched.digest)) {
+            return { decision: 'deny', reason: CARD_WAITING_MESSAGE };
+        }
+
+        const repoName = gallery.repository();
+        const repoText = JSON.stringify(repoName);
+        const fileText = JSON.stringify(fetched.file);
+        const templateText = describeBotTemplate(fetched.template);
+
+        return { decision: 'ask', summary: 'Create a bot from a gallery template.', detail: `From the gallery ${repoText}, file ${fileText}.\n\n${templateText}` };
+    }
+
+    // Creates the bot only when the template still matches the card the owner saw.
+    async installGalleryTemplate(botId: string, file: string): Promise<ImportedBot> {
+        const gallery = this.requireGallery();
+        const fetched = await gallery.fetchTemplate(file);
+        const installKey = galleryInstallKey(botId, fetched.file);
+        const check = gallery.takeCard(installKey, fetched.digest);
+
+        if (check !== 'approved') {
+            throw new Error(check === 'expired' ? CARD_EXPIRED_MESSAGE : CARD_CHANGED_MESSAGE);
+        }
+
+        return this.createBotFromTemplate(fetched.template);
+    }
+
+    // The share card shows the exact file that the pull request adds. Without a GitHub token nothing is asked.
+    async describeGalleryShare(botId: string): Promise<ToolCallVerdict> {
+        if (this.galleryToken(botId) === undefined) {
+            return { decision: 'deny', reason: NO_GITHUB_FOR_SHARE_MESSAGE };
+        }
+
+        let exported: BuiltExport;
+
+        try {
+            exported = await this.buildExport(botId);
+        } catch (error: unknown) {
+            return { decision: 'deny', reason: describeError(error) };
+        }
+
+        if (exported.text.length > MAX_SHARE_CARD_CHARS) {
+            return { decision: 'deny', reason: 'The template is too long to show the owner whole, so it was not shared.' };
+        }
+
+        const gallery = this.requireGallery();
+        let fileExists: boolean;
+
+        try {
+            fileExists = await gallery.fileExists(exported.fileName);
+        } catch (error: unknown) {
+            return { decision: 'deny', reason: describeGalleryError(error) };
+        }
+
+        const digest = digestOf(exported.text);
+        const shareKey = galleryShareKey(botId);
+
+        if (!gallery.rememberCard(shareKey, digest)) {
+            return { decision: 'deny', reason: CARD_WAITING_MESSAGE };
+        }
+
+        const repoName = gallery.repository();
+        const replaceNote = fileExists ? ' (replaces an existing file)' : '';
+        const detail = [
+            `Repository: ${repoName}`,
+            `Pull request from your fork of ${repoName}. It also adds the file to templates/index.json.`,
+            `File: templates/${exported.fileName}${replaceNote}`,
+            '',
+            exported.text,
+        ].join('\n');
+
+        return { decision: 'ask', summary: 'Open a pull request to the template gallery.', detail };
+    }
+
+    // Opens the pull request only for the file the owner approved. A changed file needs a new card.
+    async shareGalleryTemplate(botId: string): Promise<string> {
+        const token = this.galleryToken(botId);
+
+        if (token === undefined) {
+            throw new Error(NO_GITHUB_FOR_SHARE_MESSAGE);
+        }
+
+        const exported = await this.buildExport(botId);
+        const gallery = this.requireGallery();
+        const digest = digestOf(exported.text);
+        const shareKey = galleryShareKey(botId);
+        const check = gallery.takeCard(shareKey, digest);
+
+        if (check !== 'approved') {
+            throw new Error(check === 'expired' ? CARD_EXPIRED_MESSAGE : CARD_CHANGED_MESSAGE);
+        }
+
+        return gallery.openPullRequest({ token, fileName: exported.fileName, text: exported.text, botName: exported.name });
     }
 
     // A card waits for the owner for ten minutes. A newer card for the same path replaces the older one.
@@ -2798,7 +3017,7 @@ class ChatService {
                         ...this.channelTools(botId),
                     ];
             // Export is always offered. Import makes a bot, so it is offered only with the approval gate, like bot_create.
-            const templateTools = [createBotExportTool(() => this.exportBotFromTool(botId)), ...(this.approvals === undefined ? [] : [createBotImportTool(filePath => this.importBotFromTool(botId, filePath))])];
+            const templateTools = [createBotExportTool(() => this.exportBotFromTool(botId)), ...(this.approvals === undefined ? [] : [createBotImportTool(filePath => this.importBotFromTool(botId, filePath))]), ...this.galleryTools(botId)];
             // The rule list is always offered. A rule change and a bot delete are offered only with the approval gate, since each waits for the owner.
             const ruleTools = this.ruleStore === undefined ? [] : createRuleTools(this.ruleStore, botId, this.approvals !== undefined);
             const botDeleteTools = this.approvals === undefined ? [] : [createBotDeleteTool(() => this.deleteBotFromTool(botId))];
@@ -3061,7 +3280,7 @@ class ChatService {
         const botSendToolNames = [BOT_SEND_TOOL_FULL_NAME];
         const notificationToolNames = this.notificationToolNames();
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.

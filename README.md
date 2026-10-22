@@ -48,6 +48,7 @@ comes back when the job is done or when it needs you.
 - **Tell you when it is done.** Install the web app on your phone and ask a bot in the chat to turn on notifications. It posts a card with a button, and your browser asks for permission when you tap it. You get a notification when a turn finishes, when an approval waits and when the bot needs your screen. It shows the bot's name and a short line, never the text of a message. On an iPhone, add CloudBot to the home screen first. Notifications need HTTPS or localhost.
 - **Make more bots.** The + button adds a bot, and a bot can make one when you ask. Deleting a bot from its chat removes all of its data.
 - **Copy a bot.** Ask a bot to export itself and you get a template file in the chat. Attach that file and ask for a new bot from it. You see the whole template before the bot is made. Secrets, sign-ins, webhook addresses, shared files and learned memory are never in the file. Its routines start turned off.
+- **Share templates.** The template gallery lists public bot templates from a GitHub repository. Ask a bot to list them, to install one by its file name, or to share your bot there once GitHub is connected. The share opens a pull request from your fork of the gallery. You approve each card first. Set `CLOUDBOT_GALLERY_REPO` to read another repository.
 - **Work as a team.** Several bots that pass work to each other, group chats
   and a manager bot.
 
