@@ -15,7 +15,7 @@ links to it instead of repeating it. To report a problem, read the
 | The owner, holding the session cookie | Trusted |
 | The CloudBot server code | Trusted |
 | The bot, which is a model plus everything it runs | Not trusted. It can be misled. |
-| Text from outside: web pages, files, webhook bodies, page watches, replies from connected apps, messages from other bots | Not trusted. It is data, never instructions. |
+| Text from outside: web pages, files, webhook bodies, page watches, email, replies from connected apps, messages from other bots | Not trusted. It is data, never instructions. |
 | A stranger on the internet | Reaches only the public routes |
 
 The main threat is prompt injection. Text that the bot reads can talk it into
@@ -111,6 +111,7 @@ the server user.
 | GitHub token | The vault, per bot | Through `GithubProxy` for `git` and `gh` | The token. A token saved for another site is never sent. |
 | Token of a connected app | The vault, per bot | Through `AppProxy` | The token and the server address |
 | Integration secret | The vault, per bot | Through a script that runs as `cloudbot-integrations` | The value. It is removed from the output. |
+| Bot mailbox password | The vault, per bot | Used by the IMAP reader and SMTP sender over TLS | The value, in the model, chat, database or logs |
 | Password, code or card the bot asked for | The vault, per bot and per site | `browser_type_secret` types it | The value, in the chat, in a tool result or in a log |
 
 How each one works is in [Secrets](ARCHITECTURE.md#secrets),
@@ -242,6 +243,7 @@ name once, checks every address and connects to exactly the address it checked.
 | Connected apps | `checkAppUrl` when the app is added and `AppProxy` again on every request |
 | GitHub | `GithubProxy` forwards only to GitHub |
 | Integrations | No gate. The owner approves the script, and the run uses its own user. |
+| Email | `email_setup` requires an owner card for the configured hosts. IMAP and SMTP require TLS with certificate checks. | No address gate or DNS pinning for the configured hosts |
 | The bot's shell and the CLI's WebFetch tool | No gate |
 
 The owner can allow one private host for the browser with `browser_allow_host`.
@@ -277,6 +279,18 @@ the webhooks of one bot, or when 10 webhook messages already wait. The body
 reaches the bot marked as outside data, and the review reads it as not the
 owner. There is no signature check, so the token is the only secret. See
 [Webhooks](ARCHITECTURE.md#webhooks).
+
+### Email
+
+Incoming email is outside data. The chat message has a fixed marker, the review
+context labels it `Email (outside data)`, and the system prompt tells the bot
+not to follow instructions in mail. This is a prompt defense, so a model can
+still be misled. Sending mail has an external gate: the owner approves a card
+with every recipient, the subject and the full text. A card that cannot show
+the complete mail is refused. Mailbox settings also require an owner card. The
+password is entered through a secure form into the vault and is used only by
+the server's IMAP and SMTP clients. Attachment contents are discarded and are
+not exposed to the bot or sent. See [Email](ARCHITECTURE.md#email).
 
 ### Other bots
 

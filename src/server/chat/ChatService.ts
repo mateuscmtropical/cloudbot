@@ -30,6 +30,11 @@ import { BROWSER_ALLOW_TOOL_FULL_NAMES, createBrowserAllowTools } from '../deskt
 import type { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
 import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
+import { EMAIL_PASSWORD_SECRET_NAME } from '../email/EmailPasswordStore.ts';
+import type { EmailAccountService } from '../email/EmailAccountService.ts';
+import type { SmtpEmailSender } from '../email/SmtpEmailSender.ts';
+import { createEmailTools } from '../email/createEmailTools.ts';
+import { EMAIL_STATUS_TOOL_NAME, EMAIL_STATUS_TOOL_ONLY_FULL_NAMES, EMAIL_TOOL_FULL_NAMES } from '../email/emailToolNames.ts';
 import { ROUTINE_TOOL_FULL_NAMES, createRoutineTools } from '../routines/createRoutineTools.ts';
 import { TASK_TOOL_FULL_NAMES, createTaskTools, describeBlockedNotice } from '../tasks/createTaskTools.ts';
 import { INTEGRATION_TOOL_FULL_NAMES, createIntegrationTools } from '../integrations/createIntegrationTools.ts';
@@ -184,6 +189,9 @@ interface ChatServiceOptions {
     templateGallery?: TemplateGallery | undefined;
     // Lets a bot list the AI providers, connect one and switch its own. Unset leaves the tools out.
     providerTools?: ProviderToolDependencies | undefined;
+    emailPasswordStore?: Pick<EmailAccountService, 'savePassword'> | undefined;
+    emailAccountService?: EmailAccountService | undefined;
+    emailSender?: SmtpEmailSender | undefined;
     // Who holds the screen. With a browser it gives the bot the request_screen tool.
     screen?: ScreenHolder | undefined;
     // The owner's rules for each bot. Without it turns run without rules.
@@ -601,6 +609,9 @@ class ChatService {
     private readonly botSecrets: BotSecrets | undefined;
     private readonly templateGallery: TemplateGallery | undefined;
     private readonly providerTools: ProviderToolDependencies | undefined;
+    private readonly emailPasswordStore: Pick<EmailAccountService, 'savePassword'> | undefined;
+    private readonly emailAccountService: EmailAccountService | undefined;
+    private readonly emailSender: SmtpEmailSender | undefined;
     private readonly screen: ScreenHolder | undefined;
     // Bot secret forms with an answer in progress, by message id.
     private readonly answeringForms = new Set<string>();
@@ -649,6 +660,7 @@ class ChatService {
     private readonly pendingUploads = new Map<string, SavedUpload[]>();
     // Messages waiting for their turn, in run order. The database holds the same rows.
     private readonly queuedTurns = new Map<string, QueuedTurn[]>();
+    private readonly activeTurnMessageIds = new Map<string, string>();
     // A usage limit wait per bot. Its timer starts the queue again at the reset time.
     private readonly usageWaitTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -667,6 +679,9 @@ class ChatService {
         this.botSecrets = options.botSecrets;
         this.templateGallery = options.templateGallery;
         this.providerTools = options.providerTools;
+        this.emailPasswordStore = options.emailPasswordStore;
+        this.emailAccountService = options.emailAccountService;
+        this.emailSender = options.emailSender;
         this.screen = options.screen;
         this.ruleStore = options.ruleStore;
         this.routineStore = options.routineStore;
@@ -1704,6 +1719,12 @@ class ChatService {
         this.answeringForms.add(messageId);
 
         try {
+            const emailPasswordForm = action === 'secret' ? await this.findEmailPasswordForm(botId, messageId) : undefined;
+
+            if (emailPasswordForm !== undefined) {
+                return await this.saveEmailPassword(botId, messageId, emailPasswordForm, value);
+            }
+
             const botSecretForm = action === 'secret' ? await this.findBotSecretForm(botId, messageId) : undefined;
 
             if (botSecretForm !== undefined) {
@@ -1887,6 +1908,22 @@ class ChatService {
         return body.kind === 'secureForm' && body.site !== undefined ? body : undefined;
     }
 
+    private async findEmailPasswordForm(botId: string, messageId: string): Promise<SecureFormBody | undefined> {
+        const stored = await this.messageStore.getById(messageId);
+
+        if (stored === undefined || stored.botId !== botId) {
+            return undefined;
+        }
+
+        const body = stored.content as MessageBody;
+
+        return body.kind === 'secureForm'
+            && body.site === undefined
+            && body.secretName === EMAIL_PASSWORD_SECRET_NAME
+            ? body
+            : undefined;
+    }
+
     // The value goes only to the vault. The form closes and a short note says what was saved, without the value.
     private async saveBotSecret(botId: string, messageId: string, form: SecureFormBody, value: string): Promise<ChatMessage> {
         if (form.submitted) {
@@ -1913,6 +1950,47 @@ class ChatService {
         }
 
         return message;
+    }
+
+    private async saveEmailPassword(botId: string, messageId: string, form: SecureFormBody, value: string): Promise<ChatMessage> {
+        if (form.submitted) {
+            throw new SetupAnswerError('This form is already answered.');
+        }
+
+        if (this.emailPasswordStore === undefined) {
+            throw new SetupAnswerError('Email passwords cannot be saved here.');
+        }
+
+        this.emailPasswordStore.savePassword(botId, value);
+
+        const closedForm: SecureFormBody = { ...form, submitted: true };
+        const message = await this.updateSetupMessage(messageId, closedForm);
+
+        try {
+            await this.saveAndPublish(botId, 'system', {
+                kind: 'text',
+                text: 'Saved the mailbox password in the vault. Tell the bot to continue.',
+            });
+        } catch {
+            console.error('Could not post the note for a saved mailbox password.');
+        }
+
+        return message;
+    }
+
+    async postEmailPasswordForm(botId: string): Promise<ChatMessage> {
+        if (this.emailPasswordStore === undefined) {
+            throw new Error('Email password storage is not configured.');
+        }
+
+        const body: SecureFormBody = {
+            kind: 'secureForm',
+            prompt: 'Enter the bot mailbox password. It goes directly to the vault and is never shown in chat.',
+            secretName: EMAIL_PASSWORD_SECRET_NAME,
+            submitted: false,
+        };
+
+        return this.saveAndPublish(botId, 'assistant', body);
     }
 
     async postSetupMessage(botId: string, body: MessageBody): Promise<ChatMessage> {
@@ -1957,7 +2035,7 @@ class ChatService {
 
     // A message sent while the bot is busy is saved as queued and runs after the work ahead of it.
     // The source only picks the model of the turn. Routine messages pass 'routine'.
-    async sendMessage(botId: string, text: string, source: TurnSource = 'chat', handoff?: BotHandoffSource): Promise<ChatMessage | undefined> {
+    async sendMessage(botId: string, text: string, source: TurnSource = 'chat', handoff?: BotHandoffSource, emailDeliveryId?: string): Promise<ChatMessage | undefined> {
         if (this.deletingBots.has(botId)) {
             throw new BotDeletingError();
         }
@@ -2012,7 +2090,7 @@ class ChatService {
                 throw new BotDeletingError();
             }
 
-            userMessage = await this.saveAndPublish(botId, 'user', storedBody);
+            userMessage = await this.saveAndPublish(botId, 'user', storedBody, emailDeliveryId);
         } catch (error: unknown) {
             this.restoreUploads(botId, turnUploads);
 
@@ -2040,6 +2118,50 @@ class ChatService {
             });
 
         return userMessage;
+    }
+
+    async sendEmailTask(botId: string, text: string, emailDeliveryId: string): Promise<ChatMessage | undefined> {
+        const existing = await this.messageStore.getByEmailDeliveryId(emailDeliveryId);
+
+        if (existing === undefined) {
+            return this.sendMessage(botId, text, 'routine', undefined, emailDeliveryId);
+        }
+
+        if (existing.emailTaskHandledAt !== null) {
+            return toChatMessage(existing);
+        }
+
+        const queuedTurns = this.queuedTurns.get(botId) ?? [];
+        const isQueued = queuedTurns.some(turn => turn.messageId === existing.id);
+        const isRunning = this.activeTurnMessageIds.get(botId) === existing.id;
+
+        if (!isQueued && !isRunning) {
+            const body = existing.content as TextBody;
+
+            const turn: TurnInput = {
+                botId,
+                text: body.text,
+                uploads: [],
+                messageId: existing.id,
+                source: 'routine',
+            };
+
+            await this.enqueueTurn(botId, turn, false);
+            this.startNextQueuedTurn(botId)
+                .catch(reportBackgroundError);
+        }
+
+        return toChatMessage(existing);
+    }
+
+    async postEmailNotice(botId: string, text: string, emailDeliveryId: string): Promise<ChatMessage> {
+        const existing = await this.messageStore.getByEmailDeliveryId(emailDeliveryId);
+
+        if (existing !== undefined) {
+            return toChatMessage(existing);
+        }
+
+        return this.saveAndPublish(botId, 'system', { kind: 'text', text }, emailDeliveryId);
     }
 
     // The bot_send tool. Checks the target, the caps and the chain depth, then starts the target's turn like any message.
@@ -2770,6 +2892,7 @@ class ChatService {
         this.reviewSpend.delete(botId);
         this.screenWaitBots.delete(botId);
         this.runningTurns.delete(botId);
+        this.activeTurnMessageIds.delete(botId);
         this.releaseChannelRound(botId);
         this.handoffsSentByTurn.delete(botId);
         this.publishTurnState(botId);
@@ -2964,8 +3087,8 @@ class ChatService {
         this.publishTurnState(botId);
     }
 
-    private async saveAndPublish(botId: string, role: ChatRole, body: MessageBody): Promise<ChatMessage> {
-        const storedMessage = await this.messageStore.add({ botId, role, kind: body.kind, content: body });
+    private async saveAndPublish(botId: string, role: ChatRole, body: MessageBody, emailDeliveryId?: string): Promise<ChatMessage> {
+        const storedMessage = await this.messageStore.add({ botId, role, kind: body.kind, content: body, emailDeliveryId });
         const chatMessage = toChatMessage(storedMessage);
 
         this.publish(botId, { type: 'message', message: chatMessage });
@@ -2975,6 +3098,10 @@ class ChatService {
 
     private async runTurn(turn: TurnInput, abortController: AbortController): Promise<void> {
         const { botId, text, uploads } = turn;
+
+        if (turn.messageId !== undefined) {
+            this.activeTurnMessageIds.set(botId, turn.messageId);
+        }
 
         if (turn.channel !== undefined) {
             this.channelRunning.set(botId, turn.channel.roundId);
@@ -3025,6 +3152,16 @@ class ChatService {
                     );
             const screenTools = this.createScreenTools(botId);
             const secretTools = this.createSecretTools(botId);
+            const emailTools = this.emailAccountService === undefined || this.emailSender === undefined
+                ? []
+                : createEmailTools(botId, {
+                        accountService: this.emailAccountService,
+                        sender: this.emailSender,
+                        postPasswordForm: targetBotId => this.postEmailPasswordForm(targetBotId),
+                    });
+            const offeredEmailTools = this.approvals === undefined
+                ? emailTools.filter(emailTool => emailTool.name === EMAIL_STATUS_TOOL_NAME)
+                : emailTools;
             const routineTools = this.routineStore === undefined ? [] : createRoutineTools(this.routineStore, botId);
             const taskTools = this.taskStore === undefined ? [] : createTaskTools(this.taskStore, botId, { onBlocked: task => this.noticeBlockedTask(botId, task), onBoard: (cards, hiddenCount) => this.postTaskBoard(botId, cards, hiddenCount) });
             const integrationTools = this.integrationService === undefined ? [] : createIntegrationTools(this.integrationService, botId);
@@ -3060,7 +3197,7 @@ class ChatService {
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...botDeleteTools, ...notificationTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...botDeleteTools, ...notificationTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -3110,6 +3247,7 @@ class ChatService {
                     hasHandoffs: this.approvals !== undefined,
                     hasLimits: this.limitStore !== undefined,
                     hasNotifications: this.notifyOwner !== undefined,
+                    hasEmail: this.emailAccountService !== undefined && this.emailSender !== undefined,
                     ownerRules,
                     helpers: helperKinds,
                 }),
@@ -3143,6 +3281,10 @@ class ChatService {
 
             try {
                 await this.settleTurnEnd(turn, turnState);
+
+                if (turn.source === 'routine' && turn.messageId !== undefined) {
+                    await this.messageStore.markEmailTaskHandled(turn.messageId);
+                }
 
                 // A turn that hit a limit reports from its continuation, so the reply is posted once.
                 if (turnState.limit === undefined) {
@@ -3248,7 +3390,9 @@ class ChatService {
     // Without the approval gate, only the profile tools, the export, the read-only rule list and the notification switch are allowed up front. The rest need the gate.
     private allowedToolNames(): string[] {
         if (this.approvals === undefined) {
-            return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...this.ruleToolNamesAllowed(), ...this.notificationToolNames()];
+            const emailToolNames = this.emailAccountService === undefined || this.emailSender === undefined ? [] : EMAIL_STATUS_TOOL_ONLY_FULL_NAMES;
+
+            return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...emailToolNames, ...this.ruleToolNamesAllowed(), ...this.notificationToolNames()];
         }
 
         const browserToolNames = this.browser === undefined ? [] : BROWSER_TOOL_FULL_NAMES;
@@ -3278,8 +3422,9 @@ class ChatService {
         // bot_send is offered only with the approval gate too, since the receiving turn is reviewed like any other.
         const botSendToolNames = [BOT_SEND_TOOL_FULL_NAME];
         const notificationToolNames = this.notificationToolNames();
+        const emailToolNames = this.emailAccountService === undefined || this.emailSender === undefined ? [] : EMAIL_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.
