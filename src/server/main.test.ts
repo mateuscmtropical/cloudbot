@@ -111,6 +111,7 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
+// Importing the server's dependency graph can exceed Vitest's default timeout on Windows.
 it('listens before starting a stalled login and cancels it on shutdown', async () => {
     const signInUrl = Promise.withResolvers<string | null>();
     const finished = Promise.withResolvers<CancelledLogin>();
@@ -157,4 +158,4 @@ it('listens before starting a stalled login and cancels it on shutdown', async (
     process.listeners('SIGTERM')
         .filter(listener => !oldTerminate.includes(listener))
         .forEach((listener) => { process.removeListener('SIGTERM', listener); });
-});
+}, 15_000);

@@ -4,16 +4,81 @@ import type { ClaudeAuthStatus } from '../claudeAuth/getClaudeAuthStatus.ts';
 import type { ClaudeLoginSession } from '../claudeAuth/startClaudeLogin.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
 import type { SettingsStore } from '../store/SettingsStore.ts';
+import type { ProviderId } from '../providers/providerIds.ts';
 import type { Vault } from '../vault/Vault.ts';
 
+// The two ways to connect Claude. Other providers sign in by a link, see ProviderSignIn.
 type SetupMode = 'subscription' | 'apiKey';
 type SetupAction = 'choice' | 'code' | 'secret';
 
 interface SetupState {
-    step: 'choice' | 'login' | 'code' | 'secret' | 'done';
+    step: 'choice' | 'login' | 'code' | 'secret' | 'device' | 'done';
+    // The Claude way being set up now.
     mode?: SetupMode;
     messageId?: string;
     linkMessageId?: string;
+    // True once any provider is connected. The chats stay open while the owner connects another one.
+    ready?: boolean;
+    // The Claude way that is connected, kept while another provider signs in.
+    claudeMode?: SetupMode;
+    // The provider that signs in by link now.
+    signIn?: string;
+    // The provider whose API key the secret form asks for. Unset for the Claude key.
+    keyFor?: string;
+}
+
+interface DeviceSignInLink {
+    url: string;
+    // The code the owner types on the provider's page. The message that shows it is replaced when the sign-in ends.
+    code?: string | undefined;
+    // True when the provider's page shows a code that the owner pastes back, like the Google sign-in of Gemini.
+    needsCode?: boolean | undefined;
+}
+
+type DeviceSignInResult = { ok: true } | { ok: false; reason: string };
+
+interface DeviceSignInSession {
+    link: Promise<DeviceSignInLink | null>;
+    finished: Promise<DeviceSignInResult>;
+    cancel: () => void;
+    // Passes the code the owner pasted to the CLI. It is never stored.
+    submitCode?: ((code: string) => void) | undefined;
+}
+
+// A provider that signs in on its own page, like ChatGPT with a device code.
+interface ProviderSignIn {
+    id: Exclude<ProviderId, 'claude'>;
+    label: string;
+    // The name of the page the owner signs in on, such as OpenAI.
+    site: string;
+    start: () => DeviceSignInSession;
+    // Undefined when the status could not be read.
+    isSignedIn: () => Promise<boolean | undefined>;
+    // The text of the choice. It defaults to the label and the word subscription.
+    optionLabel?: string | undefined;
+}
+
+// A provider that takes an API key. The key goes to the vault, and a local proxy adds it to each request.
+interface ProviderApiKey {
+    id: Exclude<ProviderId, 'claude'>;
+    label: string;
+    // The name of the page the key comes from, such as Google AI Studio.
+    site: string;
+    secretName: string;
+    // Answers with the HTTP status of a cheap call made with the key.
+    checkKey: (key: string) => Promise<number>;
+}
+
+interface ConnectedProvider {
+    id: Exclude<ProviderId, 'claude'>;
+    label: string;
+}
+
+type ProviderMethod = 'signIn' | 'apiKey';
+
+interface ProviderOption {
+    id: string;
+    label: string;
 }
 
 interface SetupConversationOptions {
@@ -24,7 +89,12 @@ interface SetupConversationOptions {
     vault: Pick<Vault, 'has' | 'set' | 'delete'>;
     startLogin: () => ClaudeLoginSession;
     authStatus: () => Promise<ClaudeAuthStatus>;
-    connect: (mode: SetupMode) => Promise<void>;
+    // Called when Claude or another provider is connected, with the way another provider was connected.
+    connect: (connection: SetupMode | ProviderId, method?: ProviderMethod) => Promise<void>;
+    // The providers that sign in by link. Each one is a choice next to the two Claude ways.
+    signIns?: ProviderSignIn[] | undefined;
+    // The providers that take an API key. Each one is a choice too.
+    apiKeys?: ProviderApiKey[] | undefined;
     checkKey: (key: string) => Promise<number>;
     // Runs the CLI's own logout for CloudBot's login only.
     signOut?: () => Promise<void>;
@@ -35,6 +105,7 @@ interface SetupConversationOptions {
 }
 
 const SETUP_STATE_KEY = 'claude.setup';
+const KEY_CHOICE_PREFIX = 'key:';
 const API_KEY_NAME = 'ANTHROPIC_API_KEY';
 const LOCAL_MODE_LINE = 'Local mode: I run as you, on this computer, with your files and your account.';
 const NO_BROWSER_LINE = 'This computer has no browser for me, so I cannot browse. Install Chrome, Chromium or Edge to give me one.';
@@ -52,6 +123,7 @@ class SetupConversation {
     private readonly options: SetupConversationOptions;
     private state: SetupState = { step: 'choice' };
     private session: ClaudeLoginSession | undefined;
+    private deviceSession: DeviceSignInSession | undefined;
     private starting = true;
     private closed = false;
     private pending: Promise<unknown> = Promise.resolve();
@@ -61,7 +133,128 @@ class SetupConversation {
     }
 
     isDone(): boolean {
-        return !this.starting && !this.closed && this.state.step === 'done';
+        return !this.starting && !this.closed && (this.state.step === 'done' || this.state.ready === true);
+    }
+
+    // What stays when the setup moves to another step.
+    private kept(): Pick<SetupState, 'ready' | 'claudeMode'> {
+        return {
+            ...(this.state.ready === true ? { ready: true } : {}),
+            ...(this.state.claudeMode === undefined ? {} : { claudeMode: this.state.claudeMode }),
+        };
+    }
+
+    private signInById(id: string): ProviderSignIn | undefined {
+        const signIns = this.options.signIns ?? [];
+
+        return signIns.find(signIn => signIn.id === id);
+    }
+
+    private apiKeyById(id: string): ProviderApiKey | undefined {
+        const apiKeys = this.options.apiKeys ?? [];
+
+        return apiKeys.find(apiKey => apiKey.id === id);
+    }
+
+    // The provider of a choice such as key:gemini.
+    private apiKeyByChoice(choice: string | undefined): ProviderApiKey | undefined {
+        if (choice?.startsWith(KEY_CHOICE_PREFIX) !== true) {
+            return undefined;
+        }
+
+        const id = choice.slice(KEY_CHOICE_PREFIX.length);
+
+        return this.apiKeyById(id);
+    }
+
+    // A provider counts as connected with its sign-in or with its key in the vault.
+    private async signedInIds(): Promise<ProviderId[]> {
+        const signIns = this.options.signIns ?? [];
+        const checks = signIns.map(signIn => signIn.isSignedIn()
+            .catch(() => undefined));
+        const statuses = await Promise.all(checks);
+        const signedIn = signIns.filter((_signIn, index) => statuses[index] === true)
+            .map(signIn => signIn.id);
+        const apiKeys = this.options.apiKeys ?? [];
+        const withKey = apiKeys.filter(apiKey => this.options.vault.has(apiKey.secretName) && !signedIn.includes(apiKey.id))
+            .map(apiKey => apiKey.id);
+
+        return [...signedIn, ...withKey];
+    }
+
+    private connectedById(id: ProviderId): ConnectedProvider | undefined {
+        const found = this.signInById(id) ?? this.apiKeyById(id);
+
+        return found === undefined ? undefined : { id: found.id, label: found.label };
+    }
+
+    // Read from the saved state, so a turn does not run the CLI status check.
+    isClaudeConnected(): boolean {
+        return this.state.claudeMode !== undefined || (this.state.step === 'done' && this.state.mode !== undefined);
+    }
+
+    // The providers that are signed in now, for the bot's provider tools.
+    async connectedProviders(): Promise<ProviderId[]> {
+        const claude = await this.isConnected(this.state.claudeMode);
+        const signedIn = await this.signedInIds();
+
+        return claude === true ? ['claude', ...signedIn] : signedIn;
+    }
+
+    // Posts the provider list in the setup chat, so the owner can connect another provider.
+    offerProviders(): Promise<void> {
+        return this.serial(async () => {
+            if (this.closed) {
+                return;
+            }
+
+            if (this.state.ready !== true) {
+                await this.askMode();
+
+                return;
+            }
+
+            this.cancelSessions();
+            await this.retireActive();
+            this.state = { ...this.kept(), step: 'done' };
+            await this.ask({ kind: 'choice', prompt: 'Which AI provider would you like to connect?', options: this.providerOptions() });
+        });
+    }
+
+    // Each provider shows its sign-in first and its API key next to it.
+    private providerOptions(): ProviderOption[] {
+        const signIns = this.options.signIns ?? [];
+        const apiKeys = this.options.apiKeys ?? [];
+        const ids = [...new Set([...signIns.map(signIn => signIn.id), ...apiKeys.map(apiKey => apiKey.id)])];
+        const otherOptions = ids.flatMap((id) => {
+            const signIn = this.signInById(id);
+            const apiKey = this.apiKeyById(id);
+            const signInOption = signIn === undefined ? [] : [{ id, label: signIn.optionLabel ?? `${signIn.label} subscription` }];
+            const keyOption = apiKey === undefined ? [] : [{ id: `${KEY_CHOICE_PREFIX}${id}`, label: `${apiKey.label} API key` }];
+
+            return [...signInOption, ...keyOption];
+        });
+
+        return [{ id: 'subscription', label: 'Claude subscription' }, { id: 'apiKey', label: 'Claude API key' }, ...otherOptions];
+    }
+
+    private cancelSessions(): void {
+        const session = this.session;
+        const deviceSession = this.deviceSession;
+
+        this.session = undefined;
+        this.deviceSession = undefined;
+        session?.cancel();
+        deviceSession?.cancel();
+    }
+
+    // Runs one step after the answers and steps before it.
+    private serial(step: () => Promise<void>): Promise<void> {
+        const result = this.pending.then(step);
+
+        this.pending = result.catch(() => undefined);
+
+        return result;
     }
 
     private isClosed(): boolean {
@@ -78,10 +271,7 @@ class SetupConversation {
 
     close(): void {
         this.closed = true;
-        const session = this.session;
-
-        this.session = undefined;
-        session?.cancel();
+        this.cancelSessions();
     }
 
     start(): Promise<void> {
@@ -120,14 +310,34 @@ class SetupConversation {
             return;
         }
 
-        const connected = await this.isConnected();
+        if (this.state.step === 'device') {
+            // A link sign-in does not survive a restart. Its link and code are closed.
+            await this.retireActive();
+            this.state = { ...this.kept(), step: this.state.ready === true ? 'done' : 'choice' };
+        }
+
+        const claudeMode = this.state.mode ?? this.state.claudeMode;
+        const connected = await this.isConnected(claudeMode);
 
         if (this.isClosed()) {
             return;
         }
 
-        if (connected === true || (connected === undefined && this.state.step === 'done')) {
+        if (connected === true || (connected === undefined && this.state.step === 'done' && claudeMode !== undefined)) {
             await this.ready();
+
+            return;
+        }
+
+        const signedIn = await this.signedInIds();
+        const firstSignIn = signedIn[0] === undefined ? undefined : this.connectedById(signedIn[0]);
+
+        if (this.isClosed()) {
+            return;
+        }
+
+        if (firstSignIn !== undefined && (this.state.step === 'done' || this.state.ready === true)) {
+            await this.ready(firstSignIn);
 
             return;
         }
@@ -139,8 +349,8 @@ class SetupConversation {
             return;
         }
 
-        if (this.state.step === 'done') {
-            await this.fail('Claude is no longer connected.');
+        if (this.state.step === 'done' || this.state.ready === true) {
+            await this.fail('No AI provider is connected anymore.');
 
             return;
         }
@@ -178,18 +388,46 @@ class SetupConversation {
                 return;
             }
 
+            const chosenKey = body?.kind === 'choice' ? this.apiKeyByChoice(body.chosenId) : undefined;
+
+            if (chosenKey !== undefined) {
+                await this.askSecret(chosenKey);
+
+                return;
+            }
+
+            // A provider list from an older version misses the newer providers, so it is closed and posted again.
+            const currentIds = this.providerOptions()
+                .map(option => option.id)
+                .join(',');
+            const isOldList = body?.kind === 'choice' && body.chosenId === undefined && this.state.step === 'choice'
+                && body.options.map(option => option.id)
+                    .join(',') !== currentIds;
+
+            if (isOldList) {
+                // Closing the old list edits it in place, so it runs beside posting the new one.
+                const closing = this.options.chat.updateSetupMessage(this.state.messageId, { kind: 'text', text: 'This list was replaced by a newer one.' });
+                const asking = this.askMode();
+
+                await Promise.all([closing, asking]);
+
+                return;
+            }
+
             if (body !== undefined && !(body.kind === 'secureForm' && body.submitted)) {
                 return;
             }
         }
 
-        if (this.state.mode === 'apiKey') {
-            await this.askSecret();
+        if (this.state.mode === 'apiKey' || this.state.keyFor !== undefined) {
+            const apiKey = this.state.keyFor === undefined ? undefined : this.apiKeyById(this.state.keyFor);
+
+            await this.askSecret(apiKey);
 
             return;
         }
 
-        await this.say('Hello! Connect Claude to get started.');
+        await this.say('Hello! Connect an AI provider to get started. You can connect more later.');
 
         if (this.options.localMode) {
             await this.say(LOCAL_MODE_LINE);
@@ -206,12 +444,12 @@ class SetupConversation {
         await this.askMode();
     }
 
-    private async isConnected(): Promise<boolean | undefined> {
-        if (this.state.mode === 'apiKey') {
+    private async isConnected(mode: SetupMode | undefined = this.state.mode): Promise<boolean | undefined> {
+        if (mode === 'apiKey') {
             return this.options.vault.has(API_KEY_NAME);
         }
 
-        if (this.state.mode !== 'subscription') {
+        if (mode !== 'subscription') {
             return false;
         }
 
@@ -238,10 +476,14 @@ class SetupConversation {
         const message = await this.options.messages.getById(messageId);
         const switching = this.state.step === 'secret' && action === 'choice' && value === 'subscription';
         const signingOut = this.state.step === 'done' && action === 'choice' && value === 'signOut';
+        // A choice on the provider list the setup posts after it is done.
+        const offering = this.state.step === 'done' && action === 'choice' && value !== 'signOut';
         const expectedKind = action === 'code' ? 'codeField' : action === 'secret' || switching ? 'secureForm' : 'choice';
+        // A provider whose page shows a code asks for it while its sign-in runs.
+        const pastingCode = this.state.step === 'device' && action === 'code';
 
         if (this.closed || botId !== this.options.botId || message?.botId !== botId || message.kind !== expectedKind
-            || (!switching && !signingOut && this.state.step !== action) || this.state.messageId !== messageId) {
+            || (!switching && !signingOut && !offering && !pastingCode && this.state.step !== action) || this.state.messageId !== messageId) {
             throw new SetupAnswerError('This setup question is no longer active.');
         }
 
@@ -249,12 +491,16 @@ class SetupConversation {
             throw new SetupAnswerError('Enter a valid value.');
         }
 
+        const signIn = action === 'choice' ? this.signInById(value) : undefined;
+        const chosenKey = action === 'choice' ? this.apiKeyByChoice(value) : undefined;
+        const keyProvider = action === 'secret' && this.state.keyFor !== undefined ? this.apiKeyById(this.state.keyFor) : undefined;
+
         if (action === 'choice' && value === 'signOut' && !signingOut) {
-            throw new SetupAnswerError('Choose subscription or API key.');
+            throw new SetupAnswerError('Choose a provider.');
         }
 
-        if (action === 'choice' && value !== 'subscription' && value !== 'apiKey' && !signingOut) {
-            throw new SetupAnswerError('Choose subscription or API key.');
+        if (action === 'choice' && value !== 'subscription' && value !== 'apiKey' && signIn === undefined && chosenKey === undefined && !signingOut) {
+            throw new SetupAnswerError('Choose a provider.');
         }
 
         const trimmedKey = value.trim();
@@ -275,7 +521,7 @@ class SetupConversation {
 
         if (action === 'secret') {
             try {
-                status = await this.options.checkKey(trimmedKey);
+                status = keyProvider === undefined ? await this.options.checkKey(trimmedKey) : await keyProvider.checkKey(trimmedKey);
                 unchecked = status !== 401 && status !== 403 && (status < 200 || status >= 300);
             } catch {
                 unchecked = true;
@@ -294,6 +540,14 @@ class SetupConversation {
         try {
             if (signingOut) {
                 await this.signOutOfClaude();
+            } else if (signIn !== undefined) {
+                await this.beginSignIn(signIn);
+            } else if (chosenKey !== undefined) {
+                await this.askSecret(chosenKey);
+            } else if (pastingCode) {
+                const pastedCode = value.trim();
+
+                this.deviceSession?.submitCode?.(pastedCode);
             } else if (action === 'choice') {
                 if (value === 'subscription') {
                     await this.beginLogin();
@@ -303,14 +557,17 @@ class SetupConversation {
             } else if (action === 'secret') {
                 if (unchecked) {
                     // An unchecked key is never stored, so a mistyped key cannot end setup.
-                    await this.say('Could not reach Anthropic to check the key. Try again.');
-                    await this.askSecret();
+                    await this.say(`Could not reach ${keyProvider?.site ?? 'Anthropic'} to check the key. Try again.`);
+                    await this.askSecret(keyProvider);
                 } else if (status === 401 || status === 403) {
                     await this.say('The key was rejected. Try another key.');
-                    await this.askSecret();
-                } else {
+                    await this.askSecret(keyProvider);
+                } else if (keyProvider === undefined) {
                     this.options.vault.set(API_KEY_NAME, trimmedKey);
                     await this.ready();
+                } else {
+                    this.options.vault.set(keyProvider.secretName, trimmedKey);
+                    await this.ready({ id: keyProvider.id, label: keyProvider.label }, 'apiKey');
                 }
             } else {
                 const session = this.session;
@@ -323,7 +580,7 @@ class SetupConversation {
             }
         } catch {
             // Dependency errors can include secrets. Only fixed text reaches chat or logs.
-            await this.fail('Could not connect Claude.');
+            await this.fail('Could not connect the provider.');
         }
 
         return answered;
@@ -334,7 +591,7 @@ class SetupConversation {
             return;
         }
 
-        this.state = { step: 'login', mode: 'subscription' };
+        this.state = { ...this.kept(), step: 'login', mode: 'subscription' };
         await this.persist();
 
         if (this.isClosed()) {
@@ -377,7 +634,7 @@ class SetupConversation {
                     kind: 'link', text: 'Sign in on the Anthropic page.', label: 'Sign in to Claude', url,
                 });
 
-                this.state = { step: 'code', mode: 'subscription', ...(link ? { linkMessageId: link.id } : {}) };
+                this.state = { ...this.kept(), step: 'code', mode: 'subscription', ...(link ? { linkMessageId: link.id } : {}) };
                 await this.ask({ kind: 'codeField', prompt: 'Paste the sign-in code here.', placeholder: 'Sign-in code', submitted: false });
             });
 
@@ -430,27 +687,30 @@ class SetupConversation {
         }
     }
 
-    private async ready(): Promise<void> {
-        const mode = this.state.mode;
+    // Without a provider this connects Claude, with one it connects that provider.
+    private async ready(signIn?: ConnectedProvider, method?: ProviderMethod): Promise<void> {
+        const mode = signIn === undefined ? this.state.mode ?? this.state.claudeMode : undefined;
         const wasDone = this.state.step === 'done';
+        const connection = signIn?.id ?? mode;
 
-        if (mode === undefined || this.isClosed()) {
+        if (connection === undefined || this.isClosed()) {
             return;
         }
 
-        await this.options.connect(mode);
+        await (method === undefined ? this.options.connect(connection) : this.options.connect(connection, method));
         await this.retireActive();
         this.session = undefined;
+        this.deviceSession = undefined;
         const previousMessageId = this.state.messageId;
 
-        this.state = { step: 'done', mode };
+        this.state = { ...this.kept(), step: 'done', ready: true, ...(mode === undefined ? {} : { mode, claudeMode: mode }) };
         if (wasDone && previousMessageId !== undefined) {
             this.state.messageId = previousMessageId;
         }
         await this.persist();
 
         if (!wasDone) {
-            await this.say('Claude is ready. What would you like to do?');
+            await this.say(`${signIn?.label ?? 'Claude'} is ready. What would you like to do?`);
         }
 
         if (mode === 'subscription' && this.options.signOut !== undefined && this.state.messageId === undefined) {
@@ -481,26 +741,119 @@ class SetupConversation {
             return;
         }
 
+        // Claude is gone. The chats stay open only when another provider is still signed in.
+        const otherProviders = await this.signedInIds();
+
+        if (otherProviders.length > 0) {
+            this.state = { step: 'done', ready: true };
+            await this.persist();
+            await this.say('Signed out of Claude.');
+
+            return;
+        }
+
+        this.state = { step: 'choice' };
         await this.askMode();
     }
 
     private async fail(text: string): Promise<void> {
-        const session = this.session;
-
-        this.session = undefined;
-        session?.cancel();
+        this.cancelSessions();
         await this.retireActive();
         await this.say(text);
+
+        // When another provider is still connected, the chats stay open and the owner can ask for the list again.
+        const connectedProviders = this.state.ready === true ? await this.connectedProviders() : [];
+
+        if (connectedProviders.length > 0) {
+            this.state = { ...this.kept(), step: 'done', ...(this.state.claudeMode === undefined ? {} : { mode: this.state.claudeMode }) };
+            await this.persist();
+
+            return;
+        }
+
+        this.state = { step: 'choice' };
         await this.askMode();
     }
 
     private async askMode(): Promise<void> {
-        this.state = { step: 'choice' };
+        this.state = { ...this.kept(), step: 'choice' };
         await this.persist();
-        await this.ask({
-            kind: 'choice', prompt: 'How would you like to connect Claude?',
-            options: [{ id: 'subscription', label: 'Subscription' }, { id: 'apiKey', label: 'API key' }],
-        });
+        await this.ask({ kind: 'choice', prompt: 'Which AI provider would you like to use?', options: this.providerOptions() });
+    }
+
+    private async beginSignIn(signIn: ProviderSignIn): Promise<void> {
+        if (this.isClosed()) {
+            return;
+        }
+
+        this.state = { ...this.kept(), step: 'device', signIn: signIn.id };
+        await this.persist();
+
+        try {
+            const session = signIn.start();
+
+            this.deviceSession = session;
+            void this.watchSignIn(signIn, session);
+        } catch {
+            await this.fail(`Could not start ${signIn.label} sign-in.`);
+        }
+    }
+
+    private async watchSignIn(signIn: ProviderSignIn, session: DeviceSignInSession): Promise<void> {
+        const isCurrent = (): boolean => !this.closed && this.deviceSession === session;
+
+        try {
+            const link = await session.link;
+
+            await this.serial(async () => {
+                if (!isCurrent()) {
+                    return;
+                }
+
+                // A provider without a sign-in, like the free opencode models, ends without a link.
+                if (link === null) {
+                    return;
+                }
+
+                const text = link.code === undefined
+                    ? `Sign in on the ${signIn.site} page.`
+                    : `Sign in on the ${signIn.site} page and enter this code: ${link.code}`;
+                const posted = await this.post({ kind: 'link', text, label: `Sign in to ${signIn.label}`, url: link.url });
+
+                if (posted !== undefined) {
+                    this.state.linkMessageId = posted.id;
+                    await this.persist();
+                }
+
+                if (link.needsCode === true) {
+                    await this.ask({ kind: 'codeField', prompt: `Paste the code from the ${signIn.site} page here.`, placeholder: 'Sign-in code', submitted: false });
+                }
+            });
+
+            const result = await session.finished;
+
+            await this.serial(async () => {
+                if (!isCurrent()) {
+                    return;
+                }
+
+                const isSignedIn = result.ok ? await signIn.isSignedIn() : false;
+
+                if (result.ok && isSignedIn !== false) {
+                    await this.ready({ id: signIn.id, label: signIn.label }, 'signIn');
+                } else if (link === null && result.ok) {
+                    await this.fail(`${signIn.label} did not provide a sign-in link.`);
+                } else {
+                    await this.fail(result.ok ? `${signIn.label} did not confirm sign-in.` : result.reason);
+                }
+            });
+        } catch {
+            await this.serial(async () => {
+                if (isCurrent()) {
+                    await this.fail(`Could not start ${signIn.label} sign-in.`);
+                }
+            });
+        }
     }
 
     private async ask(body: MessageBody): Promise<void> {
@@ -514,10 +867,19 @@ class SetupConversation {
         await this.persist();
     }
 
-    private async askSecret(): Promise<void> {
-        this.state = { step: 'secret', mode: 'apiKey' };
+    // Without a provider this asks for the Anthropic key.
+    private async askSecret(apiKey?: ProviderApiKey): Promise<void> {
+        if (apiKey === undefined) {
+            this.state = { ...this.kept(), step: 'secret', mode: 'apiKey' };
+            await this.persist();
+            await this.ask({ kind: 'secureForm', prompt: 'Add your Anthropic API key.', secretName: API_KEY_NAME, submitted: false });
+
+            return;
+        }
+
+        this.state = { ...this.kept(), step: 'secret', keyFor: apiKey.id };
         await this.persist();
-        await this.ask({ kind: 'secureForm', prompt: 'Add your Anthropic API key.', secretName: API_KEY_NAME, submitted: false });
+        await this.ask({ kind: 'secureForm', prompt: `Add your ${apiKey.label} API key from ${apiKey.site}.`, secretName: apiKey.secretName, submitted: false });
     }
 
     private async say(text: string): Promise<void> {
@@ -540,4 +902,4 @@ class SetupConversation {
 }
 
 export { SetupConversation, SetupAnswerError, API_KEY_NAME };
-export type { SetupMode, SetupAction, SetupConversationOptions };
+export type { DeviceSignInLink, DeviceSignInResult, DeviceSignInSession, ProviderApiKey, ProviderMethod, ProviderSignIn, SetupMode, SetupAction, SetupConversationOptions };

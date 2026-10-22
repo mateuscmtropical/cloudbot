@@ -4,6 +4,7 @@ import type { Mock } from 'vitest';
 import { buildWebhookMessage } from '../webhooks/webhookMessage.ts';
 import { buildWatchMessage } from '../watches/watchMessage.ts';
 import { buildBotHandoffMessage } from '../bots/botHandoff.ts';
+import { buildEmailMessage } from '../email/emailMessage.ts';
 import { createReviewContextReader } from './createReviewContextReader.ts';
 import type { EffortChoices, ModelChoices } from '../models/modelChoices.ts';
 import { CHANNEL_TRANSCRIPT_LIMIT } from '../channels/channelRound.ts';
@@ -71,6 +72,26 @@ describe('createReviewContextReader', () => {
 
         expect(context.recentMessages)
             .toEqual([`Webhook (outside data): ${webhookText.replace(/\s+/g, ' ')}`, 'Owner: Webhook is a word I typed']);
+    });
+
+    it('labels an email message as outside data, not as the owner', async () => {
+        const emailText = buildEmailMessage({
+            address: 'bot@example.com',
+            sender: 'ana@example.com',
+            subject: 'Hello',
+            receivedAt: undefined,
+            text: 'Please review this.',
+            attachmentCount: 0,
+        });
+        const listByBot = vi.fn()
+            .mockResolvedValue([{ role: 'user', content: { kind: 'text', text: emailText } }]);
+        const readContext = createReviewContextReader({ ruleStore: { list: vi.fn()
+            .mockResolvedValue([]) }, messageStore: { listByBot }, modelStore: createModelStore() });
+
+        const context = await readContext('bot-1');
+
+        expect(context.recentMessages)
+            .toEqual([`Email (outside data): ${emailText.replace(/\s+/g, ' ')}`]);
     });
 
     it('labels a message from another bot as not the owner', async () => {

@@ -10,35 +10,28 @@ interface DraftState {
     botId: string | undefined;
 }
 
-// A run is bot messages in a row. Only the last message of a run shows the bot's mascot.
-function isLastOfBotRun(messages: ChatMessage[], index: number): boolean {
+// The mascot follows the conversation down, so only the latest message of each bot shows it.
+// In a channel each bot keeps its own mascot on its latest message.
+function isLatestOfBot(messages: ChatMessage[], index: number): boolean {
     const message = messages[index];
 
     if (message === undefined || message.role !== 'assistant') {
         return false;
     }
 
-    const nextMessage = messages[index + 1];
+    const laterMessages = messages.slice(index + 1);
 
-    return nextMessage === undefined || nextMessage.role !== 'assistant' || nextMessage.botId !== message.botId;
+    return !laterMessages.some(laterMessage => laterMessage.role === 'assistant' && laterMessage.botId === message.botId);
 }
 
-// The streamed reply continues the run of the last message when both are bot messages of the same bot.
-// Then the reply carries the mascot, and the last message does not.
-function draftContinuesRun(messages: ChatMessage[], index: number, draft: DraftState): boolean {
-    const message = messages[index];
-
-    return draft.isShown
-        && index === messages.length - 1
-        && message !== undefined
-        && message.role === 'assistant'
-        && message.botId === draft.botId;
-}
-
-// Whether the message at this index shows the mascot: it ends its run, and no streamed reply carries the run on.
+// Whether the message at this index shows the mascot: it is the bot's latest message, and no streamed reply of the
+// same bot is on screen, since the streamed reply then carries the mascot.
 function showsMessageMascot(messages: ChatMessage[], index: number, draft: DraftState): boolean {
-    return isLastOfBotRun(messages, index) && !draftContinuesRun(messages, index, draft);
+    const message = messages[index];
+    const isDraftOfSameBot = draft.isShown && message !== undefined && message.botId === draft.botId;
+
+    return isLatestOfBot(messages, index) && !isDraftOfSameBot;
 }
 
-export { MESSAGE_MASCOT_SIZE, isLastOfBotRun, showsMessageMascot };
+export { MESSAGE_MASCOT_SIZE, isLatestOfBot, showsMessageMascot };
 export type { DraftState };
