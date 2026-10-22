@@ -18,6 +18,9 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__browser_screenshot',
     'mcp__cloudbot__browser_scroll',
     'mcp__cloudbot__request_screen',
+    // Recording hands the screen to the owner, who does the task. Reading the recording only reads those steps.
+    'mcp__cloudbot__screen_record',
+    'mcp__cloudbot__screen_recording',
     'mcp__cloudbot__routine_list',
     'mcp__cloudbot__webhook_list',
     'mcp__cloudbot__watch_list',
