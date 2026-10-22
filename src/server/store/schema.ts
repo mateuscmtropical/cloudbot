@@ -130,6 +130,29 @@ const botRules = sqliteTable('bot_rules', {
         .on(table.botId),
 ]);
 
+// A skill the owner approved for a bot: written steps the bot reads when a task needs them. The server keeps them, not
+// the workspace, so the bot cannot change a skill without the owner's card.
+const botSkills = sqliteTable('bot_skills', {
+    id: text('id')
+        .primaryKey(),
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    name: text('name')
+        .notNull(),
+    description: text('description')
+        .notNull(),
+    text: text('text')
+        .notNull(),
+    createdAt: integer('created_at')
+        .notNull(),
+    updatedAt: integer('updated_at')
+        .notNull(),
+}, table => [
+    uniqueIndex('bot_skills_bot_id_name')
+        .on(table.botId, table.name),
+]);
+
 // A prompt a bot gets on a schedule. `nextRunAt` is in milliseconds since the epoch.
 const routines = sqliteTable('routines', {
     id: text('id')
@@ -465,5 +488,5 @@ const pushSubscriptions = sqliteTable('push_subscriptions', {
         .on(table.endpoint),
 ]);
 
-export { botLimits, botModels, botRules, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, emailAccounts, emailDeliveries, integrationRuns, integrations, messages, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks };
+export { botLimits, botModels, botRules, botSkills, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, emailAccounts, emailDeliveries, integrationRuns, integrations, messages, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks };
 export type { StoredUploadRecord };

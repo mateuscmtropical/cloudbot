@@ -43,6 +43,8 @@ import { IntegrationService } from './integrations/IntegrationService.ts';
 import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from './agent/prepareAgentWorkspace.ts';
 import { asIntegrationUser, runCleanup, runIntegrationProcess } from './integrations/runIntegrationProcess.ts';
 import { RuleStore } from './store/RuleStore.ts';
+import { SkillStore } from './store/SkillStore.ts';
+import { describeSkillChange } from './skills/describeSkillChange.ts';
 import { LimitStore } from './store/LimitStore.ts';
 import { ModelStore } from './store/ModelStore.ts';
 import { WebhookStore } from './store/WebhookStore.ts';
@@ -177,6 +179,7 @@ const emailPasswordStore = new EmailPasswordStore(vault);
 const emailAccountService = new EmailAccountService(emailAccountStore, emailPasswordStore);
 const emailSender = new SmtpEmailSender(emailAccountService);
 const ruleStore = new RuleStore(opened.db);
+const skillStore = new SkillStore(opened.db);
 const routineStore = new RoutineStore(opened.db);
 const taskStore = new TaskStore(opened.db);
 const modelStore = new ModelStore(opened.db);
@@ -271,6 +274,7 @@ const toolCallReviewer = createToolCallReviewer({
     describeChange: integrationService === undefined ? undefined : (botId, mode, input) => integrationService.describeChange(botId, mode, input),
     // The rule card and the bot delete check read the stores and the chat service, which is defined below. The calls happen later, in a turn.
     describeRuleChange: (botId, input) => describeRuleChange(ruleStore, botId, input),
+    describeSkillChange: (botId, change, input) => describeSkillChange(skillStore, botId, change, input),
     describeLimitChange: (botId, input) => describeLimitChange(limitStore, botId, input),
     describeBotDelete: botId => chatService.describeBotDelete(botId),
     describeBotImport: (botId, input) => chatService.describeBotImport(botId, input),
@@ -393,7 +397,7 @@ const telegramBridge = new TelegramBridge({
 const chatService: ChatService = new ChatService({
     notifyOwner: notice => pushNotifier.notify(notice),
     telegram: telegramBridge,
-    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, routineStore, taskStore, modelStore, limitStore, screen,
+    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, skillStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     templateGallery,
     providerTools: {

@@ -38,6 +38,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Skills. Ask a bot to learn a skill, or give it a link, and it saves the steps after you approve the whole text on a card. The bot reads a skill before a task it covers, and lists or removes its skills when asked.
 - Talk to a bot from Telegram. The owner saves a Telegram bot token through the secure form and sends a one-time code from the chat to the Telegram bot. Only that Telegram account can then talk to the bot, in a private chat, and the replies to its messages come back there. Text only for now.
 - When a turn that started on Telegram waits for an approval or for you on the screen, Telegram gets one line that says to open the web app. The card itself stays in the web app.
 - A bot can connect its own mailbox with owner-provided IMAP and SMTP settings. The password goes from a secure chat form into the vault. New mail arrives as an outside-data task, with delivery ids persisted across restarts. Every outgoing email waits for owner approval of all recipients, the subject and the full text. Attachments are not supported.
