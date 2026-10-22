@@ -3,7 +3,8 @@ import { z } from 'zod/v4';
 import type { ToolCall } from '../agent/AgentRunner.ts';
 import { BOT_CREATE_SHAPE, BOT_CREATE_TOOL_FULL_NAME } from '../bots/createBotTool.ts';
 import { BOT_SEND_TOOL_FULL_NAME } from '../bots/createBotSendTool.ts';
-import { BOT_IMPORT_TOOL_FULL_NAME } from '../bots/createBotTemplateTools.ts';
+import { BOT_IMPORT_TEXT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME } from '../bots/createBotTemplateTools.ts';
+import { describeBotImportDraft } from '../bots/externalBotImport.ts';
 import { GALLERY_INSTALL_TOOL_FULL_NAME, GALLERY_SHARE_TOOL_FULL_NAME } from '../bots/createGalleryTools.ts';
 import { hasHiddenCode } from '../text/isHiddenCode.ts';
 import { checkCommandFloor } from './commandFloor.ts';
@@ -309,6 +310,14 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
             // These cards are built by the owner's stores. Without the builder the change is refused, never asked with a generic card.
             if (call.toolName === BOT_IMPORT_TOOL_FULL_NAME) {
                 return options.describeBotImport === undefined ? CHECK_MISSING_VERDICT : options.describeBotImport(botId, call.input);
+            }
+
+            if (call.toolName === BOT_IMPORT_TEXT_TOOL_FULL_NAME) {
+                const detail = describeBotImportDraft(call.input);
+
+                return detail === undefined
+                    ? { decision: 'deny', reason: 'The imported bot draft is not valid or could not be shown in full.' }
+                    : { decision: 'ask', summary: 'Create a bot from pasted instructions.', detail };
             }
 
             if (call.toolName === GALLERY_INSTALL_TOOL_FULL_NAME) {

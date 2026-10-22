@@ -53,8 +53,10 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
     'mcp__cloudbot__app_connect',
     // A new bot gets its own workspace and its first instructions, so the owner approves it before it is made.
     'mcp__cloudbot__bot_create',
-    // An imported bot gets the rules and description of a file, so the owner approves the whole template first.
+    // An imported template or instruction draft can make a bot, so the owner approves it first.
     'mcp__cloudbot__bot_import',
+    // Pasted instructions become a bot's memory, so the owner approves the whole draft first.
+    'mcp__cloudbot__bot_import_text',
     // A gallery template becomes a bot, and a share opens a pull request to a public repository. Each waits for the owner's card.
     'mcp__cloudbot__gallery_install',
     'mcp__cloudbot__gallery_share',

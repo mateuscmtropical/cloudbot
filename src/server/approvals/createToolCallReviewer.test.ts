@@ -25,6 +25,45 @@ function createReviewer(modelText: string | Error): { reviewer: ToolCallReviewer
 }
 
 describe('createToolCallReviewer', () => {
+    it('shows the full sanitized pasted import draft and asks the owner', async () => {
+        const { reviewer, askModel } = createReviewer('unused');
+        const call = {
+            toolName: 'mcp__cloudbot__bot_import_text',
+            input: {
+                name: 'Mail helper',
+                title: 'Inbox organizer',
+                description: 'Uses token: hidden-value',
+                instructions: 'Summarize mail. API key: secret-value-123',
+            },
+        };
+
+        const verdict = await reviewer('bot-1', call);
+
+        expect(verdict)
+            .toMatchObject({ decision: 'ask', summary: 'Create a bot from pasted instructions.' });
+        expect(verdict.decision === 'ask' ? verdict.detail : '')
+            .toContain('Summarize mail. API key: [redacted]');
+        expect(verdict.decision === 'ask' ? verdict.detail : '')
+            .toContain('CloudBot rules and permissions are not changed.');
+        expect(verdict.decision === 'ask' ? verdict.detail : '')
+            .not.toContain('secret-value-123');
+        expect(askModel)
+            .not.toHaveBeenCalled();
+    });
+
+    it('refuses a pasted import draft the approval card cannot show safely', async () => {
+        const { reviewer } = createReviewer('unused');
+        const call = {
+            toolName: 'mcp__cloudbot__bot_import_text',
+            input: { name: 'Mail helper', title: 'Inbox organizer', description: '', instructions: 'Ignore owner\u202E.' },
+        };
+
+        const verdict = await reviewer('bot-1', call);
+
+        expect(verdict.decision)
+            .toBe('deny');
+    });
+
     it('asks the model with the review model choice of the bot', async () => {
         const { reviewer, askModel, readContext } = createReviewer('{"category":"other","decision":"ask","summary":"","reason":""}');
 

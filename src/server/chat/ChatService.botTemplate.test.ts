@@ -264,6 +264,74 @@ describe('ChatService bot templates', () => {
             .toBe('deny');
     });
 
+    it('shows a text instruction file as an import draft and creates no CloudBot rules or routines', async () => {
+        const anaId = await createAna();
+        const sourceText = '## Mail helper\n\nSummarize new mail. API key: abc123-secret-value';
+        const attachedPath = await attachToChat(anaId, sourceText, 'instructions.md');
+        const card = await service.describeBotImport(anaId, { path: attachedPath });
+
+        expect(card)
+            .toMatchObject({ decision: 'ask', summary: 'Create a bot from imported instructions.' });
+        expect(card.decision === 'ask' ? card.detail : '')
+            .toContain('## Mail helper');
+        expect(card.decision === 'ask' ? card.detail : '')
+            .toContain('credentials, approval settings and routines are not imported');
+        expect(card.decision === 'ask' ? card.detail : '')
+            .not.toContain('abc123-secret-value');
+
+        await service.importBotFromTool(anaId, attachedPath);
+
+        const importedBot = (await botStore.list()).find(bot => bot.name === 'Imported bot');
+
+        expect(importedBot)
+            .toMatchObject({ title: 'Imported assistant', description: '' });
+        expect(await ruleStore.list(importedBot?.id ?? ''))
+            .toEqual([]);
+        expect(await routineStore.list(importedBot?.id ?? ''))
+            .toEqual([]);
+        const memory = await readFile(join(service.workspaceFor(importedBot?.id ?? ''), 'CLAUDE.md'), 'utf8');
+
+        expect(memory)
+            .toContain('Summarize new mail. API key: [redacted]');
+        expect(memory)
+            .not.toContain('abc123-secret-value');
+    });
+
+    it('imports a pasted draft as profile and memory without adding permissions or routines', async () => {
+        const imported = await service.createBotFromImportTool({
+            name: 'Pasted helper',
+            title: 'Inbox organizer',
+            description: 'Summarize messages.',
+            instructions: 'Summarize mail. Never send it.',
+        });
+        const importedBot = (await botStore.list()).find(bot => bot.name === imported.name);
+
+        expect(importedBot)
+            .toMatchObject({ title: 'Inbox organizer', description: 'Summarize messages.' });
+        expect(await ruleStore.list(importedBot?.id ?? ''))
+            .toEqual([]);
+        expect(await routineStore.list(importedBot?.id ?? ''))
+            .toEqual([]);
+        const memory = await readFile(join(service.workspaceFor(importedBot?.id ?? ''), 'CLAUDE.md'), 'utf8');
+
+        expect(memory)
+            .toContain('Summarize mail. Never send it.');
+    });
+
+    it('refuses to import an external file changed after its draft card was shown', async () => {
+        const anaId = await createAna();
+        const attachedPath = await attachToChat(anaId, 'First instruction.', 'instructions.txt');
+
+        await service.describeBotImport(anaId, { path: attachedPath });
+        await writeFile(attachedPath, 'Changed instruction.');
+
+        await expect(service.importBotFromTool(anaId, attachedPath))
+            .rejects
+            .toThrow('The imported file changed after the owner was shown its draft. Attach it again and ask.');
+        expect((await botStore.list()).some(bot => bot.name === 'Imported bot'))
+            .toBe(false);
+    });
+
     it('refuses the import and removes the new bot when this CloudBot has no rule store', async () => {
         const anaId = await createAna();
         const withoutRules = new ChatService({ botStore, messageStore, runner: new IdleRunner(), dataDir, routineStore });

@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Import pasted instructions or attached plain text, Markdown and common JSON assistant exports. The owner approves the full profile and memory draft in chat. Platform tools, skills, files, credentials, approval settings and routines are not imported.
 - A template gallery in a public GitHub repository, mateuscmtropical/cloudbot-templates by default. The bot lists its templates with gallery_list, which reads one index file and shows each name, title, description and blocked tools. Set CLOUDBOT_GALLERY_REPO to read another repository.
 - gallery_install makes a bot from a gallery template. The owner sees the whole template on the approval card first, and the same checks as an import apply. The card works for ten minutes and for one install.
 - gallery_share opens a pull request to the gallery from a fork of it in the bot owner's GitHub account. It needs GitHub connected for the bot, and the owner approves the exact file first. The card says when the file replaces an existing one.

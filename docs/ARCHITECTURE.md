@@ -1071,6 +1071,10 @@ Imported routines start turned off, and the bot gets no secrets. A secret it nee
 
 Skipped in this version: the template does not carry the bot's shared files, its learned memory, or any routine state such as its last run.
 
+`bot_import` also reads owner attachments in plain text (`.txt`), Markdown (`.md`) and JSON. Text and Markdown become instruction drafts. JSON reads only the top-level name, title, description, instructions, system_prompt, systemPrompt, prompt and string rules fields. Other fields, including platform actions, tools, skills, files, credentials and approval settings, are ignored. Recognizable credential values in profile text or instructions are redacted before the card and memory are built. These formats cover pasted or exported instruction text and common JSON assistant exports without platform sign-in or network access.
+
+The external import card shows the full profile and instruction draft. It says the instructions are memory text, not CloudBot permissions. Import creates only the bot profile and its `CLAUDE.md`. It does not write CloudBot rules, add tools or connected apps, save credentials, or create routines. Pasted instructions use `bot_import_text` and the same approval card. The owner must approve before either import creates a bot.
+
 ## Template gallery
 
 The gallery is a folder of template files, templates/<name>.json, in a public GitHub repository. It is mateuscmtropical/cloudbot-templates unless CLOUDBOT_GALLERY_REPO names another one.
