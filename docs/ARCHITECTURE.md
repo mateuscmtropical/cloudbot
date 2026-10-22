@@ -777,7 +777,17 @@ Limits:
 - A stop sends `turn/interrupt`, closes the input, then sends TERM and KILL to the process group like the Claude engine.
 - `pnpm canary:codex` runs the real binary against a fake model server on 127.0.0.1. It checks the offered tools, that seven commands and a file edit all reach the review and none runs, and that `view_image` is refused. Set `CODEX_CANARY_PATH` to the binary. Run it on every Codex upgrade. The engine was checked against codex-cli 0.163.0.
 
-Not covered yet: commands that Codex starts in their own session may outlive a stop, as with the Claude engine (#165). Also the bot's own tools, outside MCP servers, images, the spending limit (Codex reports tokens, not dollars), the owner's model choices, the agent user, sign-in and the setup choice.
+Not covered yet: commands that Codex starts in their own session may outlive a stop, as with the Claude engine (#165). Also the bot's own tools, outside MCP servers, images, the spending limit (Codex reports tokens, not dollars), the owner's model choices, the agent user and the setup choice.
+
+### Codex sign-in (not wired yet)
+
+`src/server/codexAuth` signs a bot in to ChatGPT by device code, in the bot's own `codex app-server` and `CODEX_HOME`.
+
+- `startCodexLogin` sends `account/login/start` with type `chatgptDeviceCode` and returns the `verificationUrl` and `userCode` for the chat. The owner signs in on OpenAI's page. Only an https page is accepted. The sign-in ends on `account/login/completed`. A cancel, an exit or CloudBot's own 15 minute limit sends `account/login/cancel` and closes the app server.
+- `getCodexAuthStatus` reads `account/read` without a token refresh and keeps only the account type, never the email or plan.
+- `signOutCodex` runs `account/logout` and then checks that the bot is signed out.
+- Codex keeps the tokens in the bot's `CODEX_HOME`. CloudBot never reads them, never logs or stores the user code, and never uses the token or key sign-in types.
+- Shapes come from `codex app-server generate-ts` of codex-cli 0.163.0. `account/read` and `account/logout` were checked against the real binary on a signed-out home. The device code start was not run for real, since that would reach OpenAI.
 
 ## Webhooks
 

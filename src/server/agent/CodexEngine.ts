@@ -461,5 +461,5 @@ class CodexEngine implements AgentRunner {
     }
 }
 
-export { CodexEngine, buildCodexArguments };
+export { CodexEngine, buildCodexArguments, prepareCodexHome };
 export type { CodexEngineOptions };
