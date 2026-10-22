@@ -37,6 +37,13 @@ interface KeyProxyOptions {
     secretName: string;
     upstreamUrl?: string;
     port?: number;
+    // How the upstream API takes the key. Anthropic uses x-api-key, OpenAI style APIs use authorization with Bearer.
+    keyHeader?: KeyHeader;
+}
+
+interface KeyHeader {
+    name: string;
+    prefix: string;
 }
 
 interface KeyProxy {
@@ -48,24 +55,26 @@ interface ForwardTarget {
     vault: Vault;
     secretName: string;
     upstreamBase: string;
+    keyHeader: KeyHeader;
 }
 
 interface ProxyErrorResponse {
     error: string;
 }
 
-function buildRequestHeaders(incomingHeaders: IncomingHttpHeaders, apiKey: string): Record<string, string> {
+function buildRequestHeaders(incomingHeaders: IncomingHttpHeaders, apiKey: string, keyHeader: KeyHeader): Record<string, string> {
     const forwardedHeaders: Record<string, string> = {};
     const headerEntries = Object.entries(incomingHeaders);
 
     headerEntries.forEach(([headerName, headerValue]) => {
-        if (headerValue === undefined || DROPPED_REQUEST_HEADERS.has(headerName)) {
+        // Any key header the agent sends is a placeholder, so each one is dropped and the real key goes in.
+        if (headerValue === undefined || DROPPED_REQUEST_HEADERS.has(headerName) || headerName === keyHeader.name) {
             return;
         }
 
         forwardedHeaders[headerName] = Array.isArray(headerValue) ? headerValue.join(', ') : headerValue;
     });
-    forwardedHeaders[API_KEY_HEADER] = apiKey;
+    forwardedHeaders[keyHeader.name] = `${keyHeader.prefix}${apiKey}`;
 
     return forwardedHeaders;
 }
@@ -134,7 +143,7 @@ async function forwardRequest(
     }
 
     const requestBody = await readRequestBody(incomingRequest);
-    const requestHeaders = buildRequestHeaders(incomingRequest.headers, apiKey);
+    const requestHeaders = buildRequestHeaders(incomingRequest.headers, apiKey, target.keyHeader);
     const upstreamResponse = await fetch(requestUrl, {
         method: incomingRequest.method ?? DEFAULT_HTTP_METHOD,
         headers: requestHeaders,
@@ -210,6 +219,7 @@ async function startKeyProxy(options: KeyProxyOptions): Promise<KeyProxy> {
         vault: options.vault,
         secretName: options.secretName,
         upstreamBase,
+        keyHeader: options.keyHeader ?? { name: API_KEY_HEADER, prefix: '' },
     };
     const server: Server = createServer((incomingRequest, outgoingResponse) => {
         void forwardRequestSafely(incomingRequest, outgoingResponse, target);
@@ -249,4 +259,4 @@ async function startKeyProxy(options: KeyProxyOptions): Promise<KeyProxy> {
 }
 
 export { startKeyProxy };
-export type { KeyProxy, KeyProxyOptions };
+export type { KeyHeader, KeyProxy, KeyProxyOptions };

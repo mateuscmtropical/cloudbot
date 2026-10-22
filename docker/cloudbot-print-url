@@ -1,0 +1,3 @@
+#!/bin/sh
+# Stands in for a browser. A CLI that opens a sign-in page prints the link here, and the server shows it in the setup chat.
+echo "Sign-in link: $1" >&2

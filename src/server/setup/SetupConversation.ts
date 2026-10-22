@@ -23,12 +23,16 @@ interface SetupState {
     claudeMode?: SetupMode;
     // The provider that signs in by link now.
     signIn?: string;
+    // The provider whose API key the secret form asks for. Unset for the Claude key.
+    keyFor?: string;
 }
 
 interface DeviceSignInLink {
     url: string;
     // The code the owner types on the provider's page. The message that shows it is replaced when the sign-in ends.
     code?: string | undefined;
+    // True when the provider's page shows a code that the owner pastes back, like the Google sign-in of Gemini.
+    needsCode?: boolean | undefined;
 }
 
 type DeviceSignInResult = { ok: true } | { ok: false; reason: string };
@@ -37,6 +41,8 @@ interface DeviceSignInSession {
     link: Promise<DeviceSignInLink | null>;
     finished: Promise<DeviceSignInResult>;
     cancel: () => void;
+    // Passes the code the owner pasted to the CLI. It is never stored.
+    submitCode?: ((code: string) => void) | undefined;
 }
 
 // A provider that signs in on its own page, like ChatGPT with a device code.
@@ -48,7 +54,27 @@ interface ProviderSignIn {
     start: () => DeviceSignInSession;
     // Undefined when the status could not be read.
     isSignedIn: () => Promise<boolean | undefined>;
+    // The text of the choice. It defaults to the label and the word subscription.
+    optionLabel?: string | undefined;
 }
+
+// A provider that takes an API key. The key goes to the vault, and a local proxy adds it to each request.
+interface ProviderApiKey {
+    id: Exclude<ProviderId, 'claude'>;
+    label: string;
+    // The name of the page the key comes from, such as Google AI Studio.
+    site: string;
+    secretName: string;
+    // Answers with the HTTP status of a cheap call made with the key.
+    checkKey: (key: string) => Promise<number>;
+}
+
+interface ConnectedProvider {
+    id: Exclude<ProviderId, 'claude'>;
+    label: string;
+}
+
+type ProviderMethod = 'signIn' | 'apiKey';
 
 interface ProviderOption {
     id: string;
@@ -63,10 +89,12 @@ interface SetupConversationOptions {
     vault: Pick<Vault, 'has' | 'set' | 'delete'>;
     startLogin: () => ClaudeLoginSession;
     authStatus: () => Promise<ClaudeAuthStatus>;
-    // Called when Claude or another provider is connected.
-    connect: (connection: SetupMode | ProviderId) => Promise<void>;
+    // Called when Claude or another provider is connected, with the way another provider was connected.
+    connect: (connection: SetupMode | ProviderId, method?: ProviderMethod) => Promise<void>;
     // The providers that sign in by link. Each one is a choice next to the two Claude ways.
     signIns?: ProviderSignIn[] | undefined;
+    // The providers that take an API key. Each one is a choice too.
+    apiKeys?: ProviderApiKey[] | undefined;
     checkKey: (key: string) => Promise<number>;
     // Runs the CLI's own logout for CloudBot's login only.
     signOut?: () => Promise<void>;
@@ -77,6 +105,7 @@ interface SetupConversationOptions {
 }
 
 const SETUP_STATE_KEY = 'claude.setup';
+const KEY_CHOICE_PREFIX = 'key:';
 const API_KEY_NAME = 'ANTHROPIC_API_KEY';
 const LOCAL_MODE_LINE = 'Local mode: I run as you, on this computer, with your files and your account.';
 const NO_BROWSER_LINE = 'This computer has no browser for me, so I cannot browse. Install Chrome, Chromium or Edge to give me one.';
@@ -121,14 +150,42 @@ class SetupConversation {
         return signIns.find(signIn => signIn.id === id);
     }
 
+    private apiKeyById(id: string): ProviderApiKey | undefined {
+        const apiKeys = this.options.apiKeys ?? [];
+
+        return apiKeys.find(apiKey => apiKey.id === id);
+    }
+
+    // The provider of a choice such as key:gemini.
+    private apiKeyByChoice(choice: string | undefined): ProviderApiKey | undefined {
+        if (choice?.startsWith(KEY_CHOICE_PREFIX) !== true) {
+            return undefined;
+        }
+
+        const id = choice.slice(KEY_CHOICE_PREFIX.length);
+
+        return this.apiKeyById(id);
+    }
+
+    // A provider counts as connected with its sign-in or with its key in the vault.
     private async signedInIds(): Promise<ProviderId[]> {
         const signIns = this.options.signIns ?? [];
         const checks = signIns.map(signIn => signIn.isSignedIn()
             .catch(() => undefined));
         const statuses = await Promise.all(checks);
-
-        return signIns.filter((_signIn, index) => statuses[index] === true)
+        const signedIn = signIns.filter((_signIn, index) => statuses[index] === true)
             .map(signIn => signIn.id);
+        const apiKeys = this.options.apiKeys ?? [];
+        const withKey = apiKeys.filter(apiKey => this.options.vault.has(apiKey.secretName) && !signedIn.includes(apiKey.id))
+            .map(apiKey => apiKey.id);
+
+        return [...signedIn, ...withKey];
+    }
+
+    private connectedById(id: ProviderId): ConnectedProvider | undefined {
+        const found = this.signInById(id) ?? this.apiKeyById(id);
+
+        return found === undefined ? undefined : { id: found.id, label: found.label };
     }
 
     // Read from the saved state, so a turn does not run the CLI status check.
@@ -164,11 +221,21 @@ class SetupConversation {
         });
     }
 
+    // Each provider shows its sign-in first and its API key next to it.
     private providerOptions(): ProviderOption[] {
         const signIns = this.options.signIns ?? [];
-        const linkOptions = signIns.map(signIn => ({ id: signIn.id, label: signIn.label }));
+        const apiKeys = this.options.apiKeys ?? [];
+        const ids = [...new Set([...signIns.map(signIn => signIn.id), ...apiKeys.map(apiKey => apiKey.id)])];
+        const otherOptions = ids.flatMap((id) => {
+            const signIn = this.signInById(id);
+            const apiKey = this.apiKeyById(id);
+            const signInOption = signIn === undefined ? [] : [{ id, label: signIn.optionLabel ?? `${signIn.label} subscription` }];
+            const keyOption = apiKey === undefined ? [] : [{ id: `${KEY_CHOICE_PREFIX}${id}`, label: `${apiKey.label} API key` }];
 
-        return [{ id: 'subscription', label: 'Claude subscription' }, { id: 'apiKey', label: 'Claude API key' }, ...linkOptions];
+            return [...signInOption, ...keyOption];
+        });
+
+        return [{ id: 'subscription', label: 'Claude subscription' }, { id: 'apiKey', label: 'Claude API key' }, ...otherOptions];
     }
 
     private cancelSessions(): void {
@@ -263,7 +330,7 @@ class SetupConversation {
         }
 
         const signedIn = await this.signedInIds();
-        const firstSignIn = signedIn[0] === undefined ? undefined : this.signInById(signedIn[0]);
+        const firstSignIn = signedIn[0] === undefined ? undefined : this.connectedById(signedIn[0]);
 
         if (this.isClosed()) {
             return;
@@ -321,6 +388,14 @@ class SetupConversation {
                 return;
             }
 
+            const chosenKey = body?.kind === 'choice' ? this.apiKeyByChoice(body.chosenId) : undefined;
+
+            if (chosenKey !== undefined) {
+                await this.askSecret(chosenKey);
+
+                return;
+            }
+
             // A provider list from an older version misses the newer providers, so it is closed and posted again.
             const currentIds = this.providerOptions()
                 .map(option => option.id)
@@ -344,8 +419,10 @@ class SetupConversation {
             }
         }
 
-        if (this.state.mode === 'apiKey') {
-            await this.askSecret();
+        if (this.state.mode === 'apiKey' || this.state.keyFor !== undefined) {
+            const apiKey = this.state.keyFor === undefined ? undefined : this.apiKeyById(this.state.keyFor);
+
+            await this.askSecret(apiKey);
 
             return;
         }
@@ -402,9 +479,11 @@ class SetupConversation {
         // A choice on the provider list the setup posts after it is done.
         const offering = this.state.step === 'done' && action === 'choice' && value !== 'signOut';
         const expectedKind = action === 'code' ? 'codeField' : action === 'secret' || switching ? 'secureForm' : 'choice';
+        // A provider whose page shows a code asks for it while its sign-in runs.
+        const pastingCode = this.state.step === 'device' && action === 'code';
 
         if (this.closed || botId !== this.options.botId || message?.botId !== botId || message.kind !== expectedKind
-            || (!switching && !signingOut && !offering && this.state.step !== action) || this.state.messageId !== messageId) {
+            || (!switching && !signingOut && !offering && !pastingCode && this.state.step !== action) || this.state.messageId !== messageId) {
             throw new SetupAnswerError('This setup question is no longer active.');
         }
 
@@ -413,12 +492,14 @@ class SetupConversation {
         }
 
         const signIn = action === 'choice' ? this.signInById(value) : undefined;
+        const chosenKey = action === 'choice' ? this.apiKeyByChoice(value) : undefined;
+        const keyProvider = action === 'secret' && this.state.keyFor !== undefined ? this.apiKeyById(this.state.keyFor) : undefined;
 
         if (action === 'choice' && value === 'signOut' && !signingOut) {
             throw new SetupAnswerError('Choose a provider.');
         }
 
-        if (action === 'choice' && value !== 'subscription' && value !== 'apiKey' && signIn === undefined && !signingOut) {
+        if (action === 'choice' && value !== 'subscription' && value !== 'apiKey' && signIn === undefined && chosenKey === undefined && !signingOut) {
             throw new SetupAnswerError('Choose a provider.');
         }
 
@@ -440,7 +521,7 @@ class SetupConversation {
 
         if (action === 'secret') {
             try {
-                status = await this.options.checkKey(trimmedKey);
+                status = keyProvider === undefined ? await this.options.checkKey(trimmedKey) : await keyProvider.checkKey(trimmedKey);
                 unchecked = status !== 401 && status !== 403 && (status < 200 || status >= 300);
             } catch {
                 unchecked = true;
@@ -461,6 +542,12 @@ class SetupConversation {
                 await this.signOutOfClaude();
             } else if (signIn !== undefined) {
                 await this.beginSignIn(signIn);
+            } else if (chosenKey !== undefined) {
+                await this.askSecret(chosenKey);
+            } else if (pastingCode) {
+                const pastedCode = value.trim();
+
+                this.deviceSession?.submitCode?.(pastedCode);
             } else if (action === 'choice') {
                 if (value === 'subscription') {
                     await this.beginLogin();
@@ -470,14 +557,17 @@ class SetupConversation {
             } else if (action === 'secret') {
                 if (unchecked) {
                     // An unchecked key is never stored, so a mistyped key cannot end setup.
-                    await this.say('Could not reach Anthropic to check the key. Try again.');
-                    await this.askSecret();
+                    await this.say(`Could not reach ${keyProvider?.site ?? 'Anthropic'} to check the key. Try again.`);
+                    await this.askSecret(keyProvider);
                 } else if (status === 401 || status === 403) {
                     await this.say('The key was rejected. Try another key.');
-                    await this.askSecret();
-                } else {
+                    await this.askSecret(keyProvider);
+                } else if (keyProvider === undefined) {
                     this.options.vault.set(API_KEY_NAME, trimmedKey);
                     await this.ready();
+                } else {
+                    this.options.vault.set(keyProvider.secretName, trimmedKey);
+                    await this.ready({ id: keyProvider.id, label: keyProvider.label }, 'apiKey');
                 }
             } else {
                 const session = this.session;
@@ -597,8 +687,8 @@ class SetupConversation {
         }
     }
 
-    // Without a sign-in this connects Claude, with one it connects that provider.
-    private async ready(signIn?: ProviderSignIn): Promise<void> {
+    // Without a provider this connects Claude, with one it connects that provider.
+    private async ready(signIn?: ConnectedProvider, method?: ProviderMethod): Promise<void> {
         const mode = signIn === undefined ? this.state.mode ?? this.state.claudeMode : undefined;
         const wasDone = this.state.step === 'done';
         const connection = signIn?.id ?? mode;
@@ -607,7 +697,7 @@ class SetupConversation {
             return;
         }
 
-        await this.options.connect(connection);
+        await (method === undefined ? this.options.connect(connection) : this.options.connect(connection, method));
         await this.retireActive();
         this.session = undefined;
         this.deviceSession = undefined;
@@ -720,9 +810,8 @@ class SetupConversation {
                     return;
                 }
 
+                // A provider without a sign-in, like the free opencode models, ends without a link.
                 if (link === null) {
-                    await this.fail(`${signIn.label} did not provide a sign-in link.`);
-
                     return;
                 }
 
@@ -734,6 +823,10 @@ class SetupConversation {
                 if (posted !== undefined) {
                     this.state.linkMessageId = posted.id;
                     await this.persist();
+                }
+
+                if (link.needsCode === true) {
+                    await this.ask({ kind: 'codeField', prompt: `Paste the code from the ${signIn.site} page here.`, placeholder: 'Sign-in code', submitted: false });
                 }
             });
 
@@ -747,7 +840,9 @@ class SetupConversation {
                 const isSignedIn = result.ok ? await signIn.isSignedIn() : false;
 
                 if (result.ok && isSignedIn !== false) {
-                    await this.ready(signIn);
+                    await this.ready({ id: signIn.id, label: signIn.label }, 'signIn');
+                } else if (link === null && result.ok) {
+                    await this.fail(`${signIn.label} did not provide a sign-in link.`);
                 } else {
                     await this.fail(result.ok ? `${signIn.label} did not confirm sign-in.` : result.reason);
                 }
@@ -772,10 +867,19 @@ class SetupConversation {
         await this.persist();
     }
 
-    private async askSecret(): Promise<void> {
-        this.state = { ...this.kept(), step: 'secret', mode: 'apiKey' };
+    // Without a provider this asks for the Anthropic key.
+    private async askSecret(apiKey?: ProviderApiKey): Promise<void> {
+        if (apiKey === undefined) {
+            this.state = { ...this.kept(), step: 'secret', mode: 'apiKey' };
+            await this.persist();
+            await this.ask({ kind: 'secureForm', prompt: 'Add your Anthropic API key.', secretName: API_KEY_NAME, submitted: false });
+
+            return;
+        }
+
+        this.state = { ...this.kept(), step: 'secret', keyFor: apiKey.id };
         await this.persist();
-        await this.ask({ kind: 'secureForm', prompt: 'Add your Anthropic API key.', secretName: API_KEY_NAME, submitted: false });
+        await this.ask({ kind: 'secureForm', prompt: `Add your ${apiKey.label} API key from ${apiKey.site}.`, secretName: apiKey.secretName, submitted: false });
     }
 
     private async say(text: string): Promise<void> {
@@ -798,4 +902,4 @@ class SetupConversation {
 }
 
 export { SetupConversation, SetupAnswerError, API_KEY_NAME };
-export type { DeviceSignInLink, DeviceSignInResult, DeviceSignInSession, ProviderSignIn, SetupMode, SetupAction, SetupConversationOptions };
+export type { DeviceSignInLink, DeviceSignInResult, DeviceSignInSession, ProviderApiKey, ProviderMethod, ProviderSignIn, SetupMode, SetupAction, SetupConversationOptions };

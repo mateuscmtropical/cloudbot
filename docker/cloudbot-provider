@@ -1,0 +1,45 @@
+#!/bin/sh
+# Runs the agent CLI of one provider for CloudBot as the bot user, see src/server/providers/acpProviders.ts.
+# Only fixed commands are allowed: `acp` starts the ACP server and `login` starts the sign-in. No argument of the
+# server reaches the CLI. Each CLI keeps its sign-in in the bot home, which is a volume, so it survives a rebuild.
+set -eu
+
+provider="${1:-}"
+action="${2:-}"
+
+if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "login" ]; }; then
+    echo "cloudbot-provider takes a provider and acp or login." >&2
+    exit 2
+fi
+
+umask 077
+# The CLIs are root-owned copies, so an update check could only fail. These turn it off where the CLI offers it.
+export NO_UPDATE_NOTIFIER=1 OPENCODE_DISABLE_AUTOUPDATE=1 COPILOT_AUTO_UPDATE=false
+# A CLI that wants to open a browser prints the link instead, which the server reads from the sign-in output.
+export BROWSER=/usr/local/bin/cloudbot-print-url NO_BROWSER=true NO_OPEN_BROWSER=1
+LOGIN=/usr/local/lib/cloudbot/acp-login.js
+
+case "$provider:$action" in
+    gemini:acp) exec /usr/local/bin/gemini --acp ;;
+    gemini:login) exec /usr/local/bin/node "$LOGIN" oauth-personal /usr/local/bin/gemini --acp ;;
+    copilot:acp) exec /usr/local/bin/copilot --acp --stdio ;;
+    copilot:login) exec /usr/local/bin/copilot login --device-code ;;
+    cursor:acp) exec /usr/local/bin/cursor-agent acp ;;
+    cursor:login) exec /usr/local/bin/cursor-agent login ;;
+    grok:acp) exec /usr/local/bin/grok --no-auto-update agent stdio ;;
+    grok:login) exec /usr/local/bin/grok login --device-auth ;;
+    mistral:acp) exec /usr/local/bin/vibe-acp ;;
+    mistral:login) exec /usr/local/bin/node "$LOGIN" browser-auth /usr/local/bin/vibe-acp ;;
+    kimi:acp) exec /usr/local/bin/kimi acp ;;
+    kimi:login) exec /usr/local/bin/kimi login ;;
+    qwen:acp) exec /usr/local/bin/qwen --acp ;;
+    # opencode asks before every tool, so each call goes to the CloudBot review.
+    opencode:acp)
+        export OPENCODE_CONFIG_CONTENT='{"permission":{"*":"ask"},"autoupdate":false}'
+        exec /usr/local/bin/opencode acp
+        ;;
+    *)
+        echo "cloudbot-provider does not know $provider $action." >&2
+        exit 2
+        ;;
+esac

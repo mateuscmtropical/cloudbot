@@ -7,7 +7,7 @@ import { PassThrough } from 'node:stream';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { AcpEngine, toReviewedCall } from './AcpEngine.ts';
+import { AcpEngine, namesProtectedFolder, toReviewedCall } from './AcpEngine.ts';
 import type { AgentEvent } from './AgentEvent.ts';
 import type { ToolCallDecision, TurnRequest } from './AgentRunner.ts';
 
@@ -21,6 +21,7 @@ interface SentMessage {
 
 interface FakeOptions {
     capabilities?: Record<string, unknown>;
+    failAuthenticate?: boolean;
     failNewSession?: string;
     onPrompt?: (agent: FakeAcpAgent, promptId: number) => void;
 }
@@ -89,6 +90,10 @@ class FakeAcpAgent extends EventEmitter {
             this.say({ id: message.id, result: { protocolVersion: 1, agentCapabilities: this.options.capabilities ?? { mcpCapabilities: { http: true } } } });
         }
 
+        if (message.method === 'authenticate') {
+            this.say(this.options.failAuthenticate === true ? { id: message.id, error: { code: -32000, message: 'Authentication required' } } : { id: message.id, result: {} });
+        }
+
         if (message.method === 'session/new') {
             if (this.options.failNewSession !== undefined) {
                 this.say({ id: message.id, error: { code: -32000, message: this.options.failNewSession } });
@@ -119,7 +124,7 @@ class FakeAcpAgent extends EventEmitter {
     }
 }
 
-function makeEngine(options: FakeOptions = {}): { engine: AcpEngine; agents: FakeAcpAgent[] } {
+function makeEngine(options: FakeOptions = {}, authMethodId?: string): { engine: AcpEngine; agents: FakeAcpAgent[] } {
     const agents: FakeAcpAgent[] = [];
     const home = join(mkdtempSync(join(tmpdir(), 'cloudbot-acp-test-')), 'home');
     const engine = new AcpEngine({
@@ -127,6 +132,7 @@ function makeEngine(options: FakeOptions = {}): { engine: AcpEngine; agents: Fak
         command: '/usr/local/bin/gemini',
         args: ['--experimental-acp'],
         homeFor: () => home,
+        authMethodId,
         spawnFunction: () => {
             const agent = new FakeAcpAgent(options);
 
@@ -265,6 +271,41 @@ describe('AcpEngine', () => {
 
         expect(events)
             .toEqual([{ type: 'turn_error', message: 'Gemini is not signed in. Ask me to connect Gemini.', isUsageLimit: false }]);
+    });
+
+    it('authenticates with the cached sign-in before the session when the agent needs it', async () => {
+        const { engine, agents } = makeEngine({}, 'cursor_login');
+
+        await collect(engine.runTurn(makeRequest()));
+
+        expect(agents[0]?.sent.map(message => message.method))
+            .toEqual(['initialize', 'authenticate', 'session/new', 'session/prompt']);
+    });
+
+    it('tells whether the sign-in works without sending a prompt', async () => {
+        const signedIn = makeEngine({}, 'cursor_login');
+        const signedOut = makeEngine({ failAuthenticate: true }, 'cursor_login');
+        const broken = makeEngine({ failNewSession: 'disk full' });
+
+        expect(await signedIn.engine.isSignedIn('bot-1', tmpdir()))
+            .toBe(true);
+        expect(signedIn.agents[0]?.sent.some(message => message.method === 'session/prompt'))
+            .toBe(false);
+        expect(await signedOut.engine.isSignedIn('bot-1', tmpdir()))
+            .toBe(false);
+        expect(await broken.engine.isSignedIn('bot-1', tmpdir()))
+            .toBeUndefined();
+    });
+
+    it('finds a protected sign-in or config folder in a question', () => {
+        const folders = ['/home/bot/.copilot', '.gemini'];
+
+        expect(namesProtectedFolder({ kind: 'execute', rawInput: { command: 'cat /home/bot/.copilot/config.json' } }, folders))
+            .toBe(true);
+        expect(namesProtectedFolder({ kind: 'edit', locations: [{ path: '/work/.gemini/settings.json' }] }, folders))
+            .toBe(true);
+        expect(namesProtectedFolder({ kind: 'execute', rawInput: { command: 'echo .geminis' } }, folders))
+            .toBe(false);
     });
 
     it('maps each ACP tool kind to the CloudBot rule that reviews it', () => {

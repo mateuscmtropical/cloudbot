@@ -19,6 +19,11 @@ interface AcpEngineOptions {
     args: string[];
     // The HOME of the agent for a bot. CloudBot owns the folder, and the agent keeps its sign-in and config there.
     homeFor: (botId: string) => string;
+    // Folders the agent loads its sign-in and config from, as absolute paths or folder names such as .gemini. A question
+    // that names one is refused without a review, since a write there could run a program without a review next turn.
+    protectedFolders?: string[] | undefined;
+    // Some agents need an authenticate call with their cached sign-in before a session, such as cursor_login.
+    authMethodId?: string | undefined;
     // More variables for the agent, such as one that turns off its update check.
     environment?: Record<string, string> | undefined;
     // Serves the bot's own tools over MCP. Each call is reviewed there, since ACP agents send no call id.
@@ -108,6 +113,30 @@ function toReviewedCall(toolCall: AcpToolCall): ToolCall {
     }
 }
 
+function escapeForPattern(text: string): string {
+    return text.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// This is a floor, not a parser. A path the command builds at run time gets past it, and the review still sees it.
+function namesProtectedFolder(toolCall: AcpToolCall, protectedFolders: string[]): boolean {
+    const text = JSON.stringify(toolCall)
+        .replaceAll('\\\\', '/')
+        .toLowerCase();
+
+    return protectedFolders.some((folder) => {
+        const name = folder.toLowerCase();
+
+        if (name.startsWith('/')) {
+            return text.includes(name);
+        }
+
+        // A bare name matches as a whole path segment, with quotes, spaces or a slash around it.
+        const pattern = new RegExp(`(?:^|[\\s/'"=])${escapeForPattern(name)}(?:[\\s/'"]|$)`);
+
+        return pattern.test(text);
+    });
+}
+
 function pickOption(options: AcpPermissionOption[], isAllowed: boolean): string | undefined {
     const wanted = isAllowed ? 'allow_once' : 'reject_once';
     const found = options.find(option => option.kind === wanted);
@@ -157,13 +186,33 @@ class AcpEngine implements AgentRunner {
             : this.options.loopback.grantTurn({ tools, reviewToolCall, disallowedTools: request.disallowedTools, offersPromptTool: false, reviewsEachCall: true });
 
         try {
-            yield* this.runProcess(request, toolTurn, reviewToolCall);
+            yield* this.runProcess(request, toolTurn, reviewToolCall, false);
         } finally {
             toolTurn?.release();
         }
     }
 
-    private async* runProcess(request: TurnRequest, toolTurn: LoopbackTurn | undefined, reviewToolCall: NonNullable<TurnRequest['reviewToolCall']>): AsyncGenerator<AgentEvent> {
+    // Opens a session and stops before any prompt, so the setup chat can tell whether the sign-in still works.
+    async isSignedIn(botId: string, workspaceDir: string): Promise<boolean | undefined> {
+        const request = { botId, workspaceDir, prompt: '', abortSignal: new AbortController().signal };
+        const deny = (): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: false, reason: REVIEW_FAILED_REASON });
+        const events: AgentEvent[] = [];
+
+        // The events are an async iterator, so `for await` is the only loop form that fits.
+        for await (const event of this.runProcess(request, undefined, deny, true)) {
+            events.push(event);
+        }
+
+        if (events.some(event => event.type === 'session')) {
+            return true;
+        }
+
+        const failure = events.find(event => event.type === 'turn_error');
+
+        return failure?.type === 'turn_error' && failure.message.includes('not signed in') ? false : undefined;
+    }
+
+    private async* runProcess(request: TurnRequest, toolTurn: LoopbackTurn | undefined, reviewToolCall: NonNullable<TurnRequest['reviewToolCall']>, isCheck: boolean): AsyncGenerator<AgentEvent> {
         const launch = this.options.launch;
         const home = launch === undefined ? this.options.homeFor(request.botId) : undefined;
 
@@ -243,6 +292,7 @@ class AcpEngine implements AgentRunner {
             permissionCount += 1;
 
             const isOverLimit = request.maxSteps !== undefined && permissionCount > request.maxSteps;
+            const isProtected = namesProtectedFolder(toolCall, this.options.protectedFolders ?? []);
             const reviewed = toReviewedCall(toolCall);
             const review = (): Promise<ToolCallDecision> => {
                 const reviewing = reviewToolCall(reviewed, reviewController.signal)
@@ -250,7 +300,8 @@ class AcpEngine implements AgentRunner {
 
                 return withTimeout(reviewing, this.options.reviewTimeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS, { isAllowed: false, reason: REVIEW_FAILED_REASON });
             };
-            const decision: ToolCallDecision = isOverLimit ? { isAllowed: false, reason: 'The step limit was reached.' } : await review();
+            const refusal = isOverLimit ? 'The step limit was reached.' : 'This call names a folder that holds the sign-in or config of the agent.';
+            const decision: ToolCallDecision = isOverLimit || isProtected ? { isAllowed: false, reason: refusal } : await review();
             const optionId = pickOption(options, decision.isAllowed && !request.abortSignal.aborted);
 
             // Without a matching option the question is cancelled, which the agent treats as a refusal.
@@ -382,6 +433,18 @@ class AcpEngine implements AgentRunner {
                 return;
             }
 
+            const notSignedIn = `${this.options.label} is not signed in. Ask me to connect ${this.options.label}.`;
+
+            if (this.options.authMethodId !== undefined) {
+                const authenticated = await call('authenticate', { methodId: this.options.authMethodId });
+
+                if (authenticated.error !== undefined) {
+                    push({ type: 'turn_error', message: notSignedIn, isUsageLimit: false });
+
+                    return;
+                }
+            }
+
             const capabilities = readRecord(initialized.result?.agentCapabilities);
             const canLoad = capabilities.loadSession === true;
             const canHttpMcp = readRecord(capabilities.mcpCapabilities).http === true;
@@ -408,7 +471,7 @@ class AcpEngine implements AgentRunner {
                     const reason = created.error?.message ?? '';
                     const needsSignIn = /auth|sign|login/i.test(reason);
 
-                    push({ type: 'turn_error', message: needsSignIn ? `${this.options.label} is not signed in. Ask me to connect ${this.options.label}.` : `${this.options.label} could not start a session.`, isUsageLimit: false });
+                    push({ type: 'turn_error', message: needsSignIn ? notSignedIn : `${this.options.label} could not start a session.`, isUsageLimit: false });
 
                     return;
                 }
@@ -418,6 +481,10 @@ class AcpEngine implements AgentRunner {
 
             currentSessionId = sessionId;
             push({ type: 'session', sessionId });
+
+            if (isCheck) {
+                return;
+            }
 
             const instructions = request.systemPrompt === undefined ? '' : `${request.systemPrompt}\n\n`;
             const images = canImage ? (request.images ?? []).map(image => ({ type: 'image', mimeType: image.mediaType, data: image.data })) : [];
@@ -467,12 +534,15 @@ class AcpEngine implements AgentRunner {
 
             if (!hasExited) {
                 signalChild(child, 'TERM');
+                await withTimeout(exitedTrue, 2000, false);
             }
 
+            // Every path ends here, so the group is killed even after a clean end: an approved command may still run in it.
+            signalChild(child, 'KILL');
             lines.close();
         }
     }
 }
 
-export { AcpEngine, toReviewedCall };
+export { AcpEngine, namesProtectedFolder, toReviewedCall };
 export type { AcpEngineOptions, AcpLaunch };

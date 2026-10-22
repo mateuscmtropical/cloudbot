@@ -81,6 +81,28 @@ RUN cp -L /home/bot/.local/bin/claude /usr/local/bin/claude \
 RUN npm install --global @openai/codex@0.163.0 \
     && /usr/local/bin/codex --version
 
+# The agent CLIs of the other providers, which CloudBot runs over the Agent Client Protocol, see
+# src/server/providers/acpProviders.ts. They are root-owned, so the bot user cannot replace them. The ones without an
+# npm package come from each vendor's own install script, installed under /opt and linked into /usr/local/bin.
+RUN npm install --global @google/gemini-cli@0.65.0 @github/copilot@1.0.102 @qwen-code/qwen-code@0.26.0 opencode-ai@1.19.4 \
+    && install -d -m 0755 /opt/cloudbot-agents \
+    && export HOME=/opt/cloudbot-agents \
+    && curl -fsS https://cursor.com/install | bash \
+    && curl -fsSL https://x.ai/cli/install.sh | bash \
+    && curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && UV_TOOL_DIR=/opt/cloudbot-agents/uv-tools UV_TOOL_BIN_DIR=/opt/cloudbot-agents/uv-bin UV_PYTHON_INSTALL_DIR=/opt/cloudbot-agents/python \
+        /opt/cloudbot-agents/.local/bin/uv tool install --python 3.12 mistral-vibe==3.0.1 \
+    && ln -sf /opt/cloudbot-agents/.local/bin/cursor-agent /usr/local/bin/cursor-agent \
+    && ln -sf /opt/cloudbot-agents/.grok/bin/grok /usr/local/bin/grok \
+    && ln -sf /opt/cloudbot-agents/.kimi-code/bin/kimi /usr/local/bin/kimi \
+    && ln -sf /opt/cloudbot-agents/uv-bin/vibe-acp /usr/local/bin/vibe-acp \
+    && chmod -R a+rX,go-w /opt/cloudbot-agents \
+    && for cli in gemini copilot qwen opencode cursor-agent grok kimi vibe-acp; do ls -l "/usr/local/bin/$cli" && "/usr/local/bin/$cli" --version; done
+COPY --chmod=0755 docker/cloudbot-provider /usr/local/bin/cloudbot-provider
+COPY --chmod=0755 docker/cloudbot-print-url /usr/local/bin/cloudbot-print-url
+COPY --chmod=0644 docker/acp-login.js /usr/local/lib/cloudbot/acp-login.js
+
 USER cloudbot
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
