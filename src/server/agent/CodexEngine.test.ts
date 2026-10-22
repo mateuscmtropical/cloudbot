@@ -223,6 +223,26 @@ describe('CodexEngine', () => {
             .toMatchObject({ result: { decision: 'decline' } });
     });
 
+    it('reviews the newest patch Codex sent for a file change', async () => {
+        const review = vi.fn((): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: true }));
+        const { engine, servers } = makeEngine((server) => {
+            server.say({ method: 'item/started', params: { item: { type: 'fileChange', id: 'call_2', status: 'inProgress', changes: [{ path: '/w/a.txt', kind: { type: 'add' }, diff: 'part' }] } } });
+            server.say({ method: 'item/fileChange/patchUpdated', params: { itemId: 'call_2', changes: [{ path: '/w/a.txt', kind: { type: 'add' }, diff: 'full' }] } });
+            server.say({ id: 'approval-1', method: 'item/fileChange/requestApproval', params: { itemId: 'call_2', reason: null, grantRoot: null } });
+            setTimeout(() => {
+                completeTurn(server);
+            }, 20);
+        });
+
+        await collect(engine.runTurn(makeRequest({ reviewToolCall: review })));
+        const answer = servers[0]?.sent.find(message => (message as { id?: unknown }).id === 'approval-1');
+
+        expect(review)
+            .toHaveBeenCalledWith({ toolName: 'Write', input: { file_path: '/w/a.txt', content: 'full' } }, expect.any(AbortSignal));
+        expect(answer)
+            .toMatchObject({ result: { decision: 'accept' } });
+    });
+
     it('declines every call when the turn has no review', async () => {
         const { engine, servers } = makeEngine((server) => {
             server.say({ id: 'approval-1', method: 'item/commandExecution/requestApproval', params: { kind: 'command', itemId: 'call_1', command: 'ls' } });

@@ -9,8 +9,8 @@ import { answerCodexRequest } from './answerCodexRequest.ts';
 import type { CodexAnswer } from './answerCodexRequest.ts';
 import { signalProcessTree } from './ClaudeCliEngine.ts';
 import type { SignalAction, SpawnFunction } from './ClaudeCliEngine.ts';
-import { CODEX_APPROVAL_POLICY, CODEX_LOCKED_CONFIG, CODEX_SANDBOX_MODE } from './codexProtocol.ts';
-import type { CodexMessage, CodexRequestId, CodexThreadItem, CodexTurn } from './codexProtocol.ts';
+import { CODEX_APPROVAL_POLICY, CODEX_LOCKED_CONFIG, CODEX_SANDBOX_MODE, isFileChangeItem } from './codexProtocol.ts';
+import type { CodexFileChange, CodexMessage, CodexRequestId, CodexThreadItem, CodexTurn } from './codexProtocol.ts';
 import { mapCodexNotification, mapCodexTurnEnd, readItem } from './mapCodexNotification.ts';
 
 interface CodexEngineOptions {
@@ -98,6 +98,18 @@ function exitsWithin(exited: Promise<unknown>, milliseconds: number): Promise<bo
     });
 
     return Promise.race([exited.then(() => true), timeout]);
+}
+
+function updatePatch(items: Map<string, CodexThreadItem>, params: unknown): void {
+    const record = readRecord(params);
+    const itemId = typeof record.itemId === 'string' ? record.itemId : undefined;
+    const stored = itemId === undefined ? undefined : items.get(itemId);
+
+    if (itemId === undefined || stored === undefined || !isFileChangeItem(stored) || !Array.isArray(record.changes)) {
+        return;
+    }
+
+    items.set(itemId, { ...stored, changes: record.changes as CodexFileChange[] });
 }
 
 function isPastStepLimit(request: TurnRequest, progress: TurnProgress): boolean {
@@ -444,6 +456,11 @@ class CodexEngine implements AgentRunner {
             if (item?.id !== undefined) {
                 items.set(item.id, item);
             }
+        }
+
+        // A newer patch replaces the stored item with a new object, so a review of the older patch can tell it changed.
+        if (method === 'item/fileChange/patchUpdated') {
+            updatePatch(items, message.params);
         }
 
         const events = mapCodexNotification(method, message.params);
