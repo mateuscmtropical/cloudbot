@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
-import { MASCOT_COLORS } from '../../shared/mascot.ts';
+import { MASCOT_COLORS, readMascotColor } from '../../shared/mascot.ts';
 import type { MascotColorName, MascotShape } from '../../shared/mascot.ts';
 import { computeEyeOffset, computeTypingEyeOffset, subscribeToPointer, subscribeToTyping } from '../mascotPointer.ts';
 import type { Point } from '../mascotPointer.ts';
@@ -182,7 +182,7 @@ function CloudMascot({ color, shape, state, size = DEFAULT_SIZE }: CloudMascotPr
     const isLooking = hasMovingEyes && isOnScreen;
     const isBlinkShown = hasMovingEyes && isBlinking;
     const body = BODY_SPECS[shape];
-    const fill = MASCOT_COLORS[color];
+    const fill = MASCOT_COLORS[readMascotColor(color)];
 
     useEffect(() => {
         const element = svgRef.current;

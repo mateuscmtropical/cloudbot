@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MASCOT_COLORS, MASCOT_COLOR_NAMES, MASCOT_SHAPES, randomMascot } from './mascot.ts';
+import { MASCOT_COLORS, MASCOT_COLOR_NAMES, MASCOT_SHAPES, readMascotColor, randomMascot } from './mascot.ts';
 
 // The relative luminance of a color, from its hex text, as WCAG defines it.
 function relativeLuminance(hex: string): number {
@@ -28,11 +28,32 @@ describe('mascot palette', () => {
         });
     });
 
-    it('has about ten colors and four shapes', () => {
+    it('has nine colors and four shapes', () => {
         expect(MASCOT_COLOR_NAMES)
-            .toHaveLength(10);
+            .toHaveLength(9);
         expect(MASCOT_SHAPES)
             .toHaveLength(4);
+    });
+
+    it('has no yellow, which reads as brown', () => {
+        expect(MASCOT_COLOR_NAMES)
+            .not.toContain('yellow');
+        expect(Object.keys(MASCOT_COLORS))
+            .not.toContain('yellow');
+    });
+});
+
+describe('readMascotColor', () => {
+    it('keeps a color that is in the palette', () => {
+        expect(readMascotColor('orange'))
+            .toBe('orange');
+    });
+
+    it('reads a stored color that is not in the palette as blue', () => {
+        expect(readMascotColor('yellow'))
+            .toBe('blue');
+        expect(readMascotColor(''))
+            .toBe('blue');
     });
 });
 
