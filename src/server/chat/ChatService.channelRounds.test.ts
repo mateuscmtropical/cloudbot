@@ -15,6 +15,7 @@ import { MessageStore } from '../store/MessageStore.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
 import { ChatService } from './ChatService.ts';
+import { CLEANUP_RETRIES } from './testCleanup.ts';
 
 // Replies with one text and records each prompt, so a test can see what a channel turn was asked.
 class ReplyingRunner implements AgentRunner {
@@ -132,7 +133,7 @@ describe('ChatService channel rounds', () => {
 
     afterEach(async () => {
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     function buildService(runner: AgentRunner): ChatService {

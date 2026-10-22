@@ -13,6 +13,7 @@ import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
 import { ChatService } from './ChatService.ts';
 import { createChatRoutes } from './createChatRoutes.ts';
+import { CLEANUP_RETRIES } from './testCleanup.ts';
 
 describe('bot routes', () => {
     let dataDir: string;
@@ -31,7 +32,7 @@ describe('bot routes', () => {
 
     afterEach(async () => {
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     it('makes a new bot with a generic name and opens its chat with the question about its name and job', async () => {

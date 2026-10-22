@@ -16,6 +16,7 @@ import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
 import type { ChatEvent, ChatMessage } from '../../shared/chatTypes.ts';
 import { ChatService } from './ChatService.ts';
+import { CLEANUP_RETRIES } from './testCleanup.ts';
 
 // A turn that works until it is stopped, so a test can act while the bot is busy.
 class HoldingRunner implements AgentRunner {
@@ -77,7 +78,7 @@ describe('ChatService notifications', () => {
     afterEach(async () => {
         opened.close();
         vi.restoreAllMocks();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     it('notifies the owner when a turn finishes, with the bot and its newest message', async () => {
