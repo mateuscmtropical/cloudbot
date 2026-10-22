@@ -631,8 +631,8 @@ already approved. `skill_add` and `skill_remove` are in the always-ask list and 
 text starts with `> `, so a line of the text can never look like a line of the card. It says when the skill replaces
 one with the same name. A name that is not 1 to 40 lowercase letters, digits or hyphens, a description that is empty,
 longer than 200 characters or more than one line, a text that is empty or longer than 12000 characters (the card size
-of other cards), hidden characters (also variation selectors, the combining grapheme joiner and blank fillers, which
-`hasHiddenCode` lets through), tabs, unusual spaces, runs of more than 8 spaces, and a 51st skill are refused before the
+of other cards), hidden characters (every format character, category Cf, and also variation selectors, the combining grapheme joiner,
+the Mongolian selectors, the Khmer inherent vowels and the Hangul fillers), tabs, unusual spaces, runs of more than 8 spaces, and a 51st skill are refused before the
 owner is asked. Without the approval gate the prompt does not name `skill_add` or `skill_remove`.
 
 Limits: a very long line still wraps on the card, as on every card, so the `> ` prefix guards line breaks, not screen
