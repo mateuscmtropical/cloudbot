@@ -126,6 +126,24 @@ const botRules = sqliteTable('bot_rules', {
         .on(table.botId),
 ]);
 
+// A passkey of the owner. The id is the credential id the authenticator made, and the public key checks each sign-in.
+const passkeys = sqliteTable('passkeys', {
+    id: text('id')
+        .primaryKey(),
+    publicKey: text('public_key')
+        .notNull(),
+    counter: integer('counter')
+        .notNull(),
+    transports: text('transports', { mode: 'json' })
+        .$type<string[]>()
+        .notNull(),
+    name: text('name')
+        .notNull(),
+    createdAt: integer('created_at')
+        .notNull(),
+    lastUsedAt: integer('last_used_at'),
+});
+
 // A prompt a bot gets on a schedule. `nextRunAt` is in milliseconds since the epoch.
 const routines = sqliteTable('routines', {
     id: text('id')
@@ -416,5 +434,5 @@ const pushSubscriptions = sqliteTable('push_subscriptions', {
         .on(table.endpoint),
 ]);
 
-export { botLimits, botModels, botRules, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, integrationRuns, integrations, messages, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks };
+export { botLimits, botModels, botRules, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, integrationRuns, integrations, messages, passkeys, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks };
 export type { StoredUploadRecord };

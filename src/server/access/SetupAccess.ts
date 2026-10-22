@@ -85,6 +85,18 @@ class SetupAccess {
         });
     }
 
+    // A new session after another proof of the owner, such as a passkey. Like the setup link, it replaces the old one.
+    issueSession(): Promise<string> {
+        return this.runExclusive(async () => {
+            const sessionToken = createRandomSecret();
+            const sessionHash = storeHash(sessionToken);
+
+            await this.settings.set(SESSION_HASH_KEY, sessionHash);
+
+            return sessionToken;
+        });
+    }
+
     async isValidSession(sessionToken: string | undefined): Promise<boolean> {
         if (sessionToken === undefined) {
             return false;

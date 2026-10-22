@@ -8,6 +8,7 @@ import { ClaudeCliEngine } from './agent/ClaudeCliEngine.ts';
 import { PROFILE_SERVER_NAME } from './agent/createProfileToolServer.ts';
 import { AGENT_TURN_ROOT, startLoopbackToolServer } from './agent/createLoopbackToolServer.ts';
 import { SetupAccess } from './access/SetupAccess.ts';
+import { PasskeyService } from './access/PasskeyService.ts';
 import { buildSetupLink, readPublicBaseUrl, readServerHost, readServerPort } from './access/setupLinkUrl.ts';
 import { createClaudeReviewModel } from './approvals/createClaudeReviewModel.ts';
 import { createReviewContextReader } from './approvals/createReviewContextReader.ts';
@@ -44,6 +45,7 @@ import { fetchWatchedPage } from './watches/fetchWatchedPage.ts';
 import { ensureDefaultBot } from './store/ensureDefaultBot.ts';
 import { openDatabase } from './store/openDatabase.ts';
 import { databasePath, resolveDataDir } from './store/resolveDataDir.ts';
+import { PasskeyStore } from './store/PasskeyStore.ts';
 import { SettingsStore } from './store/SettingsStore.ts';
 import { checkApiKey } from './setup/checkApiKey.ts';
 import { SetupConversation, API_KEY_NAME } from './setup/SetupConversation.ts';
@@ -83,6 +85,8 @@ const databaseFilePath = databasePath(dataDir);
 const opened = await openDatabase(databaseFilePath);
 const settings = new SettingsStore(opened.db);
 const access = new SetupAccess(settings);
+// Passkeys are bound to the host name the owner opens, the same address the setup link uses.
+const passkeys = new PasskeyService({ store: new PasskeyStore(opened.db), access, publicUrl: readPublicBaseUrl(process.env) });
 const botStore = new BotStore(opened.db);
 const channelStore = new ChannelStore(opened.db);
 const messageStore = new MessageStore(opened.db);
@@ -378,7 +382,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

@@ -10,6 +10,8 @@ import { requireSession, SESSION_COOKIE_NAME } from './access/requireSession.ts'
 import { createSecurityHeaders } from './access/securityHeaders.ts';
 import type { AccessErrorResponse } from './access/requireSession.ts';
 import type { SetupAccess } from './access/SetupAccess.ts';
+import { createPasskeyRoutes } from './access/createPasskeyRoutes.ts';
+import type { PasskeyService } from './access/PasskeyService.ts';
 import { readPublicBaseUrl } from './access/setupLinkUrl.ts';
 
 import { createChannelRoutes } from './channels/createChannelRoutes.ts';
@@ -47,6 +49,8 @@ interface HealthResponse {
 interface AppOptions {
     version: string;
     access: SetupAccess;
+    // Passkey sign-in. Without it only the setup link signs the owner in.
+    passkeys?: PasskeyService;
     webRoot?: string;
     chatService?: ChatService;
     // The channels the owner can see and post in. Without both stores the channel routes are not served.
@@ -232,6 +236,12 @@ function createApp(options: AppOptions): Hono {
         const screenRoutes = createScreenRoutes(options.screen, options.screenView);
 
         app.route('/', screenRoutes);
+    }
+
+    if (options.passkeys !== undefined) {
+        const passkeyRoutes = createPasskeyRoutes({ passkeys: options.passkeys, sessionCookieOptions: SESSION_COOKIE_OPTIONS, sameOriginCheck });
+
+        app.route('/', passkeyRoutes);
     }
 
     app.get('/setup', async (context) => {

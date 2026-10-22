@@ -364,6 +364,26 @@ running server reads the code from the database on each request, so it does
 not need a restart. Run it with the server stopped or the database idle, since
 both processes write to the same SQLite file.
 
+
+### Passkeys
+
+`PasskeyService` (`access/PasskeyService.ts`) adds WebAuthn passkeys with `@simplewebauthn/server`. Passkeys are bound to
+the host of the address the setup link uses (`CLOUDBOT_PUBLIC_URL`, or the local address), and browsers allow them only
+on HTTPS or localhost.
+
+- The signed-in owner adds one: `POST /api/passkeys/register/options`, then `POST /api/passkeys/register/verify` with
+  the browser's answer and a name. `GET /api/passkeys` lists them and `DELETE /api/passkeys/:id` removes one. These sit
+  behind the session check, so the setup link stays the root of trust.
+- Anyone can start a sign-in: `POST /auth/passkey/options`, then `POST /auth/passkey/verify`. These routes have the
+  same origin check as `/api`. A good answer gets a new session cookie, made by `SetupAccess.issueSession`.
+- User verification is required. Attestation is `none`. Each challenge works once, for its own kind (add or sign in),
+  for five minutes. At most 20 challenges are open, and the oldest is dropped first. At most 20 passkeys are kept.
+- The table `passkeys` keeps the credential id, the public key, the signature counter, the transports and the name.
+  The counter is updated on each sign-in.
+
+Limits: there is one session at a time, as with the setup link, so a sign-in on one device ends the session on
+another. The web sign-in page and the device list in the chat come next.
+
 ## Chat
 
 `ChatService` in `src/server/chat/` holds the chat rules. It stores the user
