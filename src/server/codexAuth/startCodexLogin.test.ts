@@ -42,14 +42,37 @@ describe('startCodexLogin', () => {
         expect(spawnCalls[0]?.args[0])
             .toBe('app-server');
         expect(spawnCalls[0]?.env)
-            .toEqual({ PATH: '/usr/bin', HOME: home, CODEX_HOME: home });
-        expect(statSync(home).mode & 0o777)
-            .toBe(0o700);
+            .toEqual({ PATH: '/usr/bin', HOME: `${home}-home`, CODEX_HOME: home });
+        if (process.platform !== 'win32') {
+            expect(statSync(home).mode & 0o777)
+                .toBe(0o700);
+            expect(statSync(`${home}-home`).mode & 0o777)
+                .toBe(0o700);
+        }
 
         const start = servers[0]?.sent.find(message => message.method === 'account/login/start');
 
         expect(start?.params)
             .toEqual({ type: 'chatgptDeviceCode' });
+        session.cancel();
+        await session.finished;
+    });
+
+    it('keeps HOME and CODEX_HOME over the environment option', async () => {
+        const fake = fakeAccountSpawn(START_ONLY);
+        const home = makeHome();
+        const session = startCodexLogin({
+            codexPath: '/usr/local/bin/codex',
+            codexHome: home,
+            environment: { PATH: '/usr/bin', HOME: '/root', CODEX_HOME: '/root' },
+            spawnFunction: fake.spawnFunction,
+            signalProcess: () => undefined,
+            timeoutMs: 5000,
+        });
+
+        await session.deviceCode;
+        expect(fake.spawnCalls[0]?.env)
+            .toEqual({ PATH: '/usr/bin', HOME: `${home}-home`, CODEX_HOME: home });
         session.cancel();
         await session.finished;
     });

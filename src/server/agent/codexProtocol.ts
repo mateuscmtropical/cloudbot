@@ -10,12 +10,14 @@ const CODEX_APPROVAL_POLICY = 'untrusted';
 const CODEX_SANDBOX_MODE = 'workspace-write';
 
 // Built-ins that have no per-call approval are turned off, so the model is never offered them:
-// hosted web search, reading any image file, helper agents and goals.
+// hosted web search, reading any image file, helper agents and goals. Shell commands also do not get
+// CODEX_HOME, so a command cannot read the config or sign-in folder through that variable.
 const CODEX_LOCKED_CONFIG = [
     'web_search="disabled"',
     'features.view_image=false',
     'features.multi_agent=false',
     'features.goals=false',
+    'shell_environment_policy.exclude=["CODEX_HOME"]',
 ];
 
 type CodexRequestId = string | number;

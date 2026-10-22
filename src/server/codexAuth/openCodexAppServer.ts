@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline';
 
 import { signalProcessTree } from '../agent/ClaudeCliEngine.ts';
 import type { SignalAction, SpawnFunction } from '../agent/ClaudeCliEngine.ts';
-import { buildCodexArguments, prepareCodexHome } from '../agent/CodexEngine.ts';
+import { buildCodexArguments, codexUserHomeFor, preparePrivateFolder } from '../agent/CodexEngine.ts';
 import type { CodexMessage, CodexRequestId } from '../agent/codexProtocol.ts';
 
 interface CodexAppServerOptions {
@@ -75,9 +75,12 @@ function exitsWithin(exited: Promise<unknown>, milliseconds: number): Promise<bo
 async function openCodexAppServer(options: CodexAppServerOptions): Promise<CodexAppServer> {
     const spawnFunction = options.spawnFunction ?? spawn;
 
-    prepareCodexHome(options.codexHome);
+    const userHome = codexUserHomeFor(options.codexHome);
 
-    const environment = { PATH: process.env.PATH ?? '', ...options.environment, HOME: options.codexHome, CODEX_HOME: options.codexHome };
+    preparePrivateFolder(options.codexHome);
+    preparePrivateFolder(userHome);
+
+    const environment = { PATH: process.env.PATH ?? '', ...options.environment, HOME: userHome, CODEX_HOME: options.codexHome };
     const args = buildCodexArguments([]);
     const child = spawnFunction(options.codexPath, args, {
         cwd: options.codexHome,

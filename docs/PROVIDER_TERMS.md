@@ -44,7 +44,7 @@ read on 2026-10-20:
 
 | Use | Notes |
 |---|---|
-| API key | The method Anthropic asks Agent SDK products to use. |
+| API key | The method Anthropic asks products that interact with Claude's capabilities to use. |
 | Your own subscription, only you use the bot | You sign in to the unmodified CLI on Anthropic's page. CloudBot carries the sign-in code from the chat to the CLI, and Anthropic has not confirmed this flow to the project. Bots that run on their own can go past "ordinary, individual usage". |
 | Other people use the bot with your subscription | Do not do this. Each person needs their own plan or key. |
 
