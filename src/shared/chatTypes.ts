@@ -37,6 +37,10 @@ interface ChoiceBody {
     chosenId?: string;
     // Set on a question that holds a tool call until the owner answers.
     isApproval?: boolean;
+    // Set on the card that turns on push notifications. Its first button asks the browser for permission.
+    isNotificationOptIn?: boolean;
+    // Set on the card that turns them off. Its first button removes the subscription of this browser.
+    isNotificationOptOut?: boolean;
 }
 
 interface LinkBody {

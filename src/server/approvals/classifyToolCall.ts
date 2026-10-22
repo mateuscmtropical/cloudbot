@@ -38,6 +38,10 @@ const SKIP_TOOL_NAMES = new Set([
     // The export only shares a copy of the bot's template in the chat, so it needs no review.
     'mcp__cloudbot__bot_export',
     'mcp__cloudbot__screen_show',
+    // It only posts a card. The browser asks the owner for permission after the owner taps the button.
+    'mcp__cloudbot__notifications_enable',
+    // The same: it posts a card, and the browser removes its own subscription when the owner taps.
+    'mcp__cloudbot__notifications_disable',
 ]);
 
 // Letting the browser reach a private host always needs the owner's approval, whatever the rules say.

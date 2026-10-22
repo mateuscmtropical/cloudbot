@@ -143,6 +143,13 @@ export default defineConfig(
             ],
         },
     }, {
+        files: ['src/web/public/sw.js'],
+        languageOptions: {
+            globals: {
+                ...globals.serviceworker,
+            },
+        },
+    }, {
         files: ['**/*.js'],
         extends: [tseslint.configs.disableTypeChecked],
         rules: {

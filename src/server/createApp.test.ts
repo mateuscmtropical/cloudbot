@@ -11,6 +11,7 @@ import { ChatService } from './chat/ChatService.ts';
 import { createApp } from './createApp.ts';
 import { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { MAX_RULES_PER_BOT } from './rules/createRuleRoutes.ts';
+import { PushSubscriptionStore } from './store/PushSubscriptionStore.ts';
 import { RoutineStore } from './store/RoutineStore.ts';
 import { RuleStore } from './store/RuleStore.ts';
 import { BotStore } from './store/BotStore.ts';
@@ -344,6 +345,93 @@ describe('createApp', () => {
             .toBe('no-cache');
         expect(routeResponse.headers.get('cache-control'))
             .toBe('no-cache');
+    });
+
+    it('serves the manifest and the service worker without a cookie, and checks them again on every visit', async () => {
+        const webRoot = await createWebRoot();
+
+        await writeFile(join(webRoot, 'manifest.webmanifest'), '{"name":"CloudBot"}');
+        await writeFile(join(webRoot, 'sw.js'), 'self.addEventListener("push", () => {});');
+
+        const app = createApp({ version: '1.2.3', access, webRoot });
+        const manifestResponse = await app.request('/manifest.webmanifest');
+        const workerResponse = await app.request('/sw.js');
+
+        expect(manifestResponse.headers.get('content-type'))
+            .toContain('application/manifest+json');
+        expect(await manifestResponse.text())
+            .toBe('{"name":"CloudBot"}');
+        expect(workerResponse.headers.get('content-type'))
+            .toContain('javascript');
+        expect(workerResponse.headers.get('cache-control'))
+            .toBe('no-cache');
+    });
+
+    // The headers that the page's own fetch sends. The origin check refuses a state-changing request without them.
+    const OWN_PAGE_HEADERS = { 'sec-fetch-site': 'same-origin', 'content-type': 'application/json' };
+
+    it('gives the push key and saves a subscription with a cookie, and refuses both without one', async () => {
+        const store = new PushSubscriptionStore(opened.db);
+        const app = createApp({ version: '1.2.3', access, push: { store, publicKey: 'public-key-text' } });
+        const sessionToken = await signIn(app, access);
+        const subscription = JSON.stringify({ endpoint: 'http://169.254.169.254/latest', keys: { p256dh: 'x', auth: 'y' } });
+        const withoutCookieKey = await app.request('/api/push/key');
+        const withoutCookieSave = await app.request('/api/push/subscriptions', { method: 'POST', body: subscription, headers: OWN_PAGE_HEADERS });
+        const keyResponse = await requestWithSession(app, '/api/push/key', sessionToken);
+        const refusedResponse = await app.request('/api/push/subscriptions', { method: 'POST', body: subscription, headers: { ...OWN_PAGE_HEADERS, cookie: `cloudbot_session=${sessionToken}` } });
+
+        expect(withoutCookieKey.status)
+            .toBe(401);
+        expect(withoutCookieSave.status)
+            .toBe(401);
+        expect(await keyResponse.json())
+            .toEqual({ publicKey: 'public-key-text' });
+        // An address that is not a push service is refused even for the owner.
+        expect(refusedResponse.status)
+            .toBe(400);
+    });
+
+    it('removes a subscription with a cookie and refuses the removal without one', async () => {
+        const store = new PushSubscriptionStore(opened.db);
+
+        await store.save({ endpoint: 'https://fcm.googleapis.com/fcm/send/mine', p256dh: 'key', auth: 'auth' });
+
+        const app = createApp({ version: '1.2.3', access, push: { store, publicKey: 'public-key-text' } });
+        const sessionToken = await signIn(app, access);
+        const body = JSON.stringify({ endpoint: 'https://fcm.googleapis.com/fcm/send/mine' });
+        const withoutCookie = await app.request('/api/push/subscriptions', { method: 'DELETE', body, headers: OWN_PAGE_HEADERS });
+
+        expect(withoutCookie.status)
+            .toBe(401);
+        await expect(store.list())
+            .resolves.toHaveLength(1);
+
+        const withCookie = await app.request('/api/push/subscriptions', { method: 'DELETE', body, headers: { ...OWN_PAGE_HEADERS, cookie: `cloudbot_session=${sessionToken}` } });
+
+        expect(withCookie.status)
+            .toBe(204);
+        await expect(store.list())
+            .resolves.toEqual([]);
+    });
+
+    it('refuses to change push subscriptions from another site or without a JSON body type', async () => {
+        const store = new PushSubscriptionStore(opened.db);
+
+        await store.save({ endpoint: 'https://fcm.googleapis.com/fcm/send/mine', p256dh: 'key', auth: 'auth' });
+
+        const app = createApp({ version: '1.2.3', access, push: { store, publicKey: 'public-key-text' } });
+        const sessionToken = await signIn(app, access);
+        const cookie = `cloudbot_session=${sessionToken}`;
+        const body = JSON.stringify({ endpoint: 'https://fcm.googleapis.com/fcm/send/mine' });
+        const crossSite = await app.request('/api/push/subscriptions', { method: 'DELETE', body, headers: { 'cookie': cookie, 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' } });
+        const textBody = await app.request('/api/push/subscriptions', { method: 'DELETE', body, headers: { 'cookie': cookie, 'content-type': 'text/plain', 'content-length': String(body.length), 'sec-fetch-site': 'same-origin' } });
+
+        expect(crossSite.status)
+            .toBe(403);
+        expect(textBody.status)
+            .toBe(415);
+        await expect(store.list())
+            .resolves.toHaveLength(1);
     });
 
     it('answers a missing asset with 404 and no-store, not with index.html', async () => {

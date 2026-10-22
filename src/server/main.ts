@@ -60,6 +60,11 @@ import { readGithubToken } from './github/githubRouting.ts';
 import { checkAppUrl, defaultAppAddressDeps } from './apps/appAddress.ts';
 import type { AllowedPrivateHost } from './apps/appAddress.ts';
 import { ConnectedAppStore } from './store/ConnectedAppStore.ts';
+import { PushSubscriptionStore } from './store/PushSubscriptionStore.ts';
+import { createPushSender } from './push/createPushSender.ts';
+import { loadOrCreateVapidKeys } from './push/loadVapidKeys.ts';
+import { PushNotifier } from './push/PushNotifier.ts';
+import { readPushSubject } from './push/readPushSubject.ts';
 
 interface RuntimeConnection {
     proxy?: KeyProxy;
@@ -254,7 +259,17 @@ const githubProxy: GithubProxy | undefined = githubCertificate === undefined
             caFile: githubCertificate.caFile,
             bundleFile: githubCertificate.bundleFile,
         });
+// Push notifications. The key is made once in the data folder and never leaves the server. Only its public half goes to the browser.
+const vapidKeys = loadOrCreateVapidKeys(dataDir);
+const pushSubscriptionStore = new PushSubscriptionStore(opened.db);
+const pushNotifier = new PushNotifier({
+    store: pushSubscriptionStore,
+    keys: vapidKeys,
+    send: createPushSender(),
+    subject: readPushSubject(process.env),
+});
 const chatService: ChatService = new ChatService({
+    notifyOwner: notice => pushNotifier.notify(notice),
     botStore, channelStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, ruleStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     watchStore,
@@ -355,7 +370,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

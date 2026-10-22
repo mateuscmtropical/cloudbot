@@ -47,6 +47,9 @@ interface ConversationViewProps {
     onOpenBotList: () => void;
     // Goes up each time the bot asks for the screen. The Screen panel opens then, so the owner sees the request at once.
     screenRequestId?: number | undefined;
+    // The message a tapped notification was about. The view scrolls to it once the messages are there, and reports it handled.
+    focusMessageId?: string | undefined;
+    onFocusHandled?: (() => void) | undefined;
     onSend: (text: string) => void;
     onStop: () => void;
     onAttach: (files: File[]) => void;
@@ -99,6 +102,8 @@ function ConversationView({
     onLoadOlder,
     onOpenBotList,
     screenRequestId,
+    focusMessageId,
+    onFocusHandled,
     onSend,
     onStop,
     onAttach,
@@ -191,6 +196,21 @@ function ConversationView({
         previousIsLoadingRef.current = isLoadingOlder;
         previousScrollHeightRef.current = messageListElement.scrollHeight;
     }, [messages, draftText, botId, isLoadingOlder]);
+
+    // A tapped notification names a message. It is scrolled into view once the list has messages, found or not,
+    // so a message that is not in the newest page never scrolls the view later. This effect follows the bottom scroll above.
+    useLayoutEffect(() => {
+        const messageListElement = messageListRef.current;
+
+        if (focusMessageId === undefined || messageListElement === null || messages.length === 0) {
+            return;
+        }
+
+        const focusedElement = findMessageElement(messageListElement, focusMessageId);
+
+        focusedElement?.scrollIntoView({ block: 'center' });
+        onFocusHandled?.();
+    }, [focusMessageId, messages, onFocusHandled]);
 
     // Anchors the message at the top of the screen when a load starts. Drops the anchor when no load runs.
     useLayoutEffect(() => {

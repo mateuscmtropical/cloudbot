@@ -34,9 +34,10 @@ const UNIT_REDIRECT_PATTERN = new RegExp(`>\\s*${UNIT_FOLDER}(?:\\/|\\s|$)`);
 const FORK_BOMB_PATTERN = /(\w{1,64}|[:.])\(\)\{\1\|\1&\};?\1/;
 // The vault files by name, by a glob or a name that starts with vault. A name such as vault.notes.md is refused
 // too, see ARCHITECTURE. The data folder is refused for a vault name, a vault prefix and any glob inside it.
-const VAULT_NAME_PATTERN = /vault\.(key|json)\b/;
-const VAULT_GLOB_PATTERN = /vault[.*?[]/;
-const DATA_FOLDER_VAULT_PATTERN = /\/var\/lib\/cloudbot\/vault/;
+// The push key file sits next to them. It signs every push, so the bot never reads it either.
+const VAULT_NAME_PATTERN = /(?:vault\.(?:key|json)|push-vapid\.json)\b/;
+const VAULT_GLOB_PATTERN = /(?:vault|push-vapid)[.*?[]/;
+const DATA_FOLDER_VAULT_PATTERN = /\/var\/lib\/cloudbot\/(?:vault|push-vapid)/;
 const DATA_FOLDER_GLOB_PATTERN = /\/var\/lib\/cloudbot\/[^\s/]{0,255}[*?[]/;
 const VAULT_PATTERNS = [VAULT_NAME_PATTERN, VAULT_GLOB_PATTERN, DATA_FOLDER_VAULT_PATTERN, DATA_FOLDER_GLOB_PATTERN];
 // A glob of dot files inside a folder, such as $HOME/.* or ~/.[a-z]*. The folder part is the first match group.
