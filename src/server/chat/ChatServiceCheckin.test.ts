@@ -13,6 +13,7 @@ import { MessageStore } from '../store/MessageStore.ts';
 import { ModelStore } from '../store/ModelStore.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
+import type { OwnerNotice } from '../push/PushNotifier.ts';
 import type { ChatEvent } from '../../shared/chatTypes.ts';
 import { ChatService } from './ChatService.ts';
 
@@ -147,6 +148,54 @@ describe('ChatService check-ins', () => {
             .toHaveLength(2);
         expect(published.some(event => event.type === 'messagesRemoved'))
             .toBe(false);
+    });
+
+    it('keeps a check-in that said something before it ended with the quiet reply', async () => {
+        const { service, botId, published } = await runCheckin([
+            { type: 'text', text: 'Urgent: the invoice is overdue.' },
+            { type: 'tool_started', toolUseId: 't1', toolName: 'WebFetch', input: {} },
+            { type: 'tool_finished', toolUseId: 't1', isError: false, output: 'ok' },
+            { type: 'text', text: 'NOTHING_TO_REPORT' },
+            { type: 'turn_finished' },
+        ]);
+        const remainingMessages = await service.listMessages(botId);
+
+        expect(remainingMessages?.some(message => message.body.kind === 'text' && message.body.text.startsWith('Urgent')))
+            .toBe(true);
+        expect(published.some(event => event.type === 'messagesRemoved'))
+            .toBe(false);
+    });
+
+    it('sends no done notification for a quiet check-in, and one for a check-in with news', async () => {
+        const notices: OwnerNotice[] = [];
+        const notifyOwner = (notice: OwnerNotice): Promise<void> => {
+            notices.push(notice);
+
+            return Promise.resolve();
+        };
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const runner = new SequenceRunner([
+            [{ type: 'text', text: 'NOTHING_TO_REPORT' }, { type: 'turn_finished' }],
+            [{ type: 'text', text: 'Your invoice is due tomorrow.' }, { type: 'turn_finished' }],
+        ]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore, limitStore, notifyOwner });
+        const quietFinished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Check-in "Inbox": look', 'checkin');
+        await quietFinished;
+        const newsFinished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Check-in "Inbox": look', 'checkin');
+        await newsFinished;
+        await vi.waitFor(() => {
+            expect(notices)
+                .toHaveLength(1);
+        });
+
+        const newest = ((await service.listMessages(bot.id)) ?? []).at(-1);
+
+        expect(notices[0]?.messageId)
+            .toBe(newest?.id);
     });
 
     it('keeps a check-in that ended with an error', async () => {
