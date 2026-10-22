@@ -51,6 +51,8 @@ const messages = sqliteTable('messages', {
     botId: text('bot_id')
         .notNull()
         .references(() => bots.id, { onDelete: 'cascade' }),
+    emailDeliveryId: text('email_delivery_id'),
+    emailTaskHandledAt: integer('email_task_handled_at'),
     role: text('role', { enum: MESSAGE_ROLES })
         .notNull(),
     kind: text('kind')
@@ -62,6 +64,8 @@ const messages = sqliteTable('messages', {
 }, table => [
     index('messages_bot_id')
         .on(table.botId),
+    uniqueIndex('messages_email_delivery_id')
+        .on(table.emailDeliveryId),
 ]);
 
 const settings = sqliteTable('settings', {
@@ -124,6 +128,47 @@ const botRules = sqliteTable('bot_rules', {
 }, table => [
     index('bot_rules_bot_id')
         .on(table.botId),
+]);
+
+// A passkey of the owner. The id is the credential id the authenticator made, and the public key checks each sign-in.
+const passkeys = sqliteTable('passkeys', {
+    id: text('id')
+        .primaryKey(),
+    publicKey: text('public_key')
+        .notNull(),
+    counter: integer('counter')
+        .notNull(),
+    transports: text('transports', { mode: 'json' })
+        .$type<string[]>()
+        .notNull(),
+    name: text('name')
+        .notNull(),
+    createdAt: integer('created_at')
+        .notNull(),
+    lastUsedAt: integer('last_used_at'),
+});
+
+// A skill the owner approved for a bot: written steps the bot reads when a task needs them. The server keeps them, not
+// the workspace, so the bot cannot change a skill without the owner's card.
+const botSkills = sqliteTable('bot_skills', {
+    id: text('id')
+        .primaryKey(),
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    name: text('name')
+        .notNull(),
+    description: text('description')
+        .notNull(),
+    text: text('text')
+        .notNull(),
+    createdAt: integer('created_at')
+        .notNull(),
+    updatedAt: integer('updated_at')
+        .notNull(),
+}, table => [
+    uniqueIndex('bot_skills_bot_id_name')
+        .on(table.botId, table.name),
 ]);
 
 // A prompt a bot gets on a schedule. `nextRunAt` is in milliseconds since the epoch.
@@ -222,6 +267,51 @@ const watches = sqliteTable('watches', {
 }, table => [
     index('watches_bot_id')
         .on(table.botId),
+]);
+
+// The mailbox of a bot. The password is never stored here: it is a vault secret with the bot prefix.
+// `uidValidity` and `lastUid` are the position in the INBOX, so each mail is handled once.
+const emailAccounts = sqliteTable('email_accounts', {
+    botId: text('bot_id')
+        .primaryKey()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    address: text('address')
+        .notNull(),
+    imapHost: text('imap_host')
+        .notNull(),
+    imapPort: integer('imap_port')
+        .notNull(),
+    smtpHost: text('smtp_host')
+        .notNull(),
+    smtpPort: integer('smtp_port')
+        .notNull(),
+    smtpSecure: integer('smtp_secure', { mode: 'boolean' })
+        .notNull(),
+    username: text('username')
+        .notNull(),
+    // Null until the first poll records the position. UIDVALIDITY is a 32 bit number, kept as text.
+    uidValidity: text('uid_validity'),
+    lastUid: integer('last_uid'),
+    createdAt: integer('created_at')
+        .notNull(),
+    updatedAt: integer('updated_at')
+        .notNull(),
+});
+
+// A mail that was taken for delivery. `handledAt` lets a restart retry an incomplete delivery.
+const emailDeliveries = sqliteTable('email_deliveries', {
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    uidValidity: text('uid_validity')
+        .notNull(),
+    uid: integer('uid')
+        .notNull(),
+    claimedAt: integer('claimed_at')
+        .notNull(),
+    handledAt: integer('handled_at'),
+}, table => [
+    primaryKey({ columns: [table.botId, table.uidValidity, table.uid] }),
 ]);
 
 // The model the owner chose for each kind of work. A null column means the CLI default,
@@ -420,5 +510,5 @@ const pushSubscriptions = sqliteTable('push_subscriptions', {
         .on(table.endpoint),
 ]);
 
-export { botLimits, botModels, botRules, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, integrationRuns, integrations, messages, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks };
+export { botLimits, botModels, botRules, botSkills, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, emailAccounts, emailDeliveries, integrationRuns, integrations, messages, passkeys, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks };
 export type { StoredUploadRecord };

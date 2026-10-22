@@ -57,6 +57,8 @@ describe('MessageStore', () => {
                 id: expect.any(String) as string,
                 sequence: 1,
                 botId: bot.id,
+                emailDeliveryId: null,
+                emailTaskHandledAt: null,
                 role: 'user',
                 kind: 'text',
                 content: { text: 'Hello', attachments: [] },
@@ -134,6 +136,49 @@ describe('MessageStore', () => {
 
         await expect(messageStore.listByBot(bot.id, { limit: 10 }))
             .resolves.toEqual([]);
+    });
+
+    it('finds a message by its stable email delivery id and refuses a duplicate id', async () => {
+        const emailMessage = await messageStore.add({
+            botId: bot.id,
+            role: 'user',
+            kind: 'text',
+            content: { kind: 'text', text: 'Incoming mail' },
+            emailDeliveryId: 'bot-one:v1:11',
+        });
+
+        await expect(messageStore.getByEmailDeliveryId('bot-one:v1:11'))
+            .resolves.toEqual(emailMessage);
+        await expect(messageStore.add({
+            botId: bot.id,
+            role: 'user',
+            kind: 'text',
+            content: { kind: 'text', text: 'Duplicate mail' },
+            emailDeliveryId: 'bot-one:v1:11',
+        }))
+            .rejects.toThrow();
+    });
+
+    it('marks a mail task handled once without changing other messages', async () => {
+        const emailMessage = await messageStore.add({
+            botId: bot.id,
+            role: 'user',
+            kind: 'text',
+            content: 'Incoming mail',
+            emailDeliveryId: 'bot-one:v1:11',
+        });
+        const regularMessage = await messageStore.add({ botId: bot.id, role: 'user', kind: 'text', content: 'Owner message' });
+
+        await expect(messageStore.markEmailTaskHandled(regularMessage.id))
+            .resolves.toBe(false);
+        await expect(messageStore.markEmailTaskHandled(emailMessage.id))
+            .resolves.toBe(true);
+        await expect(messageStore.markEmailTaskHandled(emailMessage.id))
+            .resolves.toBe(false);
+        const handledMessage = await messageStore.getById(emailMessage.id);
+
+        expect(handledMessage?.emailTaskHandledAt)
+            .toBeTypeOf('number');
     });
 
     it('rejects a message for a bot that does not exist', async () => {

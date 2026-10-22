@@ -1,4 +1,5 @@
 import type { ToolCall } from '../agent/AgentRunner.ts';
+import { EMAIL_SEND_TOOL_FULL_NAME, EMAIL_SETUP_TOOL_FULL_NAME } from '../email/emailToolNames.ts';
 
 type ToolCallClass = 'skip' | 'always-ask' | 'review';
 
@@ -17,6 +18,9 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__browser_screenshot',
     'mcp__cloudbot__browser_scroll',
     'mcp__cloudbot__request_screen',
+    // Recording hands the screen to the owner, who does the task. Reading the recording only reads those steps.
+    'mcp__cloudbot__screen_record',
+    'mcp__cloudbot__screen_recording',
     'mcp__cloudbot__routine_list',
     'mcp__cloudbot__webhook_list',
     'mcp__cloudbot__watch_list',
@@ -30,6 +34,9 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__app_remove',
     'mcp__cloudbot__integration_list',
     'mcp__cloudbot__rule_list',
+    // Skills are text the owner already approved, so listing and reading them needs no review.
+    'mcp__cloudbot__skill_list',
+    'mcp__cloudbot__skill_read',
     'mcp__cloudbot__channel_list',
     // The board is the bot's own notes. Moving a task to Blocked tells the owner in the chat, so the move needs no review.
     'mcp__cloudbot__task_add',
@@ -44,17 +51,26 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__notifications_enable',
     // The same: it posts a card, and the browser removes its own subscription when the owner taps.
     'mcp__cloudbot__notifications_disable',
+    // Listing reads the provider status. Connecting only posts the provider list, and the owner signs in on the provider's page.
+    'mcp__cloudbot__provider_list',
+    'mcp__cloudbot__provider_connect',
+    'mcp__cloudbot__email_status',
 ]);
 
 // Letting the browser reach a private host always needs the owner's approval, whatever the rules say.
 // A new outside server, and the tools it brings, always need the owner's approval too.
 const ALWAYS_ASK_TOOL_NAMES = new Set([
+    // These calls have fixed cards, so an owner always sees the exact mail or mailbox settings.
+    EMAIL_SEND_TOOL_FULL_NAME,
+    EMAIL_SETUP_TOOL_FULL_NAME,
     'mcp__cloudbot__browser_allow_host',
     'mcp__cloudbot__app_connect',
     // A new bot gets its own workspace and its first instructions, so the owner approves it before it is made.
     'mcp__cloudbot__bot_create',
-    // An imported bot gets the rules and description of a file, so the owner approves the whole template first.
+    // An imported template or instruction draft can make a bot, so the owner approves it first.
     'mcp__cloudbot__bot_import',
+    // Pasted instructions become a bot's memory, so the owner approves the whole draft first.
+    'mcp__cloudbot__bot_import_text',
     // A gallery template becomes a bot, and a share opens a pull request to a public repository. Each waits for the owner's card.
     'mcp__cloudbot__gallery_install',
     'mcp__cloudbot__gallery_share',
@@ -64,6 +80,9 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
     // Rules are permissions, and a deleted bot is gone for good, so the owner approves both in the chat.
     'mcp__cloudbot__rule_change',
     'mcp__cloudbot__bot_delete',
+    // A skill is steps the bot will follow, so the owner reads and approves the whole text, and each removal.
+    'mcp__cloudbot__skill_add',
+    'mcp__cloudbot__skill_remove',
     // A new channel, a new member and a new manager change who takes part, so the owner approves each one.
     'mcp__cloudbot__channel_create',
     'mcp__cloudbot__channel_add',
@@ -73,6 +92,8 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
     'mcp__cloudbot__channel_delete',
     // Limits decide how much a turn may spend, so the owner approves each change with its old and new values.
     'mcp__cloudbot__limits_set',
+    // A new provider gets the bot's next messages and files, so the owner approves the switch.
+    'mcp__cloudbot__provider_use',
 ]);
 
 // The tools of the bot itself have fixed names. Any other tool is an outside connector.

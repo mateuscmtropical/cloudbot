@@ -6,6 +6,7 @@ import { createInterface } from 'node:readline';
 import type { AgentEvent, TurnErrorEvent } from './AgentEvent.ts';
 import type { AgentRunner, ToolCallDecision, TurnRequest } from './AgentRunner.ts';
 import { validateAgentIsolation } from './buildClaudeCommand.ts';
+import { buildCliDisallowedTools } from './buildCliDisallowedTools.ts';
 import { buildAgentEnvironment, validateAgentUser } from './createAgentUserSpawn.ts';
 import { APPROVE_TOOL_NAME, BUILTIN_TOOLS } from './createLoopbackToolServer.ts';
 import type { LoopbackToolServer, LoopbackTurn, LoopbackTurnGrant } from './createLoopbackToolServer.ts';
@@ -15,6 +16,7 @@ import { readWorkspaceMemoryBlock } from './readWorkspaceMemory.ts';
 import { TURN_MARKER_VARIABLE, createTurnMarker, endTurnLeftovers } from './endTurnLeftovers.ts';
 import { mapCliMessage, rememberResetsAt, withResetsAt } from './mapCliMessage.ts';
 import type { CliMessage } from './mapCliMessage.ts';
+import { isClaudeModel } from '../models/modelChoices.ts';
 
 type SpawnFunction = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 type SignalAction = 'TERM' | 'KILL';
@@ -82,13 +84,13 @@ function buildInterruptMessage(requestId: string): string {
 // The variadic --disallowedTools and --add-dir come last, so the next flag ends their values.
 function buildCliArguments(request: TurnRequest, files: CliTurnFiles): string[] {
     const resumeArgs = request.sessionId ? ['--resume', request.sessionId] : [];
-    const modelArgs = request.model === undefined ? [] : ['--model', request.model];
+    const modelArgs = request.model === undefined || !isClaudeModel(request.model) ? [] : ['--model', request.model];
     const effortArgs = request.effort === undefined ? [] : ['--effort', request.effort];
     const systemPromptArgs = files.systemPromptPath === undefined ? [] : ['--append-system-prompt-file', files.systemPromptPath];
     const agentArgs = files.agentsPath === undefined ? [] : ['--agents', files.agentsPath];
     const maxStepsArgs = request.maxSteps === undefined ? [] : ['--max-turns', String(request.maxSteps)];
     const maxSpendArgs = request.maxSpendUsd === undefined ? [] : ['--max-budget-usd', String(request.maxSpendUsd)];
-    const disallowed = [APPROVE_TOOL_FULL_NAME, ...(request.disallowedTools ?? [])];
+    const disallowed = [APPROVE_TOOL_FULL_NAME, ...buildCliDisallowedTools(request.disallowedTools ?? [])];
     const directories = request.additionalDirectories ?? [];
     const directoryArgs = directories.length === 0 ? [] : ['--add-dir', ...directories];
 
@@ -547,5 +549,5 @@ class ClaudeCliEngine implements AgentRunner {
     }
 }
 
-export { ClaudeCliEngine, buildCliArguments, buildInterruptMessage, buildUserMessage, noProxyValues };
-export type { ClaudeCliEngineOptions, CliTurnFiles, SpawnFunction };
+export { ClaudeCliEngine, buildCliArguments, buildInterruptMessage, buildUserMessage, noProxyValues, signalProcessTree };
+export type { ClaudeCliEngineOptions, CliTurnFiles, SignalAction, SpawnFunction };

@@ -36,4 +36,13 @@ describe('SettingsStore', () => {
         await expect(store.get('language'))
             .resolves.toBe('en');
     });
+
+    it('deletes a setting, and deleting a missing one is fine', async () => {
+        await store.set('language', 'pt-BR');
+        await store.delete('language');
+        await store.delete('never-written');
+
+        await expect(store.get('language'))
+            .resolves.toBeUndefined();
+    });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
 import { buildHelperAgents } from './buildHelperAgents.ts';
+import { CLI_DISALLOWED_TOOLS } from './buildCliDisallowedTools.ts';
 import { SHARE_FILE_TOOL_FULL_NAME } from './createProfileToolServer.ts';
 
 const NO_HELPERS = { browsing: null, documents: null };
@@ -21,7 +22,7 @@ describe('buildHelperAgents', () => {
                 browsing: {
                     model: 'haiku',
                     tools: BROWSER_TOOL_FULL_NAMES,
-                    disallowedTools: NO_BLOCKS,
+                    disallowedTools: CLI_DISALLOWED_TOOLS,
                 },
             });
     });
@@ -73,8 +74,8 @@ describe('buildHelperAgents', () => {
         const agents = buildHelperAgents({ browsing: 'haiku', documents: 'opus' }, { disallowedTools: blocked, hasBrowser: true });
 
         expect(agents.browsing?.disallowedTools)
-            .toEqual(blocked);
+            .toEqual([...CLI_DISALLOWED_TOOLS, ...blocked]);
         expect(agents.documents?.disallowedTools)
-            .toEqual(blocked);
+            .toEqual([...CLI_DISALLOWED_TOOLS, ...blocked]);
     });
 });

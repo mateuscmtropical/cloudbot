@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { createBotExportTool, createBotImportTool } from './createBotTemplateTools.ts';
+import { createBotExportTool, createBotImportTextTool, createBotImportTool } from './createBotTemplateTools.ts';
+import type { BotImportDraft } from './externalBotImport.ts';
 
 interface ToolResult {
     content: { type: 'text'; text: string }[];
@@ -51,5 +52,21 @@ describe('createBotTemplateTools', () => {
 
         expect(reply)
             .toEqual({ content: [{ type: 'text', text: 'The template is not valid at name: Use one line.' }], isError: true });
+    });
+
+    it('passes the approved pasted draft to the import handler', async () => {
+        const seenDrafts: BotImportDraft[] = [];
+        const handler = handlerOf(createBotImportTextTool((draft) => {
+            seenDrafts.push(draft);
+
+            return Promise.resolve({ name: draft.name });
+        }));
+        const draft: BotImportDraft = { name: 'Mail helper', title: 'Inbox organizer', description: 'Summarize mail.', instructions: 'Use a warm tone.' };
+        const reply = await handler({ ...draft }, undefined);
+
+        expect(seenDrafts)
+            .toEqual([draft]);
+        expect(reply.content[0]?.text)
+            .toBe('Created the bot Mail helper from the approved imported instructions.');
     });
 });

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, desc, eq, inArray, lt } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 
 import { messages } from './schema.ts';
 import type { AppDatabase, ListMessagesOptions, Message, NewMessage, StoreOptions } from './types.ts';
@@ -25,6 +25,8 @@ class MessageStore {
         const newMessage = {
             id: randomUUID(),
             botId: input.botId,
+            emailDeliveryId: input.emailDeliveryId ?? null,
+            emailTaskHandledAt: null,
             role: input.role,
             kind: input.kind,
             content: input.content,
@@ -40,6 +42,28 @@ class MessageStore {
         }
 
         return insertedMessage;
+    }
+
+    async getByEmailDeliveryId(emailDeliveryId: string): Promise<Message | undefined> {
+        const deliveryCondition = eq(messages.emailDeliveryId, emailDeliveryId);
+        const rows = await this.database.select()
+            .from(messages)
+            .where(deliveryCondition);
+
+        return rows[0];
+    }
+
+    async markEmailTaskHandled(messageId: string): Promise<boolean> {
+        const messageCondition = eq(messages.id, messageId);
+        const isEmailDelivery = isNotNull(messages.emailDeliveryId);
+        const isNotHandled = isNull(messages.emailTaskHandledAt);
+        const condition = and(messageCondition, isEmailDelivery, isNotHandled);
+        const updatedRows = await this.database.update(messages)
+            .set({ emailTaskHandledAt: this.now() })
+            .where(condition)
+            .returning({ id: messages.id });
+
+        return updatedRows.length > 0;
     }
 
     async getById(messageId: string): Promise<Message | undefined> {

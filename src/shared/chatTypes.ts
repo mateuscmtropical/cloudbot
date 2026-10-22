@@ -8,6 +8,8 @@ type ToolStatus = 'running' | 'done' | 'error';
 interface ChoiceOption {
     id: string;
     label: string;
+    // Set on a choice that starts a sign-in at once. The web page opens a tab in the tap and puts the link in it.
+    opensLink?: boolean;
 }
 
 interface PendingUpload {

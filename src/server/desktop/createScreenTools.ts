@@ -68,5 +68,64 @@ function createScreenShowTool(showScreen: () => void): CloudbotTool<Record<strin
     );
 }
 
-export { MAX_REASON_LENGTH, REQUEST_SCREEN_TOOL_FULL_NAME, SCREEN_SHOW_TOOL_FULL_NAME, createRequestScreenTool, createScreenShowTool };
-export type { ScreenRequestHandler, ScreenToolResult };
+const SCREEN_RECORD_TOOL_NAME = 'screen_record';
+const SCREEN_RECORD_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${SCREEN_RECORD_TOOL_NAME}`;
+const SCREEN_RECORDING_TOOL_NAME = 'screen_recording';
+const SCREEN_RECORDING_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${SCREEN_RECORDING_TOOL_NAME}`;
+const SCREEN_RECORD_DESCRIPTION = 'When the owner wants to teach you a task by doing it once, hand your screen to the owner and record the browser. Name the task in a few words. Then stop and wait. When the owner gives the screen back and writes to you, call screen_recording.';
+const SCREEN_RECORDING_DESCRIPTION = 'Read the steps the owner did in the last screen recording. Write them as clear steps and save them with skill_add, so the owner can read and fix them on the card. A step that typed a secret must ask for the saved secret.';
+const SCREEN_RECORD_SHAPE = {
+    task: z.string()
+        .trim()
+        .min(1)
+        .max(MAX_REASON_LENGTH),
+};
+
+// Starts the recording and hands the screen over. It throws with a message for the model when it cannot start.
+type ScreenRecordHandler = (task: string) => Promise<void>;
+
+function createScreenRecordTool(startRecording: ScreenRecordHandler): CloudbotTool<typeof SCREEN_RECORD_SHAPE> {
+    return tool(
+        SCREEN_RECORD_TOOL_NAME,
+        SCREEN_RECORD_DESCRIPTION,
+        SCREEN_RECORD_SHAPE,
+        async (args): Promise<ScreenToolResult> => {
+            try {
+                await startRecording(args.task);
+
+                return textResult('The owner has the screen now and the browser is recorded. Tell the owner to do the task once, then give the screen back and send you a message. Stop and wait.');
+            } catch (error: unknown) {
+                const message = error instanceof Error ? error.message : 'The recording could not start.';
+
+                return textResult(message, true);
+            }
+        },
+    );
+}
+
+function createScreenRecordingTool(readRecording: () => string): CloudbotTool<Record<string, never>> {
+    return tool(
+        SCREEN_RECORDING_TOOL_NAME,
+        SCREEN_RECORDING_DESCRIPTION,
+        {},
+        (): Promise<ScreenToolResult> => {
+            const recordingText = readRecording();
+            const result = textResult(recordingText);
+
+            return Promise.resolve(result);
+        },
+    );
+}
+
+export {
+    MAX_REASON_LENGTH,
+    REQUEST_SCREEN_TOOL_FULL_NAME,
+    SCREEN_RECORDING_TOOL_FULL_NAME,
+    SCREEN_RECORD_TOOL_FULL_NAME,
+    SCREEN_SHOW_TOOL_FULL_NAME,
+    createRequestScreenTool,
+    createScreenRecordTool,
+    createScreenRecordingTool,
+    createScreenShowTool,
+};
+export type { ScreenRecordHandler, ScreenRequestHandler, ScreenToolResult };

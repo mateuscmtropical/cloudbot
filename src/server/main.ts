@@ -5,9 +5,19 @@ import { filterOwnerEnvironment, localClaudeConfigDir, validateAgentIsolation } 
 
 import { CLEANUP_INTERVAL_MS } from './attachments/cleanUploads.ts';
 import { ClaudeCliEngine } from './agent/ClaudeCliEngine.ts';
+import { CodexEngine } from './agent/CodexEngine.ts';
+import { join } from 'node:path';
+import { ProviderChoices } from './providers/ProviderChoices.ts';
+import { ProviderRunner } from './providers/ProviderRunner.ts';
+import type { ProviderEngine } from './providers/ProviderRunner.ts';
+import { createChatgptSignIn } from './providers/chatgptSignIn.ts';
+import { BEARER, PLACEHOLDER_KEY, checkKeyAt, createAcpProviders, methodRunner, readLocalAcpPaths } from './providers/acpProviders.ts';
+import type { ProviderMethod } from './setup/SetupConversation.ts';
+import type { ProviderId } from './providers/providerIds.ts';
 import { PROFILE_SERVER_NAME } from './agent/createProfileToolServer.ts';
 import { AGENT_TURN_ROOT, startLoopbackToolServer } from './agent/createLoopbackToolServer.ts';
 import { SetupAccess } from './access/SetupAccess.ts';
+import { PasskeyService } from './access/PasskeyService.ts';
 import { buildSetupLink, readPublicBaseUrl, readServerHost, readServerPort } from './access/setupLinkUrl.ts';
 import { createClaudeReviewModel } from './approvals/createClaudeReviewModel.ts';
 import { createReviewContextReader } from './approvals/createReviewContextReader.ts';
@@ -34,6 +44,8 @@ import { IntegrationService } from './integrations/IntegrationService.ts';
 import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from './agent/prepareAgentWorkspace.ts';
 import { asIntegrationUser, runCleanup, runIntegrationProcess } from './integrations/runIntegrationProcess.ts';
 import { RuleStore } from './store/RuleStore.ts';
+import { SkillStore } from './store/SkillStore.ts';
+import { describeSkillChange } from './skills/describeSkillChange.ts';
 import { LimitStore } from './store/LimitStore.ts';
 import { ModelStore } from './store/ModelStore.ts';
 import { WebhookStore } from './store/WebhookStore.ts';
@@ -44,6 +56,7 @@ import { fetchWatchedPage } from './watches/fetchWatchedPage.ts';
 import { ensureDefaultBot } from './store/ensureDefaultBot.ts';
 import { openDatabase } from './store/openDatabase.ts';
 import { databasePath, resolveDataDir } from './store/resolveDataDir.ts';
+import { PasskeyStore } from './store/PasskeyStore.ts';
 import { SettingsStore } from './store/SettingsStore.ts';
 import { checkApiKey } from './setup/checkApiKey.ts';
 import { SetupConversation, API_KEY_NAME } from './setup/SetupConversation.ts';
@@ -69,6 +82,15 @@ import { createPushSender } from './push/createPushSender.ts';
 import { loadOrCreateVapidKeys } from './push/loadVapidKeys.ts';
 import { PushNotifier } from './push/PushNotifier.ts';
 import { readPushSubject } from './push/readPushSubject.ts';
+import { TELEGRAM_API_ORIGIN, createTelegramApi } from './telegram/TelegramApi.ts';
+import { TelegramBridge } from './telegram/TelegramBridge.ts';
+import { TELEGRAM_TOKEN_SECRET_NAME } from './telegram/createTelegramTools.ts';
+import { EmailAccountStore } from './store/EmailAccountStore.ts';
+import { EmailAccountService } from './email/EmailAccountService.ts';
+import { EmailPasswordStore } from './email/EmailPasswordStore.ts';
+import { ImapEmailReader } from './email/ImapEmailReader.ts';
+import { EmailPoller } from './email/EmailPoller.ts';
+import { SmtpEmailSender } from './email/SmtpEmailSender.ts';
 
 interface RuntimeConnection {
     proxy?: KeyProxy;
@@ -83,8 +105,22 @@ const dataDir = resolveDataDir();
 const databaseFilePath = databasePath(dataDir);
 // One database handle serves the setup access and the chat stores.
 const opened = await openDatabase(databaseFilePath);
+
+function createPasskeyService(): PasskeyService | undefined {
+    try {
+        return new PasskeyService({ store: new PasskeyStore(opened.db), access, publicUrl: readPublicBaseUrl(process.env) });
+    } catch {
+        console.error('Passkeys are off: CLOUDBOT_PUBLIC_URL is not a full address such as https://bot.example.com.');
+
+        return undefined;
+    }
+}
+
 const settings = new SettingsStore(opened.db);
 const access = new SetupAccess(settings);
+// Passkeys are bound to the host name the owner opens, the same address the setup link uses. A public address that is
+// not a URL leaves passkeys off, and the setup link still works.
+const passkeys = createPasskeyService();
 const botStore = new BotStore(opened.db);
 const channelStore = new ChannelStore(opened.db);
 const messageStore = new MessageStore(opened.db);
@@ -126,7 +162,14 @@ const loopback = await startLoopbackToolServer(PROFILE_SERVER_NAME, {
     turnRoot: agentUser ? AGENT_TURN_ROOT : undefined,
     agentReadable: agentUser !== undefined,
 });
-const runner = new ClaudeCliEngine({ loopback, pathToClaudeCodeExecutable: claudePath, environment });
+const claudeRunner = new ClaudeCliEngine({ loopback, pathToClaudeCodeExecutable: claudePath, environment });
+// The Codex CLI runs bots on a ChatGPT subscription. The image sets CODEX_PATH. Without it, ChatGPT is not offered.
+const codexPath = process.env.CODEX_PATH?.startsWith('/') === true ? process.env.CODEX_PATH : undefined;
+// Local mode keeps CloudBot's ChatGPT sign-in under the data dir, never in the owner's ~/.codex. Docker keeps it in the bot home.
+const codexHome = join(dataDir, 'codex', 'home');
+const codexAuthOptions = codexPath === undefined ? undefined : { codexPath, codexHome, ...(agentUser ? { agentUser } : {}) };
+const chatgptSignIn = codexAuthOptions === undefined ? undefined : createChatgptSignIn(codexAuthOptions);
+const providerChoices = new ProviderChoices(settings);
 // The image sets CLOUDBOT_DESKTOP_COMMAND, and its desktop starts Chromium. Without it, local runs start an installed
 // Chrome, Chromium or Edge with its own profile, and the browser tools stay off when none is found.
 const desktopCommand = buildDesktopCommand(process.env.CLOUDBOT_DESKTOP_COMMAND, agentUser);
@@ -147,7 +190,12 @@ const noBrowserReason = localTools.noBrowserReason;
 const screen = new ScreenHolder();
 const vault = new Vault(dataDir);
 const botSecrets = new BotSecrets(vault);
+const emailAccountStore = new EmailAccountStore(opened.db);
+const emailPasswordStore = new EmailPasswordStore(vault);
+const emailAccountService = new EmailAccountService(emailAccountStore, emailPasswordStore);
+const emailSender = new SmtpEmailSender(emailAccountService);
 const ruleStore = new RuleStore(opened.db);
+const skillStore = new SkillStore(opened.db);
 const routineStore = new RoutineStore(opened.db);
 const taskStore = new TaskStore(opened.db);
 const modelStore = new ModelStore(opened.db);
@@ -242,6 +290,7 @@ const toolCallReviewer = createToolCallReviewer({
     describeChange: integrationService === undefined ? undefined : (botId, mode, input) => integrationService.describeChange(botId, mode, input),
     // The rule card and the bot delete check read the stores and the chat service, which is defined below. The calls happen later, in a turn.
     describeRuleChange: (botId, input) => describeRuleChange(ruleStore, botId, input),
+    describeSkillChange: (botId, change, input) => describeSkillChange(skillStore, botId, change, input),
     describeLimitChange: (botId, input) => describeLimitChange(limitStore, botId, input),
     describeBotDelete: botId => chatService.describeBotDelete(botId),
     describeBotImport: (botId, input) => chatService.describeBotImport(botId, input),
@@ -282,11 +331,98 @@ const pushNotifier = new PushNotifier({
 });
 // The public gallery of templates. CLOUDBOT_GALLERY_REPO points it at another repository, such as a fork.
 const templateGallery = new TemplateGallery({ repo: readGalleryRepo(process.env.CLOUDBOT_GALLERY_REPO), transport: createDefaultGalleryTransport() });
+// How long a ChatGPT sign-in check is trusted, so a turn does not start an extra app server each time.
+const CHATGPT_STATUS_CACHE_MS = 5 * 60 * 1000;
+let chatgptCheckedAt = 0;
+// The way each provider was connected last, a sign-in or an API key. A turn uses that way.
+const methodFor = async (provider: ProviderId): Promise<ProviderMethod | undefined> => {
+    const saved = await settings.get(`provider.method.${provider}`);
+
+    return saved === 'apiKey' || saved === 'signIn' ? saved : undefined;
+};
+const acpProviders = await createAcpProviders({ agentUser, vault, loopback, methodFor, dataDir, localPaths: readLocalAcpPaths(process.env) });
+const engines: Partial<Record<ProviderId, ProviderEngine>> = {
+    ...acpProviders.engines,
+    claude: {
+        runner: claudeRunner,
+        isConnected: () => {
+            const isConnected = setup.isClaudeConnected();
+
+            return Promise.resolve(isConnected);
+        },
+    },
+};
+
+// An OpenAI API key runs Codex in its own folder, signed in with a placeholder. The key proxy adds the real key.
+const OPENAI_KEY_NAME = 'OPENAI_API_KEY';
+const openaiKeyProxy = codexPath === undefined ? undefined : await startKeyProxy({ vault, secretName: OPENAI_KEY_NAME, upstreamUrl: 'https://api.openai.com', keyHeader: BEARER });
+
+if (codexPath !== undefined && chatgptSignIn !== undefined && openaiKeyProxy !== undefined) {
+    const signIn = chatgptSignIn;
+    const agentOptions = agentUser ? { agentUser, imageRoot: AGENT_TURN_ROOT } : {};
+    const subscriptionEngine = new CodexEngine({ codexPath, codexHomeFor: () => codexHome, loopback, callGates: appProxy, ...agentOptions });
+    const keyEngine = new CodexEngine({
+        codexPath, codexHomeFor: () => join(dataDir, 'codex', 'key-home'), loopback, callGates: appProxy, ...agentOptions,
+        apiKeyLogin: PLACEHOLDER_KEY,
+        extraConfig: [`openai_base_url="${openaiKeyProxy.url}/v1"`],
+        // docker/cloudbot-codex keeps the key sign-in in its own folder, beside the ChatGPT one.
+        ...(agentUser ? { environment: { CLOUDBOT_CODEX_KEY_MODE: '1' } } : {}),
+    });
+
+    engines.chatgpt = {
+        runner: methodRunner(subscriptionEngine, keyEngine, () => methodFor('chatgpt')),
+        isConnected: async () => {
+            if (await methodFor('chatgpt') === 'apiKey') {
+                return vault.has(OPENAI_KEY_NAME);
+            }
+
+            if (Date.now() - chatgptCheckedAt < CHATGPT_STATUS_CACHE_MS) {
+                return true;
+            }
+
+            const isSignedIn = await signIn.isSignedIn() === true;
+
+            chatgptCheckedAt = isSignedIn ? Date.now() : 0;
+
+            return isSignedIn;
+        },
+    };
+}
+
+const providerRunner = new ProviderRunner({ engines, providerFor: botId => providerChoices.forBot(botId) });
+
+// The token is used only for the Telegram API site the owner saved it for.
+function readTelegramToken(botId: string): string | undefined {
+    const secret = botSecrets.read(botId, TELEGRAM_TOKEN_SECRET_NAME);
+
+    return secret?.site === TELEGRAM_API_ORIGIN ? secret.value : undefined;
+}
+
+const telegramBridge = new TelegramBridge({
+    chat: {
+        sendMessage: (botId, text) => chatService.sendMessage(botId, text),
+        subscribe: (botId, listener) => chatService.subscribe(botId, listener),
+        postNotice: async (botId, text) => {
+            await chatService.postSetupMessage(botId, { kind: 'text', text });
+        },
+    },
+    settings,
+    readToken: readTelegramToken,
+    createApi: token => createTelegramApi(token),
+});
 const chatService: ChatService = new ChatService({
     notifyOwner: notice => pushNotifier.notify(notice),
-    botStore, channelStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, ruleStore, routineStore, taskStore, modelStore, limitStore, screen,
+    telegram: telegramBridge,
+    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, skillStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     templateGallery,
+    providerTools: {
+        available: ['claude', ...(chatgptSignIn === undefined ? [] : ['chatgpt' as const]), ...acpProviders.available],
+        connected: () => setup.connectedProviders(),
+        providerFor: botId => providerChoices.forBot(botId),
+        setProvider: (botId, provider) => providerChoices.setForBot(botId, provider),
+        offerProviders: () => setup.offerProviders(),
+    },
     watchStore,
     connectedApps,
     integrationService,
@@ -299,6 +435,8 @@ const chatService: ChatService = new ChatService({
 });
 const bots = await botStore.list();
 const firstBot = bots[0];
+
+const botIds = bots.map(bot => bot.id);
 
 if (firstBot === undefined) {
     throw new Error('The default bot is missing.');
@@ -313,7 +451,32 @@ const setup = new SetupConversation({
     ...(!agentUser && process.platform === 'darwin' ? {} : { signOut: () => signOutClaude(authOptions) }),
     localMode: !agentUser,
     noBrowser: isReusedGateBusy ? 'leftover' : noBrowserReason,
-    connect: async (mode) => {
+    signIns: [...(chatgptSignIn === undefined ? [] : [chatgptSignIn]), ...acpProviders.signIns],
+    apiKeys: [
+        ...(openaiKeyProxy === undefined
+            ? []
+            : [{
+                    id: 'chatgpt' as const, label: 'OpenAI', site: 'the OpenAI platform', secretName: OPENAI_KEY_NAME,
+                    checkKey: (key: string) => checkKeyAt('https://api.openai.com/v1/models', BEARER, key),
+                }]),
+        ...acpProviders.apiKeys,
+    ],
+    connect: async (mode, method) => {
+        const provider: ProviderId = mode === 'subscription' || mode === 'apiKey' ? 'claude' : mode;
+
+        // The first provider the owner connects is the default of every bot without its own choice.
+        if (await settings.get('provider.default') === undefined) {
+            await providerChoices.setDefault(provider);
+        }
+
+        if (provider !== 'claude') {
+            if (method !== undefined) {
+                await settings.set(`provider.method.${provider}`, method);
+            }
+
+            return;
+        }
+
         if (mode === 'apiKey') {
             connection.proxy ??= await startKeyProxy({ vault, secretName: API_KEY_NAME });
             environment.ANTHROPIC_BASE_URL = connection.proxy.url;
@@ -326,6 +489,7 @@ const setup = new SetupConversation({
 });
 
 chatService.setSetup(setup);
+await telegramBridge.resume(botIds);
 await appProxy.start();
 await connectedApps.start();
 
@@ -366,10 +530,20 @@ const watchScheduler = new WatchScheduler({
     isReady: () => setup.isDone(),
 });
 
+const emailPoller = new EmailPoller({
+    accountStore: emailAccountStore,
+    passwordStore: emailPasswordStore,
+    reader: new ImapEmailReader(),
+    sendMessage: (botId, text, emailDeliveryId) => chatService.sendEmailTask(botId, text, emailDeliveryId),
+    postNotice: (botId, text, emailDeliveryId) => chatService.postEmailNotice(botId, text, emailDeliveryId),
+    isReady: () => setup.isDone(),
+});
+
 // Queued messages and usage limit waits from the last run continue before the first request.
 await chatService.resumeQueue();
 routineScheduler.start();
 watchScheduler.start();
+emailPoller.start();
 
 function cleanUploads(): void {
     chatService.cleanUploads()
@@ -385,7 +559,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.
@@ -422,11 +596,14 @@ if (desktop !== undefined) {
 function shutdown(): void {
     clearInterval(cleanupTimer);
     routineScheduler.stop();
+    watchScheduler.stop();
+    emailPoller.stop();
     desktop?.stop();
     localBrowser?.stop();
     gateController.abort();
     void browserGate?.close();
     void appProxy.close();
+    void telegramBridge.close();
     void githubProxy?.close();
     // The certificate's public folder is removed on exit. Its key was only on disk in a private folder while openssl ran.
     if (githubCertificate !== undefined) {
@@ -436,9 +613,11 @@ function shutdown(): void {
     server.close();
     (server as Server).closeAllConnections();
     void connection.proxy?.close();
+    void acpProviders.close();
+    void openaiKeyProxy?.close();
     // The CLI processes stop first, so no tool call reaches the loopback server after it closes.
     // The loopback closes even when a stop fails, so the port is never left open.
-    void runner.close()
+    void providerRunner.close()
         .catch((error: unknown) => {
             console.error('Could not stop the CLI processes:', error);
         })

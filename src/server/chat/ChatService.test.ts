@@ -5,16 +5,19 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME } from '../bots/createBotTemplateTools.ts';
+import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TEXT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME } from '../bots/createBotTemplateTools.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildPng } from '../attachments/testImages.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
+import { CLI_DISALLOWED_TOOLS } from '../agent/buildCliDisallowedTools.ts';
 import { PROFILE_SERVER_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, UPDATE_PROFILE_TOOL_FULL_NAME } from '../agent/createProfileToolServer.ts';
 import { BrowserControl } from '../desktop/BrowserControl.ts';
 import { REQUEST_SCREEN_TOOL_FULL_NAME } from '../desktop/createScreenTools.ts';
 import { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import { RuleStore } from '../store/RuleStore.ts';
+import { SkillStore } from '../store/SkillStore.ts';
+import { SKILL_ADD_TOOL_FULL_NAME, SKILL_LIST_TOOL_FULL_NAME, SKILL_READ_TOOL_FULL_NAME, SKILL_TOOL_FULL_NAMES } from '../skills/createSkillTools.ts';
 import { ModelStore } from '../store/ModelStore.ts';
 import { BOT_CREATE_TOOL_FULL_NAME } from '../bots/createBotTool.ts';
 import { BOT_DELETE_TOOL_FULL_NAME } from '../bots/createBotDeleteTool.ts';
@@ -1020,8 +1023,42 @@ describe('ChatService', () => {
 
         expect(withGate.receivedRequests[0]?.allowedTools)
             .toContain(BOT_CREATE_TOOL_FULL_NAME);
+        expect(withGate.receivedRequests[0]?.allowedTools)
+            .toContain(BOT_IMPORT_TEXT_TOOL_FULL_NAME);
         expect(withoutGate.receivedRequests[0]?.allowedTools)
             .not.toContain(BOT_CREATE_TOOL_FULL_NAME);
+        expect(withoutGate.receivedRequests[0]?.allowedTools)
+            .not.toContain(BOT_IMPORT_TEXT_TOOL_FULL_NAME);
+    });
+
+    it('lists the approved skills in the prompt and offers the skill changes only with the approval gate', async () => {
+        const skillStore = new SkillStore(opened.db);
+        const toolCallReviewer = vi.fn(() => Promise.resolve({ decision: 'ask' as const, summary: 'Add a skill.' }));
+        const withGate = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const withGateService = new ChatService({ botStore, messageStore, runner: withGate, dataDir, toolCallReviewer, skillStore });
+        const withoutGate = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const withoutGateService = new ChatService({ botStore, messageStore, runner: withoutGate, dataDir, skillStore });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await skillStore.save(bot.id, { name: 'weekly-report', description: 'Writes the weekly report.', text: 'Step 1.' });
+        const finished = waitForTurnFinish(withGateService, bot.id);
+
+        await withGateService.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const finishedWithout = waitForTurnFinish(withoutGateService, bot.id);
+
+        await withoutGateService.sendMessage(bot.id, 'Hi');
+        await finishedWithout;
+
+        expect(withGate.receivedRequests[0]?.systemPrompt)
+            .toContain('- weekly-report: Writes the weekly report.');
+        expect(withGate.receivedRequests[0]?.allowedTools)
+            .toEqual(expect.arrayContaining(SKILL_TOOL_FULL_NAMES));
+        expect(withoutGate.receivedRequests[0]?.allowedTools)
+            .toEqual(expect.arrayContaining([SKILL_LIST_TOOL_FULL_NAME, SKILL_READ_TOOL_FULL_NAME]));
+        expect(withoutGate.receivedRequests[0]?.allowedTools)
+            .not.toContain(SKILL_ADD_TOOL_FULL_NAME);
     });
 
     it('writes the instructions of a new bot to its CLAUDE.md and adds no rule', async () => {
@@ -1092,7 +1129,7 @@ describe('ChatService', () => {
         const turnRequest = runner.receivedRequests[0];
 
         expect(turnRequest?.allowedTools)
-            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...BROWSER_TOOL_FULL_NAMES, BOT_CREATE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME, BOT_DELETE_TOOL_FULL_NAME, BOT_SEND_TOOL_FULL_NAME]);
+            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...BROWSER_TOOL_FULL_NAMES, BOT_CREATE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME, BOT_IMPORT_TEXT_TOOL_FULL_NAME, BOT_DELETE_TOOL_FULL_NAME, BOT_SEND_TOOL_FULL_NAME]);
         expect(turnRequest?.systemPrompt)
             .toBe(buildSystemPrompt(bot, { hasBrowser: true, hasHandoffs: true }));
     });
@@ -2037,9 +2074,9 @@ describe('ChatService model choices', () => {
         const agents = runner.receivedRequests[0]?.agents ?? {};
 
         expect(agents.browsing?.disallowedTools)
-            .toEqual([blockedTool]);
+            .toEqual([...CLI_DISALLOWED_TOOLS, blockedTool]);
         expect(agents.documents?.disallowedTools)
-            .toEqual([blockedTool]);
+            .toEqual([...CLI_DISALLOWED_TOOLS, blockedTool]);
     });
 
     it('sends no helper and no Agent tool when no helper is chosen', async () => {

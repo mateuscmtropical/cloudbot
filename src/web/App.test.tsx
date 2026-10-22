@@ -1143,7 +1143,7 @@ describe('App setup reminder', () => {
     it('shows local input and the assistant reminder and clears Stop without a turn event', async () => {
         const reminder: ChatMessage = {
             id: 'reminder', botId: 'bot-1', role: 'assistant', sequence: 2, createdAt: 1,
-            body: { kind: 'text', text: 'Finish connecting Claude above to start chatting.' },
+            body: { kind: 'text', text: 'Finish connecting an AI provider above to start chatting.' },
         };
 
         vi.mocked(listBots)
@@ -1172,7 +1172,7 @@ describe('App setup reminder', () => {
             expect(view.container.querySelector('.message-user')?.textContent.trim())
                 .toBe('private input');
             expect(view.container.querySelector('.message-assistant')?.textContent)
-                .toContain('Finish connecting Claude above');
+                .toContain('Finish connecting an AI provider above');
         });
         cleanup();
         render(<App />);

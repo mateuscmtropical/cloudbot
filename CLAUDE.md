@@ -7,9 +7,10 @@ request details that are not listed here come from your task instructions.
 
 ## What CloudBot is
 
-A self-hosted AI coworker that runs on the owner's VPS. It is built only on
-official Anthropic piece: the `claude` CLI from the
-official installer. No third-party wrappers. The interface is a messenger, and
+A self-hosted AI coworker that runs on the owner's VPS. Each turn runs in an
+AI provider's own official CLI, unmodified: the `claude` CLI from Anthropic's
+installer, Codex, or an Agent Client Protocol CLI from its vendor's package.
+No third-party wrappers. The interface is a messenger, and
 setup happens inside the chat. API keys stay in the vault, out of reach of the
 bot.
 
@@ -57,14 +58,15 @@ messages.
 
 ## Security limits
 
-- Never collect, store, log or broker Claude.ai credentials or session tokens.
-  CloudBot may pass a sign-in code to the official CLI and nothing more.
+- Never collect, store, log or broker Claude.ai credentials or session tokens,
+  or the sign-in of any other provider. CloudBot may pass a sign-in code to the
+  official CLI and nothing more.
 - Never log or store a sign-in code or an API key.
 - Never sign in with a real account and never use real credentials. Tests use
   fakes. A manual test may use an obviously fake key against a local server.
 - Never build anything that solves a CAPTCHA or another bot check. The screen
   goes to the person.
-- Tests never call Claude or the network.
+- Tests never call Claude, another provider or the network.
 
 ## Testing for real
 

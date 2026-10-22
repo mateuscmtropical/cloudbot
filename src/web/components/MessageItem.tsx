@@ -9,6 +9,7 @@ import { renderMarkdown } from '../markdown.ts';
 import type { MascotState } from '../mascotState.ts';
 import { ChoiceButtons } from './ChoiceButtons.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
+import { ChatCard } from './ChatCard.tsx';
 import { CodeField } from './CodeField.tsx';
 import { LinkCard } from './LinkCard.tsx';
 import { SecureForm } from './SecureForm.tsx';
@@ -62,9 +63,7 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
             );
         case 'choice':
             return (
-                <div className="setup-card">
-                    {/* The approval card carries a script, so its line breaks and long lines are kept. */}
-                    <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{body.prompt}</p>
+                <ChatCard text={body.prompt}>
                     <ChoiceButtons
                         options={body.options}
                         chosenId={body.chosenId}
@@ -72,18 +71,17 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
                             void actions.onChoose(message.id, choiceId);
                         }}
                     />
-                </div>
+                </ChatCard>
             );
         case 'link':
             return (
-                <div className="setup-card">
-                    <p>{body.text}</p>
+                <ChatCard text={body.text}>
                     <LinkCard label={body.label} url={body.url} />
-                </div>
+                </ChatCard>
             );
         case 'tasks':
             return (
-                <div className="setup-card task-board">
+                <ChatCard className="task-board">
                     {TASK_STATUSES.map((status) => {
                         const columnTasks = body.tasks.filter(task => task.status === status);
 
@@ -100,12 +98,11 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
                         );
                     })}
                     {body.hiddenCount > 0 ? <p className="task-more">{'and ' + String(body.hiddenCount) + ' more'}</p> : null}
-                </div>
+                </ChatCard>
             );
         case 'screenLink':
             return (
-                <div className="setup-card">
-                    <p>{body.text}</p>
+                <ChatCard text={body.text}>
                     <button
                         type="button"
                         className="choice-button"
@@ -115,7 +112,7 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
                     >
                         Open the screen
                     </button>
-                </div>
+                </ChatCard>
             );
         case 'codeField':
             return (
@@ -130,24 +127,22 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
             );
         case 'secureForm':
             return (
-                <div className="setup-card">
-                    <SecureForm
-                        prompt={body.prompt}
-                        secretName={body.secretName}
-                        submitted={body.submitted}
-                        site={body.site}
-                        onSubmit={value => actions.onSubmitSecret(message.id, value)}
-                        alternative={body.secretName === 'ANTHROPIC_API_KEY' && body.site === undefined
-                            ? { label: 'Use subscription instead', onSelect: () => actions.onChoose(message.id, 'subscription') }
-                            : undefined}
-                    />
-                </div>
+                <SecureForm
+                    prompt={body.prompt}
+                    secretName={body.secretName}
+                    submitted={body.submitted}
+                    site={body.site}
+                    onSubmit={value => actions.onSubmitSecret(message.id, value)}
+                    alternative={body.secretName === 'ANTHROPIC_API_KEY' && body.site === undefined
+                        ? { label: 'Use subscription instead', onSelect: () => actions.onChoose(message.id, 'subscription') }
+                        : undefined}
+                />
             );
         case 'file': {
             const fileUrl = `/api/bots/${encodeURIComponent(message.botId)}/messages/${encodeURIComponent(message.id)}/file`;
 
             return (
-                <div className="setup-card file-card">
+                <ChatCard className="file-card">
                     {PREVIEW_IMAGE_TYPES.has(body.mimeType) && body.sizeBytes <= MAX_PREVIEW_BYTES
                         ? <img className="file-preview" src={fileUrl} alt={body.name} loading="lazy" />
                         : null}
@@ -155,7 +150,7 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
                         {`Download ${body.name}`}
                     </a>
                     <span className="file-size">{formatFileSize(body.sizeBytes)}</span>
-                </div>
+                </ChatCard>
             );
         }
         case 'toolActivity':
@@ -179,7 +174,7 @@ function MessageItemView({ message, actions, mascot, isMascotShown = false, masc
     }
 
     return (
-        <div className={`${className} has-mascot`}>
+        <div className={`${className} has-mascot`} data-message-mascot={isMascotShown ? 'true' : undefined}>
             {isMascotShown
                 ? <CloudMascot color={mascot.mascotColor} shape={mascot.mascotShape} state={mascotState} size={MESSAGE_MASCOT_SIZE} />
                 : <span className="mascot-gap" style={{ width: MESSAGE_MASCOT_SIZE }} aria-hidden="true" />}

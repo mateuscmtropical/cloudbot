@@ -1,9 +1,14 @@
 Defaults:cloudbot env_reset
 Defaults:cloudbot secure_path="/usr/local/bin:/usr/bin:/bin"
 # The GitHub names point git and gh at the proxy. Each name the server sets must be listed here, or sudo drops it.
-Defaults:cloudbot env_keep="ANTHROPIC_BASE_URL ANTHROPIC_API_KEY NO_PROXY no_proxy GH_HOST GH_ENTERPRISE_TOKEN GH_PROMPT_DISABLED GH_NO_UPDATE_NOTIFIER SSL_CERT_FILE GIT_TERMINAL_PROMPT GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_KEY_1 GIT_CONFIG_VALUE_1 GIT_CONFIG_KEY_2 GIT_CONFIG_VALUE_2 DISABLE_AUTOUPDATER CLOUDBOT_TURN_MARKER"
+# The provider key names hold a placeholder and the URL of a key proxy, never a real key.
+Defaults:cloudbot env_keep="ANTHROPIC_BASE_URL ANTHROPIC_API_KEY NO_PROXY no_proxy GH_HOST GH_ENTERPRISE_TOKEN GH_PROMPT_DISABLED GH_NO_UPDATE_NOTIFIER SSL_CERT_FILE GIT_TERMINAL_PROMPT GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_KEY_1 GIT_CONFIG_VALUE_1 GIT_CONFIG_KEY_2 GIT_CONFIG_VALUE_2 DISABLE_AUTOUPDATER CLOUDBOT_TURN_MARKER CLOUDBOT_TOOLS_TOKEN GEMINI_API_KEY GOOGLE_GEMINI_BASE_URL OPENAI_API_KEY OPENAI_BASE_URL MISTRAL_API_KEY VIBE_PROVIDERS CODEX_API_KEY CLOUDBOT_KEY_PROXY_URL CLOUDBOT_CODEX_KEY_MODE KIMI_MODEL_NAME KIMI_MODEL_PROVIDER_TYPE KIMI_MODEL_API_KEY KIMI_MODEL_BASE_URL CLOUDBOT_AGY_REVIEW_URL CLOUDBOT_AGY_CONVERSATION CLOUDBOT_AGY_MODEL CLOUDBOT_AGY_EFFORT"
 # The CLI is a root-owned copy in /usr/local/bin. The bot user cannot replace it, so the server never runs bot-written code.
 cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/claude
+# Codex runs only through this root-owned wrapper, which allows only the app server and sets CODEX_HOME in the bot home.
+cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-codex app-server *
+# The other providers run only through this root-owned wrapper, which takes a provider and acp or login and starts a fixed command.
+cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-provider *
 # Signals the agent's process group only, with TERM or KILL. The wrapper checks its two arguments, so no other kill is allowed.
 cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-signal-group *
 # Ends the bot user's processes that still carry the marker of a finished turn. The wrapper takes only the marker.
