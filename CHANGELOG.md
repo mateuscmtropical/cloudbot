@@ -41,6 +41,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- Telegram no longer sends the same message to the bot twice after a restart. The poll resumes from the saved update offset, and a disconnect forgets it.
 - A background process that a command started in its own session no longer keeps running after the turn ends. Each turn marks its processes, and the marked ones are ended when it is over.
 - The plus in the new bot and attach buttons sits exactly in the center of the round button.
 - `share_file` works on Windows and macOS. The file must stay inside the workspace, and the opened file must be the one the path leads to, checked by file identity. Linux uses the same check. On Windows the open does not refuse links, so the realpath and identity check are the guard there.

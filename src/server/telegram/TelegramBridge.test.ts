@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatEvent } from '../../shared/chatTypes.ts';
 import type { TelegramApi, TelegramUpdate } from './TelegramApi.ts';
-import { LINK_KEY_PREFIX, MAX_FAILED_TRIES, PAIRING_LIFETIME_MS, TelegramBridge } from './TelegramBridge.ts';
+import { LINK_KEY_PREFIX, MAX_FAILED_TRIES, OFFSET_KEY_PREFIX, PAIRING_LIFETIME_MS, TelegramBridge } from './TelegramBridge.ts';
 import type { TelegramSettings } from './TelegramBridge.ts';
 
 const BOT_ID = 'bot-1';
@@ -13,13 +13,15 @@ const OWNER_CHAT = 4200;
 class FakeTelegram {
     readonly batches: TelegramUpdate[][] = [];
     readonly sent: { chatId: number; text: string }[] = [];
+    readonly offsets: number[] = [];
     failNextSend = false;
     private nextId = 1;
     private wake: (() => void) | undefined;
 
     readonly api: TelegramApi = {
-        getUpdates: async (_offset, _timeout, signal) => {
-            const batch = this.batches.shift();
+        getUpdates: async (offset, _timeout, signal) => {
+            this.offsets.push(offset);
+            const batch = this.takeBatch(offset);
 
             if (batch !== undefined) {
                 return batch;
@@ -37,7 +39,7 @@ class FakeTelegram {
                 throw new Error('aborted');
             }
 
-            return this.batches.shift() ?? [];
+            return this.takeBatch(offset) ?? [];
         },
         sendMessage: (chatId, text) => {
             if (this.failNextSend) {
@@ -52,10 +54,32 @@ class FakeTelegram {
         },
     };
 
-    receive(text: string | undefined, from: number = OWNER_ID, chat: { id: number; type: string } = { id: OWNER_CHAT, type: 'private' }): void {
-        this.batches.push([{ update_id: this.nextId, message: { chat, from: { id: from }, text } }]);
+    receive(text: string | undefined, from: number = OWNER_ID, chat: { id: number; type: string } = { id: OWNER_CHAT, type: 'private' }): TelegramUpdate {
+        const update: TelegramUpdate = { update_id: this.nextId, message: { chat, from: { id: from }, text } };
+
         this.nextId += 1;
+        this.batches.push([update]);
         this.wake?.();
+
+        return update;
+    }
+
+    replay(update: TelegramUpdate): void {
+        this.batches.push([update]);
+        this.wake?.();
+    }
+
+    // Telegram sends an update until a later poll asks from an offset above it.
+    private takeBatch(offset: number): TelegramUpdate[] | undefined {
+        const batch = this.batches.shift();
+
+        if (batch === undefined) {
+            return undefined;
+        }
+
+        const remaining = batch.filter(update => update.update_id >= offset);
+
+        return remaining.length === 0 ? this.takeBatch(offset) : remaining;
     }
 }
 
@@ -78,7 +102,7 @@ function makeSettings(): TelegramSettings & { values: Map<string, string> } {
     };
 }
 
-function makeBridge(options: { token?: string | undefined; now?: () => number } = {}): {
+function makeBridge(options: { token?: string | undefined; now?: () => number; settings?: ReturnType<typeof makeSettings> } = {}): {
     bridge: TelegramBridge;
     telegram: FakeTelegram;
     settings: ReturnType<typeof makeSettings>;
@@ -87,7 +111,7 @@ function makeBridge(options: { token?: string | undefined; now?: () => number } 
     emit: (event: ChatEvent) => void;
 } {
     const telegram = new FakeTelegram();
-    const settings = makeSettings();
+    const settings = options.settings ?? makeSettings();
     const notices: string[] = [];
     const sentToBot: string[] = [];
     const listeners: ((event: ChatEvent) => void)[] = [];
@@ -344,5 +368,35 @@ describe('TelegramBridge', () => {
             expect(setup.sentToBot)
                 .toEqual(['back again']);
         });
+    });
+
+    it('resumes from the saved offset and does not send a handled message again', async () => {
+        const first = makeBridge();
+
+        await pair(first);
+        const handled = first.telegram.receive('do this once');
+
+        await vi.waitFor(() => {
+            expect(first.sentToBot)
+                .toEqual(['do this once']);
+        });
+        await first.bridge.close();
+        expect(first.settings.values.get(`${OFFSET_KEY_PREFIX}${BOT_ID}`))
+            .toBe(String(handled.update_id + 1));
+
+        const second = makeBridge({ settings: first.settings });
+
+        bridges.push(second.bridge);
+        second.telegram.replay(handled);
+        await second.bridge.resume([BOT_ID]);
+        await vi.waitFor(() => {
+            expect(second.telegram.offsets.length)
+                .toBeGreaterThan(0);
+        });
+        expect(second.telegram.offsets[0])
+            .toBe(handled.update_id + 1);
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(second.sentToBot)
+            .toEqual([]);
     });
 });

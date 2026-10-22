@@ -46,6 +46,7 @@ interface Poller {
 }
 
 const LINK_KEY_PREFIX = 'telegram.link.';
+const OFFSET_KEY_PREFIX = 'telegram.offset.';
 const MS_PER_MINUTE = 60_000;
 const PAIRING_LIFETIME_MS = 10 * MS_PER_MINUTE;
 // A wrong code ends the pairing after this many tries, so a stranger cannot guess it.
@@ -82,6 +83,16 @@ function readLink(stored: string | undefined): TelegramLink | undefined {
     }
 
     return undefined;
+}
+
+function readOffset(stored: string | undefined): number | undefined {
+    if (stored === undefined) {
+        return undefined;
+    }
+
+    const offset = Number(stored);
+
+    return Number.isSafeInteger(offset) && offset >= 0 ? offset : undefined;
 }
 
 function newPairingCode(): string {
@@ -172,10 +183,14 @@ class TelegramBridge {
     // Forgets the Telegram account and stops listening. Returns false when the bot was not connected.
     async disconnect(botId: string): Promise<boolean> {
         const wasConnected = this.links.has(botId) || this.pairings.has(botId);
+        const poller = this.pollers.get(botId);
 
         this.pairings.delete(botId);
         this.detach(botId);
+        // Wait for a poll that is still saving its offset, so it cannot write the key back after the delete below.
+        await poller?.done;
         await this.settings.delete(`${LINK_KEY_PREFIX}${botId}`);
+        await this.settings.delete(`${OFFSET_KEY_PREFIX}${botId}`);
 
         return wasConnected;
     }
@@ -253,7 +268,25 @@ class TelegramBridge {
         };
 
         this.pollers.set(botId, { controller, done });
-        step(0);
+        // Telegram confirms an update only when a later poll asks from a higher offset, so resume from the saved one.
+        const storedOffset = this.settings.get(`${OFFSET_KEY_PREFIX}${botId}`);
+
+        storedOffset
+            .then((stored) => {
+                if (controller.signal.aborted) {
+                    stop();
+
+                    return;
+                }
+
+                const offset = readOffset(stored) ?? 0;
+
+                step(offset);
+            })
+            .catch(() => {
+                console.error('The Telegram poll stopped after an error.');
+                stop();
+            });
     }
 
     // A poll runs while the bot is connected or a pairing is open. A missing token stops it.
@@ -291,20 +324,32 @@ class TelegramBridge {
         }
 
         const nextOffset = updates.reduce((highest, update) => Math.max(highest, update.update_id + 1), offset);
-        const start = Promise.resolve();
+        const start = Promise.resolve(true);
         const handled = updates.reduce(async (previous, update) => {
-            await previous;
+            const isPreviousHandled = await previous;
 
-            if (!isAborted(signal) && update.message !== undefined) {
+            if (!isPreviousHandled || isAborted(signal)) {
+                return false;
+            }
+
+            if (update.message !== undefined) {
                 // One message that fails, such as an answer Telegram refused, never stops the poll.
                 await this.handleMessage(botId, api, update.message)
                     .catch(() => {
                         console.error('A Telegram message could not be handled.');
                     });
             }
-        }, start);
 
-        await handled;
+            return true;
+        }, start);
+        const hasHandledAll = await handled;
+
+        // A batch cut short by a stop is not saved, so its unhandled updates come again after a restart.
+        if (hasHandledAll && updates.length > 0) {
+            const nextOffsetText = String(nextOffset);
+
+            await this.settings.set(`${OFFSET_KEY_PREFIX}${botId}`, nextOffsetText);
+        }
 
         return nextOffset;
     }
@@ -417,5 +462,5 @@ class TelegramBridge {
     }
 }
 
-export { LINK_KEY_PREFIX, MAX_FAILED_TRIES, PAIRING_LIFETIME_MS, TelegramBridge };
+export { LINK_KEY_PREFIX, MAX_FAILED_TRIES, OFFSET_KEY_PREFIX, PAIRING_LIFETIME_MS, TelegramBridge };
 export type { TelegramBridgeOptions, TelegramChat, TelegramLink, TelegramSettings };
