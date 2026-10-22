@@ -450,3 +450,67 @@ describe('answerCodexRequest for the bot tools', () => {
             .toEqual([[], []]);
     });
 });
+
+function remoteServer(name: string, items: CodexMcpToolCallItem[], blockedTools: string[] = []): CodexToolServer {
+    return { name, toolCalls: () => items, decidedItemIds: new Set(), blockedTools, allowCall: () => undefined };
+}
+
+function remoteItem(id: string, server: string, tool: string, args: unknown): CodexMcpToolCallItem {
+    return { type: 'mcpToolCall', id, server, tool, status: 'inProgress', arguments: args };
+}
+
+describe('answerCodexRequest for connected servers', () => {
+    it('reviews a connected server\'s call under its full name and accepts it when allowed', async () => {
+        const items = [remoteItem('call_1', 'linear', 'create_issue', { title: 'Bug' })];
+        const context = { ...makeContext(allow), remoteServers: [remoteServer('linear', items)] };
+
+        const answer = await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ title: 'Bug' }, 'linear'), context);
+
+        expect(answer)
+            .toEqual({ result: { action: 'accept', content: null, _meta: null } });
+        expect(context.calls)
+            .toEqual([{ toolName: 'mcp__linear__create_issue', input: { title: 'Bug' } }]);
+    });
+
+    it('declines a refused call, and a call of a server the turn does not have', async () => {
+        const items = [remoteItem('call_1', 'linear', 'create_issue', { title: 'Bug' }), remoteItem('call_2', 'other', 'run', { title: 'Bug' })];
+        const refused = { ...makeContext(deny), remoteServers: [remoteServer('linear', items)] };
+        const unknown = { ...makeContext(allow), remoteServers: [remoteServer('linear', items)] };
+
+        const refusedAnswer = await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ title: 'Bug' }, 'linear'), refused);
+        const unknownAnswer = await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ title: 'Bug' }, 'other'), unknown);
+
+        expect([refusedAnswer, unknownAnswer])
+            .toEqual([{ result: { action: 'decline', content: null, _meta: null } }, { result: { action: 'decline', content: null, _meta: null } }]);
+        expect(unknown.calls)
+            .toEqual([]);
+    });
+
+    it('does not match a call of one server to a question from another', async () => {
+        const items = [remoteItem('call_1', 'github', 'delete_repo', { name: 'x' })];
+        const context = { ...makeContext(allow), toolServer: makeToolServer([]), remoteServers: [remoteServer('linear', items), remoteServer('github', items)] };
+
+        const answer = await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ name: 'x' }, 'linear'), context);
+
+        expect(answer)
+            .toEqual({ result: { action: 'decline', content: null, _meta: null } });
+        expect(context.calls)
+            .toEqual([]);
+    });
+
+    it('declines a tool the owner blocked by name or by server', async () => {
+        const items = [remoteItem('call_1', 'linear', 'create_issue', { title: 'Bug' })];
+        const byName = { ...makeContext(allow), remoteServers: [remoteServer('linear', items, ['mcp__linear__create_issue'])] };
+        const byServer = { ...makeContext(allow), remoteServers: [remoteServer('linear', items, ['mcp__linear'])] };
+
+        const answers = [
+            await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ title: 'Bug' }, 'linear'), byName),
+            await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ title: 'Bug' }, 'linear'), byServer),
+        ];
+
+        expect(answers)
+            .toEqual([{ result: { action: 'decline', content: null, _meta: null } }, { result: { action: 'decline', content: null, _meta: null } }]);
+        expect([byName.calls, byServer.calls])
+            .toEqual([[], []]);
+    });
+});

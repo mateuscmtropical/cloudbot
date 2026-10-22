@@ -105,7 +105,23 @@ function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThre
     spawnArgs: string[][];
     signals: string[];
     home: string;
+    gates: { allowed: unknown[][]; closed: string[] };
 } {
+    const gates: { allowed: unknown[][]; closed: string[] } = { allowed: [], closed: [] };
+    // A stand-in for the app proxy. An address ending in key9 is not one it gave out.
+    const callGates = {
+        openCallGate: (address: string) => address.endsWith('key9')
+            ? undefined
+            : {
+                    address: `${address}/gate`,
+                    allowCall: (...call: unknown[]) => {
+                        gates.allowed.push(call);
+                    },
+                    close: () => {
+                        gates.closed.push(address);
+                    },
+                },
+    };
     const servers: FakeAppServer[] = [];
     const spawnOptions: SpawnOptions[] = [];
     const spawnArgs: string[][] = [];
@@ -125,13 +141,14 @@ function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThre
         codexHomeFor: () => home,
         environment: options.environment ?? { PATH: '/usr/bin' },
         loopback: options.loopback,
+        callGates,
         spawnFunction,
         signalProcess: (_child, action) => {
             signals.push(action);
         },
     });
 
-    return { engine, servers, spawnOptions, spawnArgs, signals, home };
+    return { engine, servers, spawnOptions, spawnArgs, signals, home, gates };
 }
 
 function makeRequest(overrides: Partial<TurnRequest> = {}): TurnRequest {
@@ -432,6 +449,110 @@ describe('CodexEngine', () => {
             .resolves.toMatchObject({ isAllowed: false });
         expect(releases)
             .toBe(1);
+    });
+
+    it('gives Codex the connected http servers at a gated address of the turn, and leaves the rest out', async () => {
+        const { engine, spawnArgs, gates } = makeEngine(completeTurn);
+        const mcpServers = {
+            'linear': { type: 'http' as const, url: 'http://127.0.0.1:6000/key1' },
+            'unknown': { type: 'http' as const, url: 'http://127.0.0.1:6000/key9' },
+            'cloudbot': { type: 'http' as const, url: 'http://127.0.0.1:6000/key2' },
+            'bad.name': { type: 'http' as const, url: 'http://127.0.0.1:6000/key3' },
+            'local': { command: '/bin/server' },
+        };
+
+        await collect(engine.runTurn(makeRequest({ mcpServers })));
+
+        const joined = spawnArgs[0]?.join(' ') ?? '';
+
+        expect(spawnArgs[0])
+            .toEqual(expect.arrayContaining([
+                'mcp_servers.linear.url="http://127.0.0.1:6000/key1/gate"',
+                'mcp_servers.linear.default_tools_approval_mode="prompt"',
+            ]));
+        expect(joined)
+            .not.toContain('key9');
+        expect(gates.closed)
+            .toEqual(['http://127.0.0.1:6000/key1']);
+        expect(joined)
+            .not.toContain('key2');
+        expect(joined)
+            .not.toContain('key3');
+        expect(joined)
+            .not.toContain('/bin/server');
+    });
+
+    it('reviews a connected server\'s tool call and answers with the decision', async () => {
+        const review = vi.fn((): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: true }));
+        const { engine, servers, gates } = makeEngine((server) => {
+            server.say({ method: 'item/started', params: { item: { type: 'mcpToolCall', id: 'call_1', server: 'linear', tool: 'create_issue', status: 'inProgress', arguments: { title: 'Bug' } } } });
+            server.say({
+                id: 'question-1',
+                method: 'mcpServer/elicitation/request',
+                params: { threadId: 'thread-1', turnId: 'turn-1', serverName: 'linear', mode: 'form', message: 'Allow?', requestedSchema: {}, _meta: { codex_approval_kind: 'mcp_tool_call', tool_params: { title: 'Bug' } } },
+            });
+            setTimeout(() => {
+                completeTurn(server);
+            }, 20);
+        });
+
+        await collect(engine.runTurn(makeRequest({ reviewToolCall: review, mcpServers: { linear: { type: 'http', url: 'http://127.0.0.1:6000/key1' } } })));
+        const answer = servers[0]?.sent.find(message => (message as { id?: unknown }).id === 'question-1');
+
+        expect(review)
+            .toHaveBeenCalledWith({ toolName: 'mcp__linear__create_issue', input: { title: 'Bug' } }, expect.any(AbortSignal));
+        expect(answer)
+            .toMatchObject({ result: { action: 'accept' } });
+        expect(gates.allowed)
+            .toEqual([['call_1', 'create_issue', { title: 'Bug' }]]);
+    });
+
+    it('gives Codex no connected servers without the app proxy', async () => {
+        const spawnArgs: string[][] = [];
+        const home = join(mkdtempSync(join(tmpdir(), 'cloudbot-codex-test-')), 'codex-home');
+        const engine = new CodexEngine({
+            codexPath: '/usr/local/bin/codex',
+            codexHomeFor: () => home,
+            spawnFunction: (_command, args) => {
+                spawnArgs.push(args);
+
+                return new FakeAppServer(completeTurn) as unknown as ChildProcess;
+            },
+            signalProcess: () => undefined,
+        });
+
+        await collect(engine.runTurn(makeRequest({ mcpServers: { linear: { type: 'http', url: 'http://127.0.0.1:6000/key1' } } })));
+        expect(spawnArgs[0]?.join(' '))
+            .not.toContain('linear');
+    });
+
+    it('closes the opened gates when a later gate fails to open', async () => {
+        const closed: string[] = [];
+        const home = join(mkdtempSync(join(tmpdir(), 'cloudbot-codex-test-')), 'codex-home');
+        const engine = new CodexEngine({
+            codexPath: '/usr/local/bin/codex',
+            codexHomeFor: () => home,
+            callGates: {
+                openCallGate: (address: string) => {
+                    if (address.endsWith('key2')) {
+                        throw new Error('The app proxy has not started.');
+                    }
+
+                    return { address: `${address}/gate`, allowCall: () => undefined, close: () => closed.push(address) };
+                },
+            },
+            spawnFunction: () => new FakeAppServer(completeTurn) as unknown as ChildProcess,
+            signalProcess: () => undefined,
+        });
+        const mcpServers = {
+            first: { type: 'http' as const, url: 'http://127.0.0.1:6000/key1' },
+            second: { type: 'http' as const, url: 'http://127.0.0.1:6000/key2' },
+        };
+
+        await expect(collect(engine.runTurn(makeRequest({ mcpServers }))))
+            .rejects.toThrow('The app proxy has not started.');
+        expect(closed)
+            .toEqual(['http://127.0.0.1:6000/key1']);
     });
 
     it('passes images as private files for the turn, and removes them when the turn ends', async () => {

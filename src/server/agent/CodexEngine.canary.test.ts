@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod/v4';
 
+import { AppProxy } from '../apps/AppProxy.ts';
 import type { AgentEvent } from './AgentEvent.ts';
 import type { ToolCall } from './AgentRunner.ts';
 import { CodexEngine } from './CodexEngine.ts';
@@ -27,6 +28,9 @@ const PATCH = `*** Begin Patch\n*** Add File: ${PATCHED_FILE}\n+hello\n*** End P
 // Each command must reach the review before it runs. The last one would leave a file if it ran.
 const COMMANDS = ['ls', 'cat /etc/hostname', 'git status', 'grep -r secret .', 'base64 /etc/hostname', 'cat ~/.ssh/id_rsa', `touch ${MARKER_FILE}`];
 const TOKEN_PROBE = 'echo token=$CLOUDBOT_TOOLS_TOKEN';
+const REMOTE_SERVER_NAME = 'remote';
+const REMOTE_RESOURCE_URI = 'file:///canary-secret';
+const REMOTE_PROTOCOL_VERSION = '2025-06-18';
 const MODEL_CALLS = [
     ...COMMANDS.map(command => ({ name: 'exec_command', arguments: JSON.stringify({ cmd: command }) })),
     { name: 'exec_command', arguments: JSON.stringify({ cmd: `apply_patch <<'EOF'\n${PATCH}EOF\n` }) },
@@ -38,10 +42,16 @@ const MODEL_CALLS = [
     { name: 'exec_command', arguments: JSON.stringify({ cmd: TOKEN_PROBE }) },
     // The permission prompt tool of the Claude engine. It is not listed for Codex, so a call to it must not run.
     { name: 'approve', namespace: `mcp__${PROFILE_SERVER_NAME}`, arguments: JSON.stringify({ tool_name: 'Bash', input: { command: 'ls' } }) },
+    // A connected server behind the app proxy: the review refuses the first call and allows the second.
+    { name: 'lookup', namespace: `mcp__${REMOTE_SERVER_NAME}`, arguments: JSON.stringify({ query: 'refused' }) },
+    { name: 'lookup', namespace: `mcp__${REMOTE_SERVER_NAME}`, arguments: JSON.stringify({ query: 'allowed' }) },
+    // The resource tools have no approval in Codex. The proxy must refuse them before they reach the server.
+    { name: 'list_mcp_resources', arguments: JSON.stringify({ server: REMOTE_SERVER_NAME }) },
+    { name: 'read_mcp_resource', arguments: JSON.stringify({ server: REMOTE_SERVER_NAME, uri: REMOTE_RESOURCE_URI }) },
 ];
 // The only tools Codex may offer the model with the locked config. view_image, web search and helper agents are off.
 // With an MCP server Codex adds the resource tools, which have no approval. The loopback server has no resources.
-const EXPECTED_TOOLS = ['exec_command', 'list_mcp_resource_templates', 'list_mcp_resources', `mcp__${PROFILE_SERVER_NAME}`, 'read_mcp_resource', 'request_user_input', 'write_stdin'];
+const EXPECTED_TOOLS = ['exec_command', 'list_mcp_resource_templates', 'list_mcp_resources', `mcp__${PROFILE_SERVER_NAME}`, `mcp__${REMOTE_SERVER_NAME}`, 'read_mcp_resource', 'request_user_input', 'write_stdin'];
 const EXPECTED_BOT_TOOLS = ['echo'];
 // A 1 by 1 PNG, attached to the canary turn.
 const ONE_PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';
@@ -99,6 +109,66 @@ function startFakeModel(requests: ModelRequest[]): Promise<{ url: string; close:
     });
 }
 
+interface RemoteMessage {
+    id?: number | string;
+    method?: string;
+    params?: { name?: string; arguments?: Record<string, unknown> };
+}
+
+// A connected MCP server that offers one tool and one resource. It records every request that reaches it.
+function startFakeRemoteServer(received: RemoteMessage[]): Promise<{ url: URL; close: () => void }> {
+    const answers: Record<string, (message: RemoteMessage) => unknown> = {
+        initialize: () => ({ protocolVersion: REMOTE_PROTOCOL_VERSION, capabilities: { tools: {}, resources: {} }, serverInfo: { name: 'remote', version: '1.0.0' } }),
+        ['tools/list']: () => ({ tools: [{ name: 'lookup', description: 'Looks a word up.', inputSchema: { type: 'object', properties: { query: { type: 'string' } } } }] }),
+        ['tools/call']: message => ({ content: [{ type: 'text', text: `found ${String(message.params?.arguments?.query)}` }] }),
+        ['resources/list']: () => ({ resources: [{ uri: REMOTE_RESOURCE_URI, name: 'secret' }] }),
+        ['resources/read']: () => ({ contents: [{ uri: REMOTE_RESOURCE_URI, text: 'secret' }] }),
+        ['resources/templates/list']: () => ({ resourceTemplates: [] }),
+    };
+    const server = createServer((request, response) => {
+        let body = '';
+
+        request.on('data', (chunk: Buffer) => {
+            body += chunk.toString('utf8');
+        });
+        request.on('end', () => {
+            if (request.method !== 'POST') {
+                response.writeHead(405);
+                response.end();
+
+                return;
+            }
+
+            const message = JSON.parse(body) as RemoteMessage;
+            const answer = message.method === undefined ? undefined : answers[message.method];
+
+            received.push(message);
+
+            if (message.id === undefined) {
+                response.writeHead(202);
+                response.end();
+
+                return;
+            }
+
+            const reply = answer === undefined
+                ? { jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Unknown method.' } }
+                : { jsonrpc: '2.0', id: message.id, result: answer(message) };
+
+            response.writeHead(200, { 'content-type': 'application/json' });
+            response.end(JSON.stringify(reply));
+        });
+    });
+
+    return new Promise((resolve) => {
+        server.listen(0, '127.0.0.1', () => {
+            const address = server.address() as AddressInfo;
+
+            resolve({ url: new URL(`http://127.0.0.1:${String(address.port)}/mcp`), close: () => server.close() });
+        });
+    });
+}
+
 describe.skipIf(CODEX_PATH === '')(`Codex canary (checked with ${CODEX_PROTOCOL_VERSION})`, () => {
     const requests: ModelRequest[] = [];
     const reviewed: ToolCall[] = [];
@@ -107,13 +177,20 @@ describe.skipIf(CODEX_PATH === '')(`Codex canary (checked with ${CODEX_PROTOCOL_
     const workspaceFolder = mkdtempSync(join(folder, 'workspace-'));
     let model: { url: string; close: () => void } | undefined;
     let loopback: LoopbackToolServer | undefined;
+    let remote: { url: URL; close: () => void } | undefined;
+    const proxy = new AppProxy({ checkUpstream: () => Promise.resolve(['127.0.0.1']) });
     const echoed: string[] = [];
+    const remoteReceived: RemoteMessage[] = [];
 
     beforeAll(async () => {
         model = await startFakeModel(requests);
         loopback = await startLoopbackToolServer(PROFILE_SERVER_NAME);
+        remote = await startFakeRemoteServer(remoteReceived);
+        await proxy.start();
+        const remoteAddress = proxy.register('remote-app', { upstream: remote.url, readToken: () => undefined });
         const engine = new CodexEngine({
             loopback,
+            callGates: proxy,
             codexPath: CODEX_PATH,
             codexHomeFor: () => join(folder, 'codex-home'),
             environment: { PATH: process.env.PATH ?? '', FAKE_PROVIDER_KEY: FAKE_KEY, NO_PROXY: '127.0.0.1', no_proxy: '127.0.0.1' },
@@ -133,6 +210,7 @@ describe.skipIf(CODEX_PATH === '')(`Codex canary (checked with ${CODEX_PROTOCOL_
             prompt: 'Run the canary.',
             images: [{ mediaType: 'image/png', data: ONE_PIXEL_PNG }],
             abortSignal: new AbortController().signal,
+            mcpServers: { [REMOTE_SERVER_NAME]: { type: 'http', url: remoteAddress } },
             tools: [{
                 name: 'echo',
                 description: 'Repeats the text.',
@@ -147,8 +225,9 @@ describe.skipIf(CODEX_PATH === '')(`Codex canary (checked with ${CODEX_PROTOCOL_
                 reviewed.push(call);
                 const isAllowedEcho = call.toolName === `mcp__${PROFILE_SERVER_NAME}__echo` && (call.input as { text?: unknown }).text === 'allowed';
                 const isTokenProbe = call.toolName === 'Bash' && (call.input as { command?: unknown }).command === TOKEN_PROBE;
+                const isAllowedLookup = call.toolName === `mcp__${REMOTE_SERVER_NAME}__lookup` && (call.input as { query?: unknown }).query === 'allowed';
 
-                return Promise.resolve(isAllowedEcho || isTokenProbe ? { isAllowed: true } : { isAllowed: false, reason: 'The canary refuses this call.' });
+                return Promise.resolve(isAllowedEcho || isTokenProbe || isAllowedLookup ? { isAllowed: true } : { isAllowed: false, reason: 'The canary refuses this call.' });
             },
         });
 
@@ -160,6 +239,8 @@ describe.skipIf(CODEX_PATH === '')(`Codex canary (checked with ${CODEX_PROTOCOL_
 
     afterAll(() => {
         model?.close();
+        remote?.close();
+        void proxy.close();
         void loopback?.close();
         rmSync(folder, { recursive: true, force: true });
     });
@@ -176,7 +257,7 @@ describe.skipIf(CODEX_PATH === '')(`Codex canary (checked with ${CODEX_PROTOCOL_
     });
 
     it('runs a bot tool only after the review allows it, and only once', () => {
-        const toolCalls = reviewed.filter(call => call.toolName.startsWith('mcp__'));
+        const toolCalls = reviewed.filter(call => call.toolName.startsWith(`mcp__${PROFILE_SERVER_NAME}__`));
 
         expect(toolCalls)
             .toEqual([
@@ -218,6 +299,30 @@ describe.skipIf(CODEX_PATH === '')(`Codex canary (checked with ${CODEX_PROTOCOL_
 
         expect(probe)
             .toMatchObject({ output: 'token=\n' });
+    });
+
+    it('runs a connected server\'s tool only after the review allows it, and only once', () => {
+        const remoteReviews = reviewed.filter(call => call.toolName.startsWith(`mcp__${REMOTE_SERVER_NAME}__`));
+        const remoteCalls = remoteReceived.filter(message => message.method === 'tools/call')
+            .map(message => message.params?.arguments);
+
+        expect(remoteReviews)
+            .toEqual([
+                { toolName: `mcp__${REMOTE_SERVER_NAME}__lookup`, input: { query: 'refused' } },
+                { toolName: `mcp__${REMOTE_SERVER_NAME}__lookup`, input: { query: 'allowed' } },
+            ]);
+        expect(remoteCalls)
+            .toEqual([{ query: 'allowed' }]);
+    });
+
+    it('never lets a resource request reach a connected server', () => {
+        const resourceRequests = remoteReceived.filter(message => (message.method ?? '').startsWith('resources/'));
+        const methods = remoteReceived.map(message => message.method);
+
+        expect(methods)
+            .toContain('tools/list');
+        expect(resourceRequests)
+            .toEqual([]);
     });
 
     it('sends the attached image to the model', () => {
