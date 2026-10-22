@@ -29,6 +29,8 @@ interface LoopbackTurnGrant {
     remoteServers?: Record<string, unknown> | undefined;
     // Tools the owner blocked. The CLI already hides them, and the decision route refuses them too (exact name match).
     disallowedTools?: string[] | undefined;
+    // False for an engine that decides calls itself, such as Codex. The permission prompt tool is then not listed.
+    offersPromptTool?: boolean | undefined;
 }
 
 // The files the CLI reads for one turn. They live in a folder of their own, removed on release.
@@ -40,6 +42,11 @@ interface LoopbackTurn {
     noteToolUse(toolUseId: string, toolName: string, input: unknown): void;
     // Writes a file into the turn folder with the turn's file mode, and returns its path.
     writeFile(name: string, text: string): string;
+    // For an engine that reviews a call itself, such as Codex: the one tools/call with this id, name and input may run once.
+    allowCall(toolUseId: string, toolName: string, input: unknown): void;
+    // The address and the token of the turn, for an engine that does not read the MCP config file.
+    mcpUrl: string;
+    token: string;
     release(): void;
 }
 
@@ -123,8 +130,8 @@ const approveArgumentsSchema = z.object({
     tool_use_id: stringSchema.optional(),
 });
 
-// The CLI sends the tool use id of the call in the request's _meta.
-const toolCallMetaSchema = z.object({ 'claudecode/toolUseId': stringSchema.optional() });
+// The CLI sends the tool use id of the call in the request's _meta. Codex sends it as callId (seen with codex-cli 0.163.0).
+const toolCallMetaSchema = z.object({ 'claudecode/toolUseId': stringSchema.optional(), 'callId': stringSchema.optional() });
 
 class BodyTooLargeError extends Error {}
 
@@ -435,7 +442,9 @@ async function answerMcp(serverName: string, turn: TurnState, body: string, resp
             inputSchema: { type: 'object', properties: { tool_name: { type: 'string' }, input: { type: 'object' }, tool_use_id: { type: 'string' } } },
         };
 
-        writeJson(response, 200, { jsonrpc: '2.0', id, result: { tools: [...tools, approveTool] } });
+        const listed = turn.grant.offersPromptTool === false ? tools : [...tools, approveTool];
+
+        writeJson(response, 200, { jsonrpc: '2.0', id, result: { tools: listed } });
 
         return;
     }
@@ -459,7 +468,7 @@ async function answerMcp(serverName: string, turn: TurnState, body: string, resp
 
         const fullToolName = `mcp__${serverName}__${tool.name}`;
         const parsedMeta = toolCallMetaSchema.safeParse(params._meta);
-        const metaToolUseId = parsedMeta.success ? parsedMeta.data['claudecode/toolUseId'] : undefined;
+        const metaToolUseId = parsedMeta.success ? parsedMeta.data['claudecode/toolUseId'] ?? parsedMeta.data.callId : undefined;
 
         if (!consumeAllowedCall(turn, fullToolName, params.arguments, metaToolUseId)) {
             writeJson(response, 200, { jsonrpc: '2.0', id, result: failedResult(NOT_APPROVED_TEXT) });
@@ -620,6 +629,14 @@ async function startLoopbackToolServer(serverName: string, options: LoopbackServ
 
                     return path;
                 },
+                allowCall(toolUseId: string, toolName: string, input: unknown): void {
+                    // An id that is known already keeps its first state, so a second allow cannot reopen a used call.
+                    if (!state.calls.has(toolUseId)) {
+                        state.calls.set(toolUseId, { toolName, inputKey: inputKeyOf(input), decided: true, allowed: true, consumed: false });
+                    }
+                },
+                mcpUrl: `${baseUrl}/mcp`,
+                token,
                 release(): void {
                     dropTurn(state, turns, token);
                 },
@@ -646,5 +663,5 @@ async function startLoopbackToolServer(serverName: string, options: LoopbackServ
     };
 }
 
-export { AGENT_TURN_ROOT, APPROVE_TOOL_NAME, BUILTIN_TOOLS, startLoopbackToolServer };
+export { AGENT_TURN_ROOT, APPROVE_TOOL_NAME, BUILTIN_TOOLS, inputKeyOf, startLoopbackToolServer };
 export type { LoopbackServerOptions, LoopbackTool, LoopbackToolResult, LoopbackToolServer, LoopbackTurn, LoopbackTurnGrant };

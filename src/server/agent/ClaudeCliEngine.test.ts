@@ -74,6 +74,9 @@ function makeLoopback(): { loopback: LoopbackToolServer; grants: LoopbackTurnGra
         writeFile(name: string): string {
             return join(folder, name);
         },
+        allowCall: () => undefined,
+        mcpUrl: 'http://127.0.0.1:1/mcp',
+        token: 'fake-token',
         release(): void {
             releases += 1;
         },
@@ -684,6 +687,9 @@ describe('ClaudeCliEngine process handling', () => {
 
                     return `/t/${name}`;
                 },
+                allowCall: () => undefined,
+                mcpUrl: 'http://127.0.0.1:1/mcp',
+                token: 'fake-token',
                 release: () => undefined,
             }),
             close: () => Promise.resolve(),
