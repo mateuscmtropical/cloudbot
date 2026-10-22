@@ -762,6 +762,22 @@ Limits:
 - Windows (local mode only, no job object): a stop skips TERM, because it would end the CLI alone and `taskkill /T` could no longer find its tools. It runs `taskkill /T /F` while the CLI is still alive. Checked live: the CLI, the tool process and its child were all gone when the turn ended. After a clean exit, nothing is sent, since the exited pid may be reused. The background child was already gone in the live check.
 - Agent-user mode: the group signal goes through `/usr/local/bin/cloudbot-signal-group`, a root-owned wrapper that accepts only a positive group id and TERM or KILL. The sudoers line allows only that wrapper. The wrapper was checked as a non-root user. The sudo path itself is not verified: WSL asks for a password, so no passwordless sudo test was run.
 
+### Codex engine (not wired yet)
+
+`CodexEngine` runs a turn in its own `codex app-server`, the Codex route with an approval channel (`codex exec` has none). It is built and tested but no bot uses it yet. The rest is tracked in #128.
+
+- Every thread starts with the approval policy `untrusted` and the `workspace-write` sandbox. With `on-request`, most commands run without a question.
+- The built-ins that have no per-call approval are turned off with `-c`: `web_search="disabled"`, `features.view_image=false`, `features.multi_agent=false` and `features.goals=false`. The model is then offered only `exec_command`, `write_stdin` and `request_user_input`.
+- A command approval goes to the same review as a Claude `Bash` call, with the command taken out of the login shell Codex wraps it in. A command that runs outside the workspace is reviewed as `cd <folder> && <command>`. Each file of a patch is reviewed as the `Write` or `Edit` it is, so the command floor checks its path. A write to a running command's input is declined.
+- An approval that would give more than one run is declined without a review: a retry outside the sandbox (it has a `reason`), a network host or network rule, and a file change with a `grantRoot`. A plain approval has none of these fields.
+- The step limit counts the approvals. Past it, the command or file change is declined and the engine ends the turn.
+- Anything else Codex asks is declined or refused: MCP questions, token refreshes, questions for the user and requests the engine does not know. A review that fails or takes longer than 65 minutes declines the call.
+- Each bot gets its own `CODEX_HOME`, made by CloudBot with mode 0700. The app server gets `PATH`, `HOME`, `CODEX_HOME`, the engine's own environment option and the turn's extra variables (such as the GitHub proxy). It never inherits the environment of the CloudBot server.
+- A stop sends `turn/interrupt`, closes the input, then sends TERM and KILL to the process group like the Claude engine.
+- `pnpm canary:codex` runs the real binary against a fake model server on 127.0.0.1. It checks the offered tools, that seven commands and a file edit all reach the review and none runs, and that `view_image` is refused. Set `CODEX_CANARY_PATH` to the binary. Run it on every Codex upgrade. The engine was checked against codex-cli 0.163.0.
+
+Not covered yet: commands that Codex starts in their own session may outlive a stop, as with the Claude engine (#165). Also the bot's own tools, outside MCP servers, images, the spending limit (Codex reports tokens, not dollars), the owner's model choices, the agent user, sign-in and the setup choice.
+
 ## Webhooks
 
 The owner creates a webhook in the Routines panel, with `POST
