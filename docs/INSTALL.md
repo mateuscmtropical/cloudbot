@@ -79,11 +79,11 @@ Four volumes keep your data across updates:
 | Volume | Holds |
 |---|---|
 | `cloudbot-data` | The database and the vault |
-| `cloudbot-home` | The bot home: the Claude login, sessions and the Claude Code CLI |
+| `cloudbot-home` | The bot home: the Claude login and sessions |
 | `cloudbot-workspaces` | Each bot's workspace, with its memory in `CLAUDE.md` |
 | `cloudbot-uploads` | Files attached in chat. The bot can read them but cannot change them |
 
-The CLI in `cloudbot-home` updates itself, so a new image does not replace it.
+The CLI comes with the image and does not update itself, so a new image replaces it.
 `docker compose down -v` deletes all four volumes, including the Claude login.
 
 ## Commands
