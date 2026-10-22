@@ -205,7 +205,9 @@ and one turn. It sees the call, the owner rules and the last six chat lines.
 Webhook bodies, page watches and messages from other bots are labeled as not the
 owner. It answers with a category and a decision. A message, a purchase or a
 booking always becomes a question for the owner. An answer that is not valid, a
-failed call and a timeout of 60 seconds all send the question to the owner. See
+failed call and a timeout of 60 seconds all send the question to the owner.
+When Claude is not signed in, the review runs on agy as the bot user, and its
+hook refuses every tool, so that call has no tools either. See
 [Review agent](ARCHITECTURE.md#review-agent).
 
 ### Owner approval

@@ -7,8 +7,8 @@ set -eu
 provider="${1:-}"
 action="${2:-}"
 
-if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "acp-key" ] && [ "$action" != "login" ] && [ "$action" != "status" ] && [ "$action" != "agy" ]; }; then
-    echo "cloudbot-provider takes a provider and acp, acp-key, agy, login or status." >&2
+if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "acp-key" ] && [ "$action" != "login" ] && [ "$action" != "status" ] && [ "$action" != "agy" ] && [ "$action" != "agy-review" ]; }; then
+    echo "cloudbot-provider takes a provider and acp, acp-key, agy, agy-review, login or status." >&2
     exit 2
 fi
 
@@ -69,6 +69,20 @@ case "$provider:$action" in
             low|medium|high|xhigh|max) set -- "$@" --effort "$CLOUDBOT_AGY_EFFORT" ;;
         esac
         exec /usr/local/bin/agy --input-format stream-json --output-format stream-json --print-timeout 0 "$@"
+        ;;
+    # The tool call review when Claude is not signed in. The hook gets no review address, so it refuses every tool and
+    # the model can only answer in text. Only a model slug is taken from the server.
+    gemini:agy-review)
+        unset CLOUDBOT_AGY_REVIEW_URL CLOUDBOT_TOOLS_TOKEN CLOUDBOT_AGY_CONVERSATION
+        mkdir -p "$HOME/.gemini/config"
+        printf '%s\n' '{"cloudbot-review":{"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"/usr/local/bin/node /usr/local/lib/cloudbot/agy-hook.js","timeout":3900}]}]}}' > "$HOME/.gemini/config/hooks.json"
+        set --
+        case "${CLOUDBOT_AGY_MODEL:-}" in
+            '') ;;
+            *[!a-z0-9.-]*) ;;
+            *) set -- --model "$CLOUDBOT_AGY_MODEL" ;;
+        esac
+        exec /usr/local/bin/agy --input-format stream-json --output-format stream-json --print-timeout 60s --disable-slash-commands --mode plan "$@"
         ;;
     copilot:acp) exec /usr/local/bin/copilot --acp --stdio ;;
     copilot:login) exec /usr/local/bin/copilot login --device-code ;;

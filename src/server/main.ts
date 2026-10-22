@@ -19,7 +19,10 @@ import { AGENT_TURN_ROOT, startLoopbackToolServer } from './agent/createLoopback
 import { SetupAccess } from './access/SetupAccess.ts';
 import { PasskeyService } from './access/PasskeyService.ts';
 import { buildSetupLink, readPublicBaseUrl, readServerHost, readServerPort } from './access/setupLinkUrl.ts';
+import { createAgyReviewModel } from './approvals/createAgyReviewModel.ts';
 import { createClaudeReviewModel } from './approvals/createClaudeReviewModel.ts';
+import type { ReviewModel } from './approvals/createToolCallReviewer.ts';
+import { PROVIDER_AGENT_WRAPPER, wrapperAgentLaunch } from './agent/codexAgentLaunch.ts';
 import { createReviewContextReader } from './approvals/createReviewContextReader.ts';
 import { createToolCallReviewer } from './approvals/createToolCallReviewer.ts';
 import { ChatService } from './chat/ChatService.ts';
@@ -282,9 +285,25 @@ const integrationService = integrationUser === undefined
             cleanup: () => runCleanup(integrationUser),
         });
 // The review model has no tools, so it runs as the server user. The environment object is shared, so a change of sign-in reaches it.
-const askReviewModel = createClaudeReviewModel({
+const askClaudeReview = createClaudeReviewModel({
     pathToClaudeCodeExecutable: claudePath, environment, workingDirectory: dataDir,
 });
+// An owner who connected only Gemini has no Claude sign-in, so a failed Claude review is tried again on agy.
+// agy runs only through the Docker wrapper, so without an agent user there is no second try.
+const askAgyReview = agentUser === undefined
+    ? undefined
+    : createAgyReviewModel({ launch: wrapperAgentLaunch(agentUser, PROVIDER_AGENT_WRAPPER), command: PROVIDER_AGENT_WRAPPER, args: ['gemini', 'agy-review'] });
+const askReviewModel: ReviewModel = async (prompt, signal, model, effort, onCost) => {
+    try {
+        return await askClaudeReview(prompt, signal, model, effort, onCost);
+    } catch (error: unknown) {
+        if (askAgyReview === undefined || signal?.aborted === true) {
+            throw error;
+        }
+
+        return askAgyReview(prompt, signal, model, effort);
+    }
+};
 const toolCallReviewer = createToolCallReviewer({
     askModel: askReviewModel,
     readContext: createReviewContextReader({ ruleStore, messageStore, modelStore, channelStore }),

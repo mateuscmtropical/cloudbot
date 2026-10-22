@@ -1166,6 +1166,14 @@ that sends something in a way the patterns miss relies on the model's category.
 Each reviewed call costs one extra model call. The review runs as the server
 user, which is safe only because the call has no tools.
 
+When the Claude call fails, as it does for an owner who connected only Gemini,
+the review is tried once more on agy (`createAgyReviewModel`). It runs as the
+bot user through the `agy-review` action of `docker/cloudbot-provider`. That
+action gives the hook no review address, so `agy-hook.js` refuses every tool
+and the model can only answer in text. A Claude model choice is replaced by a
+small Gemini model. Without an agent user there is no agy, so the failed review
+asks the owner as before.
+
 ## Command floor
 
 Before any rule, approval or model, `createToolCallReviewer` checks the call

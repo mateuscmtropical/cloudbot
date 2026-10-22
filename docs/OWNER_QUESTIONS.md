@@ -185,9 +185,9 @@ Status: **open** means the default is in use and waits for the owner.
 ### Review model
 
 - Status: open
-- Default: the review agent always runs on Claude, whatever provider the bot
-  uses. Without Claude connected the review fails, so every reviewed call asks
-  the owner.
+- Default: the review agent runs on Claude, whatever provider the bot uses.
+  Without Claude connected it runs on Gemini through agy. Without either, the
+  review fails, so every reviewed call asks the owner.
 - Why: the review prompt and its verdict format were built and checked on
   Claude. A wrong verdict from another model would let a call run.
 - Other options: review on the bot's own provider, or on one provider the owner
