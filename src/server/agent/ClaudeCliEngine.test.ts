@@ -398,6 +398,73 @@ describe('ClaudeCliEngine process handling', () => {
             .toEqual([{ type: 'turn_error', message: 'Could not start the Claude CLI. Check the server setup.', isUsageLimit: false }]);
     });
 
+    it('gives the turn a marker and ends what still carries it once the turn is over', async () => {
+        const { loopback } = makeLoopback();
+        const { spawn, children } = scriptedSpawn({ stdout: fixture('text'), exitCode: 0 });
+        const ended: string[] = [];
+        let spawnedEnvironment: NodeJS.ProcessEnv | undefined;
+        const recordingSpawn: SpawnFunction = (command, args, options) => {
+            spawnedEnvironment = options.env;
+
+            return spawn(command, args, options);
+        };
+        const engine = new ClaudeCliEngine({
+            loopback,
+            spawnFunction: recordingSpawn,
+            environment: {},
+            signalProcess: () => undefined,
+            endLeftovers: (marker) => {
+                ended.push(marker);
+            },
+        });
+
+        await collect(engine.runTurn(makeRequest({ extraEnvironment: { CLOUDBOT_TURN_MARKER: 'from-the-request' } })));
+
+        expect(children)
+            .toHaveLength(1);
+        expect(spawnedEnvironment?.CLOUDBOT_TURN_MARKER)
+            .toMatch(/^[0-9a-f]{32}$/);
+        expect(ended)
+            .toEqual([spawnedEnvironment?.CLOUDBOT_TURN_MARKER]);
+    });
+
+    // The case of #165: an approved command starts a child in its own session, outside the CLI's group, and the turn
+    // then ends normally. The child keeps the marker, so it is found and ended.
+    it.skipIf(process.platform !== 'linux')('ends a command that left the process group, after a clean end of the turn', async () => {
+        const { loopback } = makeLoopback();
+        const folder = mkdtempSync(join(tmpdir(), 'cloudbot-leftover-test-'));
+        const pidFile = join(folder, 'tool.pid');
+        const fakeCli = [
+            'const { spawn } = require("node:child_process");',
+            'const { writeFileSync } = require("node:fs");',
+            'const { createInterface } = require("node:readline");',
+            'const say = (message) => process.stdout.write(JSON.stringify(message) + "\\n");',
+            'createInterface({ input: process.stdin }).on("line", (line) => {',
+            '    const message = JSON.parse(line);',
+            '    if (message.type === "user") {',
+            '        const tool = spawn("sleep", ["600"], { stdio: "ignore", detached: true });',
+            '        tool.unref();',
+            '        writeFileSync(process.env.FAKE_TOOL_PID_FILE, String(tool.pid));',
+            '        say({ type: "system", subtype: "init", session_id: "s-1", tools: [], mcp_servers: [] });',
+            '        say({ type: "result", subtype: "success", is_error: false, result: "Done.", session_id: "s-1", total_cost_usd: 0, duration_ms: 1 });',
+            '    }',
+            '});',
+            'process.stdin.on("end", () => process.exit(0));',
+        ].join('\n');
+        const realSpawn: SpawnFunction = (_command, args, options) => spawnProcess(process.execPath, ['-e', fakeCli, '--', ...args], options);
+        const engine = new ClaudeCliEngine({ loopback, spawnFunction: realSpawn, environment: { PATH: process.env.PATH ?? '', FAKE_TOOL_PID_FILE: pidFile } });
+
+        const events = await collect(engine.runTurn(makeRequest()));
+        const toolPid = Number(readFileSync(pidFile, 'utf8'));
+
+        await vi.waitFor(() => {
+            expect(isProcessAlive(toolPid))
+                .toBe(false);
+        });
+        expect(events.filter(event => event.type === 'turn_error'))
+            .toEqual([]);
+    }, 15000);
+
     it('stops the CLI on abort with an interrupt on stdin, yields no error and releases the turn', async () => {
         const { loopback, released } = makeLoopback();
         const controller = new AbortController();

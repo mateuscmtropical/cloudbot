@@ -22,6 +22,7 @@ const NAMES_THE_SERVER_SETS = [
     'GIT_CONFIG_KEY_2',
     'GIT_CONFIG_VALUE_2',
     'DISABLE_AUTOUPDATER',
+    'CLOUDBOT_TURN_MARKER',
 ];
 
 const SUDOERS_PATH = new URL('../../../docker/cloudbot-agent.sudoers', import.meta.url);
