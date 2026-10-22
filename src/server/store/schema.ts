@@ -130,6 +130,24 @@ const botRules = sqliteTable('bot_rules', {
         .on(table.botId),
 ]);
 
+// A passkey of the owner. The id is the credential id the authenticator made, and the public key checks each sign-in.
+const passkeys = sqliteTable('passkeys', {
+    id: text('id')
+        .primaryKey(),
+    publicKey: text('public_key')
+        .notNull(),
+    counter: integer('counter')
+        .notNull(),
+    transports: text('transports', { mode: 'json' })
+        .$type<string[]>()
+        .notNull(),
+    name: text('name')
+        .notNull(),
+    createdAt: integer('created_at')
+        .notNull(),
+    lastUsedAt: integer('last_used_at'),
+});
+
 // A skill the owner approved for a bot: written steps the bot reads when a task needs them. The server keeps them, not
 // the workspace, so the bot cannot change a skill without the owner's card.
 const botSkills = sqliteTable('bot_skills', {
@@ -488,5 +506,5 @@ const pushSubscriptions = sqliteTable('push_subscriptions', {
         .on(table.endpoint),
 ]);
 
-export { botLimits, botModels, botRules, botSkills, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, emailAccounts, emailDeliveries, integrationRuns, integrations, messages, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks };
+export { botLimits, botModels, botRules, botSkills, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, emailAccounts, emailDeliveries, integrationRuns, integrations, messages, passkeys, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks };
 export type { StoredUploadRecord };
