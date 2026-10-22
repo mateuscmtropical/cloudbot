@@ -6,6 +6,26 @@ function classify(toolName: string): string {
     return classifyToolCall({ toolName, input: {} });
 }
 
+describe('channel changes', () => {
+    it('makes the owner approve each change of who takes part in a channel', () => {
+        expect(classify('mcp__cloudbot__channel_create'))
+            .toBe('always-ask');
+        expect(classify('mcp__cloudbot__channel_add'))
+            .toBe('always-ask');
+        expect(classify('mcp__cloudbot__channel_set_manager'))
+            .toBe('always-ask');
+        expect(classify('mcp__cloudbot__channel_remove'))
+            .toBe('always-ask');
+        expect(classify('mcp__cloudbot__channel_delete'))
+            .toBe('always-ask');
+    });
+
+    it('does not ask the owner to list the channels of the bot', () => {
+        expect(classify('mcp__cloudbot__channel_list'))
+            .toBe('skip');
+    });
+});
+
 describe('models_set', () => {
     it('is reviewed, so the review agent sees a change of models', () => {
         expect(classify('mcp__cloudbot__models_set'))

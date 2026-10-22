@@ -4,6 +4,7 @@ import type { BotRoutine } from '../shared/routineTypes.ts';
 import type { BotWatch } from '../shared/watchTypes.ts';
 import type { BotWebhook, CreatedBotWebhook } from '../shared/webhookTypes.ts';
 import type { TurnLimits } from '../shared/limitTypes.ts';
+import type { ChannelDetail, ChannelPostView, ChannelSummary } from '../shared/channelTypes.ts';
 
 const API_ROOT = '/api';
 
@@ -77,6 +78,29 @@ function listBots(): Promise<BotSummary[]> {
     const path = `${API_ROOT}/bots`;
 
     return requestJson<BotSummary[]>(path, {});
+}
+
+function listChannels(): Promise<ChannelSummary[]> {
+    return requestJson<ChannelSummary[]>(`${API_ROOT}/channels`, {});
+}
+
+function getChannel(channelId: string): Promise<ChannelDetail> {
+    const path = `${API_ROOT}/channels/${encodeURIComponent(channelId)}`;
+
+    return requestJson<ChannelDetail>(path, {});
+}
+
+function postChannelMessage(channelId: string, text: string): Promise<ChannelPostView> {
+    const path = `${API_ROOT}/channels/${encodeURIComponent(channelId)}/messages`;
+
+    return postJson<ChannelPostView>(path, { text });
+}
+
+// Stops the whole round of the channel. The server answers with whether a round was running.
+function stopChannel(channelId: string): Promise<{ stopped: boolean }> {
+    const path = `${API_ROOT}/channels/${encodeURIComponent(channelId)}/stop`;
+
+    return postJson<{ stopped: boolean }>(path, {});
 }
 
 // The "+" button. The server makes the bot and opens its chat with the question about its name and job.
@@ -411,6 +435,10 @@ export {
     createBot,
     deleteBot,
     listBots,
+    listChannels,
+    getChannel,
+    postChannelMessage,
+    stopChannel,
     listMessages,
     sendMessage,
     stopTurn,

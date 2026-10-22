@@ -6,6 +6,7 @@ import { buildWatchMessage } from '../watches/watchMessage.ts';
 import { buildBotHandoffMessage } from '../bots/botHandoff.ts';
 import { createReviewContextReader } from './createReviewContextReader.ts';
 import type { EffortChoices, ModelChoices } from '../models/modelChoices.ts';
+import { CHANNEL_TRANSCRIPT_LIMIT } from '../channels/channelRound.ts';
 
 const NO_CHOICES: ModelChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
 const NO_EFFORTS: EffortChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
@@ -156,5 +157,41 @@ describe('createReviewContextReader', () => {
 
         expect(listByBot)
             .toHaveBeenCalledWith('bot-9', { limit: 3 });
+    });
+
+    it('reads the channel posts for a channel turn, with the channel labels, and never the bot chat', async () => {
+        const listByBot = vi.fn()
+            .mockResolvedValue([{ role: 'user', content: { kind: 'text', text: 'Private bot chat' } }]);
+        const listRecentMessages = vi.fn()
+            .mockResolvedValue([
+                { role: 'user', authorName: 'You', body: { kind: 'text', text: 'Plan the launch' } },
+                { role: 'assistant', authorName: 'Ben', body: { kind: 'text', text: 'First\n  line' } },
+                { role: 'system', authorName: 'CloudBot', body: { kind: 'text', text: 'The owner stopped the channel round.' } },
+            ]);
+        const readContext = createReviewContextReader({ ruleStore: { list: vi.fn()
+            .mockResolvedValue([]) }, messageStore: { listByBot }, modelStore: createModelStore(), channelStore: { listRecentMessages } });
+
+        const context = await readContext('bot-ana', 'channel-1');
+
+        expect(context.recentMessages)
+            .toEqual(['Owner: Plan the launch', 'Bot Ben: First line']);
+        expect(listRecentMessages)
+            .toHaveBeenCalledWith('channel-1', CHANNEL_TRANSCRIPT_LIMIT);
+        expect(listByBot)
+            .not.toHaveBeenCalled();
+    });
+
+    it('gives a channel review no chat lines when the channel store is missing, never the bot chat', async () => {
+        const listByBot = vi.fn()
+            .mockResolvedValue([{ role: 'user', content: { kind: 'text', text: 'Private bot chat' } }]);
+        const readContext = createReviewContextReader({ ruleStore: { list: vi.fn()
+            .mockResolvedValue([]) }, messageStore: { listByBot }, modelStore: createModelStore() });
+
+        const context = await readContext('bot-ana', 'channel-1');
+
+        expect(context.recentMessages)
+            .toEqual([]);
+        expect(listByBot)
+            .not.toHaveBeenCalled();
     });
 });

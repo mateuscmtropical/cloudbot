@@ -10,7 +10,8 @@ type ToolCallVerdict
 
 // Decides what happens to one tool call. A throw is treated as ask.
 // The signal is the turn's. A review that the turn no longer needs can be stopped with it.
-type ToolCallReviewer = (botId: string, call: ToolCall, signal?: AbortSignal) => Promise<ToolCallVerdict>;
+// The channel id is set for a channel turn. The review then reads the channel, not the bot's own chat.
+type ToolCallReviewer = (botId: string, call: ToolCall, signal?: AbortSignal, channelId?: string) => Promise<ToolCallVerdict>;
 
 // How the gate talks to the chat. close sets the chosen option and returns the stored message.
 interface ApprovalChat {
@@ -90,8 +91,8 @@ class ApprovalGate {
         this.onOwnerWait = options.onOwnerWait;
     }
 
-    async review(botId: string, call: ToolCall, signal: AbortSignal): Promise<ToolCallDecision> {
-        const verdict = await this.readVerdict(botId, call, signal);
+    async review(botId: string, call: ToolCall, signal: AbortSignal, channelId?: string): Promise<ToolCallDecision> {
+        const verdict = await this.readVerdict(botId, call, signal, channelId);
 
         if (verdict.decision === 'allow') {
             return { isAllowed: true };
@@ -134,9 +135,9 @@ class ApprovalGate {
         }
     }
 
-    private async readVerdict(botId: string, call: ToolCall, signal: AbortSignal): Promise<ToolCallVerdict> {
+    private async readVerdict(botId: string, call: ToolCall, signal: AbortSignal, channelId?: string): Promise<ToolCallVerdict> {
         try {
-            return await this.reviewer(botId, call, signal);
+            return await this.reviewer(botId, call, signal, channelId);
         } catch {
             // A reviewer that fails must not let the call through, so the owner decides.
             return { decision: 'ask', summary: REVIEW_FAILED_SUMMARY };

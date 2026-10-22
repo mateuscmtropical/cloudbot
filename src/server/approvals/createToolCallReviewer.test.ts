@@ -184,7 +184,16 @@ describe('createToolCallReviewer', () => {
         await reviewer('bot-7', BASH_CALL);
 
         expect(readContext)
-            .toHaveBeenCalledWith('bot-7');
+            .toHaveBeenCalledWith('bot-7', undefined);
+    });
+
+    it('passes the channel id to the context reader for a channel turn', async () => {
+        const { reviewer, readContext } = createReviewer(answer({}));
+
+        await reviewer('bot-7', BASH_CALL, undefined, 'channel-3');
+
+        expect(readContext)
+            .toHaveBeenCalledWith('bot-7', 'channel-3');
     });
 });
 

@@ -17,7 +17,7 @@ describe('BotList new bot button', () => {
     it('calls onNewBot when the + button is pressed', () => {
         const onNewBot = vi.fn();
         const { getByLabelText } = render(
-            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" isOpen={false} onSelectBot={vi.fn()} onNewBot={onNewBot} onConnectApps={vi.fn()} />,
+            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={onNewBot} onConnectApps={vi.fn()} />,
         );
 
         fireEvent.click(getByLabelText('New bot'));

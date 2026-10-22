@@ -10,8 +10,11 @@ import type { AccessErrorResponse } from './access/requireSession.ts';
 import type { SetupAccess } from './access/SetupAccess.ts';
 import { readPublicBaseUrl } from './access/setupLinkUrl.ts';
 
+import { createChannelRoutes } from './channels/createChannelRoutes.ts';
 import { createChatRoutes } from './chat/createChatRoutes.ts';
 import type { ChatService } from './chat/ChatService.ts';
+import type { BotStore } from './store/BotStore.ts';
+import type { ChannelStore } from './store/ChannelStore.ts';
 import { createScreenRoutes } from './desktop/createScreenRoutes.ts';
 import type { ScreenViewName } from '../shared/chatTypes.ts';
 import type { ScreenHolder } from './desktop/ScreenHolder.ts';
@@ -42,6 +45,9 @@ interface AppOptions {
     access: SetupAccess;
     webRoot?: string;
     chatService?: ChatService;
+    // The channels the owner can see and post in. Without both stores the channel routes are not served.
+    channelStore?: ChannelStore;
+    botStore?: BotStore;
     ruleStore?: RuleStore;
     routineStore?: RoutineStore;
     modelStore?: ModelStore;
@@ -143,6 +149,12 @@ function createApp(options: AppOptions): Hono {
         const chatRoutes = createChatRoutes(options.chatService);
 
         app.route('/', chatRoutes);
+    }
+
+    if (options.channelStore !== undefined && options.botStore !== undefined) {
+        const channelRoutes = createChannelRoutes({ channels: options.channelStore, bots: options.botStore, rounds: options.chatService });
+
+        app.route('/', channelRoutes);
     }
 
     if (options.chatService !== undefined && options.ruleStore !== undefined) {

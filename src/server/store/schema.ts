@@ -1,5 +1,7 @@
-import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
+import type { MessageBody } from '../../shared/chatTypes.ts';
 import { MASCOT_COLOR_NAMES, MASCOT_SHAPES } from '../../shared/mascot.ts';
 import { CONNECTED_APP_STATUSES } from '../../shared/connectedApps.ts';
 import { INTEGRATION_COMMANDS } from '../../shared/integrations.ts';
@@ -308,5 +310,71 @@ const integrationRuns = sqliteTable('integration_runs', {
         .notNull(),
 });
 
-export { botLimits, botModels, botRules, bots, browserAllowedHosts, connectedApps, integrationRuns, integrations, messages, routines, settings, turnQueue, turnWaits, watches, webhooks };
+// A group chat or project channel. Its messages live in channelMessages, not in the bots' own chats.
+// Channel names are unique without case, so "Project" and "project" cannot both exist.
+const channels = sqliteTable('channels', {
+    id: text('id')
+        .primaryKey(),
+    name: text('name')
+        .notNull(),
+    createdAt: integer('created_at')
+        .notNull(),
+}, table => [
+    uniqueIndex('channels_name_lower')
+        .on(sql`lower(${table.name})`),
+]);
+
+// The bots in a channel. Exactly one member is the manager, the bot that splits the owner's requests.
+const channelMembers = sqliteTable('channel_members', {
+    channelId: text('channel_id')
+        .notNull()
+        .references(() => channels.id, { onDelete: 'cascade' }),
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    isManager: integer('is_manager', { mode: 'boolean' })
+        .notNull()
+        .default(false),
+    joinedAt: integer('joined_at')
+        .notNull(),
+}, table => [
+    primaryKey({ columns: [table.channelId, table.botId] }),
+    index('channel_members_bot_id')
+        .on(table.botId),
+]);
+
+// Channel messages. The author is a bot id that is set to null when the bot is deleted, so the history stays.
+// The name and mascot are copied into the row, so a message from a deleted bot still shows who wrote it.
+const channelMessages = sqliteTable('channel_messages', {
+    sequence: integer('sequence')
+        .primaryKey({ autoIncrement: true }),
+    id: text('id')
+        .notNull()
+        .unique(),
+    channelId: text('channel_id')
+        .notNull()
+        .references(() => channels.id, { onDelete: 'cascade' }),
+    authorBotId: text('author_bot_id')
+        .references(() => bots.id, { onDelete: 'set null' }),
+    authorName: text('author_name')
+        .notNull(),
+    authorColor: text('author_color', { enum: MASCOT_COLOR_NAMES })
+        .notNull(),
+    authorShape: text('author_shape', { enum: MASCOT_SHAPES })
+        .notNull(),
+    role: text('role', { enum: MESSAGE_ROLES })
+        .notNull(),
+    kind: text('kind')
+        .notNull(),
+    content: text('content', { mode: 'json' })
+        .$type<MessageBody>()
+        .notNull(),
+    createdAt: integer('created_at')
+        .notNull(),
+}, table => [
+    index('channel_messages_channel_id')
+        .on(table.channelId),
+]);
+
+export { botLimits, botModels, botRules, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, integrationRuns, integrations, messages, routines, settings, turnQueue, turnWaits, watches, webhooks };
 export type { StoredUploadRecord };
