@@ -174,7 +174,7 @@ function MessageItemView({ message, actions, mascot, isMascotShown = false, masc
     }
 
     return (
-        <div className={`${className} has-mascot`}>
+        <div className={`${className} has-mascot`} data-message-mascot={isMascotShown ? 'true' : undefined}>
             {isMascotShown
                 ? <CloudMascot color={mascot.mascotColor} shape={mascot.mascotShape} state={mascotState} size={MESSAGE_MASCOT_SIZE} />
                 : <span className="mascot-gap" style={{ width: MESSAGE_MASCOT_SIZE }} aria-hidden="true" />}

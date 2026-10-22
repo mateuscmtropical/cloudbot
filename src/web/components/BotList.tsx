@@ -3,8 +3,12 @@ import type { ReactElement } from 'react';
 import type { BotSummary } from '../../shared/chatTypes.ts';
 import type { ChannelSummary } from '../../shared/channelTypes.ts';
 import type { MascotState } from '../mascotState.ts';
+import type { MascotHopPoint } from '../mascotHop.ts';
 import { CloudMascot } from './CloudMascot.tsx';
 import { PlusIcon } from './PlusIcon.tsx';
+
+// Where the hop lands on the row, inside its rounded right end.
+const ROW_EDGE_INSET = 24;
 
 interface BotListProps {
     bots: BotSummary[];
@@ -14,7 +18,7 @@ interface BotListProps {
     channels: ChannelSummary[];
     selectedChannelId: string | undefined;
     isOpen: boolean;
-    onSelectBot: (botId: string) => void;
+    onSelectBot: (botId: string, sourceMascot: HTMLElement | null, rowEdge: MascotHopPoint) => void;
     onSelectChannel: (channelId: string) => void;
     onNewBot: () => void;
     onConnectApps: () => void;
@@ -48,8 +52,13 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
                             type="button"
                             className={itemClassName}
                             aria-current={isSelected ? 'true' : undefined}
-                            onClick={() => {
-                                onSelectBot(bot.id);
+                            onClick={(event) => {
+                                const sourceMascot = event.currentTarget.querySelector<HTMLElement>('.cloud-mascot');
+                                // The mascot hops along the row to its right edge, then down into the chat.
+                                const rowRect = event.currentTarget.getBoundingClientRect();
+                                const rowEdge: MascotHopPoint = { x: rowRect.right - ROW_EDGE_INSET, y: rowRect.top + rowRect.height / 2 };
+
+                                onSelectBot(bot.id, sourceMascot, rowEdge);
                             }}
                         >
                             <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={40} />

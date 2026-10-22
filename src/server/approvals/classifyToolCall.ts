@@ -1,4 +1,5 @@
 import type { ToolCall } from '../agent/AgentRunner.ts';
+import { EMAIL_SEND_TOOL_FULL_NAME, EMAIL_SETUP_TOOL_FULL_NAME } from '../email/emailToolNames.ts';
 
 type ToolCallClass = 'skip' | 'always-ask' | 'review';
 
@@ -44,17 +45,26 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__notifications_enable',
     // The same: it posts a card, and the browser removes its own subscription when the owner taps.
     'mcp__cloudbot__notifications_disable',
+    // Listing reads the provider status. Connecting only posts the provider list, and the owner signs in on the provider's page.
+    'mcp__cloudbot__provider_list',
+    'mcp__cloudbot__provider_connect',
+    'mcp__cloudbot__email_status',
 ]);
 
 // Letting the browser reach a private host always needs the owner's approval, whatever the rules say.
 // A new outside server, and the tools it brings, always need the owner's approval too.
 const ALWAYS_ASK_TOOL_NAMES = new Set([
+    // These calls have fixed cards, so an owner always sees the exact mail or mailbox settings.
+    EMAIL_SEND_TOOL_FULL_NAME,
+    EMAIL_SETUP_TOOL_FULL_NAME,
     'mcp__cloudbot__browser_allow_host',
     'mcp__cloudbot__app_connect',
     // A new bot gets its own workspace and its first instructions, so the owner approves it before it is made.
     'mcp__cloudbot__bot_create',
-    // An imported bot gets the rules and description of a file, so the owner approves the whole template first.
+    // An imported template or instruction draft can make a bot, so the owner approves it first.
     'mcp__cloudbot__bot_import',
+    // Pasted instructions become a bot's memory, so the owner approves the whole draft first.
+    'mcp__cloudbot__bot_import_text',
     // A gallery template becomes a bot, and a share opens a pull request to a public repository. Each waits for the owner's card.
     'mcp__cloudbot__gallery_install',
     'mcp__cloudbot__gallery_share',
@@ -73,6 +83,8 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
     'mcp__cloudbot__channel_delete',
     // Limits decide how much a turn may spend, so the owner approves each change with its old and new values.
     'mcp__cloudbot__limits_set',
+    // A new provider gets the bot's next messages and files, so the owner approves the switch.
+    'mcp__cloudbot__provider_use',
 ]);
 
 // The tools of the bot itself have fixed names. Any other tool is an outside connector.

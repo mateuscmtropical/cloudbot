@@ -7,6 +7,8 @@ import { BotList } from './components/BotList.tsx';
 import { ChannelView } from './components/ChannelView.tsx';
 import type { MessageActions } from './components/MessageItem.tsx';
 import { deriveMascotState } from './mascotState.ts';
+import { findLatestMessageMascot, startMascotHop } from './mascotHop.ts';
+import type { MascotHop, MascotHopPoint } from './mascotHop.ts';
 import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
@@ -47,6 +49,13 @@ interface FinishedTurn {
 interface ActiveTool {
     botId: string;
     toolName: string;
+}
+
+interface MascotHopRequest {
+    requestId: number;
+    targetBotId: string;
+    sourceMascot: HTMLElement;
+    rowEdge: MascotHopPoint;
 }
 
 const emptyDraft: DraftState = { botId: '', text: '', afterSequence: 0 };
@@ -122,6 +131,10 @@ function App(): ReactElement {
     const [hasUnreadReply, setHasUnreadReply] = useState(false);
     // The message a tapped notification was about. The conversation scrolls to it once, then clears it.
     const [focusMessageId, setFocusMessageId] = useState<string | undefined>(undefined);
+    const [mascotHopRequest, setMascotHopRequest] = useState<MascotHopRequest | undefined>(undefined);
+    const mascotHopRequestIdRef = useRef(0);
+    const startedMascotHopRequestIdRef = useRef<number | undefined>(undefined);
+    const mascotHopRef = useRef<MascotHop | undefined>(undefined);
 
     useEffect(() => {
         if (finishedTurn === undefined) {
@@ -188,6 +201,29 @@ function App(): ReactElement {
 
     const messages = chatState.messages;
     const olderPaging = chatState.olderPaging;
+
+    useLayoutEffect(() => {
+        if (mascotHopRequest === undefined
+            || mascotHopRequest.targetBotId !== selectedBotId
+            || selectedChannelId !== undefined
+            || startedMascotHopRequestIdRef.current === mascotHopRequest.requestId) {
+            return;
+        }
+
+        const conversationElement = document.querySelector<HTMLElement>('.conversation');
+        const targetMascot = conversationElement === null ? null : findLatestMessageMascot(conversationElement);
+
+        if (targetMascot === null) {
+            return;
+        }
+
+        startedMascotHopRequestIdRef.current = mascotHopRequest.requestId;
+        mascotHopRef.current = startMascotHop(mascotHopRequest.sourceMascot, targetMascot, mascotHopRequest.rowEdge);
+    }, [mascotHopRequest, messages, selectedBotId, selectedChannelId]);
+
+    useEffect(() => () => {
+        mascotHopRef.current?.cancel();
+    }, []);
 
     // A layout effect, so the ref matches the committed list before any later event or response reads it.
     useLayoutEffect(() => {
@@ -630,7 +666,25 @@ function App(): ReactElement {
             });
     }
 
-    function handleSelectBot(botId: string): void {
+    function handleSelectBot(
+        botId: string,
+        sourceMascot: HTMLElement | null = null,
+        rowEdge?: MascotHopPoint,
+    ): void {
+        mascotHopRef.current?.cancel();
+        mascotHopRef.current = undefined;
+        setMascotHopRequest(undefined);
+
+        if ((botId !== selectedBotId || selectedChannelId !== undefined)
+            && sourceMascot !== null
+            && rowEdge !== undefined) {
+            mascotHopRequestIdRef.current += 1;
+            const requestId = mascotHopRequestIdRef.current;
+            const pendingHop: MascotHopRequest = { requestId, targetBotId: botId, sourceMascot, rowEdge };
+
+            setMascotHopRequest(pendingHop);
+        }
+
         // The older-load error belongs to the bot it was for, so another bot starts clean.
         setErrorText(previousError => (previousError === OLDER_ERROR_TEXT ? undefined : previousError));
         setSelectedChannelId(undefined);
@@ -639,6 +693,9 @@ function App(): ReactElement {
     }
 
     function handleSelectChannel(channelId: string): void {
+        mascotHopRef.current?.cancel();
+        mascotHopRef.current = undefined;
+        setMascotHopRequest(undefined);
         setChannelDetail(undefined);
         setSelectedChannelId(channelId);
         setIsBotListOpen(false);

@@ -15,7 +15,7 @@ links to it instead of repeating it. To report a problem, read the
 | The owner, holding the session cookie | Trusted |
 | The CloudBot server code | Trusted |
 | The bot, which is a model plus everything it runs | Not trusted. It can be misled. |
-| Text from outside: web pages, files, webhook bodies, page watches, replies from connected apps, messages from other bots | Not trusted. It is data, never instructions. |
+| Text from outside: web pages, files, webhook bodies, page watches, email, replies from connected apps, messages from other bots | Not trusted. It is data, never instructions. |
 | A stranger on the internet | Reaches only the public routes |
 
 The main threat is prompt injection. Text that the bot reads can talk it into
@@ -107,10 +107,11 @@ the server user.
 
 | Secret | Where it lives | How the bot uses it | What the bot never gets |
 |---|---|---|---|
-| Anthropic API key | The vault | Through the key proxy | The key. It gets the proxy address and a dummy key. |
+| API key of an AI provider | The vault | Through a key proxy per provider | The key. It gets the proxy address and a dummy key. |
 | GitHub token | The vault, per bot | Through `GithubProxy` for `git` and `gh` | The token. A token saved for another site is never sent. |
 | Token of a connected app | The vault, per bot | Through `AppProxy` | The token and the server address |
 | Integration secret | The vault, per bot | Through a script that runs as `cloudbot-integrations` | The value. It is removed from the output. |
+| Bot mailbox password | The vault, per bot | Used by the IMAP reader and SMTP sender over TLS | The value, in the model, chat, database or logs |
 | Password, code or card the bot asked for | The vault, per bot and per site | `browser_type_secret` types it | The value, in the chat, in a tool result or in a log |
 
 How each one works is in [Secrets](ARCHITECTURE.md#secrets),
@@ -122,8 +123,8 @@ The vault encrypts each value with AES-256-GCM and a new random IV. The key is
 The encryption alone helps only when someone gets `vault.json` without
 `vault.key`. The real protection is the Unix permission on the data folder.
 
-The key proxy sends the bot's requests to Anthropic's API and adds the key. It
-sends nothing to any other address.
+Each key proxy sends the bot's requests to its one provider's API and adds that
+provider's key. It sends nothing to any other address.
 
 A secret that the bot asked for with `request_secret` is saved with an https
 site. `browser_type_secret` types it only when the page origin is that site and
@@ -131,9 +132,11 @@ the focused element is a password, one-time code or card field. A search box or
 a text field is refused. Names that start with `ANTHROPIC_` or `CLAUDE_` are
 refused, so a bot form cannot pass for the setup form.
 
-The subscription login is not in the vault. The `claude` CLI keeps it in the
+The subscription login is not in the vault. Each provider's CLI keeps it in the
 home of the `bot` user. CloudBot never reads, copies or stores it. The bot
-runs as the same user, so in Docker its shell can read those files.
+runs as the same user, so in Docker its shell can read those files. A tool call
+that names a CLI's sign-in or config folder is refused before the review, but
+this is a text match, and a path built at run time is not caught.
 
 ## What stops the bot from doing harm
 
@@ -151,6 +154,16 @@ CLI as `--disallowedTools`, and each helper agent gets them as
 can propose a change with a tool, and the owner approves it. A rule that names
 no tool is advice to the model and not a barrier. A misspelled tool name blocks
 nothing. See [Owner rules](ARCHITECTURE.md#owner-rules).
+
+CloudBot also always disallows the CLI built-ins that operate separate CLI
+services. The list covers `CronCreate`, `CronDelete`, `CronList`,
+`ScheduleWakeup`, `RemoteTrigger`, `PushNotification`, `SendMessage`,
+`ListAgents`, `Workflow`, `Monitor`, `EnterWorktree`, `ExitWorktree`,
+`DesignSync`, `ReportFindings`, `TaskStop`, `NotebookEdit`, `PowerShell` and
+`Skill`. The same fixed list reaches every main turn and helper agent. Owner
+blocks are added to it. CloudBot's own shell, file, web, helper and MCP tools
+stay available under their existing review rules. CLI skills are not loaded by
+CloudBot.
 
 ### Command floor
 
@@ -230,6 +243,7 @@ name once, checks every address and connects to exactly the address it checked.
 | Connected apps | `checkAppUrl` when the app is added and `AppProxy` again on every request |
 | GitHub | `GithubProxy` forwards only to GitHub |
 | Integrations | No gate. The owner approves the script, and the run uses its own user. |
+| Email | `email_setup` requires an owner card for the configured hosts. IMAP and SMTP require TLS with certificate checks. | No address gate or DNS pinning for the configured hosts |
 | The bot's shell and the CLI's WebFetch tool | No gate |
 
 The owner can allow one private host for the browser with `browser_allow_host`.
@@ -266,6 +280,18 @@ reaches the bot marked as outside data, and the review reads it as not the
 owner. There is no signature check, so the token is the only secret. See
 [Webhooks](ARCHITECTURE.md#webhooks).
 
+### Email
+
+Incoming email is outside data. The chat message has a fixed marker, the review
+context labels it `Email (outside data)`, and the system prompt tells the bot
+not to follow instructions in mail. This is a prompt defense, so a model can
+still be misled. Sending mail has an external gate: the owner approves a card
+with every recipient, the subject and the full text. A card that cannot show
+the complete mail is refused. Mailbox settings also require an owner card. The
+password is entered through a secure form into the vault and is used only by
+the server's IMAP and SMTP clients. Attachment contents are discarded and are
+not exposed to the bot or sent. See [Email](ARCHITECTURE.md#email).
+
 ### Other bots
 
 A hand-off from another bot is a user message labeled as not the owner. The
@@ -297,12 +323,17 @@ These are accepted today. A report about one of them is out of scope in the
   the owner.
 - The Chromium profile holds the sessions of sites that were signed in. The bot
   can read it, and it can drive the browser.
-- The subscription login is readable by the bot in Docker.
+- The subscription login of every provider is readable by the bot in Docker.
 - Chromium runs with `--no-sandbox`, because Docker's default seccomp profile
   blocks the namespaces its sandbox needs. See
   [OWNER_QUESTIONS.md](OWNER_QUESTIONS.md).
-- The bot can use the API key through the key proxy outside the turn limits.
-  The limits count the spending that the CLI reports.
+- The bot can use an API key through its key proxy outside the turn limits. A
+  command can reach every key proxy, not only the one of its own provider. The
+  limits count the spending that the Claude CLI reports. Other providers have
+  no spending limit yet.
+- A provider CLI other than Claude decides which of its tools ask first. Its
+  questions are reviewed, but a tool that the CLI runs without asking is not
+  seen. Mistral Vibe and opencode are set to ask for every tool.
 - The memory of a bot is `CLAUDE.md` in its workspace, and the bot writes it.
   Text from a web page can end up there and come back in later turns.
 
@@ -346,6 +377,10 @@ These are accepted today. A report about one of them is out of scope in the
 - The image downloads the `claude` CLI with Anthropic's installer at build
   time. The CLI then runs from a root-owned copy and does not update itself.
   Updates come with a new image.
+- The other provider CLIs come from npm or from each vendor's install script
+  at build time, pinned to a version where the source allows it. They are owned
+  by root, so the bot user cannot replace them, and update checks are off
+  where the CLI has a switch for it.
 - `docker/install.sh` runs with `curl | sudo bash`, and `cloudbot update` pulls
   `main` with `git pull --ff-only`. Nothing checks a signature.
 

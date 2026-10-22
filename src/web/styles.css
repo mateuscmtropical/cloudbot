@@ -150,6 +150,46 @@ svg {
     flex-shrink: 0;
 }
 
+.mascot-hop-copy {
+    position: fixed;
+    z-index: 10;
+    margin: 0;
+    pointer-events: none;
+    transform-origin: center;
+    will-change: transform;
+    animation: mascot-hop var(--mascot-hop-duration) cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+@keyframes mascot-hop {
+    0% {
+        transform: translate(0, 0) scale(1);
+    }
+
+    10% {
+        transform: translate(var(--mascot-hop-row-first-x), calc(var(--mascot-hop-row-first-y) - 14px)) scale(1.04);
+    }
+
+    20% {
+        transform: translate(var(--mascot-hop-row-second-x), var(--mascot-hop-row-second-y)) scale(1);
+    }
+
+    30% {
+        transform: translate(var(--mascot-hop-row-edge-x), calc(var(--mascot-hop-row-edge-y) - 14px)) scale(1.04);
+    }
+
+    40% {
+        transform: translate(var(--mascot-hop-row-edge-x), var(--mascot-hop-row-edge-y)) scale(1);
+    }
+
+    70% {
+        transform: translate(var(--mascot-hop-landing-middle-x), calc(var(--mascot-hop-landing-middle-y) - 48px)) scale(var(--mascot-hop-landing-middle-scale));
+    }
+
+    100% {
+        transform: translate(var(--mascot-hop-landing-x), var(--mascot-hop-landing-y)) scale(var(--mascot-hop-landing-scale));
+    }
+}
+
 .message.has-mascot {
     display: flex;
     align-items: flex-end;

@@ -179,3 +179,33 @@ Status: **open** means the default is in use and waits for the owner.
   the bot.
 - Other options: review only some tools, use a cheaper model, or let the owner
   pick which actions always ask.
+
+## AI providers (#128)
+
+### Review model
+
+- Status: open
+- Default: the review agent always runs on Claude, whatever provider the bot
+  uses. Without Claude connected the review fails, so every reviewed call asks
+  the owner.
+- Why: the review prompt and its verdict format were built and checked on
+  Claude. A wrong verdict from another model would let a call run.
+- Other options: review on the bot's own provider, or on one provider the owner
+  picks for reviews.
+
+### Providers without a key or a sign-in
+
+- Status: open
+- Default: GitHub Copilot and Cursor offer only a subscription, since their
+  tokens cannot go through the key proxy. Qwen offers only a key, since Qwen
+  Code dropped its free sign-in. opencode offers only its free models.
+- Other options: a Copilot or Cursor token given to the CLI directly, which the
+  bot could then read.
+
+### Default models
+
+- Status: open
+- Default: each CLI uses its own default model. An xAI key runs `xai/grok-4.7`
+  on opencode and a Moonshot key runs `kimi-k3`. The owner's model choices name
+  Claude models, so they apply to Claude only.
+- Other options: a model choice per provider in the chat.

@@ -5,6 +5,15 @@ import { filterOwnerEnvironment, localClaudeConfigDir, validateAgentIsolation } 
 
 import { CLEANUP_INTERVAL_MS } from './attachments/cleanUploads.ts';
 import { ClaudeCliEngine } from './agent/ClaudeCliEngine.ts';
+import { CodexEngine } from './agent/CodexEngine.ts';
+import { join } from 'node:path';
+import { ProviderChoices } from './providers/ProviderChoices.ts';
+import { ProviderRunner } from './providers/ProviderRunner.ts';
+import type { ProviderEngine } from './providers/ProviderRunner.ts';
+import { createChatgptSignIn } from './providers/chatgptSignIn.ts';
+import { BEARER, PLACEHOLDER_KEY, checkKeyAt, createAcpProviders, methodRunner, readLocalAcpPaths } from './providers/acpProviders.ts';
+import type { ProviderMethod } from './setup/SetupConversation.ts';
+import type { ProviderId } from './providers/providerIds.ts';
 import { PROFILE_SERVER_NAME } from './agent/createProfileToolServer.ts';
 import { AGENT_TURN_ROOT, startLoopbackToolServer } from './agent/createLoopbackToolServer.ts';
 import { SetupAccess } from './access/SetupAccess.ts';
@@ -69,6 +78,12 @@ import { createPushSender } from './push/createPushSender.ts';
 import { loadOrCreateVapidKeys } from './push/loadVapidKeys.ts';
 import { PushNotifier } from './push/PushNotifier.ts';
 import { readPushSubject } from './push/readPushSubject.ts';
+import { EmailAccountStore } from './store/EmailAccountStore.ts';
+import { EmailAccountService } from './email/EmailAccountService.ts';
+import { EmailPasswordStore } from './email/EmailPasswordStore.ts';
+import { ImapEmailReader } from './email/ImapEmailReader.ts';
+import { EmailPoller } from './email/EmailPoller.ts';
+import { SmtpEmailSender } from './email/SmtpEmailSender.ts';
 
 interface RuntimeConnection {
     proxy?: KeyProxy;
@@ -126,7 +141,14 @@ const loopback = await startLoopbackToolServer(PROFILE_SERVER_NAME, {
     turnRoot: agentUser ? AGENT_TURN_ROOT : undefined,
     agentReadable: agentUser !== undefined,
 });
-const runner = new ClaudeCliEngine({ loopback, pathToClaudeCodeExecutable: claudePath, environment });
+const claudeRunner = new ClaudeCliEngine({ loopback, pathToClaudeCodeExecutable: claudePath, environment });
+// The Codex CLI runs bots on a ChatGPT subscription. The image sets CODEX_PATH. Without it, ChatGPT is not offered.
+const codexPath = process.env.CODEX_PATH?.startsWith('/') === true ? process.env.CODEX_PATH : undefined;
+// Local mode keeps CloudBot's ChatGPT sign-in under the data dir, never in the owner's ~/.codex. Docker keeps it in the bot home.
+const codexHome = join(dataDir, 'codex', 'home');
+const codexAuthOptions = codexPath === undefined ? undefined : { codexPath, codexHome, ...(agentUser ? { agentUser } : {}) };
+const chatgptSignIn = codexAuthOptions === undefined ? undefined : createChatgptSignIn(codexAuthOptions);
+const providerChoices = new ProviderChoices(settings);
 // The image sets CLOUDBOT_DESKTOP_COMMAND, and its desktop starts Chromium. Without it, local runs start an installed
 // Chrome, Chromium or Edge with its own profile, and the browser tools stay off when none is found.
 const desktopCommand = buildDesktopCommand(process.env.CLOUDBOT_DESKTOP_COMMAND, agentUser);
@@ -147,6 +169,10 @@ const noBrowserReason = localTools.noBrowserReason;
 const screen = new ScreenHolder();
 const vault = new Vault(dataDir);
 const botSecrets = new BotSecrets(vault);
+const emailAccountStore = new EmailAccountStore(opened.db);
+const emailPasswordStore = new EmailPasswordStore(vault);
+const emailAccountService = new EmailAccountService(emailAccountStore, emailPasswordStore);
+const emailSender = new SmtpEmailSender(emailAccountService);
 const ruleStore = new RuleStore(opened.db);
 const routineStore = new RoutineStore(opened.db);
 const taskStore = new TaskStore(opened.db);
@@ -282,11 +308,77 @@ const pushNotifier = new PushNotifier({
 });
 // The public gallery of templates. CLOUDBOT_GALLERY_REPO points it at another repository, such as a fork.
 const templateGallery = new TemplateGallery({ repo: readGalleryRepo(process.env.CLOUDBOT_GALLERY_REPO), transport: createDefaultGalleryTransport() });
+// How long a ChatGPT sign-in check is trusted, so a turn does not start an extra app server each time.
+const CHATGPT_STATUS_CACHE_MS = 5 * 60 * 1000;
+let chatgptCheckedAt = 0;
+// The way each provider was connected last, a sign-in or an API key. A turn uses that way.
+const methodFor = async (provider: ProviderId): Promise<ProviderMethod | undefined> => {
+    const saved = await settings.get(`provider.method.${provider}`);
+
+    return saved === 'apiKey' || saved === 'signIn' ? saved : undefined;
+};
+const acpProviders = await createAcpProviders({ agentUser, vault, loopback, methodFor, dataDir, localPaths: readLocalAcpPaths(process.env) });
+const engines: Partial<Record<ProviderId, ProviderEngine>> = {
+    ...acpProviders.engines,
+    claude: {
+        runner: claudeRunner,
+        isConnected: () => {
+            const isConnected = setup.isClaudeConnected();
+
+            return Promise.resolve(isConnected);
+        },
+    },
+};
+
+// An OpenAI API key runs Codex in its own folder, signed in with a placeholder. The key proxy adds the real key.
+const OPENAI_KEY_NAME = 'OPENAI_API_KEY';
+const openaiKeyProxy = codexPath === undefined ? undefined : await startKeyProxy({ vault, secretName: OPENAI_KEY_NAME, upstreamUrl: 'https://api.openai.com', keyHeader: BEARER });
+
+if (codexPath !== undefined && chatgptSignIn !== undefined && openaiKeyProxy !== undefined) {
+    const signIn = chatgptSignIn;
+    const agentOptions = agentUser ? { agentUser, imageRoot: AGENT_TURN_ROOT } : {};
+    const subscriptionEngine = new CodexEngine({ codexPath, codexHomeFor: () => codexHome, loopback, callGates: appProxy, ...agentOptions });
+    const keyEngine = new CodexEngine({
+        codexPath, codexHomeFor: () => join(dataDir, 'codex', 'key-home'), loopback, callGates: appProxy, ...agentOptions,
+        apiKeyLogin: PLACEHOLDER_KEY,
+        extraConfig: [`openai_base_url="${openaiKeyProxy.url}/v1"`],
+        // docker/cloudbot-codex keeps the key sign-in in its own folder, beside the ChatGPT one.
+        ...(agentUser ? { environment: { CLOUDBOT_CODEX_KEY_MODE: '1' } } : {}),
+    });
+
+    engines.chatgpt = {
+        runner: methodRunner(subscriptionEngine, keyEngine, () => methodFor('chatgpt')),
+        isConnected: async () => {
+            if (await methodFor('chatgpt') === 'apiKey') {
+                return vault.has(OPENAI_KEY_NAME);
+            }
+
+            if (Date.now() - chatgptCheckedAt < CHATGPT_STATUS_CACHE_MS) {
+                return true;
+            }
+
+            const isSignedIn = await signIn.isSignedIn() === true;
+
+            chatgptCheckedAt = isSignedIn ? Date.now() : 0;
+
+            return isSignedIn;
+        },
+    };
+}
+
+const providerRunner = new ProviderRunner({ engines, providerFor: botId => providerChoices.forBot(botId) });
 const chatService: ChatService = new ChatService({
     notifyOwner: notice => pushNotifier.notify(notice),
-    botStore, channelStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, ruleStore, routineStore, taskStore, modelStore, limitStore, screen,
+    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     templateGallery,
+    providerTools: {
+        available: ['claude', ...(chatgptSignIn === undefined ? [] : ['chatgpt' as const]), ...acpProviders.available],
+        connected: () => setup.connectedProviders(),
+        providerFor: botId => providerChoices.forBot(botId),
+        setProvider: (botId, provider) => providerChoices.setForBot(botId, provider),
+        offerProviders: () => setup.offerProviders(),
+    },
     watchStore,
     connectedApps,
     integrationService,
@@ -313,7 +405,32 @@ const setup = new SetupConversation({
     ...(!agentUser && process.platform === 'darwin' ? {} : { signOut: () => signOutClaude(authOptions) }),
     localMode: !agentUser,
     noBrowser: isReusedGateBusy ? 'leftover' : noBrowserReason,
-    connect: async (mode) => {
+    signIns: [...(chatgptSignIn === undefined ? [] : [chatgptSignIn]), ...acpProviders.signIns],
+    apiKeys: [
+        ...(openaiKeyProxy === undefined
+            ? []
+            : [{
+                    id: 'chatgpt' as const, label: 'OpenAI', site: 'the OpenAI platform', secretName: OPENAI_KEY_NAME,
+                    checkKey: (key: string) => checkKeyAt('https://api.openai.com/v1/models', BEARER, key),
+                }]),
+        ...acpProviders.apiKeys,
+    ],
+    connect: async (mode, method) => {
+        const provider: ProviderId = mode === 'subscription' || mode === 'apiKey' ? 'claude' : mode;
+
+        // The first provider the owner connects is the default of every bot without its own choice.
+        if (await settings.get('provider.default') === undefined) {
+            await providerChoices.setDefault(provider);
+        }
+
+        if (provider !== 'claude') {
+            if (method !== undefined) {
+                await settings.set(`provider.method.${provider}`, method);
+            }
+
+            return;
+        }
+
         if (mode === 'apiKey') {
             connection.proxy ??= await startKeyProxy({ vault, secretName: API_KEY_NAME });
             environment.ANTHROPIC_BASE_URL = connection.proxy.url;
@@ -366,10 +483,20 @@ const watchScheduler = new WatchScheduler({
     isReady: () => setup.isDone(),
 });
 
+const emailPoller = new EmailPoller({
+    accountStore: emailAccountStore,
+    passwordStore: emailPasswordStore,
+    reader: new ImapEmailReader(),
+    sendMessage: (botId, text, emailDeliveryId) => chatService.sendEmailTask(botId, text, emailDeliveryId),
+    postNotice: (botId, text, emailDeliveryId) => chatService.postEmailNotice(botId, text, emailDeliveryId),
+    isReady: () => setup.isDone(),
+});
+
 // Queued messages and usage limit waits from the last run continue before the first request.
 await chatService.resumeQueue();
 routineScheduler.start();
 watchScheduler.start();
+emailPoller.start();
 
 function cleanUploads(): void {
     chatService.cleanUploads()
@@ -422,6 +549,8 @@ if (desktop !== undefined) {
 function shutdown(): void {
     clearInterval(cleanupTimer);
     routineScheduler.stop();
+    watchScheduler.stop();
+    emailPoller.stop();
     desktop?.stop();
     localBrowser?.stop();
     gateController.abort();
@@ -436,9 +565,11 @@ function shutdown(): void {
     server.close();
     (server as Server).closeAllConnections();
     void connection.proxy?.close();
+    void acpProviders.close();
+    void openaiKeyProxy?.close();
     // The CLI processes stop first, so no tool call reaches the loopback server after it closes.
     // The loopback closes even when a stop fails, so the port is never left open.
-    void runner.close()
+    void providerRunner.close()
         .catch((error: unknown) => {
             console.error('Could not stop the CLI processes:', error);
         })
