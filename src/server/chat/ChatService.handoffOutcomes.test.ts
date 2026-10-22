@@ -13,6 +13,7 @@ import { openDatabase } from '../store/openDatabase.ts';
 import type { SetupConversation } from '../setup/SetupConversation.ts';
 import type { ChatEvent } from '../../shared/chatTypes.ts';
 import { ChatService } from './ChatService.ts';
+import { CLEANUP_RETRIES } from './testCleanup.ts';
 
 const ONE_MINUTE_MS = 60_000;
 const REPLY_SCRIPT: AgentEvent[] = [{ type: 'text', text: 'Done' }, { type: 'turn_finished' }];
@@ -127,7 +128,7 @@ describe('ChatService bot hand-off outcomes', () => {
     afterEach(async () => {
         vi.useRealTimers();
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     it('reports a hand-off once, from the message it started with, after a usage limit wait', async () => {

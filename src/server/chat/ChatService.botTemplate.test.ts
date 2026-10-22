@@ -14,6 +14,7 @@ import { RoutineStore } from '../store/RoutineStore.ts';
 import { RuleStore } from '../store/RuleStore.ts';
 import type { FileBody } from '../../shared/chatTypes.ts';
 import { ChatService } from './ChatService.ts';
+import { CLEANUP_RETRIES } from './testCleanup.ts';
 
 // The template tests never start a turn, so the runner is never asked for an answer.
 class IdleRunner implements AgentRunner {
@@ -53,7 +54,7 @@ describe('ChatService bot templates', () => {
     afterEach(async () => {
         vi.restoreAllMocks();
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     // Reads the file of the latest shared file message of the bot.

@@ -14,6 +14,7 @@ import { RuleStore } from '../store/RuleStore.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
 import { ChatService } from './ChatService.ts';
+import { CLEANUP_RETRIES } from './testCleanup.ts';
 
 describe('ChatService deleting a bot that manages a channel', () => {
     let dataDir: string;
@@ -38,7 +39,7 @@ describe('ChatService deleting a bot that manages a channel', () => {
 
     afterEach(async () => {
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     it('refuses to delete the manager, and says which channel it manages', async () => {
