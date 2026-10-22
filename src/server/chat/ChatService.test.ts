@@ -28,6 +28,8 @@ import { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
 import { BotSecrets } from '../secrets/BotSecrets.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME } from '../secrets/createSecretTools.ts';
 import { TYPE_SECRET_TOOL_FULL_NAME } from '../secrets/createTypeSecretTool.ts';
+import { WHATSAPP_TOOL_FULL_NAMES } from '../whatsapp/createWhatsAppTools.ts';
+import type { WhatsAppConnector } from '../whatsapp/createWhatsAppTools.ts';
 import { Vault } from '../vault/Vault.ts';
 import { FakeAgentRunner } from '../agent/FakeAgentRunner.ts';
 import type { ScriptedAgentStep } from '../agent/FakeAgentRunner.ts';
@@ -1002,6 +1004,58 @@ describe('ChatService', () => {
             .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME]);
         expect(turnRequest?.systemPrompt)
             .toBe(buildSystemPrompt(bot, { hasBrowser: false }));
+    });
+
+    it('offers the WhatsApp tools and paragraph only when the connector is set', async () => {
+        const connector: WhatsAppConnector = {
+            connect: () => Promise.resolve({ status: 'invalid-phone-number-id' }),
+            disconnect: () => Promise.resolve(false),
+        };
+        const withWhatsApp = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const withWhatsAppService = new ChatService({ botStore, messageStore, runner: withWhatsApp, dataDir, whatsapp: connector });
+        const withoutWhatsApp = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const withoutWhatsAppService = new ChatService({ botStore, messageStore, runner: withoutWhatsApp, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(withWhatsAppService, bot.id);
+
+        await withWhatsAppService.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const finishedWithout = waitForTurnFinish(withoutWhatsAppService, bot.id);
+
+        await withoutWhatsAppService.sendMessage(bot.id, 'Hi');
+        await finishedWithout;
+
+        const toolNames = (withWhatsApp.receivedRequests[0]?.tools ?? []).map(item => `mcp__${PROFILE_SERVER_NAME}__${item.name}`);
+
+        expect(toolNames)
+            .toEqual(expect.arrayContaining(WHATSAPP_TOOL_FULL_NAMES));
+        expect(withWhatsApp.receivedRequests[0]?.allowedTools)
+            .toEqual(expect.arrayContaining(WHATSAPP_TOOL_FULL_NAMES));
+        expect(withWhatsApp.receivedRequests[0]?.systemPrompt)
+            .toContain('never on WhatsApp');
+        expect(withoutWhatsApp.receivedRequests[0]?.allowedTools)
+            .not.toContain(WHATSAPP_TOOL_FULL_NAMES[0]);
+        expect(withoutWhatsApp.receivedRequests[0]?.systemPrompt)
+            .not.toContain('whatsapp_connect');
+    });
+
+    it('posts a system note for WhatsApp without starting a turn', async () => {
+        const runner = new FakeAgentRunner([]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        const posted = await service.postSystemNote(bot.id, 'Only text messages are supported yet.');
+        const storedMessages = (await service.listMessages(bot.id)) ?? [];
+
+        expect(posted?.role)
+            .toBe('system');
+        expect(storedMessages.map(message => message.body))
+            .toEqual([{ kind: 'text', text: 'Only text messages are supported yet.' }]);
+        expect(runner.receivedRequests)
+            .toEqual([]);
+        await expect(service.postSystemNote('missing-bot', 'Note'))
+            .resolves.toBeUndefined();
     });
 
     it('offers bot_create to the bot only when the approval gate exists', async () => {

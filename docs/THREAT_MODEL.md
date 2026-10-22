@@ -16,6 +16,8 @@ links to it instead of repeating it. To report a problem, read the
 | The CloudBot server code | Trusted |
 | The bot, which is a model plus everything it runs | Not trusted. It can be misled. |
 | Text from outside: web pages, files, webhook bodies, page watches, email, replies from connected apps, messages from other bots | Not trusted. It is data, never instructions. |
+| A WhatsApp message from the owner's number, after the signature and the number are checked | Trusted as the owner |
+| A WhatsApp message from any other number | Dropped silently |
 | A stranger on the internet | Reaches only the public routes |
 
 The main threat is prompt injection. Text that the bot reads can talk it into
@@ -24,8 +26,9 @@ protections sit outside the model: separate Unix users, the vault, proxies, an
 address gate, a command floor and owner approvals.
 
 The public routes are `/api/health`, `/setup` (needs the one-time code),
-`/hooks/<token>` (needs the webhook token) and the static web app files. Every
-other `/api` route needs the session cookie.
+`/hooks/<token>` (needs the webhook token), `/whatsapp` (needs Meta's signature
+or the verify token) and the static web app files. Every other `/api` route
+needs the session cookie.
 
 ## Layers at a glance
 
@@ -292,6 +295,31 @@ password is entered through a secure form into the vault and is used only by
 the server's IMAP and SMTP clients. Attachment contents are discarded and are
 not exposed to the bot or sent. See [Email](ARCHITECTURE.md#email).
 
+### WhatsApp
+
+The callback URL is `<public address>/whatsapp`. It is public, like a webhook
+URL, because Meta calls it. `GET /whatsapp` is Meta's verification handshake:
+the verify token is compared in constant time with the token of any connected
+bot, and only then is the challenge returned. `POST /whatsapp` carries
+`X-Hub-Signature-256`, an HMAC SHA-256 of the exact raw body with the app secret
+of the phone number in the call. CloudBot checks it, also in constant time,
+before reading a message. A call that no connection could have signed gets 401.
+The body is at most 1 MiB. Status callbacks and unconnected phone number IDs
+change nothing.
+
+Only the owner's number may send instructions. It is read from the vault and
+compared with Meta's sender for every message. Any other sender is dropped
+silently, with no turn, no note and no reply. A handled message id is stored for
+8 days, so a Meta retry is answered without running the message twice. A text
+message becomes an ordinary chat turn, with the chat model and limits. Other
+message types get a system note in the chat saying that only text is supported.
+CloudBot never sends a WhatsApp message, so the answer stays in the web app.
+The existing push notification announces it when notifications are enabled.
+The app secret, the verify token and the owner's
+number are bot secrets in the vault. They never reach the model, the messages,
+the database in plaintext or the log. See
+[WhatsApp](ARCHITECTURE.md#whatsapp) and [WhatsApp setup](WHATSAPP.md).
+
 ### Other bots
 
 A hand-off from another bot is a user message labeled as not the owner. The
@@ -363,6 +391,9 @@ These are accepted today. A report about one of them is out of scope in the
 
 - Anyone who has a webhook URL can start bot turns, up to the rate limit. Treat
   the URL like a password and delete a webhook that leaked.
+- A WhatsApp call needs the app secret that signed it. A leaked app secret lets
+  its holder send signed calls, but only messages from the owner's number in the
+  vault are handled. Other senders are dropped silently.
 - There is no passkey or password. The session cookie is the only login, and it
   lasts a year unless a new setup link ends it.
 - Security headers on the page are pending

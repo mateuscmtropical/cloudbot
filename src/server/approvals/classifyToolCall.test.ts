@@ -82,6 +82,15 @@ describe('notifications_enable', () => {
     });
 });
 
+describe('WhatsApp setup tools', () => {
+    it('skips the review, since they only link a number and post secure forms', () => {
+        expect(classify('mcp__cloudbot__whatsapp_connect'))
+            .toBe('skip');
+        expect(classify('mcp__cloudbot__whatsapp_disconnect'))
+            .toBe('skip');
+    });
+});
+
 describe('browser allow tools', () => {
     it('always asks the owner before the browser may reach a private host', () => {
         expect(classify('mcp__cloudbot__browser_allow_host'))

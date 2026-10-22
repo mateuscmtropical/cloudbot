@@ -55,6 +55,9 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__provider_list',
     'mcp__cloudbot__provider_connect',
     'mcp__cloudbot__email_status',
+    // These only link or unlink a number and post secure forms. No WhatsApp message is ever sent.
+    'mcp__cloudbot__whatsapp_connect',
+    'mcp__cloudbot__whatsapp_disconnect',
 ]);
 
 // Letting the browser reach a private host always needs the owner's approval, whatever the rules say.

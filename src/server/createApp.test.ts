@@ -20,6 +20,7 @@ import { MessageStore } from './store/MessageStore.ts';
 import type { OpenedDatabase } from './store/openDatabase.ts';
 import { openDatabase } from './store/openDatabase.ts';
 import { SettingsStore } from './store/SettingsStore.ts';
+import { WhatsAppStore } from './store/WhatsAppStore.ts';
 
 const createdDirectories: string[] = [];
 // app.request builds its URL on http://localhost, so this is the page's own origin.
@@ -520,6 +521,17 @@ describe('createApp', () => {
 
         expect(response.status)
             .toBe(201);
+    });
+
+    it('serves the WhatsApp webhook without a session and refuses a call that no connection signed', async () => {
+        const chatService = buildChatService(opened);
+        const secrets = { read: () => undefined };
+        const app = createApp({ version: '1.2.3', access, chatService, whatsappStore: new WhatsAppStore(opened.db), whatsappSecrets: secrets });
+        const post = await app.request('/whatsapp', { method: 'POST', body: '{}' });
+        const handshake = await app.request('/whatsapp?hub.mode=subscribe&hub.verify_token=token&hub.challenge=challenge');
+
+        expect([post.status, handshake.status])
+            .toEqual([401, 403]);
     });
 
     it('sends the security headers with the page and with the API', async () => {

@@ -76,6 +76,8 @@ import {
 import { ScreenRecorder, describeRecordedSteps } from '../desktop/ScreenRecorder.ts';
 import type { RecordedStep } from '../desktop/ScreenRecorder.ts';
 import type { ScreenHolder } from '../desktop/ScreenHolder.ts';
+import { WHATSAPP_TOOL_FULL_NAMES, createWhatsAppTools } from '../whatsapp/createWhatsAppTools.ts';
+import type { WhatsAppConnector } from '../whatsapp/createWhatsAppTools.ts';
 import { TYPE_SECRET_TOOL_FULL_NAME, createTypeSecretTool } from '../secrets/createTypeSecretTool.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
@@ -244,6 +246,8 @@ interface ChatServiceOptions {
     notifyOwner?: ((notice: OwnerNotice) => Promise<void>) | undefined;
     // Connects a bot to the owner's Telegram account. Unset means the Telegram tools are not offered.
     telegram?: TelegramConnector | undefined;
+    // Receives messages from the owner's WhatsApp number. Unset means the WhatsApp tools are not offered.
+    whatsapp?: WhatsAppConnector | undefined;
 }
 
 interface SharedFileDownload {
@@ -669,6 +673,7 @@ class ChatService {
     private readonly forgetGithub: ((botId: string) => Promise<void>) | undefined;
     private readonly notifyOwner: ((notice: OwnerNotice) => Promise<void>) | undefined;
     private readonly telegram: TelegramConnector | undefined;
+    private readonly whatsapp: WhatsAppConnector | undefined;
     // Bots whose delete is running. New messages and uploads for them are refused.
     private readonly deletingBots = new Set<string>();
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
@@ -743,6 +748,7 @@ class ChatService {
         this.forgetGithub = options.forgetGithub;
         this.notifyOwner = options.notifyOwner;
         this.telegram = options.telegram;
+        this.whatsapp = options.whatsapp;
         this.approvals = options.toolCallReviewer === undefined
             ? undefined
             : new ApprovalGate({
@@ -2133,6 +2139,18 @@ class ChatService {
         return this.saveAndPublish(botId, 'assistant', body);
     }
 
+    // A line from CloudBot itself, such as the note for a WhatsApp message CloudBot cannot handle.
+    // It starts no turn, so it does not wake the bot.
+    async postSystemNote(botId: string, text: string): Promise<ChatMessage | undefined> {
+        const bot = await this.botStore.getById(botId);
+
+        if (bot === undefined) {
+            return undefined;
+        }
+
+        return this.saveAndPublish(botId, 'system', { kind: 'text', text });
+    }
+
     async updateSetupMessage(messageId: string, body: MessageBody): Promise<ChatMessage> {
         const stored = await this.messageStore.updateContent(messageId, body);
 
@@ -3341,11 +3359,12 @@ class ChatService {
                         createNotificationsDisableTool(() => this.postNotificationOffCard(botId)),
                     ];
             const telegramTools = this.telegram === undefined ? [] : createTelegramTools(this.telegram, botId);
+            const whatsappTools = this.whatsapp === undefined ? [] : createWhatsAppTools(this.whatsapp, botId);
             const profileTools = createProfileTools(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...telegramTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...telegramTools, ...whatsappTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -3402,6 +3421,7 @@ class ChatService {
                     hasLimits: this.limitStore !== undefined,
                     hasNotifications: this.notifyOwner !== undefined,
                     hasEmail: this.emailAccountService !== undefined && this.emailSender !== undefined,
+                    hasWhatsApp: this.whatsapp !== undefined,
                     ownerRules,
                     skills,
                     canChangeSkills: this.approvals !== undefined,
@@ -3584,12 +3604,14 @@ class ChatService {
     }
 
     // Headless turns cannot answer a permission prompt, so the cloudbot tools the bot has are allowed up front.
-    // Without the approval gate, only the profile tools, the export, the read-only rule list, the read-only skills and the notification switch are allowed up front. The rest need the gate.
+    // Without the approval gate, only the profile tools, the export, the read-only rule list, the read-only skills, the notification switch
+    // and the WhatsApp setup tools are allowed up front. The WhatsApp tools only post secure forms and link a number. The rest need the gate.
     private allowedToolNames(): string[] {
         if (this.approvals === undefined) {
             const emailToolNames = this.emailAccountService === undefined || this.emailSender === undefined ? [] : EMAIL_STATUS_TOOL_ONLY_FULL_NAMES;
+            const whatsappToolNames = this.whatsapp === undefined ? [] : WHATSAPP_TOOL_FULL_NAMES;
 
-            return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...emailToolNames, ...this.ruleToolNamesAllowed(), ...this.skillToolNamesAllowed(), ...this.notificationToolNames()];
+            return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...emailToolNames, ...this.ruleToolNamesAllowed(), ...this.skillToolNamesAllowed(), ...this.notificationToolNames(), ...whatsappToolNames];
         }
 
         const browserToolNames = this.browser === undefined ? [] : BROWSER_TOOL_FULL_NAMES;
@@ -3622,8 +3644,9 @@ class ChatService {
         const emailToolNames = this.emailAccountService === undefined || this.emailSender === undefined ? [] : EMAIL_TOOL_FULL_NAMES;
 
         const telegramToolNames = this.telegram === undefined ? [] : TELEGRAM_TOOL_FULL_NAMES;
+        const whatsappToolNames = this.whatsapp === undefined ? [] : WHATSAPP_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...telegramToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...telegramToolNames, ...whatsappToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.

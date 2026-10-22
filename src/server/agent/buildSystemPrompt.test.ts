@@ -77,6 +77,15 @@ describe('buildSystemPrompt', () => {
             .not.toContain('email_setup');
     });
 
+    it('explains that WhatsApp messages arrive in the chat and answers stay there, only when WhatsApp is on', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+
+        expect(buildSystemPrompt(profile, { hasWhatsApp: true }))
+            .toContain('never on WhatsApp');
+        expect(buildSystemPrompt(profile))
+            .not.toContain('whatsapp_connect');
+    });
+
     it('explains the GitHub token and the --repo rule only when GitHub is on', () => {
         const profile = { name: 'Ana', title: 'Assistant', description: '' };
 
