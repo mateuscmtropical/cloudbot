@@ -22,6 +22,8 @@ interface AcpEngineOptions {
     // Folders the agent loads its sign-in and config from, as absolute paths or folder names such as .gemini. A question
     // that names one is refused without a review, since a write there could run a program without a review next turn.
     protectedFolders?: string[] | undefined;
+    // The session mode that asks before each tool, for an agent whose default mode accepts some calls by itself.
+    askModeId?: string | undefined;
     // Some agents need an authenticate call with their cached sign-in before a session, such as cursor_login.
     authMethodId?: string | undefined;
     // More variables for the agent, such as one that turns off its update check.
@@ -480,6 +482,18 @@ class AcpEngine implements AgentRunner {
             }
 
             currentSessionId = sessionId;
+
+            if (this.options.askModeId !== undefined) {
+                const modeSet = await call('session/set_mode', { sessionId, modeId: this.options.askModeId });
+
+                // A session that would accept calls without asking is never prompted.
+                if (modeSet.error !== undefined) {
+                    push({ type: 'turn_error', message: `${this.options.label} could not switch to asking before each tool.`, isUsageLimit: false });
+
+                    return;
+                }
+            }
+
             push({ type: 'session', sessionId });
 
             if (isCheck) {

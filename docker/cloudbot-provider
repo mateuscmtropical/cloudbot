@@ -7,8 +7,8 @@ set -eu
 provider="${1:-}"
 action="${2:-}"
 
-if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "login" ]; }; then
-    echo "cloudbot-provider takes a provider and acp or login." >&2
+if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "acp-key" ] && [ "$action" != "login" ]; }; then
+    echo "cloudbot-provider takes a provider and acp, acp-key or login." >&2
     exit 2
 fi
 
@@ -38,7 +38,26 @@ case "$provider:$action" in
         export OPENCODE_CONFIG_CONTENT='{"permission":{"*":"ask"},"autoupdate":false}'
         exec /usr/local/bin/opencode acp
         ;;
-    *)
+    # Grok Build signs in only with a Grok account over ACP, so an xAI API key runs through opencode's xAI provider.
+    # The key proxy adds the real key. The server sets only the proxy address, which must be a loopback port.
+    grok:acp-key)
+        case "${CLOUDBOT_KEY_PROXY_URL:-}" in
+            http://127.0.0.1:[0-9]*) ;;
+            *)
+                echo "cloudbot-provider needs the key proxy address." >&2
+                exit 2
+                ;;
+        esac
+        port="${CLOUDBOT_KEY_PROXY_URL#http://127.0.0.1:}"
+        case "$port" in
+            *[!0-9]*)
+                echo "cloudbot-provider needs the key proxy address." >&2
+                exit 2
+                ;;
+        esac
+        export OPENCODE_CONFIG_CONTENT="{\"permission\":{\"*\":\"ask\"},\"autoupdate\":false,\"model\":\"xai/grok-4.7\",\"provider\":{\"xai\":{\"options\":{\"baseURL\":\"http://127.0.0.1:$port/v1\",\"apiKey\":\"cloudbot-key-proxy\"}}}}"
+        exec /usr/local/bin/opencode acp
+        ;;    *)
         echo "cloudbot-provider does not know $provider $action." >&2
         exit 2
         ;;

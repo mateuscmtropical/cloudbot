@@ -11,6 +11,8 @@ import { ProviderChoices } from './providers/ProviderChoices.ts';
 import { ProviderRunner } from './providers/ProviderRunner.ts';
 import type { ProviderEngine } from './providers/ProviderRunner.ts';
 import { createChatgptSignIn } from './providers/chatgptSignIn.ts';
+import { BEARER, PLACEHOLDER_KEY, checkKeyAt, createAcpProviders, methodRunner, readLocalAcpPaths } from './providers/acpProviders.ts';
+import type { ProviderMethod } from './setup/SetupConversation.ts';
 import type { ProviderId } from './providers/providerIds.ts';
 import { PROFILE_SERVER_NAME } from './agent/createProfileToolServer.ts';
 import { AGENT_TURN_ROOT, startLoopbackToolServer } from './agent/createLoopbackToolServer.ts';
@@ -299,7 +301,15 @@ const templateGallery = new TemplateGallery({ repo: readGalleryRepo(process.env.
 // How long a ChatGPT sign-in check is trusted, so a turn does not start an extra app server each time.
 const CHATGPT_STATUS_CACHE_MS = 5 * 60 * 1000;
 let chatgptCheckedAt = 0;
+// The way each provider was connected last, a sign-in or an API key. A turn uses that way.
+const methodFor = async (provider: ProviderId): Promise<ProviderMethod | undefined> => {
+    const saved = await settings.get(`provider.method.${provider}`);
+
+    return saved === 'apiKey' || saved === 'signIn' ? saved : undefined;
+};
+const acpProviders = await createAcpProviders({ agentUser, vault, loopback, methodFor, dataDir, localPaths: readLocalAcpPaths(process.env) });
 const engines: Partial<Record<ProviderId, ProviderEngine>> = {
+    ...acpProviders.engines,
     claude: {
         runner: claudeRunner,
         isConnected: () => {
@@ -310,12 +320,29 @@ const engines: Partial<Record<ProviderId, ProviderEngine>> = {
     },
 };
 
-if (codexPath !== undefined && chatgptSignIn !== undefined) {
+// An OpenAI API key runs Codex in its own folder, signed in with a placeholder. The key proxy adds the real key.
+const OPENAI_KEY_NAME = 'OPENAI_API_KEY';
+const openaiKeyProxy = codexPath === undefined ? undefined : await startKeyProxy({ vault, secretName: OPENAI_KEY_NAME, upstreamUrl: 'https://api.openai.com', keyHeader: BEARER });
+
+if (codexPath !== undefined && chatgptSignIn !== undefined && openaiKeyProxy !== undefined) {
     const signIn = chatgptSignIn;
+    const agentOptions = agentUser ? { agentUser, imageRoot: AGENT_TURN_ROOT } : {};
+    const subscriptionEngine = new CodexEngine({ codexPath, codexHomeFor: () => codexHome, loopback, callGates: appProxy, ...agentOptions });
+    const keyEngine = new CodexEngine({
+        codexPath, codexHomeFor: () => join(dataDir, 'codex', 'key-home'), loopback, callGates: appProxy, ...agentOptions,
+        apiKeyLogin: PLACEHOLDER_KEY,
+        extraConfig: [`openai_base_url="${openaiKeyProxy.url}/v1"`],
+        // docker/cloudbot-codex keeps the key sign-in in its own folder, beside the ChatGPT one.
+        ...(agentUser ? { environment: { CLOUDBOT_CODEX_KEY_MODE: '1' } } : {}),
+    });
 
     engines.chatgpt = {
-        runner: new CodexEngine({ codexPath, codexHomeFor: () => codexHome, loopback, callGates: appProxy, ...(agentUser ? { agentUser, imageRoot: AGENT_TURN_ROOT } : {}) }),
+        runner: methodRunner(subscriptionEngine, keyEngine, () => methodFor('chatgpt')),
         isConnected: async () => {
+            if (await methodFor('chatgpt') === 'apiKey') {
+                return vault.has(OPENAI_KEY_NAME);
+            }
+
             if (Date.now() - chatgptCheckedAt < CHATGPT_STATUS_CACHE_MS) {
                 return true;
             }
@@ -336,7 +363,7 @@ const chatService: ChatService = new ChatService({
     webhookStore,
     templateGallery,
     providerTools: {
-        available: ['claude', ...(chatgptSignIn === undefined ? [] : ['chatgpt' as const])],
+        available: ['claude', ...(chatgptSignIn === undefined ? [] : ['chatgpt' as const]), ...acpProviders.available],
         connected: () => setup.connectedProviders(),
         providerFor: botId => providerChoices.forBot(botId),
         setProvider: (botId, provider) => providerChoices.setForBot(botId, provider),
@@ -368,8 +395,17 @@ const setup = new SetupConversation({
     ...(!agentUser && process.platform === 'darwin' ? {} : { signOut: () => signOutClaude(authOptions) }),
     localMode: !agentUser,
     noBrowser: isReusedGateBusy ? 'leftover' : noBrowserReason,
-    ...(chatgptSignIn === undefined ? {} : { signIns: [chatgptSignIn] }),
-    connect: async (mode) => {
+    signIns: [...(chatgptSignIn === undefined ? [] : [chatgptSignIn]), ...acpProviders.signIns],
+    apiKeys: [
+        ...(openaiKeyProxy === undefined
+            ? []
+            : [{
+                    id: 'chatgpt' as const, label: 'OpenAI', site: 'the OpenAI platform', secretName: OPENAI_KEY_NAME,
+                    checkKey: (key: string) => checkKeyAt('https://api.openai.com/v1/models', BEARER, key),
+                }]),
+        ...acpProviders.apiKeys,
+    ],
+    connect: async (mode, method) => {
         const provider: ProviderId = mode === 'subscription' || mode === 'apiKey' ? 'claude' : mode;
 
         // The first provider the owner connects is the default of every bot without its own choice.
@@ -378,6 +414,10 @@ const setup = new SetupConversation({
         }
 
         if (provider !== 'claude') {
+            if (method !== undefined) {
+                await settings.set(`provider.method.${provider}`, method);
+            }
+
             return;
         }
 
@@ -503,6 +543,8 @@ function shutdown(): void {
     server.close();
     (server as Server).closeAllConnections();
     void connection.proxy?.close();
+    void acpProviders.close();
+    void openaiKeyProxy?.close();
     // The CLI processes stop first, so no tool call reaches the loopback server after it closes.
     // The loopback closes even when a stop fails, so the port is never left open.
     void providerRunner.close()

@@ -39,6 +39,9 @@ interface CodexEngineOptions {
     agentUser?: string | undefined;
     // Where a turn writes the attached images when Codex runs as the agent user. The agent user's group must read it.
     imageRoot?: string | undefined;
+    // An API key Codex signs in with before each turn. CloudBot passes a placeholder here, and openai_base_url in
+    // extraConfig points Codex at the key proxy, which adds the real key. The app server ignores CODEX_API_KEY.
+    apiKeyLogin?: string | undefined;
     // Tests inject fakes here. Production spawns the binary and signals its process group.
     spawnFunction?: SpawnFunction | undefined;
     signalProcess?: ((child: ChildProcess, action: SignalAction) => void) | undefined;
@@ -437,6 +440,14 @@ class CodexEngine implements AgentRunner {
             }
 
             write({ jsonrpc: '2.0', method: 'initialized' });
+
+            if (this.options.apiKeyLogin !== undefined) {
+                const login = await call('account/login/start', { type: 'apiKey', apiKey: this.options.apiKeyLogin });
+
+                if (login.error !== undefined) {
+                    throw new Error(login.error.message);
+                }
+            }
 
             const threadSettings = {
                 cwd: request.workspaceDir,

@@ -23,6 +23,16 @@ const NAMES_THE_SERVER_SETS = [
     'GIT_CONFIG_VALUE_2',
     'DISABLE_AUTOUPDATER',
     'CLOUDBOT_TURN_MARKER',
+    // The key proxy names of the other providers, from src/server/providers/acpProviders.ts.
+    'GEMINI_API_KEY',
+    'GOOGLE_GEMINI_BASE_URL',
+    'OPENAI_API_KEY',
+    'OPENAI_BASE_URL',
+    'MISTRAL_API_KEY',
+    'VIBE_PROVIDERS',
+    'CODEX_API_KEY',
+    'CLOUDBOT_KEY_PROXY_URL',
+    'CLOUDBOT_CODEX_KEY_MODE',
 ];
 
 const SUDOERS_PATH = new URL('../../../docker/cloudbot-agent.sudoers', import.meta.url);

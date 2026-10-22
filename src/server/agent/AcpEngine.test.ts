@@ -104,6 +104,10 @@ class FakeAcpAgent extends EventEmitter {
             this.say({ id: message.id, result: { sessionId: 'session-1' } });
         }
 
+        if (message.method === 'session/set_mode') {
+            this.say({ id: message.id, result: {} });
+        }
+
         if (message.method === 'session/load') {
             this.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'old reply' } });
             this.say({ id: message.id, result: {} });
@@ -124,7 +128,7 @@ class FakeAcpAgent extends EventEmitter {
     }
 }
 
-function makeEngine(options: FakeOptions = {}, authMethodId?: string): { engine: AcpEngine; agents: FakeAcpAgent[] } {
+function makeEngine(options: FakeOptions = {}, authMethodId?: string, askModeId?: string): { engine: AcpEngine; agents: FakeAcpAgent[] } {
     const agents: FakeAcpAgent[] = [];
     const home = join(mkdtempSync(join(tmpdir(), 'cloudbot-acp-test-')), 'home');
     const engine = new AcpEngine({
@@ -133,6 +137,7 @@ function makeEngine(options: FakeOptions = {}, authMethodId?: string): { engine:
         args: ['--experimental-acp'],
         homeFor: () => home,
         authMethodId,
+        askModeId,
         spawnFunction: () => {
             const agent = new FakeAcpAgent(options);
 
@@ -280,6 +285,18 @@ describe('AcpEngine', () => {
 
         expect(agents[0]?.sent.map(message => message.method))
             .toEqual(['initialize', 'authenticate', 'session/new', 'session/prompt']);
+    });
+
+    it('switches the session to the mode that asks before each tool, before the prompt', async () => {
+        const { engine, agents } = makeEngine({}, undefined, 'ask');
+
+        await collect(engine.runTurn(makeRequest()));
+        const setMode = agents[0]?.sent.find(message => message.method === 'session/set_mode');
+
+        expect(agents[0]?.sent.map(message => message.method))
+            .toEqual(['initialize', 'session/new', 'session/set_mode', 'session/prompt']);
+        expect(setMode?.params)
+            .toEqual({ sessionId: 'session-1', modeId: 'ask' });
     });
 
     it('tells whether the sign-in works without sending a prompt', async () => {

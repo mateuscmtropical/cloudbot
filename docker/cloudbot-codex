@@ -10,7 +10,12 @@ if [ "${1:-}" != "app-server" ]; then
 fi
 
 umask 077
-mkdir -p "$HOME/.cloudbot-codex"
-CODEX_HOME="$HOME/.cloudbot-codex"
+# A bot on an OpenAI API key gets its own folder, so its placeholder key never replaces the ChatGPT sign-in.
+folder="$HOME/.cloudbot-codex"
+if [ "${CLOUDBOT_CODEX_KEY_MODE:-}" = "1" ]; then
+    folder="$HOME/.cloudbot-codex-key"
+fi
+mkdir -p "$folder"
+CODEX_HOME="$folder"
 export CODEX_HOME
 exec /usr/local/bin/codex "$@"

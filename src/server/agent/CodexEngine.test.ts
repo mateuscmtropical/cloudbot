@@ -69,6 +69,10 @@ class FakeAppServer extends EventEmitter {
             this.say({ id: message.id, result: { userAgent: 'fake', codexHome: '/x', platformFamily: 'unix', platformOs: 'linux' } });
         }
 
+        if (message.method === 'account/login/start') {
+            this.say({ id: message.id, result: { type: 'apiKey' } });
+        }
+
         if (message.method === 'thread/start' || message.method === 'thread/resume') {
             if (this.failThreadStart) {
                 this.say({ id: message.id, error: { code: -32600, message: 'bad config' } });
@@ -98,7 +102,7 @@ function completeTurn(server: FakeAppServer): void {
     server.say({ method: 'turn/completed', params: { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed', error: null, durationMs: 50 } } });
 }
 
-function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThreadStart?: boolean; loopback?: LoopbackToolServer; environment?: Record<string, string> } = {}): {
+function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThreadStart?: boolean; loopback?: LoopbackToolServer; environment?: Record<string, string>; apiKeyLogin?: string } = {}): {
     engine: CodexEngine;
     servers: FakeAppServer[];
     spawnOptions: SpawnOptions[];
@@ -142,6 +146,7 @@ function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThre
         environment: options.environment ?? { PATH: '/usr/bin' },
         loopback: options.loopback,
         callGates,
+        apiKeyLogin: options.apiKeyLogin,
         spawnFunction,
         signalProcess: (_child, action) => {
             signals.push(action);
@@ -171,6 +176,20 @@ function significant(events: AgentEvent[]): AgentEvent[] {
 }
 
 describe('buildCodexArguments', () => {
+    it('signs in with the placeholder key before the thread when it runs on an API key', async () => {
+        const { engine, servers } = makeEngine(completeTurn, { apiKeyLogin: 'cloudbot-key-proxy' });
+
+        await collect(engine.runTurn(makeRequest()));
+        const methods = servers[0]?.sent.map(message => message.method)
+            .filter(method => method !== undefined);
+        const login = servers[0]?.sent.find(message => message.method === 'account/login/start');
+
+        expect(methods?.slice(0, 4))
+            .toEqual(['initialize', 'initialized', 'account/login/start', 'thread/start']);
+        expect(login?.params)
+            .toEqual({ type: 'apiKey', apiKey: 'cloudbot-key-proxy' });
+    });
+
     it('runs the app server with the built-ins that have no approval turned off, and the tool token and CODEX_HOME kept out of commands', () => {
         expect(buildCodexArguments([]))
             .toEqual(['app-server', '-c', 'web_search="disabled"', '-c', 'features.view_image=false', '-c', 'features.multi_agent=false', '-c', 'features.goals=false', '-c', 'shell_environment_policy.exclude=["CLOUDBOT_TOOLS_TOKEN","CODEX_HOME"]']);
