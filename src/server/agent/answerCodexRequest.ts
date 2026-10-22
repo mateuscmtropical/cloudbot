@@ -1,6 +1,7 @@
 import type { ToolCall, ToolCallDecision } from './AgentRunner.ts';
 import { isFileChangeItem } from './codexProtocol.ts';
-import type { CodexFileChange, CodexThreadItem } from './codexProtocol.ts';
+import type { CodexFileChange, CodexMcpToolCallItem, CodexThreadItem } from './codexProtocol.ts';
+import { inputKeyOf } from './createLoopbackToolServer.ts';
 
 interface CodexRequestContext {
     reviewToolCall: (call: ToolCall, signal: AbortSignal) => Promise<ToolCallDecision>;
@@ -13,6 +14,20 @@ interface CodexRequestContext {
     workspaceDir: string;
     // False once the turn has used its steps. A further command or file change is declined without a review.
     hasStepsLeft: () => boolean;
+    // The bot's own MCP server, when the turn has tools. Any other server's question is declined.
+    toolServer?: CodexToolServer | undefined;
+}
+
+interface CodexToolServer {
+    name: string;
+    // Every tool call item the turn has started, so a question can be matched to the one call it is about.
+    toolCalls: () => CodexMcpToolCallItem[];
+    // The items already decided. Each gets one decision.
+    decidedItemIds: Set<string>;
+    // Tools the owner blocked, by full name.
+    blockedTools: string[];
+    // Lets the loopback server run this one call, once.
+    allowCall: (itemId: string, toolName: string, input: unknown) => void;
 }
 
 type CodexAnswer = { result: unknown } | { error: { code: number; message: string } };
@@ -27,6 +42,9 @@ const SHELL_WRAPPER_PATTERN = /^(?:\/usr)?(?:\/bin\/)?(?:bash|sh|zsh) -lc (?:'([
 const DECLINE_COMMAND: CodexAnswer = { result: { decision: 'decline' } };
 const ACCEPT_COMMAND: CodexAnswer = { result: { decision: 'accept' } };
 const DECLINE_ELICITATION: CodexAnswer = { result: { action: 'decline', content: null, _meta: null } };
+const ACCEPT_ELICITATION: CodexAnswer = { result: { action: 'accept', content: null, _meta: null } };
+// The kind Codex puts in the _meta of a tool call question (seen with codex-cli 0.163.0).
+const TOOL_CALL_APPROVAL_KIND = 'mcp_tool_call';
 const NOT_SUPPORTED: CodexAnswer = { error: { code: METHOD_NOT_SUPPORTED, message: NOT_SUPPORTED_MESSAGE } };
 
 function readRecord(value: unknown): Record<string, unknown> {
@@ -139,8 +157,57 @@ async function answerFileChange(params: Record<string, unknown>, context: CodexR
     return isAllowed ? ACCEPT_COMMAND : DECLINE_COMMAND;
 }
 
+// A tool call question names the server and the arguments, but not the tool or the call. It is matched to the started
+// calls of that server with the same arguments that are not decided yet. Only exactly one match is reviewed. With more
+// than one, all of them are declined, since the review could not know which call it would allow.
+function findQuestionedCalls(params: Record<string, unknown>, server: CodexToolServer): CodexMcpToolCallItem[] {
+    const meta = readRecord(params._meta);
+    const isToolQuestion = params.serverName === server.name && params.mode === 'form' && meta.codex_approval_kind === TOOL_CALL_APPROVAL_KIND;
+
+    if (!isToolQuestion) {
+        return [];
+    }
+
+    const argumentsKey = inputKeyOf(meta.tool_params);
+
+    return server.toolCalls()
+        .filter(item => item.server === server.name && item.status === 'inProgress' && !server.decidedItemIds.has(item.id))
+        .filter(item => inputKeyOf(item.arguments) === argumentsKey);
+}
+
+async function answerToolQuestion(params: Record<string, unknown>, context: CodexRequestContext): Promise<CodexAnswer> {
+    const server = context.toolServer;
+    const candidates = server === undefined ? [] : findQuestionedCalls(params, server);
+    const item = candidates.length === 1 ? candidates[0] : undefined;
+
+    // Marked before the review, so a second question for the same call cannot be answered while the first waits.
+    candidates.forEach((candidate) => {
+        server?.decidedItemIds.add(candidate.id);
+    });
+
+    if (server === undefined || item === undefined) {
+        return DECLINE_ELICITATION;
+    }
+
+    const toolName = `mcp__${server.name}__${item.tool}`;
+
+    if (server.blockedTools.includes(toolName) || !context.hasStepsLeft()) {
+        return DECLINE_ELICITATION;
+    }
+
+    const isAllowed = await reviewInTime({ toolName, input: item.arguments }, context);
+
+    if (!isAllowed) {
+        return DECLINE_ELICITATION;
+    }
+
+    server.allowCall(item.id, toolName, item.arguments);
+
+    return ACCEPT_ELICITATION;
+}
+
 // The answer to one request that Codex sends to CloudBot. Anything not known here is declined or refused.
-// Codex has no outside MCP servers in this engine yet, so every MCP question is declined.
+// Codex has no outside MCP servers in this engine yet. Only a tool call question for the bot's own server is reviewed.
 function answerCodexRequest(method: string, params: unknown, context: CodexRequestContext): Promise<CodexAnswer> {
     const record = readRecord(params);
 
@@ -153,7 +220,7 @@ function answerCodexRequest(method: string, params: unknown, context: CodexReque
     }
 
     if (method === 'mcpServer/elicitation/request') {
-        return Promise.resolve(DECLINE_ELICITATION);
+        return answerToolQuestion(record, context);
     }
 
     // The older approval requests, which a v2 thread does not send. They are refused all the same.
@@ -166,4 +233,4 @@ function answerCodexRequest(method: string, params: unknown, context: CodexReque
 }
 
 export { answerCodexRequest, unwrapShellCommand };
-export type { CodexAnswer, CodexRequestContext };
+export type { CodexAnswer, CodexRequestContext, CodexToolServer };

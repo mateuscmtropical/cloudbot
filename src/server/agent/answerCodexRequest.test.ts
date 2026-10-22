@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ToolCall, ToolCallDecision } from './AgentRunner.ts';
 import { answerCodexRequest, unwrapShellCommand } from './answerCodexRequest.ts';
-import type { CodexRequestContext } from './answerCodexRequest.ts';
-import type { CodexThreadItem } from './codexProtocol.ts';
+import type { CodexRequestContext, CodexToolServer } from './answerCodexRequest.ts';
+import type { CodexMcpToolCallItem, CodexThreadItem } from './codexProtocol.ts';
 
 function makeContext(decide: (call: ToolCall) => ToolCallDecision, items: CodexThreadItem[] = []): CodexRequestContext & { calls: ToolCall[] } {
     const calls: ToolCall[] = [];
@@ -187,7 +187,7 @@ describe('answerCodexRequest', () => {
             .toEqual([]);
     });
 
-    it('declines every MCP question and refuses requests it does not know, such as a token refresh', async () => {
+    it('declines an MCP question when the turn has no tool server, and refuses requests it does not know, such as a token refresh', async () => {
         const review = vi.fn(allow);
         const context = makeContext(review);
 
@@ -206,5 +206,105 @@ describe('answerCodexRequest', () => {
             .toMatchObject({ error: { code: -32601 } });
         expect(review)
             .not.toHaveBeenCalled();
+    });
+});
+
+function toolCallItem(id: string, tool: string, args: unknown): CodexMcpToolCallItem {
+    return { type: 'mcpToolCall', id, server: 'cloudbot', tool, status: 'inProgress', arguments: args };
+}
+
+function toolQuestion(args: unknown, serverName = 'cloudbot'): unknown {
+    return {
+        threadId: 't',
+        turnId: 'u',
+        serverName,
+        mode: 'form',
+        message: 'Allow the cloudbot MCP server to run tool "x"?',
+        requestedSchema: { type: 'object', properties: {} },
+        _meta: { codex_approval_kind: 'mcp_tool_call', tool_params: args },
+    };
+}
+
+function makeToolServer(items: CodexMcpToolCallItem[], blockedTools: string[] = []): CodexToolServer & { allowed: string[] } {
+    const allowed: string[] = [];
+
+    return {
+        allowed,
+        name: 'cloudbot',
+        toolCalls: () => items,
+        decidedItemIds: new Set(),
+        blockedTools,
+        allowCall: (itemId, toolName) => {
+            allowed.push(`${itemId}:${toolName}`);
+        },
+    };
+}
+
+describe('answerCodexRequest for the bot tools', () => {
+    it('reviews the one started call the question is about, and lets it run once when allowed', async () => {
+        const server = makeToolServer([toolCallItem('call_1', 'update_profile', { title: 'Writer' }), toolCallItem('call_2', 'share_file', { path: 'a.txt' })]);
+        const context = { ...makeContext(allow), toolServer: server };
+
+        const answer = await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ path: 'a.txt' }), context);
+
+        expect(answer)
+            .toEqual({ result: { action: 'accept', content: null, _meta: null } });
+        expect(context.calls)
+            .toEqual([{ toolName: 'mcp__cloudbot__share_file', input: { path: 'a.txt' } }]);
+        expect(server.allowed)
+            .toEqual(['call_2:mcp__cloudbot__share_file']);
+    });
+
+    it('declines a refused call and lets nothing run', async () => {
+        const server = makeToolServer([toolCallItem('call_1', 'bot_delete', {})]);
+        const context = { ...makeContext(deny), toolServer: server };
+
+        const answer = await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({}), context);
+
+        expect(answer)
+            .toEqual({ result: { action: 'decline', content: null, _meta: null } });
+        expect(server.allowed)
+            .toEqual([]);
+    });
+
+    it('declines a question it cannot match to exactly one call, without a review', async () => {
+        const twins = makeToolServer([toolCallItem('call_1', 'task_add', { title: 'x' }), toolCallItem('call_2', 'task_move', { title: 'x' })]);
+        const context = { ...makeContext(allow), toolServer: twins };
+
+        const ambiguous = await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ title: 'x' }), context);
+        const unmatched = await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ title: 'y' }), context);
+        const otherServer = await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ title: 'x' }, 'remote'), context);
+        const urlMode = await answerCodexRequest('mcpServer/elicitation/request', { serverName: 'cloudbot', mode: 'url', url: 'https://x.test', _meta: null }, context);
+
+        expect([ambiguous, unmatched, otherServer, urlMode].every(answer => JSON.stringify(answer)
+            .includes('"decline"')))
+            .toBe(true);
+        expect(context.calls)
+            .toEqual([]);
+    });
+
+    it('gives one decision per call, refuses a blocked tool, and stops at the step limit', async () => {
+        const server = makeToolServer([toolCallItem('call_1', 'routine_create', { name: 'a' })]);
+        const context = { ...makeContext(allow), toolServer: server };
+        const blocked = { ...makeContext(allow), toolServer: makeToolServer([toolCallItem('call_1', 'routine_create', { name: 'a' })], ['mcp__cloudbot__routine_create']) };
+        const noSteps = { ...makeContext(allow), hasStepsLeft: () => false, toolServer: makeToolServer([toolCallItem('call_1', 'routine_create', { name: 'a' })]) };
+
+        const first = await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ name: 'a' }), context);
+        const second = await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ name: 'a' }), context);
+        const blockedAnswer = await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ name: 'a' }), blocked);
+        const lateAnswer = await answerCodexRequest('mcpServer/elicitation/request', toolQuestion({ name: 'a' }), noSteps);
+
+        expect(first)
+            .toMatchObject({ result: { action: 'accept' } });
+        expect([second, blockedAnswer, lateAnswer])
+            .toEqual([
+                { result: { action: 'decline', content: null, _meta: null } },
+                { result: { action: 'decline', content: null, _meta: null } },
+                { result: { action: 'decline', content: null, _meta: null } },
+            ]);
+        expect(context.calls)
+            .toHaveLength(1);
+        expect([blocked.calls, noSteps.calls])
+            .toEqual([[], []]);
     });
 });

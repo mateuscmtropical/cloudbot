@@ -11,6 +11,7 @@ import type { AgentEvent } from './AgentEvent.ts';
 import type { ToolCallDecision, TurnRequest } from './AgentRunner.ts';
 import { CodexEngine, buildCodexArguments } from './CodexEngine.ts';
 import type { SpawnFunction } from './ClaudeCliEngine.ts';
+import type { LoopbackToolServer, LoopbackTurnGrant } from './createLoopbackToolServer.ts';
 
 interface SentMessage {
     id?: number;
@@ -97,7 +98,7 @@ function completeTurn(server: FakeAppServer): void {
     server.say({ method: 'turn/completed', params: { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed', error: null, durationMs: 50 } } });
 }
 
-function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThreadStart?: boolean } = {}): {
+function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThreadStart?: boolean; loopback?: LoopbackToolServer } = {}): {
     engine: CodexEngine;
     servers: FakeAppServer[];
     spawnOptions: SpawnOptions[];
@@ -123,6 +124,7 @@ function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThre
         codexPath: '/usr/local/bin/codex',
         codexHomeFor: () => home,
         environment: { PATH: '/usr/bin' },
+        loopback: options.loopback,
         spawnFunction,
         signalProcess: (_child, action) => {
             signals.push(action);
@@ -152,9 +154,9 @@ function significant(events: AgentEvent[]): AgentEvent[] {
 }
 
 describe('buildCodexArguments', () => {
-    it('runs the app server with the built-ins that have no approval turned off', () => {
+    it('runs the app server with the built-ins that have no approval turned off, and the tool token kept out of commands', () => {
         expect(buildCodexArguments([]))
-            .toEqual(['app-server', '-c', 'web_search="disabled"', '-c', 'features.view_image=false', '-c', 'features.multi_agent=false', '-c', 'features.goals=false']);
+            .toEqual(['app-server', '-c', 'web_search="disabled"', '-c', 'features.view_image=false', '-c', 'features.multi_agent=false', '-c', 'features.goals=false', '-c', 'shell_environment_policy.exclude=["CLOUDBOT_TOOLS_TOKEN"]']);
     });
 });
 
@@ -327,6 +329,52 @@ describe('CodexEngine', () => {
             .toHaveBeenCalledTimes(1);
         expect(events.at(-1))
             .toEqual({ type: 'turn_limit', limit: 'steps' });
+    });
+
+    it('serves the bot tools through the loopback server, with every call asking first and the token in the environment', async () => {
+        const grants: LoopbackTurnGrant[] = [];
+        let releases = 0;
+        const loopback: LoopbackToolServer = {
+            grantTurn: (grant) => {
+                grants.push(grant);
+
+                return {
+                    folder: '/t',
+                    mcpConfigPath: '/t/mcp.json',
+                    settingsPath: '/t/settings.json',
+                    noteToolUse: () => undefined,
+                    writeFile: name => `/t/${name}`,
+                    allowCall: () => undefined,
+                    mcpUrl: 'http://127.0.0.1:5555/mcp',
+                    token: 'fake-loopback-token',
+                    release: () => {
+                        releases += 1;
+                    },
+                };
+            },
+            close: () => Promise.resolve(),
+        };
+        const { engine, spawnArgs, spawnOptions } = makeEngine(completeTurn, { loopback });
+        const tool = { name: 'echo', description: 'Repeats.', inputSchema: {}, handler: () => Promise.resolve({ content: [] }) };
+
+        await collect(engine.runTurn(makeRequest({ tools: [tool], disallowedTools: ['mcp__cloudbot__echo'] })));
+
+        expect(spawnArgs[0])
+            .toEqual(expect.arrayContaining([
+                'mcp_servers.cloudbot.url="http://127.0.0.1:5555/mcp"',
+                'mcp_servers.cloudbot.bearer_token_env_var="CLOUDBOT_TOOLS_TOKEN"',
+                'mcp_servers.cloudbot.default_tools_approval_mode="prompt"',
+            ]));
+        expect(spawnArgs[0]?.join(' '))
+            .not.toContain('fake-loopback-token');
+        expect(spawnOptions[0]?.env)
+            .toMatchObject({ CLOUDBOT_TOOLS_TOKEN: 'fake-loopback-token' });
+        expect(grants[0])
+            .toMatchObject({ tools: [tool], offersPromptTool: false, disallowedTools: ['mcp__cloudbot__echo'] });
+        await expect(grants[0]?.reviewToolCall({ toolName: 'Bash', input: {} }, new AbortController().signal))
+            .resolves.toMatchObject({ isAllowed: false });
+        expect(releases)
+            .toBe(1);
     });
 
     it('refuses images without starting Codex', async () => {

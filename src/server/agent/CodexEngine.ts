@@ -9,8 +9,10 @@ import { answerCodexRequest } from './answerCodexRequest.ts';
 import type { CodexAnswer } from './answerCodexRequest.ts';
 import { signalProcessTree } from './ClaudeCliEngine.ts';
 import type { SignalAction, SpawnFunction } from './ClaudeCliEngine.ts';
-import { CODEX_APPROVAL_POLICY, CODEX_LOCKED_CONFIG, CODEX_SANDBOX_MODE } from './codexProtocol.ts';
+import { CODEX_APPROVAL_POLICY, CODEX_LOCKED_CONFIG, CODEX_SANDBOX_MODE, CODEX_TOOL_TOKEN_VARIABLE, isMcpToolCallItem } from './codexProtocol.ts';
 import type { CodexMessage, CodexRequestId, CodexThreadItem, CodexTurn } from './codexProtocol.ts';
+import type { LoopbackToolServer, LoopbackTurn } from './createLoopbackToolServer.ts';
+import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
 import { mapCodexNotification, mapCodexTurnEnd, readItem } from './mapCodexNotification.ts';
 
 interface CodexEngineOptions {
@@ -22,6 +24,8 @@ interface CodexEngineOptions {
     environment?: Record<string, string> | undefined;
     // More -c overrides, added after the locked ones. Tests point Codex at a fake model server with them.
     extraConfig?: string[] | undefined;
+    // Serves the bot's own tools. Unset means a Codex turn has no CloudBot tools.
+    loopback?: LoopbackToolServer | undefined;
     // How long a review may take before the call is declined. The approval gate waits one hour, so this outlasts it.
     reviewTimeoutMs?: number | undefined;
     // Tests inject fakes here. Production spawns the binary and signals its process group.
@@ -60,7 +64,12 @@ const STOPPED_EARLY = 'Codex stopped before the turn ended.';
 // The setup calls answer at once when Codex works. A Codex that never answers would hold the turn open.
 const SETUP_TIMEOUT_MS = 60000;
 const SETUP_TIMED_OUT = 'Codex did not answer.';
-const APPROVAL_METHODS = ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval'];
+const APPROVAL_METHODS = ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'mcpServer/elicitation/request'];
+// Codex reads the loopback token from this variable, so the token is never on the command line. The locked config keeps
+// it out of the commands Codex runs.
+const TOOL_TOKEN_VARIABLE = CODEX_TOOL_TOKEN_VARIABLE;
+// A bot tool may wait for the owner, such as a secret form, so Codex waits as long as an approval may.
+const TOOL_TIMEOUT_SECONDS = 3900;
 
 function buildCodexArguments(extraConfig: string[]): string[] {
     const overrides = [...CODEX_LOCKED_CONFIG, ...extraConfig].flatMap(setting => ['-c', setting]);
@@ -98,6 +107,22 @@ function exitsWithin(exited: Promise<unknown>, milliseconds: number): Promise<bo
     });
 
     return Promise.race([exited.then(() => true), timeout]);
+}
+
+// The bot's own server for Codex. Every call asks first (prompt), so each one comes to CloudBot as a question.
+function toolServerConfig(turn: LoopbackTurn): string[] {
+    const prefix = `mcp_servers.${PROFILE_SERVER_NAME}`;
+
+    return [
+        `${prefix}.url="${turn.mcpUrl}"`,
+        `${prefix}.bearer_token_env_var="${TOOL_TOKEN_VARIABLE}"`,
+        `${prefix}.default_tools_approval_mode="prompt"`,
+        `${prefix}.tool_timeout_sec=${String(TOOL_TIMEOUT_SECONDS)}`,
+    ];
+}
+
+function refuseOnPromptRoute(): Promise<{ isAllowed: false; reason: string }> {
+    return Promise.resolve({ isAllowed: false, reason: 'Codex calls are decided by the engine.' });
 }
 
 function isPastStepLimit(request: TurnRequest, progress: TurnProgress): boolean {
@@ -141,12 +166,25 @@ class CodexEngine implements AgentRunner {
         const codexHome = this.options.codexHomeFor(request.botId);
 
         prepareCodexHome(codexHome);
-        yield* this.runProcess(request, codexHome);
+
+        const tools = request.tools ?? [];
+        // The engine decides each call itself, so the prompt route of the loopback server refuses everything.
+        const toolTurn = this.options.loopback === undefined || tools.length === 0
+            ? undefined
+            : this.options.loopback.grantTurn({ tools, reviewToolCall: refuseOnPromptRoute, disallowedTools: request.disallowedTools, offersPromptTool: false });
+
+        try {
+            yield* this.runProcess(request, codexHome, toolTurn);
+        } finally {
+            toolTurn?.release();
+        }
     }
 
-    private async* runProcess(request: TurnRequest, codexHome: string): AsyncGenerator<AgentEvent> {
-        const environment = { PATH: process.env.PATH ?? '', ...this.options.environment, HOME: codexHome, CODEX_HOME: codexHome, ...request.extraEnvironment };
-        const args = buildCodexArguments(this.options.extraConfig ?? []);
+    private async* runProcess(request: TurnRequest, codexHome: string, toolTurn: LoopbackTurn | undefined): AsyncGenerator<AgentEvent> {
+        const tokenVariable = toolTurn === undefined ? {} : { [TOOL_TOKEN_VARIABLE]: toolTurn.token };
+        const environment = { PATH: process.env.PATH ?? '', ...this.options.environment, ...request.extraEnvironment, HOME: codexHome, CODEX_HOME: codexHome, ...tokenVariable };
+        const toolConfig = toolTurn === undefined ? [] : toolServerConfig(toolTurn);
+        const args = buildCodexArguments([...toolConfig, ...(this.options.extraConfig ?? [])]);
         const child = this.spawnFunction(this.options.codexPath, args, {
             cwd: request.workspaceDir,
             env: environment,
@@ -180,6 +218,7 @@ class CodexEngine implements AgentRunner {
         const lines = createInterface({ input: stdout, crlfDelay: Infinity });
         const pending = new Map<CodexRequestId, PendingCall>();
         const items = new Map<string, CodexThreadItem>();
+        const decidedItemIds = new Set<string>();
         const progress: TurnProgress = { threadId: undefined, turnId: undefined, isSessionReported: false, isTurnOver: false, toolCount: 0, approvalCount: 0, setupError: undefined };
         const reviewController = new AbortController();
         let nextId = 0;
@@ -277,6 +316,17 @@ class CodexEngine implements AgentRunner {
                 timeoutMs: this.options.reviewTimeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS,
                 workspaceDir: request.workspaceDir,
                 hasStepsLeft: () => request.maxSteps === undefined || approvalNumber <= request.maxSteps,
+                toolServer: toolTurn === undefined
+                    ? undefined
+                    : {
+                            name: PROFILE_SERVER_NAME,
+                            toolCalls: () => [...items.values()].filter(isMcpToolCallItem),
+                            decidedItemIds,
+                            blockedTools: request.disallowedTools ?? [],
+                            allowCall: (itemId: string, toolName: string, input: unknown) => {
+                                toolTurn.allowCall(itemId, toolName, input);
+                            },
+                        },
             };
 
             void answerCodexRequest(message.method, message.params, context)
@@ -438,7 +488,8 @@ class CodexEngine implements AgentRunner {
             return mapCodexTurnEnd(turn);
         }
 
-        if (method === 'item/started') {
+        // The latest state of each item is kept, so a finished tool call is no longer matched to a new question.
+        if (method === 'item/started' || method === 'item/completed') {
             const item = readItem(message.params);
 
             if (item?.id !== undefined) {

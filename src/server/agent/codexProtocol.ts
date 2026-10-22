@@ -9,13 +9,19 @@ const CODEX_PROTOCOL_VERSION = '0.163.0';
 const CODEX_APPROVAL_POLICY = 'untrusted';
 const CODEX_SANDBOX_MODE = 'workspace-write';
 
+// The variable that holds the loopback token for Codex.
+const CODEX_TOOL_TOKEN_VARIABLE = 'CLOUDBOT_TOOLS_TOKEN';
+
 // Built-ins that have no per-call approval are turned off, so the model is never offered them:
 // hosted web search, reading any image file, helper agents and goals.
+// Codex passes its own environment to the commands it runs, a token included (seen with codex-cli 0.163.0). A command
+// holding the loopback token could reach the bot's tools, so that variable is kept out of every command.
 const CODEX_LOCKED_CONFIG = [
     'web_search="disabled"',
     'features.view_image=false',
     'features.multi_agent=false',
     'features.goals=false',
+    `shell_environment_policy.exclude=["${CODEX_TOOL_TOKEN_VARIABLE}"]`,
 ];
 
 type CodexRequestId = string | number;
@@ -102,5 +108,5 @@ interface CodexMessage {
     error?: { code: number; message: string };
 }
 
-export { CODEX_APPROVAL_POLICY, CODEX_LOCKED_CONFIG, CODEX_PROTOCOL_VERSION, CODEX_SANDBOX_MODE, isAgentMessageItem, isCommandItem, isFileChangeItem, isMcpToolCallItem };
-export type { CodexCommandItem, CodexFileChange, CodexFileChangeItem, CodexMessage, CodexRequestId, CodexThreadItem, CodexTurn, CodexTurnError };
+export { CODEX_APPROVAL_POLICY, CODEX_LOCKED_CONFIG, CODEX_PROTOCOL_VERSION, CODEX_SANDBOX_MODE, CODEX_TOOL_TOKEN_VARIABLE, isAgentMessageItem, isCommandItem, isFileChangeItem, isMcpToolCallItem };
+export type { CodexCommandItem, CodexFileChange, CodexFileChangeItem, CodexMcpToolCallItem, CodexMessage, CodexRequestId, CodexThreadItem, CodexTurn, CodexTurnError };
