@@ -10,7 +10,8 @@ All notable changes to this project are listed here. The format follows
 
 - Yellow is no longer a bot color. Its dark shade read as brown, so bots and channel posts that had it are now orange. New bots and the mascot tool never pick yellow. A stored color the app does not know shows as blue instead of breaking the mascot.
 - Buttons light up when the pointer is over them, including the choice buttons on the setup card. A disabled button does not. The change shows with reduced motion on, and the keyboard focus ring is unchanged.
-
+- Turns run the official claude CLI directly. The Claude Agent SDK is no longer used.
+- After the owner denies an action, the same action is refused at once if the bot tries it again in that turn, so no second approval card appears. The bot is told not to retry it.
 - A streamed reply stays smooth in a long chat. Stored messages no longer render again on every new word, and the words that arrive within one screen frame are drawn together. On a phone class CPU with 200 messages on screen, a fast reply went from about 11 to about 49 frames per second.
 - Mascots that are off screen stop following the pointer and stop blinking, so a long chat does no work for them.
 - The mascot's eyes move much further toward the pointer and the caret, and the whole cloud leans a little the same way, so the look reads on a small mascot too. Under reduced motion the eyes and the lean still move, without the glide.
@@ -39,6 +40,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- A background process that a command started in its own session no longer keeps running after the turn ends. Each turn marks its processes, and the marked ones are ended when it is over.
 - The plus in the new bot and attach buttons sits exactly in the center of the round button.
 - `share_file` works on Windows and macOS. The file must stay inside the workspace, and the opened file must be the one the path leads to, checked by file identity. Linux uses the same check. On Windows the open does not refuse links, so the realpath and identity check are the guard there.
 - The buttons inside the Rules panel had no background and their text could not be read.

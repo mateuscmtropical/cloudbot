@@ -105,7 +105,7 @@ const turnWaits = sqliteTable('turn_waits', {
         .notNull(),
 });
 
-// Rules the owner sets for a bot. Block rules may also name tools the SDK must refuse.
+// Rules the owner sets for a bot. Block rules may also name tools the CLI must refuse.
 const botRules = sqliteTable('bot_rules', {
     id: text('id')
         .primaryKey(),
@@ -231,7 +231,7 @@ const botModels = sqliteTable('bot_models', {
     reviewModel: text('review_model'),
     browsingModel: text('browsing_model'),
     documentsModel: text('documents_model'),
-    // The effort per kind of work, as a level of the SDK effort option. A null column is the CLI default.
+    // The effort per kind of work, as a level of the CLI effort option. A null column is the CLI default.
     chatEffort: text('chat_effort'),
     routinesEffort: text('routines_effort'),
     reviewEffort: text('review_effort'),

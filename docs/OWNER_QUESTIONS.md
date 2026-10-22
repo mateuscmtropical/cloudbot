@@ -149,12 +149,12 @@ Status: **open** means the default is in use and waits for the owner.
   `rule_change`, and the owner approves each one in the chat, so a web page cannot talk it into more rights.
 - Each rule is a sentence. Every sentence goes into the system prompt as an
   owner rule. Block rules can also name tools, such as `Bash(rm:*)` or
-  `WebFetch`, and the SDK refuses those through `disallowedTools`.
+  `WebFetch`, and the CLI refuses those through `disallowedTools`.
 - An allow rule cannot name tools, so it never widens what the bot can do.
-- A tool name must be spelled as the SDK spells it. A wrong name blocks
+- A tool name must be spelled as the CLI spells it. A wrong name blocks
   nothing, and `Bash(rm:*)` blocks only commands that start with `rm`, so a
   sentence is still needed for the intent.
-- A blocked call is refused by the SDK, and the bot continues. A review agent
+- A blocked call is refused by the CLI, and the bot continues. A review agent
   that checks each call against the sentences is the next roadmap item.
 - Other options: rules for all bots at once, or a turn that pauses and asks the
   owner when a call is blocked.

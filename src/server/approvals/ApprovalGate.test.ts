@@ -129,7 +129,7 @@ describe('ApprovalGate', () => {
             .toBe(false);
     });
 
-    it('refuses the call after Deny', async () => {
+    it('refuses the call after Deny and tells the model not to try it again', async () => {
         const { gate, posted } = createGate(() => Promise.resolve({ decision: 'ask', summary: 'Buy a ticket' }));
         const pending = gate.review('bot-1', SEND_CALL, new AbortController().signal);
 
@@ -140,7 +140,7 @@ describe('ApprovalGate', () => {
         await gate.answer('bot-1', 'message-1', 'deny');
 
         await expect(pending)
-            .resolves.toMatchObject({ isAllowed: false });
+            .resolves.toEqual({ isAllowed: false, reason: 'The owner denied this action, so it was not run. Do not try it again or another way. Tell the owner it was not done.', isOwnerDenial: true });
     });
 
     it('treats a stop as Deny and closes the question', async () => {
@@ -182,7 +182,7 @@ describe('ApprovalGate', () => {
         const decision = await gate.review('bot-1', SEND_CALL, new AbortController().signal);
 
         expect(decision)
-            .toMatchObject({ isAllowed: false });
+            .toEqual({ isAllowed: false, reason: 'The owner did not approve this action.' });
         expect(closed[0]?.body.chosenId)
             .toBe('deny');
     });

@@ -1,132 +1,160 @@
-import { Readable } from 'node:stream';
-
+import { EventEmitter } from 'node:events';
+import type { ChildProcess } from 'node:child_process';
+import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
-import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 import { createClaudeReviewModel } from './createClaudeReviewModel.ts';
-import type { ReviewQueryFunction } from './createClaudeReviewModel.ts';
+import type { ReviewSpawnFunction } from './createClaudeReviewModel.ts';
 
-function resultMessage(fields: Record<string, unknown>): SDKMessage {
-    return { type: 'result', subtype: 'success', is_error: false, result: '{}', ...fields } as unknown as SDKMessage;
+interface FakeCli {
+    process: ChildProcess;
+    kill: ReturnType<typeof vi.fn>;
+    stdinText(): string;
 }
 
-function createQuery(messages: SDKMessage[]): { queryFunction: ReviewQueryFunction; calls: { prompt: string; options: Options }[] } {
-    const calls: { prompt: string; options: Options }[] = [];
-    const queryFunction: ReviewQueryFunction = (parameters) => {
-        calls.push(parameters);
+// A stand-in for the CLI. With an answer, it writes the answer once the prompt is read. Without one, it only ends when killed.
+function fakeCli(answer: string | undefined): FakeCli {
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const kill = vi.fn(() => {
+        stdout.end();
 
-        return Readable.from(messages) as AsyncIterable<SDKMessage>;
+        return true;
+    });
+    const child = Object.assign(new EventEmitter(), { stdin, stdout, kill });
+    let received = '';
+
+    stdin.on('data', (chunk: Buffer) => {
+        received += chunk.toString('utf8');
+    });
+    stdin.on('finish', () => {
+        if (answer !== undefined) {
+            stdout.end(answer);
+        }
+    });
+    stdout.on('end', () => {
+        child.emit('close');
+    });
+
+    return {
+        process: child as unknown as ChildProcess,
+        kill,
+        stdinText: () => received,
     };
+}
 
-    return { queryFunction, calls };
+function resultLine(fields: Record<string, unknown>): string {
+    return `${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: '{}', total_cost_usd: 0.01, ...fields })}\n`;
+}
+
+function spawnReturning(cli: FakeCli): ReturnType<typeof vi.fn<ReviewSpawnFunction>> {
+    return vi.fn<ReviewSpawnFunction>(() => cli.process);
 }
 
 describe('createClaudeReviewModel', () => {
-    it('runs the review with the model the owner chose', async () => {
-        const { queryFunction, calls } = createQuery([resultMessage({ result: '{}' })]);
-        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
+    it('runs the review with the model and effort the owner chose', async () => {
+        const cli = fakeCli(resultLine({}));
+        const spawnFunction = spawnReturning(cli);
+        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', spawnFunction });
 
-        await askModel('prompt', undefined, 'haiku');
+        await askModel('prompt', undefined, 'haiku', 'low');
 
-        expect(calls[0]?.options)
-            .toMatchObject({ model: 'haiku' });
+        expect(spawnFunction.mock.calls[0]?.[1])
+            .toEqual(expect.arrayContaining(['--model', 'haiku', '--effort', 'low']));
     });
 
-    it('runs the review with the effort the owner chose', async () => {
-        const { queryFunction, calls } = createQuery([resultMessage({ result: '{}' })]);
-        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
-
-        await askModel('prompt', undefined, undefined, 'max');
-
-        expect(calls[0]?.options)
-            .toMatchObject({ effort: 'max' });
-    });
-
-    it('runs the review with the CLI default effort when none is chosen', async () => {
-        const { queryFunction, calls } = createQuery([resultMessage({ result: '{}' })]);
-        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
+    it('leaves out the model and effort when none is chosen', async () => {
+        const cli = fakeCli(resultLine({}));
+        const spawnFunction = spawnReturning(cli);
+        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', spawnFunction });
 
         await askModel('prompt');
 
-        expect(calls[0]?.options)
-            .not.toHaveProperty('effort');
+        const args = spawnFunction.mock.calls[0]?.[1] ?? [];
+
+        expect(args).not.toContain('--model');
+        expect(args).not.toContain('--effort');
     });
 
-    it('runs the review with the CLI default model when none is chosen', async () => {
-        const { queryFunction, calls } = createQuery([resultMessage({ result: '{}' })]);
-        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
+    it('returns the text of the result and sends the prompt on stdin', async () => {
+        const cli = fakeCli(resultLine({ result: 'answer' }));
+        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', spawnFunction: spawnReturning(cli) });
 
-        await askModel('prompt');
-
-        expect(calls[0]?.options)
-            .not.toHaveProperty('model');
-    });
-
-    it('returns the text of the result', async () => {
-        const { queryFunction } = createQuery([{ type: 'system' } as unknown as SDKMessage, resultMessage({ result: 'answer' })]);
-        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
-
-        const answer = await askModel('prompt');
+        const answer = await askModel('the prompt');
 
         expect(answer)
             .toBe('answer');
+        expect(cli.stdinText())
+            .toBe('the prompt');
     });
 
-    it('runs with no tools, no settings, no saved session and one turn', async () => {
-        const { queryFunction, calls } = createQuery([resultMessage({})]);
+    it('runs with no tools, no settings, no saved session and one JSON answer', async () => {
+        const cli = fakeCli(resultLine({}));
+        const spawnFunction = spawnReturning(cli);
         const askModel = createClaudeReviewModel({
             workingDirectory: '/work',
             environment: { PATH: '/bin' },
             pathToClaudeCodeExecutable: '/usr/bin/claude',
-            queryFunction,
+            spawnFunction,
         });
 
         await askModel('the prompt');
 
-        expect(calls[0]?.prompt)
-            .toBe('the prompt');
-        expect(calls[0]?.options)
-            .toMatchObject({
-                cwd: '/work',
-                tools: [],
-                settingSources: [],
-                persistSession: false,
-                maxTurns: 1,
-                env: { PATH: '/bin' },
-                pathToClaudeCodeExecutable: '/usr/bin/claude',
-            });
+        const [command, args, options] = spawnFunction.mock.calls[0] ?? [];
+
+        expect(command)
+            .toBe('/usr/bin/claude');
+        expect(args)
+            .toEqual(expect.arrayContaining(['-p', '--output-format', 'json', '--no-session-persistence']));
+        expect(args?.[args.indexOf('--tools') + 1])
+            .toBe('');
+        expect(args?.[args.indexOf('--setting-sources') + 1])
+            .toBe('');
+        expect(options)
+            .toMatchObject({ cwd: '/work', env: { PATH: '/bin' }, shell: false });
     });
 
     it('throws when the result is an error', async () => {
-        const { queryFunction } = createQuery([resultMessage({ is_error: true })]);
-        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
+        const askModel = createClaudeReviewModel({
+            workingDirectory: '/tmp',
+            spawnFunction: spawnReturning(fakeCli(resultLine({ is_error: true }))),
+        });
 
         await expect(askModel('prompt'))
             .rejects
             .toThrow('did not answer');
     });
 
-    it('throws when there is no result', async () => {
-        const { queryFunction } = createQuery([]);
-        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
+    it('throws when there is no answer', async () => {
+        const askModel = createClaudeReviewModel({
+            workingDirectory: '/tmp',
+            spawnFunction: spawnReturning(fakeCli('')),
+        });
 
         await expect(askModel('prompt'))
             .rejects
             .toThrow('no answer');
     });
 
-    it('aborts the query when the signal fires', async () => {
-        const abortSeen = vi.fn();
-        const queryFunction: ReviewQueryFunction = ({ options }) => (async function* generate(): AsyncGenerator<SDKMessage> {
-            await new Promise<void>((resolve) => {
-                options.abortController?.signal.addEventListener('abort', () => {
-                    abortSeen();
-                    resolve();
-                });
-            });
-            yield* [];
-        })();
-        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
+    it('throws when the CLI cannot start', async () => {
+        const child = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough(), kill: vi.fn() });
+        const askModel = createClaudeReviewModel({
+            workingDirectory: '/tmp',
+            spawnFunction: () => {
+                queueMicrotask(() => child.emit('error', new Error('ENOENT')));
+
+                return child as unknown as ChildProcess;
+            },
+        });
+
+        await expect(askModel('prompt'))
+            .rejects
+            .toThrow('could not start');
+    });
+
+    it('stops the CLI when the signal fires', async () => {
+        const cli = fakeCli(undefined);
+        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', spawnFunction: spawnReturning(cli) });
         const controller = new AbortController();
         const pending = askModel('prompt', controller.signal);
 
@@ -135,23 +163,16 @@ describe('createClaudeReviewModel', () => {
         await expect(pending)
             .rejects
             .toThrow('no answer');
-        expect(abortSeen)
+        expect(cli.kill)
             .toHaveBeenCalledOnce();
     });
 
-    it('aborts the query after the timeout', async () => {
+    it('stops the CLI after the timeout', async () => {
         vi.useFakeTimers();
 
         try {
-            const queryFunction: ReviewQueryFunction = ({ options }) => (async function* generate(): AsyncGenerator<SDKMessage> {
-                await new Promise<void>((resolve) => {
-                    options.abortController?.signal.addEventListener('abort', () => {
-                        resolve();
-                    });
-                });
-                yield* [];
-            })();
-            const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction, timeoutMs: 1000 });
+            const cli = fakeCli(undefined);
+            const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', spawnFunction: spawnReturning(cli), timeoutMs: 1000 });
             const pending = askModel('prompt');
             const settled = expect(pending)
                 .rejects
@@ -159,19 +180,23 @@ describe('createClaudeReviewModel', () => {
 
             await vi.advanceTimersByTimeAsync(1000);
             await settled;
+            expect(cli.kill)
+                .toHaveBeenCalledOnce();
         } finally {
             vi.useRealTimers();
         }
     });
 
     it('reports the total cost of the review to onCost', async () => {
-        const { queryFunction } = createQuery([resultMessage({ total_cost_usd: 0.07 })]);
-        const askModel = createClaudeReviewModel({ workingDirectory: '/tmp', queryFunction });
+        const askModel = createClaudeReviewModel({
+            workingDirectory: '/tmp',
+            spawnFunction: spawnReturning(fakeCli(resultLine({ total_cost_usd: 0.42 }))),
+        });
         const onCost = vi.fn();
 
         await askModel('prompt', undefined, undefined, undefined, onCost);
 
         expect(onCost)
-            .toHaveBeenCalledWith(0.07);
+            .toHaveBeenCalledWith(0.42);
     });
 });

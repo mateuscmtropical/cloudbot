@@ -7,11 +7,9 @@ import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
 import type { Bot } from '../store/types.ts';
 import {
-    PROFILE_SERVER_NAME,
     PROFILE_TOOL_SHAPE,
     SHARE_FILE_TOOL_FULL_NAME,
     UPDATE_PROFILE_TOOL_FULL_NAME,
-    createProfileToolServer,
     createShareFileTool,
     createUpdateProfileTool,
 } from './createProfileToolServer.ts';
@@ -148,26 +146,6 @@ describe('PROFILE_TOOL_SHAPE', () => {
             .toBe(true);
         expect(profileSchema.safeParse({ description: 'x'.repeat(501) }).success)
             .toBe(false);
-    });
-});
-
-describe('createProfileToolServer', () => {
-    let opened: OpenedDatabase;
-
-    beforeEach(async () => {
-        opened = await openDatabase(':memory:');
-    });
-
-    afterEach(() => {
-        opened.close();
-    });
-
-    it('builds an in-process SDK server named cloudbot', () => {
-        const botStore = new BotStore(opened.db);
-        const server = createProfileToolServer(botStore, 'bot-1');
-
-        expect(server)
-            .toMatchObject({ type: 'sdk', name: PROFILE_SERVER_NAME });
     });
 });
 

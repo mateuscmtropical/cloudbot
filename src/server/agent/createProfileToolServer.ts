@@ -1,5 +1,5 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
-import type { McpSdkServerConfigWithInstance, SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from './cloudbotTool.ts';
+import type { CloudbotTool } from './cloudbotTool.ts';
 import { z } from 'zod/v4';
 
 import { MASCOT_COLOR_NAMES, MASCOT_SHAPES } from '../../shared/mascot.ts';
@@ -97,7 +97,7 @@ function buildChanges(args: ProfileToolArguments): Partial<BotProfile> {
 type NameConflictCheck = (name: string) => Promise<string | undefined>;
 
 // The bot id is fixed when the tool is built. The model cannot pick another bot.
-function createUpdateProfileTool(botStore: BotStore, botId: string, nameConflict?: NameConflictCheck): SdkMcpToolDefinition<typeof PROFILE_TOOL_SHAPE> {
+function createUpdateProfileTool(botStore: BotStore, botId: string, nameConflict?: NameConflictCheck): CloudbotTool<typeof PROFILE_TOOL_SHAPE> {
     return tool(
         UPDATE_PROFILE_TOOL_NAME,
         UPDATE_PROFILE_DESCRIPTION,
@@ -125,7 +125,7 @@ function createUpdateProfileTool(botStore: BotStore, botId: string, nameConflict
 }
 
 // The bot id is fixed when the tool is built, as for update_profile. Only the mascot fields change.
-function createSetMascotTool(botStore: BotStore, botId: string): SdkMcpToolDefinition<typeof SET_MASCOT_TOOL_SHAPE> {
+function createSetMascotTool(botStore: BotStore, botId: string): CloudbotTool<typeof SET_MASCOT_TOOL_SHAPE> {
     return tool(
         SET_MASCOT_TOOL_NAME,
         SET_MASCOT_DESCRIPTION,
@@ -146,7 +146,7 @@ function createSetMascotTool(botStore: BotStore, botId: string): SdkMcpToolDefin
     );
 }
 
-function createShareFileTool(shareFile: ShareFileHandler): SdkMcpToolDefinition<typeof SHARE_FILE_TOOL_SHAPE> {
+function createShareFileTool(shareFile: ShareFileHandler): CloudbotTool<typeof SHARE_FILE_TOOL_SHAPE> {
     return tool(
         SHARE_FILE_TOOL_NAME,
         SHARE_FILE_DESCRIPTION,
@@ -167,27 +167,19 @@ function createShareFileTool(shareFile: ShareFileHandler): SdkMcpToolDefinition<
     );
 }
 
-// Any tool the SDK server takes. Its handler types differ per tool, so the SDK's own element type is used.
-type CloudbotTool = NonNullable<Parameters<typeof createSdkMcpServer>[0]['tools']>[number];
-
-// The server is built for one turn and passed as mcpServers[PROFILE_SERVER_NAME].
-// The share_file tool is added only when a handler is given. Extra tools, such as the browser tools, join the same server.
-function createProfileToolServer(
+// The tools of one turn. The share_file tool is added only when a handler is given. Extra tools, such as the browser tools, join the same list.
+function createProfileTools(
     botStore: BotStore,
     botId: string,
     shareFile?: ShareFileHandler,
     extraTools: CloudbotTool[] = [],
     nameConflict?: NameConflictCheck,
-): McpSdkServerConfigWithInstance {
+): CloudbotTool[] {
     const updateProfileTool = createUpdateProfileTool(botStore, botId, nameConflict);
     const setMascotTool = createSetMascotTool(botStore, botId);
     const shareTools = shareFile === undefined ? [] : [createShareFileTool(shareFile)];
 
-    return createSdkMcpServer({
-        name: PROFILE_SERVER_NAME,
-        version: '1.0.0',
-        tools: [updateProfileTool, setMascotTool, ...shareTools, ...extraTools],
-    });
+    return [updateProfileTool, setMascotTool, ...shareTools, ...extraTools];
 }
 
 export {
@@ -198,7 +190,7 @@ export {
     SHARE_FILE_TOOL_FULL_NAME,
     SHARE_FILE_TOOL_SHAPE,
     UPDATE_PROFILE_TOOL_FULL_NAME,
-    createProfileToolServer,
+    createProfileTools,
     createSetMascotTool,
     createShareFileTool,
     createUpdateProfileTool,

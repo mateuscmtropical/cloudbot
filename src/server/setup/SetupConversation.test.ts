@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import type { ChatMessage } from '../../shared/chatTypes.ts';
 import { FakeAgentRunner } from '../agent/FakeAgentRunner.ts';
 import { ChatService } from '../chat/ChatService.ts';
+import { CLEANUP_RETRIES } from '../chat/testCleanup.ts';
 import { SetupAccess } from '../access/SetupAccess.ts';
 import { createApp } from '../createApp.ts';
 import { BotStore } from '../store/BotStore.ts';
@@ -53,7 +54,7 @@ describe('setup conversation', () => {
 
     afterEach(async () => {
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     async function fixture(start = true, localMode = false, canSignOut = true, noBrowser?: 'notInstalled' | 'leftover'): Promise<Fixture> {

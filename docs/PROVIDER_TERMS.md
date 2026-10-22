@@ -10,8 +10,8 @@ Anthropic publishes.
 
 ## How CloudBot runs Claude
 
-- CloudBot uses the official Claude Agent SDK. The SDK starts the official
-  Claude Code CLI (`claude`), and the CLI sends all requests to Anthropic.
+- CloudBot runs the official Claude Code CLI (`claude`) for each turn, and the
+  CLI sends all requests to Anthropic.
 - The CLI is installed with Anthropic's installer and is never modified.
 - **Subscription.** CloudBot starts `claude auth login --claudeai` in a pseudo
   terminal and reads the sign-in link. You open that link on your own device,
@@ -44,7 +44,7 @@ read on 2026-10-20:
 
 | Use | Notes |
 |---|---|
-| API key | The method Anthropic asks Agent SDK products to use. |
+| API key | The method Anthropic asks products that interact with Claude's capabilities to use. |
 | Your own subscription, only you use the bot | You sign in to the unmodified CLI on Anthropic's page. CloudBot carries the sign-in code from the chat to the CLI, and Anthropic has not confirmed this flow to the project. Bots that run on their own can go past "ordinary, individual usage". |
 | Other people use the bot with your subscription | Do not do this. Each person needs their own plan or key. |
 

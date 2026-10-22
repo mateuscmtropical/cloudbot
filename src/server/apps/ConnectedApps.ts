@@ -1,8 +1,7 @@
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
-
 import type { ConnectedAppSummary } from '../../shared/connectedApps.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import type { ConnectedAppRecord, ConnectedAppStore } from '../store/ConnectedAppStore.ts';
+import type { McpServerConfig } from '../agent/AgentRunner.ts';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
 import type { AppProxy } from './AppProxy.ts';
 import { AppAddressError, checkAppUrl, defaultAppAddressDeps } from './appAddress.ts';

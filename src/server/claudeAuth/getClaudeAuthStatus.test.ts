@@ -14,7 +14,7 @@ describe('getClaudeAuthStatus', () => {
             expect(runCommand)
                 .toHaveBeenCalledExactlyOnceWith('/usr/bin/sudo', [
                     '-n', '-u', 'bot', '--', '/home/bot/.local/bin/claude', 'auth', 'status', '--json',
-                ], { HOME: '/home/bot', PATH: '/usr/local/bin:/usr/bin:/bin' });
+                ], { HOME: '/home/bot', PATH: '/usr/local/bin:/usr/bin:/bin', DISABLE_AUTOUPDATER: '1' });
         } finally {
             vi.unstubAllEnvs();
         }

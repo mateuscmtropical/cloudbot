@@ -1,5 +1,5 @@
-import { tool } from '@anthropic-ai/claude-agent-sdk';
-import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from '../agent/cloudbotTool.ts';
+import type { CloudbotTool } from '../agent/cloudbotTool.ts';
 import { z } from 'zod/v4';
 
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
@@ -38,7 +38,7 @@ function textResult(text: string, isError = false): SecretToolResult {
     return isError ? { content: [content], isError: true } : { content: [content] };
 }
 
-function createRequestSecretTool(requestSecret: SecretRequestHandler): SdkMcpToolDefinition<typeof REQUEST_SECRET_SHAPE> {
+function createRequestSecretTool(requestSecret: SecretRequestHandler): CloudbotTool<typeof REQUEST_SECRET_SHAPE> {
     return tool(
         REQUEST_SECRET_TOOL_NAME,
         REQUEST_SECRET_DESCRIPTION,

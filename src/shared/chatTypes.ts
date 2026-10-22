@@ -141,7 +141,7 @@ interface ChatTextDeltaEvent {
 interface ChatToolStartedEvent {
     type: 'toolStarted';
     botId: string;
-    // The tool name as the SDK spells it, such as WebFetch or mcp__cloudbot__browser_open.
+    // The tool name as the CLI spells it, such as WebFetch or mcp__cloudbot__browser_open.
     toolName: string;
 }
 

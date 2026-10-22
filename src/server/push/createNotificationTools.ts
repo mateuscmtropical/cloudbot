@@ -1,6 +1,5 @@
-import { tool } from '@anthropic-ai/claude-agent-sdk';
-import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
-
+import { tool } from '../agent/cloudbotTool.ts';
+import type { CloudbotTool } from '../agent/createProfileToolServer.ts';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
 
 interface NotificationToolResult {
@@ -25,7 +24,7 @@ function textResult(text: string, isError = false): NotificationToolResult {
     return isError ? { content: [content], isError: true } : { content: [content] };
 }
 
-function createCardTool(name: string, description: string, doneText: string, postCard: NotificationCardHandler): SdkMcpToolDefinition<Record<string, never>> {
+function createCardTool(name: string, description: string, doneText: string, postCard: NotificationCardHandler): CloudbotTool {
     return tool(
         name,
         description,
@@ -42,11 +41,11 @@ function createCardTool(name: string, description: string, doneText: string, pos
     );
 }
 
-function createNotificationsEnableTool(postCard: NotificationCardHandler): SdkMcpToolDefinition<Record<string, never>> {
+function createNotificationsEnableTool(postCard: NotificationCardHandler): CloudbotTool {
     return createCardTool(NOTIFICATIONS_ENABLE_TOOL_NAME, NOTIFICATIONS_ENABLE_DESCRIPTION, 'A card with a button to turn on notifications is in the chat. Tell the owner in one short sentence to tap it, then stop. Do not repeat what the card says.', postCard);
 }
 
-function createNotificationsDisableTool(postCard: NotificationCardHandler): SdkMcpToolDefinition<Record<string, never>> {
+function createNotificationsDisableTool(postCard: NotificationCardHandler): CloudbotTool {
     return createCardTool(NOTIFICATIONS_DISABLE_TOOL_NAME, NOTIFICATIONS_DISABLE_DESCRIPTION, 'A card with a button to turn off notifications is in the chat. Tell the owner in one short sentence to tap it, then stop. Do not repeat what the card says.', postCard);
 }
 

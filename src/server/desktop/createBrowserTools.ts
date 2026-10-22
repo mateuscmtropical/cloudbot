@@ -1,5 +1,5 @@
-import { tool } from '@anthropic-ai/claude-agent-sdk';
-import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from '../agent/cloudbotTool.ts';
+import type { CloudbotTool } from '../agent/cloudbotTool.ts';
 import { z } from 'zod/v4';
 
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
@@ -137,7 +137,7 @@ async function shareIfAsked(data: string, showOwner: boolean | undefined, shareS
 }
 
 // shareScreenshot is given when the chat can show screenshots, so browser_screenshot can post one.
-function createBrowserTools(browser: BrowserControl, shareScreenshot?: ScreenshotShareHandler, screen?: ScreenHolder): SdkMcpToolDefinition<z.ZodRawShape>[] {
+function createBrowserTools(browser: BrowserControl, shareScreenshot?: ScreenshotShareHandler, screen?: ScreenHolder): CloudbotTool[] {
     const openTool = tool(
         `${BROWSER_TOOL_PREFIX}open`,
         'Open a web page in your browser, on your screen. Returns the page title, its address and its visible text.',
@@ -217,7 +217,7 @@ function createBrowserTools(browser: BrowserControl, shareScreenshot?: Screensho
         }),
     );
 
-    return [openTool, readTool, screenshotTool, clickTool, typeTool, keyTool, scrollTool] as SdkMcpToolDefinition<z.ZodRawShape>[];
+    return [openTool, readTool, screenshotTool, clickTool, typeTool, keyTool, scrollTool] as CloudbotTool[];
 }
 
 export { BROWSER_TOOL_FULL_NAMES, SCREEN_HEIGHT, SCREEN_WIDTH, createBrowserTools };

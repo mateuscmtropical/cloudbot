@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BOT_EXPORT_TOOL_FULL_NAME } from '../bots/createBotTemplateTools.ts';
+import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME } from '../bots/createBotTemplateTools.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildPng } from '../attachments/testImages.ts';
@@ -17,6 +17,8 @@ import { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import { RuleStore } from '../store/RuleStore.ts';
 import { ModelStore } from '../store/ModelStore.ts';
 import { BOT_CREATE_TOOL_FULL_NAME } from '../bots/createBotTool.ts';
+import { BOT_DELETE_TOOL_FULL_NAME } from '../bots/createBotDeleteTool.ts';
+import { BOT_SEND_TOOL_FULL_NAME } from '../bots/createBotSendTool.ts';
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
 import { BROWSER_ALLOW_TOOL_FULL_NAMES } from '../desktop/createBrowserAllowTools.ts';
 import { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
@@ -986,7 +988,9 @@ describe('ChatService', () => {
         const turnRequest = runner.receivedRequests[0];
 
         expect(turnRequest?.mcpServers)
-            .toHaveProperty([PROFILE_SERVER_NAME], expect.objectContaining({ type: 'sdk' }));
+            .toEqual({});
+        expect(turnRequest?.tools?.map(item => `mcp__${PROFILE_SERVER_NAME}__${item.name}`))
+            .toEqual(expect.arrayContaining([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME]));
         expect(turnRequest?.allowedTools)
             .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME]);
         expect(turnRequest?.systemPrompt)
@@ -1057,7 +1061,7 @@ describe('ChatService', () => {
             .toEqual([creator.id]);
     });
 
-    it('adds the browser tools and the browser paragraph when the bot has a browser', async () => {
+    it('allows only the profile tools and the export up front without the approval gate', async () => {
         const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
         const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:9' });
         const service = new ChatService({ botStore, messageStore, runner, dataDir, browser });
@@ -1067,18 +1071,32 @@ describe('ChatService', () => {
         await service.sendMessage(bot.id, 'Hi');
         await finished;
 
+        expect(runner.receivedRequests[0]?.allowedTools)
+            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME]);
+    });
+
+    it('adds the browser tools and the browser paragraph when the bot has a browser', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:9' });
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, browser, toolCallReviewer: () => Promise.resolve({ decision: 'allow' as const }) });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
         const turnRequest = runner.receivedRequests[0];
 
         expect(turnRequest?.allowedTools)
-            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...BROWSER_TOOL_FULL_NAMES, BOT_EXPORT_TOOL_FULL_NAME]);
+            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...BROWSER_TOOL_FULL_NAMES, BOT_CREATE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME, BOT_DELETE_TOOL_FULL_NAME, BOT_SEND_TOOL_FULL_NAME]);
         expect(turnRequest?.systemPrompt)
-            .toBe(buildSystemPrompt(bot, { hasBrowser: true }));
+            .toBe(buildSystemPrompt(bot, { hasBrowser: true, hasHandoffs: true }));
     });
 
     it('posts a secure form for a secret the bot asks for and offers the tool', async () => {
         const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
         const botSecrets = new BotSecrets(new Vault(join(dataDir, 'vault')));
-        const service = new ChatService({ botStore, messageStore, runner, dataDir, botSecrets });
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, botSecrets, toolCallReviewer: () => Promise.resolve({ decision: 'allow' as const }) });
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
         const finished = waitForTurnFinish(service, bot.id);
 
@@ -1101,7 +1119,7 @@ describe('ChatService', () => {
         const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:9' });
         const withBoth = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
         const vaultOnly = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
-        const firstService = new ChatService({ botStore, messageStore, runner: withBoth, dataDir, botSecrets, browser });
+        const firstService = new ChatService({ botStore, messageStore, runner: withBoth, dataDir, botSecrets, browser, toolCallReviewer: () => Promise.resolve({ decision: 'allow' as const }) });
         const secondService = new ChatService({ botStore, messageStore, runner: vaultOnly, dataDir, botSecrets });
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
         const firstFinished = waitForTurnFinish(firstService, bot.id);
@@ -1164,7 +1182,7 @@ describe('ChatService', () => {
         const withStore = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
         const withoutStore = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
-        const firstService = new ChatService({ botStore, messageStore, runner: withStore, dataDir, browser, browserAllowStore: allowStore });
+        const firstService = new ChatService({ botStore, messageStore, runner: withStore, dataDir, browser, browserAllowStore: allowStore, toolCallReviewer: () => Promise.resolve({ decision: 'allow' as const }) });
         const secondService = new ChatService({ botStore, messageStore, runner: withoutStore, dataDir, browser });
         const firstFinished = waitForTurnFinish(firstService, bot.id);
 
@@ -1187,7 +1205,7 @@ describe('ChatService', () => {
         const withBoth = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
         const browserOnly = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
-        const firstService = new ChatService({ botStore, messageStore, runner: withBoth, dataDir, browser, screen: new ScreenHolder() });
+        const firstService = new ChatService({ botStore, messageStore, runner: withBoth, dataDir, browser, screen: new ScreenHolder(), toolCallReviewer: () => Promise.resolve({ decision: 'allow' as const }) });
         const secondService = new ChatService({ botStore, messageStore, runner: browserOnly, dataDir, browser });
         const firstFinished = waitForTurnFinish(firstService, bot.id);
 
@@ -1329,7 +1347,7 @@ describe('ChatService', () => {
             .rejects.toThrow('already answered');
     });
 
-    it('gives the turn no review hook without a reviewer', async () => {
+    it('gives the turn a review that allows only the bot tools without an approval channel', async () => {
         const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
         const service = new ChatService({ botStore, messageStore, runner, dataDir });
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
@@ -1338,8 +1356,15 @@ describe('ChatService', () => {
         await service.sendMessage(bot.id, 'Hi');
         await finished;
 
-        expect(runner.receivedRequests[0]?.reviewToolCall)
-            .toBeUndefined();
+        const review = runner.receivedRequests[0]?.reviewToolCall;
+        const signal = new AbortController().signal;
+        const botTool = await review?.({ toolName: 'mcp__cloudbot__update_profile', input: {} }, signal);
+        const shell = await review?.({ toolName: 'Bash', input: { command: 'ls' } }, signal);
+
+        expect(botTool)
+            .toEqual({ isAllowed: true });
+        expect(shell)
+            .toMatchObject({ isAllowed: false });
     });
 
     it('closes approval questions left open by a restart', async () => {
@@ -2031,7 +2056,7 @@ describe('ChatService model choices', () => {
     it('lets the bot change its models with models_set when a model store is set', async () => {
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
         const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
-        const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore });
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore, toolCallReviewer: () => Promise.resolve({ decision: 'allow' as const }) });
         const finished = waitForTurnFinish(service, bot.id);
 
         await service.sendMessage(bot.id, 'Hi');

@@ -1,0 +1,39 @@
+#!/bin/sh
+# Ends every process of the agent user that still carries the marker of one finished turn.
+# The server runs it through sudo as the agent user, see cloudbot-agent.sudoers, so it can only read and end that
+# user's own processes. It takes one marker of 32 lowercase hex characters, and nothing else.
+set -eu
+
+if [ "$#" -ne 1 ]; then
+    echo "usage: cloudbot-end-turn <marker>" >&2
+    exit 2
+fi
+
+case "$1" in
+    *[!0-9a-f]*)
+        echo "invalid marker" >&2
+        exit 2
+        ;;
+esac
+
+if [ "${#1}" -ne 32 ]; then
+    echo "invalid marker" >&2
+    exit 2
+fi
+
+wanted="CLOUDBOT_TURN_MARKER=$1"
+
+for environ in /proc/[0-9]*/environ; do
+    pid="${environ#/proc/}"
+    pid="${pid%/environ}"
+
+    # This script never carries the marker, but its own pid is skipped all the same.
+    if [ "$pid" = "$$" ]; then
+        continue
+    fi
+
+    # A process of another user cannot be read, and a process that ended meanwhile is gone. Both are skipped.
+    if { tr '\0' '\n' < "$environ"; } 2>/dev/null | grep -qx "$wanted"; then
+        kill -s KILL "$pid" 2>/dev/null || true
+    fi
+done

@@ -8,7 +8,7 @@ request details that are not listed here come from your task instructions.
 ## What CloudBot is
 
 A self-hosted AI coworker that runs on the owner's VPS. It is built only on
-official Anthropic pieces: the Claude Agent SDK and the `claude` CLI from the
+official Anthropic piece: the `claude` CLI from the
 official installer. No third-party wrappers. The interface is a messenger, and
 setup happens inside the chat. API keys stay in the vault, out of reach of the
 bot.

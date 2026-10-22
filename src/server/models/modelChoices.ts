@@ -1,5 +1,4 @@
-// The aliases the SDK takes in its model option. The list follows the comment on AgentDefinition.model
-// in node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts.
+// The aliases the claude CLI takes in its --model option.
 const MODEL_ALIASES: readonly string[] = ['fable', 'opus', 'sonnet', 'haiku'];
 // Full model ids start with "claude-". The pattern keeps any other text away from the CLI.
 const MODEL_ID_PATTERN = /^claude-[a-z0-9.-]+$/;
@@ -7,7 +6,7 @@ const MAX_MODEL_LENGTH = 100;
 // The first three kinds pick the model of a turn. browsing and documents are helper agents, and a null
 // choice for either one means the bot has no helper for that work.
 const MODEL_KINDS = ['chat', 'routines', 'review', 'browsing', 'documents'] as const;
-// The levels of the SDK effort option, as EffortLevel in node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts.
+// The levels of the claude CLI --effort option.
 const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 // The kind and the field name the web app and the tool use for its effort. The order is the panel's order.
 const EFFORT_FIELDS = [

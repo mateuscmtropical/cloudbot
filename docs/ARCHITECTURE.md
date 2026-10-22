@@ -8,7 +8,7 @@ as planned.
 | Process | Runs as | Job |
 |---|---|---|
 | Server | `cloudbot` user | HTTP API, chat, setup, vault, task queue, storage |
-| Agent | `bot` user | The `claude` CLI for one conversation, started by the SDK in the server |
+| Agent | `bot` user | The `claude` CLI for one conversation, started by the server |
 | Key proxy | `cloudbot` user | Adds the API key to requests from the agent, so the agent never holds it |
 | Desktop | `bot` user | Virtual screen, Chromium, a terminal and a VNC server, started by the server |
 
@@ -22,17 +22,21 @@ production dependencies, the build, then the runtime image. The runtime
 image has two users. `cloudbot` runs the server and owns `/var/lib/cloudbot`,
 which is mode 700 and holds `CLOUDBOT_DATA_DIR`. `bot` installs the Claude
 Code CLI with Anthropic's installer (`curl -fsSL https://claude.ai/install.sh | bash`),
-which puts it in `/home/bot/.local/bin/claude`. The image sets `CLAUDE_PATH` to that path,
-so the server can pass it to the SDK as `pathToClaudeCodeExecutable`. The build fails if
+which puts it in `/home/bot/.local/bin/claude`. The build then copies that binary to
+`/usr/local/bin/claude` as root (mode 0755, owned by root) and deletes the bot's own
+copies. The build fails if any file named `claude` is left under `/home/bot`, so bot,
+which can write its home, cannot replace the binary that runs as the agent user. The
+image sets `CLAUDE_PATH` to the root-owned copy, which the server starts for each turn. The agent environment sets `DISABLE_AUTOUPDATER=1`, so the
+CLI does not update itself. Updates come with a new image. The build fails if
 the CLI does not run. The runtime installs sudo and sets `CLOUDBOT_AGENT_USER=bot`.
-`SdkAgentRunner` reads that setting and `CLAUDE_PATH`, with constructor options
+`ClaudeCliEngine` reads that setting and `CLAUDE_PATH`, with constructor options
 available for explicit configuration. Production startup fails if no agent user
 is configured. Without an agent user, local development on Windows and macOS
-keeps the normal SDK spawn behavior.
+starts the CLI directly.
 
-With an agent user, the SDK's `spawnClaudeCodeProcess` hook starts
-`sudo -n -u bot -- /home/bot/.local/bin/claude` with the SDK arguments as a
-literal argument array. It forwards the SDK working directory and cancellation
+With an agent user, the engine starts
+`sudo -n -u bot -- /usr/local/bin/claude` with the CLI arguments as a
+literal argument array. It passes the turn's working directory and cancellation
 signal, with piped input and output. The sudoers file permits only this CLI
 path as `bot`, with any CLI arguments, without a password. It grants no root
 commands, shells or environment override permission. The image validates the
@@ -45,13 +49,13 @@ the helpers retain their direct CLI execution for local development.
 
 The agent's stderr is piped and drained rather than inherited into server
 logs. Only its last 4096 bytes are retained for failure diagnostics, printed
-as one JSON-quoted line when the SDK throws. Workspace preparation failures
+as one JSON-quoted line when the CLI exits with a failure. Workspace preparation failures
 are logged on the server and reach chat as a short message without paths.
 
 The wrapper constructs an environment containing only `HOME=/home/bot` and a
 fixed system `PATH`. When the caller supplies the key proxy's
 `ANTHROPIC_BASE_URL` in the runner environment, it also passes that URL and a
-fixed dummy `ANTHROPIC_API_KEY`. It drops all other caller and SDK environment
+fixed dummy `ANTHROPIC_API_KEY`. It drops all other caller environment
 values, including real keys and auth tokens. Sudo resets the environment,
 sets the target user's home and identity variables, applies the same fixed
 system path and preserves only the two proxy variables. Sudo may add its own
@@ -75,8 +79,7 @@ Compose and the CI container mount separate named volumes at `/home/bot`,
 `/var/lib/cloudbot-workspaces` and `/var/lib/cloudbot-uploads`, alongside the private server data volume.
 They preserve login credentials, sessions and workspace memory in `CLAUDE.md`
 across container replacement. New volumes inherit the image's ownership and
-permissions. The CLI in the bot home volume updates itself and is not replaced
-by a new image, because the mounted volume hides the image's copy of `/home/bot`.
+permissions. The CLI is outside the bot home volume, so a new image replaces it.
 
 The server finds `drizzle/` relative to its install folder, so it starts
 from any working directory. The image health check calls `/api/health`.
@@ -100,7 +103,7 @@ server-created workspace.
 src/
   server/          HTTP server and the code that wires the parts together
     access/        Setup link, session cookie and the check that guards /api
-    agent/         Runs one conversation turn through the Claude Agent SDK
+    agent/         Runs one conversation turn through the claude CLI
     chat/          Chat routes, the turn run and the event stream to the web app
     createApp.ts   Hono app and routes
     desktop/       Starts the bot's desktop and starts it again when it exits
@@ -397,7 +400,7 @@ Files live outside the agent's writable workspace. In agent user mode the folder
 is `/var/lib/cloudbot-uploads/<botId>`, owned by cloudbot with group bot. The bot
 can read the files and cannot create, rename or replace anything. Without an
 agent user the folder is `<dataDir>/uploads/<botId>`. `ChatService.uploadDirFor`
-returns it. Every turn passes the folder to the SDK as an additional directory,
+returns it. Every turn passes the folder to the CLI as an additional directory,
 so the agent can read an earlier upload by its path.
 
 `ChatService` keeps the saved files as pending for the bot, with their bytes in
@@ -421,7 +424,7 @@ removed when its modification time is older than `CLOUDBOT_UPLOAD_RETENTION_DAYS
 running, queued or waiting turn keeps all its files. The age comes from the file
 time, so a pending file lost in a restart is treated as used.
 
-Images up to 5 MB go to the SDK as image blocks, built from the bytes in memory.
+Images up to 5 MB go to the CLI as image blocks, built from the bytes in memory.
 The disk is never read back for them. Images are detected from their first bytes,
 not from the client type. Before an image becomes a block, `readImageSize` reads
 its pixel size from the header and checks that the file has the end marker its format
@@ -621,7 +624,7 @@ bot, a kind (`allow` or `block`), a sentence and a list of blocked tools. The
 routes `GET` and `POST /api/bots/:id/rules` and `DELETE
 /api/bots/:id/rules/:ruleId` sit behind the session cookie. `parseRuleInput`
 checks the input: a sentence of 1 to 300 characters, at most 20 tool names as
-the SDK spells them, optionally with a pattern such as `Bash(rm:*)` without
+the CLI spells them, optionally with a pattern such as `Bash(rm:*)` without
 commas. Only a block rule can name tools, and a bot has at most 50 rules. The
 bot has `rule_list` to read its rules. It also has `rule_change` to propose adding
 or removing one, and that tool is offered only with the approval gate. Rules are
@@ -634,7 +637,7 @@ conversation header. It lists, adds and removes rules through these routes and
 shows the server's error text when a rule is refused.
 
 Each turn reads the bot's rules. `buildSystemPrompt` lists the sentences as
-owner rules, and the blocked tools go to the SDK as `disallowedTools`, which
+owner rules, and the blocked tools go to the CLI as `--disallowedTools`, which
 wins over `allowedTools`.
 
 ## Model choices
@@ -649,7 +652,7 @@ reviewed like other setting changes, because it is not on the skip list in
 `ModelStore` keeps one row per bot in the `bot_models` table, with a choice for
 each kind of work: `chat`, `routines`, `review`, `browsing` and `documents`. A
 null choice keeps the CLI default. For `browsing` and `documents` a null choice
-means no helper agent. A choice is an alias the SDK accepts (`fable`, `opus`,
+means no helper agent. A choice is an alias the CLI accepts (`fable`, `opus`,
 `sonnet` or `haiku`, listed in `MODEL_ALIASES`) or a full id that matches
 `^claude-[a-z0-9.-]+$`. `parseModelInput` checks both. The routes `GET` and
 `PUT /api/bots/:id/models` sit behind the session cookie. `PUT` replaces all
@@ -667,15 +670,15 @@ returns 400 and saves nothing. `models_set` takes the same fields as a partial
 update, and the bot is told to pick a sensible effort when the owner names a
 model only.
 
-A turn sends its choice to the SDK `model` option. A routine or webhook turn
+A turn sends its choice to the CLI `--model` option. A routine or webhook turn
 uses the `routines` choice and falls back to `chat`. The `source` of a turn
 (`chat`, `routine` or `webhook`) is stored with the queued turn, so a turn that
 waits keeps its choice after a restart. The review model is read with the owner
 rules on each review call.
 
-The effort follows the same rule (`chooseTurnEffort`) and goes to the SDK
-`effort` option. The review call gets the review effort, and each helper gets
-its own effort on its `AgentDefinition`. An unset effort is left out, so the
+The effort follows the same rule (`chooseTurnEffort`) and goes to the CLI
+`--effort` option. The review call gets the review effort, and each helper gets
+its own effort in the `--agents` file. An unset effort is left out, so the
 CLI default applies.
 
 ## Turn limits
@@ -696,10 +699,10 @@ Each limit has its own mechanism:
   turn waits on the owner. `ApprovalGate.onOwnerWait` reports an approval card,
   and `ScreenHolder.onChange` reports a screen handoff. The model review of a
   call is not owner wait.
-- Steps: the SDK `maxTurns` option. The SDK reports `error_max_turns`, which
+- Steps: the CLI `--max-turns` option. The CLI reports `error_max_turns`, which
   becomes a `turn_limit` event with `limit: 'steps'`.
-- Spending: the SDK `maxBudgetUsd` option, reported as `error_max_budget_usd`.
-  The SDK `total_cost_usd` covers the main loop only, so the review agent cost
+- Spending: the CLI `--max-budget-usd` option, reported as `error_max_budget_usd`.
+  The CLI `total_cost_usd` covers the main loop only, so the review agent cost
   is added through `reportReviewCost` and `recordReviewCost`. The turn stops
   when the review spend alone passes the cap. The two costs are not combined.
   The agent and the review agent are each held to the spending limit, so a turn
@@ -714,16 +717,16 @@ place that reports waiting on or off for a turn, and `stopTurnWithReason` is the
 one stop-with-reason path. The stall watch reuses both.
 
 Known gaps: secure input (`requestSecret`) returns at once and does not pause
-the clock. The SDK does not report the main-loop cost while a turn runs, so the
+the clock. The CLI does not report the main-loop cost while a turn runs, so the
 two costs are never added together. The helper agents' cost is assumed to count toward
-`maxBudgetUsd`, as the SDK documents, and this is not checked at runtime.
+`--max-budget-usd`, and this is not checked at runtime.
 
 ## Stalled turns
 
 A turn that sends no agent event for 10 minutes is stopped. The period is the
 constant `STALL_MS` in `src/server/chat/StallWatchdog.ts`, not a setting.
 `StallWatchdog` starts with the turn, and it starts again on each agent event of
-the turn. An `activity` event counts too. The runner sends it for an SDK message
+the turn. An `activity` event counts too. The runner sends it for a CLI message
 that maps to no other event, such as tool progress or a retry, and nothing shows
 it in the chat. The watch counts it as proof that the turn is alive. Time the
 owner is asked does not count. `reportOwnerWait` holds the
@@ -740,6 +743,24 @@ signal still holds the queue, because the watch only aborts the turn.
 ## Task board
 
 Each bot has a board of tasks in the tasks table: id, bot_id, channel_id (empty until group channels exist), title, status (todo, doing, blocked, done), blocked_reason and timestamps. Three tools in the profile server manage it: task_add (never Blocked), task_move (Blocked needs a reason) and task_board. They are skipped by the approval gate, since they only change the bot's own notes and the owner asks for them in the chat. A move into Blocked from another column saves a notice in the bot's chat. The notice starts with "Task blocked by this bot:", is labeled as the bot's own note for the review, and quotes the title and reason with markdown escaped, so no link renders. A bot can have at most 100 open tasks, and finished tasks do not count. task_board shows open tasks first, newest first, up to 50. task_board posts a tasks message, a snapshot that does not change after it is posted. The owner moves tasks only through the chat. There are no panels or header buttons for the board, and no unread dot for other bots: the bot list only marks the bot that is open.
+
+### CLI engine gate and known limits
+
+The CLI engine (`ClaudeCliEngine`) runs `claude -p` with one gate. The per-turn settings ask for every built-in and every MCP tool, and `--tools` lists only the built-ins the bot uses, so a built-in that a later CLI adds does not run. Each ask goes to the permission prompt tool `mcp__cloudbot__approve`, which answers from the owner review. Each tool use gets one decision and one run at most, and the decision is bound to the tool use id the CLI printed on its stdout. The prompt tool is hidden from the model with `--disallowedTools`.
+
+Limits:
+
+- Turns of one OS user can read each other's turn folders, since the CLI and its tools all run as that user. In local mode that is the owner's user. In agent-user mode every bot runs as the same user, so bots can read or delete each other's turn folders. This is denial of service or timing, not a bypass: a decision still needs the turn's token, and the seen-id check stops a stolen token from getting a decision for a call the CLI did not make. The later fix is one OS user per bot, or the token sent over stdin instead of a file.
+- A tool outside the gate runs unreviewed. That happens if a built-in is missing from `BUILTIN_TOOLS`, or if an MCP server's ask rule does not match its tools. Keep the list in step with the CLI, and test each remote MCP server through the gate before trusting it.
+- If the server crashes, a command already approved keeps running until it ends. New tool calls fail closed, because the prompt tool is unreachable. The CLI exits once its input closes, after its current turn. Run the server under a supervisor that kills the agent's process group, as Docker does on stop.
+- `disallowedTools` matches by exact name on the decision route. The CLI applies the same list itself.
+- A malformed approve reply stalls the turn until the probe guard ends it, with no tool run. Our server never sends one, so this is accepted.
+- Remote MCP tools prompt by default. The `mcp__<name>` ask rule is kept as well. The probe with a second MCP server confirmed that the prefix and exact forms both reach the prompt tool, and that a denied call does not run.
+- CLAUDE_CONFIG_DIR: in local mode, login, status, sign-out and turns all use `<data dir>/claude-config`. In agent-user mode, they all run as the bot user with its default home config (`/home/<agent>/.claude`). The variable is not forwarded through sudo, so the bot user's own config is the only one read.
+- The workspace `CLAUDE.md` is the bot's memory. The CLI does not load it under `--setting-sources ''`, which keeps bot-writable settings files out, so the server reads it each turn and appends it to the system prompt file, after the bot profile. The bot controls that folder, so the read opens with `O_NOFOLLOW` and `O_NONBLOCK`, and takes only a regular file, cut at 64 KB. A link, pipe, device or folder means no memory, and the server logs one line without the path. The block is labelled as the bot's own notes, not the owner's words, between begin and end markers. Checked live with the real CLI: the marker in the file reached the request body.
+- On POSIX, a stop and a clean exit both send KILL to the CLI's process group. The group does not hold a command that starts its own session, such as `setsid sleep 300 &`. So each turn also gets a random `CLOUDBOT_TURN_MARKER` in its environment, which every child inherits. When the turn ends, every process that still carries the marker is ended (#165). Local mode on Linux reads `/proc/<pid>/environ` of the server user's processes. Agent-user mode runs the root-owned `/usr/local/bin/cloudbot-end-turn` as the bot user through sudo, so it can only read and end the bot user's processes. It takes only a 32 character hex marker. Checked live with the real CLI: a `setsid` sleep started by an approved Bash call was left running before, and is gone now. Limits: a process that clears its environment (`env -i`) loses the marker and is not found. macOS has no `/proc`, so nothing is ended there. The kill goes to the group only, not to a bare pid. A group id can be reused once its group is empty, so a clean exit followed by a fresh group with the same id could be hit. The window is tiny but not zero.
+- Windows (local mode only, no job object): a stop skips TERM, because it would end the CLI alone and `taskkill /T` could no longer find its tools. It runs `taskkill /T /F` while the CLI is still alive. Checked live: the CLI, the tool process and its child were all gone when the turn ended. After a clean exit, nothing is sent, since the exited pid may be reused. The background child was already gone in the live check.
+- Agent-user mode: the group signal goes through `/usr/local/bin/cloudbot-signal-group`, a root-owned wrapper that accepts only a positive group id and TERM or KILL. The sudoers line allows only that wrapper. The wrapper was checked as a non-root user. The sudo path itself is not verified: WSL asks for a password, so no passwordless sudo test was run.
 
 ## Webhooks
 
@@ -834,7 +855,7 @@ resolver and the request, so no test reaches the network.
 
 ## Helper agents
 
-A helper is an SDK subagent with its own model. `browsing` gets the browser
+A helper is a CLI subagent, written to the `--agents` file, with its own model. `browsing` gets the browser
 tools (`BROWSER_TOOL_FULL_NAMES`) and exists only when the bot has a browser.
 `documents` gets `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep` and
 `share_file`. `buildHelperAgents` builds the `agents` option for the turn. A
@@ -842,19 +863,18 @@ helper exists only when its model choice is set. The main turn then also gets
 the `Agent` tool in `allowedTools`, and one line of the system prompt per
 helper tells it to hand that work over.
 
-Safety for helper calls rests on three things. The owner's blocked tools go to
-each helper as its `disallowedTools`, which the SDK documents as the list that
-disallows tools for that agent. The `PreToolUse` review hook is installed for
-the whole query. The SDK types say the hook input has `agent_id` "when the hook
-fires from within a subagent", so helper calls are reviewed too. Not checked
-against a live CLI: that the SDK enforces `disallowedTools` inside a helper.
+Safety for helper calls rests on two things. The owner's blocked tools go to
+each helper as its `disallowedTools`, and to the turn as `--disallowedTools`.
+The turn's approval route also covers the calls a helper makes. Not checked
+against a live CLI for helpers: that the CLI enforces a helper's own
+`disallowedTools`, and that every helper call reaches the approval route.
 
 ## Tool call approval
 
-`ApprovalGate` pauses a tool call until the owner answers. `SdkAgentRunner`
-installs a `PreToolUse` hook when the turn request has `reviewToolCall`. The
-hook runs for every tool, also for the ones in `allowedTools`. It returns
-nothing for an allowed call and a `deny` with the reason for a refused one.
+`ApprovalGate` pauses a tool call until the owner answers. `ClaudeCliEngine`
+gives each call that needs a decision to the loopback approval tool, which the
+CLI calls with `--permission-prompt-tool`. `reviewToolCall` decides the call, and
+the answer goes back to the CLI. Each tool call gets one decision and one run at most.
 
 A `ToolCallReviewer` decides for each call: `allow`, `deny` with a reason, or
 `ask` with a one line summary. `ask` posts a choice message with Approve and
@@ -886,7 +906,7 @@ service. `classifyToolCall` sorts each call first:
   the model must see the whole input.
 - Every other call goes to the model.
 
-The model is one Claude Agent SDK call with no tools, no settings files, no
+The model is one `claude` CLI call with no tools, no settings files, no
 saved session and one turn (`createClaudeReviewModel`). It gets the tool call,
 the owner rules of the bot and the last six chat lines, and answers with a
 JSON object: `category`, `decision`, `summary` and `reason`. A category of
@@ -1130,8 +1150,8 @@ API credentials are removed before constructing the runner environment.
 
 ## Claude
 
-The Claude Agent SDK runs the `claude` CLI installed by Anthropic's installer
-(`pathToClaudeCodeExecutable`). Sign-in, status and the agent all use that one
+The server runs the `claude` CLI installed by Anthropic's installer
+(`CLAUDE_PATH`). Sign-in, status and the agent all use that one
 CLI. See [provider terms](PROVIDER_TERMS.md).
 
 The bot profile reaches the agent in two ways. `buildSystemPrompt` turns the
@@ -1139,16 +1159,16 @@ name, title and description into a prompt that is appended to Claude Code's
 default prompt, so the bot keeps its tool and coding instructions. The prompt
 also says the bot runs
 on the owner's VPS through CloudBot, and that its memory is `CLAUDE.md` in its
-workspace. `createProfileToolServer` builds an in-process MCP server with one
-tool, `update_profile`, which saves changes through `BotStore`. The tool is
+workspace. `createProfileTools` builds the bot's own tools, starting with
+`update_profile`, which saves changes through `BotStore`. The tool is
 bound to one bot id, and it is allowed up front so headless turns never ask.
 The tool trims its fields and caps them at 40, 80 and 500 characters. It writes
 only the fields the model passed, so a reply cannot overwrite the others. The
 profile text is framed as the owner's words, with newlines collapsed, so it
-cannot add instructions as new paragraphs. The server is built for each turn,
-and its key in `mcpServers` must be `cloudbot`, because `allowedTools` names the
-tool as `mcp__cloudbot__update_profile`. The SDK loads `CLAUDE.md` from the
-working directory by default, so the workspace file is the bot's memory.
+cannot add instructions as new paragraphs. The tools are served for each turn under the
+name `cloudbot`, so the CLI names the tool `mcp__cloudbot__update_profile`, which
+`allowedTools` lists. The CLI does not load `CLAUDE.md` for a turn, so the server
+reads the workspace file and appends it to the system prompt as memory notes.
 
 `startClaudeLogin` runs login in a util-linux `script` pseudo terminal on Linux.
 It exposes `signInUrl`, `submitCode`, `cancel` and `finished` for the
