@@ -91,19 +91,21 @@ RUN npm install --global @google/gemini-cli@0.65.0 @github/copilot@1.0.102 @qwen
     && curl -fsSL https://x.ai/cli/install.sh | bash \
     && curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && curl -fsSL https://antigravity.google/cli/install.sh | bash \
     && UV_TOOL_DIR=/opt/cloudbot-agents/uv-tools UV_TOOL_BIN_DIR=/opt/cloudbot-agents/uv-bin UV_PYTHON_INSTALL_DIR=/opt/cloudbot-agents/python \
         /opt/cloudbot-agents/.local/bin/uv tool install --python 3.12 mistral-vibe==3.0.1 \
     && ln -sf /opt/cloudbot-agents/.local/bin/cursor-agent /usr/local/bin/cursor-agent \
     && ln -sf /opt/cloudbot-agents/.grok/bin/grok /usr/local/bin/grok \
     && ln -sf /opt/cloudbot-agents/.kimi-code/bin/kimi /usr/local/bin/kimi \
     && ln -sf /opt/cloudbot-agents/uv-bin/vibe-acp /usr/local/bin/vibe-acp \
+    && ln -sf /opt/cloudbot-agents/.local/bin/agy /usr/local/bin/agy \
     && chmod -R a+rX,go-w /opt/cloudbot-agents \
-    && for cli in gemini copilot qwen opencode cursor-agent grok kimi vibe-acp; do ls -l "/usr/local/bin/$cli" && "/usr/local/bin/$cli" --version; done
+    && for cli in gemini copilot qwen opencode cursor-agent grok kimi vibe-acp agy; do ls -l "/usr/local/bin/$cli" && "/usr/local/bin/$cli" --version; done
 COPY --chmod=0755 docker/cloudbot-provider /usr/local/bin/cloudbot-provider
 COPY --chmod=0755 docker/cloudbot-print-url /usr/local/bin/cloudbot-print-url
 # COPY --chmod would give a folder it makes the file mode too, which nobody could enter.
 RUN install -d -m 0755 /usr/local/lib/cloudbot
-COPY --chmod=0644 docker/acp-login.js /usr/local/lib/cloudbot/acp-login.js
+COPY --chmod=0644 docker/acp-login.js docker/agy-login.js docker/agy-hook.js /usr/local/lib/cloudbot/
 
 USER cloudbot
 WORKDIR /app

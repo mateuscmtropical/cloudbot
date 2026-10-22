@@ -7,8 +7,8 @@ set -eu
 provider="${1:-}"
 action="${2:-}"
 
-if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "acp-key" ] && [ "$action" != "login" ]; }; then
-    echo "cloudbot-provider takes a provider and acp, acp-key or login." >&2
+if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "acp-key" ] && [ "$action" != "login" ] && [ "$action" != "status" ] && [ "$action" != "agy" ]; }; then
+    echo "cloudbot-provider takes a provider and acp, acp-key, agy, login or status." >&2
     exit 2
 fi
 
@@ -23,7 +23,53 @@ LOGIN=/usr/local/lib/cloudbot/acp-login.js
 
 case "$provider:$action" in
     gemini:acp) exec /usr/local/bin/gemini --acp ;;
-    gemini:login) exec /usr/local/bin/node "$LOGIN" oauth-personal /usr/local/bin/gemini --acp ;;
+    # Google ended Gemini CLI sign-ins for individuals, so a Gemini subscription signs in to the Antigravity CLI.
+    gemini:login) exec /usr/local/bin/node /usr/local/lib/cloudbot/agy-login.js ;;
+    gemini:status) exec /usr/local/bin/node /usr/local/lib/cloudbot/agy-login.js --status ;;
+    # A Gemini subscription runs on agy headless. Its PreToolUse hook sends each tool call to the CloudBot review of the
+    # turn, and the bot tools come from the loopback server. The server sets only the loopback address, the turn token,
+    # and optionally a conversation id, a model slug and an effort, and each is checked here.
+    gemini:agy)
+        case "${CLOUDBOT_AGY_REVIEW_URL:-}" in
+            http://127.0.0.1:[0-9]*/mcp) ;;
+            *)
+                echo "cloudbot-provider needs the review address." >&2
+                exit 2
+                ;;
+        esac
+        port="${CLOUDBOT_AGY_REVIEW_URL#http://127.0.0.1:}"
+        port="${port%/mcp}"
+        case "$port" in
+            ''|*[!0-9]*)
+                echo "cloudbot-provider needs the review address." >&2
+                exit 2
+                ;;
+        esac
+        case "${CLOUDBOT_TOOLS_TOKEN:-}" in
+            ''|*[!0-9a-f]*)
+                echo "cloudbot-provider needs the turn token." >&2
+                exit 2
+                ;;
+        esac
+        mkdir -p "$HOME/.gemini/config"
+        printf '%s\n' '{"cloudbot-review":{"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"/usr/local/bin/node /usr/local/lib/cloudbot/agy-hook.js","timeout":3900}]}]}}' > "$HOME/.gemini/config/hooks.json"
+        /usr/local/bin/agy mcp add --header "Authorization: Bearer $CLOUDBOT_TOOLS_TOKEN" cloudbot "http://127.0.0.1:$port/mcp" > /dev/null 2>&1 || true
+        set --
+        case "${CLOUDBOT_AGY_CONVERSATION:-}" in
+            '') ;;
+            *[!0-9a-f-]*) ;;
+            *) set -- --conversation "$CLOUDBOT_AGY_CONVERSATION" ;;
+        esac
+        case "${CLOUDBOT_AGY_MODEL:-}" in
+            '') ;;
+            *[!a-z0-9.-]*) ;;
+            *) set -- "$@" --model "$CLOUDBOT_AGY_MODEL" ;;
+        esac
+        case "${CLOUDBOT_AGY_EFFORT:-}" in
+            low|medium|high|xhigh|max) set -- "$@" --effort "$CLOUDBOT_AGY_EFFORT" ;;
+        esac
+        exec /usr/local/bin/agy --input-format stream-json --output-format stream-json --print-timeout 0 "$@"
+        ;;
     copilot:acp) exec /usr/local/bin/copilot --acp --stdio ;;
     copilot:login) exec /usr/local/bin/copilot login --device-code ;;
     cursor:acp) exec /usr/local/bin/cursor-agent acp ;;
@@ -59,7 +105,8 @@ case "$provider:$action" in
         esac
         export OPENCODE_CONFIG_CONTENT="{\"permission\":{\"*\":\"ask\"},\"autoupdate\":false,\"model\":\"xai/grok-4.7\",\"provider\":{\"xai\":{\"options\":{\"baseURL\":\"http://127.0.0.1:$port/v1\",\"apiKey\":\"cloudbot-key-proxy\"}}}}"
         exec /usr/local/bin/opencode acp
-        ;;    *)
+        ;;
+    *)
         echo "cloudbot-provider does not know $provider $action." >&2
         exit 2
         ;;

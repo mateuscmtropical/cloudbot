@@ -1259,8 +1259,12 @@ a restart. The runner environment receives its `ANTHROPIC_BASE_URL` and a dummy
 key. Subscription mode receives no API key or proxy URL. Server environment
 API credentials are removed before constructing the runner environment.
 
-The same conversation connects the other providers. The list shows a
-subscription and an API key option for each installed provider that has them.
+The same conversation connects the other providers. The first card has one
+choice per installed provider. A provider with both ways asks Subscription or
+API key next, and one with a single way starts it. A choice that starts a
+sign-in carries `opensLink`, so the web page opens an empty tab inside the tap
+and puts the link in it when the link message arrives. If the CLI prints a
+refused code after the owner pasted one, the sign-in is stopped and fails.
 A CLI sign-in posts the link and the device code that the CLI prints, or a code
 field when the provider's page shows a code to paste back (Gemini). A key goes
 through the secure form, is checked with one request to the provider's model
@@ -1335,7 +1339,7 @@ key, a call through the key proxy to a fake upstream that logged the header:
 
 | Provider | Command | Sign-in | Key route |
 | --- | --- | --- | --- |
-| Gemini | `gemini --acp` | `acp-login.js` runs `authenticate oauth-personal` with `NO_BROWSER`, the owner pastes Google's code | `GEMINI_API_KEY` and `GOOGLE_GEMINI_BASE_URL`, header `x-goog-api-key` |
+| Gemini | `agy` headless for a subscription, `gemini --acp` for a key | `agy-login.js`, see below | `GEMINI_API_KEY` and `GOOGLE_GEMINI_BASE_URL`, header `x-goog-api-key` |
 | GitHub Copilot | `copilot --acp --stdio` | `copilot login --device-code` | none, the token cannot go through a proxy |
 | Cursor | `cursor-agent acp` | `agent login` with `NO_OPEN_BROWSER`, link only | none, same reason |
 | Grok | `grok agent stdio` | `grok login --device-auth` | the ACP agent takes only a Grok account, so an xAI key runs `opencode acp` with the `xai` provider at the proxy |
@@ -1343,6 +1347,34 @@ key, a call through the key proxy to a fake upstream that logged the header:
 | Qwen | `qwen --acp --auth-type openai` | none, the free account sign-in was removed | `OPENAI_API_KEY` and `OPENAI_BASE_URL` at DashScope's compatible mode |
 | Kimi | `kimi acp` | `kimi login` | `KIMI_MODEL_NAME`, `KIMI_MODEL_API_KEY` and `KIMI_MODEL_BASE_URL` |
 | opencode | `opencode acp` | none, free models only | none |
+
+Google ended Gemini CLI sign-ins for personal accounts and points them to the
+Antigravity CLI (`agy`), so a Gemini subscription runs on `AgyEngine`, not on
+ACP:
+
+- `agy` has no login command. `agy-login.js` starts its screen under
+  `script(1)`, picks Google, prints the link once and passes the pasted code.
+  The sign-in is saved when `~/.gemini/antigravity-cli/antigravity-oauth-token`
+  exists, which is also the status check.
+- A turn runs `agy --input-format stream-json --output-format stream-json`
+  through `cloudbot-provider gemini agy`. The wrapper writes a `PreToolUse`
+  hook to `~/.gemini/config/hooks.json` and adds the loopback server as the
+  `cloudbot` MCP server with the turn token.
+- The hook (`agy-hook.js`) sends each call to the loopback `approve` tool,
+  which runs the turn's review. `allow` answers `auto_approve`, anything else
+  answers `deny`. Headless `agy` refuses every call it cannot ask about, so a
+  call runs only after a review.
+- The engine maps agy names (`run_command`, `write_file` and the rest) to the
+  kinds the rules read, refuses agy's own schedules, workflows, messages and
+  subagents, and refuses calls that name `.gemini` or `.agents`.
+- `agy` sees no argument names for MCP tools, so the prompt lists the bot
+  tools with theirs. A Gemini model id without a level takes it from the
+  effort, so `gemini-3.8-flash` at low runs `gemini-3.8-flash-low`.
+- The conversation id comes from the `init` line and resumes with
+  `--conversation`.
+
+ACP and agy stream a reply in pieces. The engines join them and send the whole
+text once, so the chat saves it.
 
 Gemini, Cursor and Grok need `authenticate` before a session. The engine
 sends the cached method, and an error means the provider is not signed in. The
