@@ -500,6 +500,17 @@ async function answerMcp(serverName: string, turn: TurnState, body: string, resp
         const fullToolName = `mcp__${serverName}__${tool.name}`;
         const parsedMeta = toolCallMetaSchema.safeParse(params._meta);
         const metaToolUseId = parsedMeta.success ? parsedMeta.data['claudecode/toolUseId'] ?? parsedMeta.data.callId : undefined;
+        const objectSchema = z.object(tool.inputSchema);
+        const parsedArguments = objectSchema.safeParse(params.arguments ?? {});
+
+        // Checked before the review, so a call that cannot run never asks the owner, and the bot learns what to fix.
+        if (!parsedArguments.success) {
+            const problems = z.prettifyError(parsedArguments.error);
+
+            writeJson(response, 200, { jsonrpc: '2.0', id, result: failedResult(`The arguments do not match the tool.\n${problems}`) });
+
+            return;
+        }
 
         if (!consumeAllowedCall(turn, fullToolName, params.arguments, metaToolUseId)) {
             const refusal = turn.grant.reviewsEachCall === true ? await reviewOwnCall(turn, fullToolName, params.arguments) : NOT_APPROVED_TEXT;
