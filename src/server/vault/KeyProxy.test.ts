@@ -102,6 +102,21 @@ describe('startKeyProxy', () => {
             .toBe('{"model":"test"}');
     });
 
+    it('sends the key in the header the upstream API takes, replacing the placeholder', async () => {
+        const vault = new Vault(folderPath);
+
+        vault.set('GEMINI_API_KEY', 'real-google-key');
+        proxy = await startKeyProxy({ vault, secretName: 'GEMINI_API_KEY', upstreamUrl, port: 0, keyHeader: { name: 'x-goog-api-key', prefix: '' } });
+
+        await fetch(`${proxy.url}/v1beta/models`, { headers: { 'x-goog-api-key': 'placeholder', 'x-api-key': 'other' } })
+            .then(response => response.text());
+
+        expect(receivedRequests[0]?.headers['x-goog-api-key'])
+            .toBe('real-google-key');
+        expect(receivedRequests[0]?.headers['x-api-key'])
+            .toBeUndefined();
+    });
+
     it('answers 503 with a JSON error when the secret is missing', async () => {
         const vault = new Vault(folderPath);
 

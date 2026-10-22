@@ -1,1615 +1,1889 @@
 {
-  "version": "6",
-  "dialect": "sqlite",
-  "id": "cdbde509-ed92-433c-a8cd-1eb02e8bafaf",
-  "prevId": "b2e2f438-6060-486d-93f9-aa08a414be9e",
-  "tables": {
-    "bot_limits": {
-      "name": "bot_limits",
-      "columns": {
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "chat_minutes": {
-          "name": "chat_minutes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "chat_usd": {
-          "name": "chat_usd",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "chat_steps": {
-          "name": "chat_steps",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "routine_minutes": {
-          "name": "routine_minutes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "routine_usd": {
-          "name": "routine_usd",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "routine_steps": {
-          "name": "routine_steps",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "bot_limits_bot_id_bots_id_fk": {
-          "name": "bot_limits_bot_id_bots_id_fk",
-          "tableFrom": "bot_limits",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "bot_models": {
-      "name": "bot_models",
-      "columns": {
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "chat_model": {
-          "name": "chat_model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "routines_model": {
-          "name": "routines_model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "review_model": {
-          "name": "review_model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "browsing_model": {
-          "name": "browsing_model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "documents_model": {
-          "name": "documents_model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "chat_effort": {
-          "name": "chat_effort",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "routines_effort": {
-          "name": "routines_effort",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "review_effort": {
-          "name": "review_effort",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "browsing_effort": {
-          "name": "browsing_effort",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "documents_effort": {
-          "name": "documents_effort",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "bot_models_bot_id_bots_id_fk": {
-          "name": "bot_models_bot_id_bots_id_fk",
-          "tableFrom": "bot_models",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "bot_rules": {
-      "name": "bot_rules",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "text": {
-          "name": "text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "blocked_tools": {
-          "name": "blocked_tools",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "bot_rules_bot_id": {
-          "name": "bot_rules_bot_id",
-          "columns": [
-            "bot_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "bot_rules_bot_id_bots_id_fk": {
-          "name": "bot_rules_bot_id_bots_id_fk",
-          "tableFrom": "bot_rules",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "bot_skills": {
-      "name": "bot_skills",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "text": {
-          "name": "text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "bot_skills_bot_id_name": {
-          "name": "bot_skills_bot_id_name",
-          "columns": [
-            "bot_id",
-            "name"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "bot_skills_bot_id_bots_id_fk": {
-          "name": "bot_skills_bot_id_bots_id_fk",
-          "tableFrom": "bot_skills",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "bots": {
-      "name": "bots",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "mascot_color": {
-          "name": "mascot_color",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'blue'"
-        },
-        "mascot_shape": {
-          "name": "mascot_shape",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'puff'"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "browser_allowed_hosts": {
-      "name": "browser_allowed_hosts",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "host": {
-          "name": "host",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "port": {
-          "name": "port",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "browser_allowed_hosts_host_port": {
-          "name": "browser_allowed_hosts_host_port",
-          "columns": [
-            "host",
-            "port"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "channel_members": {
-      "name": "channel_members",
-      "columns": {
-        "channel_id": {
-          "name": "channel_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "is_manager": {
-          "name": "is_manager",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
-        "joined_at": {
-          "name": "joined_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "channel_members_bot_id": {
-          "name": "channel_members_bot_id",
-          "columns": [
-            "bot_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "channel_members_channel_id_channels_id_fk": {
-          "name": "channel_members_channel_id_channels_id_fk",
-          "tableFrom": "channel_members",
-          "tableTo": "channels",
-          "columnsFrom": [
-            "channel_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "channel_members_bot_id_bots_id_fk": {
-          "name": "channel_members_bot_id_bots_id_fk",
-          "tableFrom": "channel_members",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "channel_members_channel_id_bot_id_pk": {
-          "columns": [
-            "channel_id",
-            "bot_id"
-          ],
-          "name": "channel_members_channel_id_bot_id_pk"
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "channel_messages": {
-      "name": "channel_messages",
-      "columns": {
-        "sequence": {
-          "name": "sequence",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "channel_id": {
-          "name": "channel_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "author_bot_id": {
-          "name": "author_bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "author_name": {
-          "name": "author_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "author_color": {
-          "name": "author_color",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "author_shape": {
-          "name": "author_shape",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "role": {
-          "name": "role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "channel_messages_id_unique": {
-          "name": "channel_messages_id_unique",
-          "columns": [
-            "id"
-          ],
-          "isUnique": true
-        },
-        "channel_messages_channel_id": {
-          "name": "channel_messages_channel_id",
-          "columns": [
-            "channel_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "channel_messages_channel_id_channels_id_fk": {
-          "name": "channel_messages_channel_id_channels_id_fk",
-          "tableFrom": "channel_messages",
-          "tableTo": "channels",
-          "columnsFrom": [
-            "channel_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "channel_messages_author_bot_id_bots_id_fk": {
-          "name": "channel_messages_author_bot_id_bots_id_fk",
-          "tableFrom": "channel_messages",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "author_bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "channels": {
-      "name": "channels",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "channels_name_lower": {
-          "name": "channels_name_lower",
-          "columns": [
-            "lower(\"name\")"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "connected_apps": {
-      "name": "connected_apps",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "url": {
-          "name": "url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "tool_count": {
-          "name": "tool_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "problem": {
-          "name": "problem",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "secret_name": {
-          "name": "secret_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "secret_bot_id": {
-          "name": "secret_bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "connected_apps_name": {
-          "name": "connected_apps_name",
-          "columns": [
-            "name"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "integration_runs": {
-      "name": "integration_runs",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "integration_id": {
-          "name": "integration_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "exit_code": {
-          "name": "exit_code",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "timed_out": {
-          "name": "timed_out",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "output": {
-          "name": "output",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "integration_runs_integration_id_integrations_id_fk": {
-          "name": "integration_runs_integration_id_integrations_id_fk",
-          "tableFrom": "integration_runs",
-          "tableTo": "integrations",
-          "columnsFrom": [
-            "integration_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "integrations": {
-      "name": "integrations",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "entry_path": {
-          "name": "entry_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "command": {
-          "name": "command",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "secret_name": {
-          "name": "secret_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "entry_hash": {
-          "name": "entry_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "integrations_bot_name": {
-          "name": "integrations_bot_name",
-          "columns": [
-            "bot_id",
-            "name"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "integrations_bot_id_bots_id_fk": {
-          "name": "integrations_bot_id_bots_id_fk",
-          "tableFrom": "integrations",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "messages": {
-      "name": "messages",
-      "columns": {
-        "sequence": {
-          "name": "sequence",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "role": {
-          "name": "role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "messages_id_unique": {
-          "name": "messages_id_unique",
-          "columns": [
-            "id"
-          ],
-          "isUnique": true
-        },
-        "messages_bot_id": {
-          "name": "messages_bot_id",
-          "columns": [
-            "bot_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "messages_bot_id_bots_id_fk": {
-          "name": "messages_bot_id_bots_id_fk",
-          "tableFrom": "messages",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "push_subscriptions": {
-      "name": "push_subscriptions",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "endpoint": {
-          "name": "endpoint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "p256dh": {
-          "name": "p256dh",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "auth": {
-          "name": "auth",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "push_subscriptions_endpoint": {
-          "name": "push_subscriptions_endpoint",
-          "columns": [
-            "endpoint"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "routines": {
-      "name": "routines",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "prompt": {
-          "name": "prompt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "schedule": {
-          "name": "schedule",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "is_enabled": {
-          "name": "is_enabled",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "next_run_at": {
-          "name": "next_run_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "last_run_at": {
-          "name": "last_run_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "routines_bot_id": {
-          "name": "routines_bot_id",
-          "columns": [
-            "bot_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "routines_bot_id_bots_id_fk": {
-          "name": "routines_bot_id_bots_id_fk",
-          "tableFrom": "routines",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "settings": {
-      "name": "settings",
-      "columns": {
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "value": {
-          "name": "value",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "tasks": {
-      "name": "tasks",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "channel_id": {
-          "name": "channel_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "blocked_reason": {
-          "name": "blocked_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "tasks_bot_id": {
-          "name": "tasks_bot_id",
-          "columns": [
-            "bot_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "tasks_bot_id_bots_id_fk": {
-          "name": "tasks_bot_id_bots_id_fk",
-          "tableFrom": "tasks",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "turn_queue": {
-      "name": "turn_queue",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "message_id": {
-          "name": "message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "text": {
-          "name": "text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "uploads": {
-          "name": "uploads",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'chat'"
-        }
-      },
-      "indexes": {
-        "turn_queue_bot_id": {
-          "name": "turn_queue_bot_id",
-          "columns": [
-            "bot_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "turn_queue_bot_id_bots_id_fk": {
-          "name": "turn_queue_bot_id_bots_id_fk",
-          "tableFrom": "turn_queue",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "turn_waits": {
-      "name": "turn_waits",
-      "columns": {
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "resume_at": {
-          "name": "resume_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "turn_waits_bot_id_bots_id_fk": {
-          "name": "turn_waits_bot_id_bots_id_fk",
-          "tableFrom": "turn_waits",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "watches": {
-      "name": "watches",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "url": {
-          "name": "url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "interval_minutes": {
-          "name": "interval_minutes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "keyword": {
-          "name": "keyword",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "text_hash": {
-          "name": "text_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "last_text": {
-          "name": "last_text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "next_check_at": {
-          "name": "next_check_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "last_checked_at": {
-          "name": "last_checked_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "watches_bot_id": {
-          "name": "watches_bot_id",
-          "columns": [
-            "bot_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "watches_bot_id_bots_id_fk": {
-          "name": "watches_bot_id_bots_id_fk",
-          "tableFrom": "watches",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "webhooks": {
-      "name": "webhooks",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "bot_id": {
-          "name": "bot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "webhooks_token_hash_unique": {
-          "name": "webhooks_token_hash_unique",
-          "columns": [
-            "token_hash"
-          ],
-          "isUnique": true
-        },
-        "webhooks_bot_id": {
-          "name": "webhooks_bot_id",
-          "columns": [
-            "bot_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "webhooks_bot_id_bots_id_fk": {
-          "name": "webhooks_bot_id_bots_id_fk",
-          "tableFrom": "webhooks",
-          "tableTo": "bots",
-          "columnsFrom": [
-            "bot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    }
-  },
-  "views": {},
-  "enums": {},
-  "_meta": {
-    "schemas": {},
-    "tables": {},
-    "columns": {}
-  },
-  "internal": {
-    "indexes": {
-      "channels_name_lower": {
-        "columns": {
-          "lower(\"name\")": {
-            "isExpression": true
-          }
-        }
-      }
-    }
-  }
+    "version":  "6",
+    "dialect":  "sqlite",
+    "id":  "a4e3d8da-62ca-4d88-a3ad-605c4a10c263",
+    "prevId":  "b2e2f438-6060-486d-93f9-aa08a414be9e",
+    "tables":  {
+                   "bot_limits":  {
+                                      "name":  "bot_limits",
+                                      "columns":  {
+                                                      "bot_id":  {
+                                                                     "name":  "bot_id",
+                                                                     "type":  "text",
+                                                                     "primaryKey":  true,
+                                                                     "notNull":  true,
+                                                                     "autoincrement":  false
+                                                                 },
+                                                      "chat_minutes":  {
+                                                                           "name":  "chat_minutes",
+                                                                           "type":  "integer",
+                                                                           "primaryKey":  false,
+                                                                           "notNull":  false,
+                                                                           "autoincrement":  false
+                                                                       },
+                                                      "chat_usd":  {
+                                                                       "name":  "chat_usd",
+                                                                       "type":  "real",
+                                                                       "primaryKey":  false,
+                                                                       "notNull":  false,
+                                                                       "autoincrement":  false
+                                                                   },
+                                                      "chat_steps":  {
+                                                                         "name":  "chat_steps",
+                                                                         "type":  "integer",
+                                                                         "primaryKey":  false,
+                                                                         "notNull":  false,
+                                                                         "autoincrement":  false
+                                                                     },
+                                                      "routine_minutes":  {
+                                                                              "name":  "routine_minutes",
+                                                                              "type":  "integer",
+                                                                              "primaryKey":  false,
+                                                                              "notNull":  false,
+                                                                              "autoincrement":  false
+                                                                          },
+                                                      "routine_usd":  {
+                                                                          "name":  "routine_usd",
+                                                                          "type":  "real",
+                                                                          "primaryKey":  false,
+                                                                          "notNull":  false,
+                                                                          "autoincrement":  false
+                                                                      },
+                                                      "routine_steps":  {
+                                                                            "name":  "routine_steps",
+                                                                            "type":  "integer",
+                                                                            "primaryKey":  false,
+                                                                            "notNull":  false,
+                                                                            "autoincrement":  false
+                                                                        }
+                                                  },
+                                      "indexes":  {
+
+                                                  },
+                                      "foreignKeys":  {
+                                                          "bot_limits_bot_id_bots_id_fk":  {
+                                                                                               "name":  "bot_limits_bot_id_bots_id_fk",
+                                                                                               "tableFrom":  "bot_limits",
+                                                                                               "tableTo":  "bots",
+                                                                                               "columnsFrom":  [
+                                                                                                                   "bot_id"
+                                                                                                               ],
+                                                                                               "columnsTo":  [
+                                                                                                                 "id"
+                                                                                                             ],
+                                                                                               "onDelete":  "cascade",
+                                                                                               "onUpdate":  "no action"
+                                                                                           }
+                                                      },
+                                      "compositePrimaryKeys":  {
+
+                                                               },
+                                      "uniqueConstraints":  {
+
+                                                            },
+                                      "checkConstraints":  {
+
+                                                           }
+                                  },
+                   "bot_models":  {
+                                      "name":  "bot_models",
+                                      "columns":  {
+                                                      "bot_id":  {
+                                                                     "name":  "bot_id",
+                                                                     "type":  "text",
+                                                                     "primaryKey":  true,
+                                                                     "notNull":  true,
+                                                                     "autoincrement":  false
+                                                                 },
+                                                      "chat_model":  {
+                                                                         "name":  "chat_model",
+                                                                         "type":  "text",
+                                                                         "primaryKey":  false,
+                                                                         "notNull":  false,
+                                                                         "autoincrement":  false
+                                                                     },
+                                                      "routines_model":  {
+                                                                             "name":  "routines_model",
+                                                                             "type":  "text",
+                                                                             "primaryKey":  false,
+                                                                             "notNull":  false,
+                                                                             "autoincrement":  false
+                                                                         },
+                                                      "review_model":  {
+                                                                           "name":  "review_model",
+                                                                           "type":  "text",
+                                                                           "primaryKey":  false,
+                                                                           "notNull":  false,
+                                                                           "autoincrement":  false
+                                                                       },
+                                                      "browsing_model":  {
+                                                                             "name":  "browsing_model",
+                                                                             "type":  "text",
+                                                                             "primaryKey":  false,
+                                                                             "notNull":  false,
+                                                                             "autoincrement":  false
+                                                                         },
+                                                      "documents_model":  {
+                                                                              "name":  "documents_model",
+                                                                              "type":  "text",
+                                                                              "primaryKey":  false,
+                                                                              "notNull":  false,
+                                                                              "autoincrement":  false
+                                                                          },
+                                                      "chat_effort":  {
+                                                                          "name":  "chat_effort",
+                                                                          "type":  "text",
+                                                                          "primaryKey":  false,
+                                                                          "notNull":  false,
+                                                                          "autoincrement":  false
+                                                                      },
+                                                      "routines_effort":  {
+                                                                              "name":  "routines_effort",
+                                                                              "type":  "text",
+                                                                              "primaryKey":  false,
+                                                                              "notNull":  false,
+                                                                              "autoincrement":  false
+                                                                          },
+                                                      "review_effort":  {
+                                                                            "name":  "review_effort",
+                                                                            "type":  "text",
+                                                                            "primaryKey":  false,
+                                                                            "notNull":  false,
+                                                                            "autoincrement":  false
+                                                                        },
+                                                      "browsing_effort":  {
+                                                                              "name":  "browsing_effort",
+                                                                              "type":  "text",
+                                                                              "primaryKey":  false,
+                                                                              "notNull":  false,
+                                                                              "autoincrement":  false
+                                                                          },
+                                                      "documents_effort":  {
+                                                                               "name":  "documents_effort",
+                                                                               "type":  "text",
+                                                                               "primaryKey":  false,
+                                                                               "notNull":  false,
+                                                                               "autoincrement":  false
+                                                                           }
+                                                  },
+                                      "indexes":  {
+
+                                                  },
+                                      "foreignKeys":  {
+                                                          "bot_models_bot_id_bots_id_fk":  {
+                                                                                               "name":  "bot_models_bot_id_bots_id_fk",
+                                                                                               "tableFrom":  "bot_models",
+                                                                                               "tableTo":  "bots",
+                                                                                               "columnsFrom":  [
+                                                                                                                   "bot_id"
+                                                                                                               ],
+                                                                                               "columnsTo":  [
+                                                                                                                 "id"
+                                                                                                             ],
+                                                                                               "onDelete":  "cascade",
+                                                                                               "onUpdate":  "no action"
+                                                                                           }
+                                                      },
+                                      "compositePrimaryKeys":  {
+
+                                                               },
+                                      "uniqueConstraints":  {
+
+                                                            },
+                                      "checkConstraints":  {
+
+                                                           }
+                                  },
+                   "bot_rules":  {
+                                     "name":  "bot_rules",
+                                     "columns":  {
+                                                     "id":  {
+                                                                "name":  "id",
+                                                                "type":  "text",
+                                                                "primaryKey":  true,
+                                                                "notNull":  true,
+                                                                "autoincrement":  false
+                                                            },
+                                                     "bot_id":  {
+                                                                    "name":  "bot_id",
+                                                                    "type":  "text",
+                                                                    "primaryKey":  false,
+                                                                    "notNull":  true,
+                                                                    "autoincrement":  false
+                                                                },
+                                                     "kind":  {
+                                                                  "name":  "kind",
+                                                                  "type":  "text",
+                                                                  "primaryKey":  false,
+                                                                  "notNull":  true,
+                                                                  "autoincrement":  false
+                                                              },
+                                                     "text":  {
+                                                                  "name":  "text",
+                                                                  "type":  "text",
+                                                                  "primaryKey":  false,
+                                                                  "notNull":  true,
+                                                                  "autoincrement":  false
+                                                              },
+                                                     "blocked_tools":  {
+                                                                           "name":  "blocked_tools",
+                                                                           "type":  "text",
+                                                                           "primaryKey":  false,
+                                                                           "notNull":  true,
+                                                                           "autoincrement":  false
+                                                                       },
+                                                     "created_at":  {
+                                                                        "name":  "created_at",
+                                                                        "type":  "integer",
+                                                                        "primaryKey":  false,
+                                                                        "notNull":  true,
+                                                                        "autoincrement":  false
+                                                                    }
+                                                 },
+                                     "indexes":  {
+                                                     "bot_rules_bot_id":  {
+                                                                              "name":  "bot_rules_bot_id",
+                                                                              "columns":  [
+                                                                                              "bot_id"
+                                                                                          ],
+                                                                              "isUnique":  false
+                                                                          }
+                                                 },
+                                     "foreignKeys":  {
+                                                         "bot_rules_bot_id_bots_id_fk":  {
+                                                                                             "name":  "bot_rules_bot_id_bots_id_fk",
+                                                                                             "tableFrom":  "bot_rules",
+                                                                                             "tableTo":  "bots",
+                                                                                             "columnsFrom":  [
+                                                                                                                 "bot_id"
+                                                                                                             ],
+                                                                                             "columnsTo":  [
+                                                                                                               "id"
+                                                                                                           ],
+                                                                                             "onDelete":  "cascade",
+                                                                                             "onUpdate":  "no action"
+                                                                                         }
+                                                     },
+                                     "compositePrimaryKeys":  {
+
+                                                              },
+                                     "uniqueConstraints":  {
+
+                                                           },
+                                     "checkConstraints":  {
+
+                                                          }
+                                 },
+                   "bots":  {
+                                "name":  "bots",
+                                "columns":  {
+                                                "id":  {
+                                                           "name":  "id",
+                                                           "type":  "text",
+                                                           "primaryKey":  true,
+                                                           "notNull":  true,
+                                                           "autoincrement":  false
+                                                       },
+                                                "name":  {
+                                                             "name":  "name",
+                                                             "type":  "text",
+                                                             "primaryKey":  false,
+                                                             "notNull":  true,
+                                                             "autoincrement":  false
+                                                         },
+                                                "title":  {
+                                                              "name":  "title",
+                                                              "type":  "text",
+                                                              "primaryKey":  false,
+                                                              "notNull":  true,
+                                                              "autoincrement":  false
+                                                          },
+                                                "description":  {
+                                                                    "name":  "description",
+                                                                    "type":  "text",
+                                                                    "primaryKey":  false,
+                                                                    "notNull":  true,
+                                                                    "autoincrement":  false
+                                                                },
+                                                "session_id":  {
+                                                                   "name":  "session_id",
+                                                                   "type":  "text",
+                                                                   "primaryKey":  false,
+                                                                   "notNull":  false,
+                                                                   "autoincrement":  false
+                                                               },
+                                                "created_at":  {
+                                                                   "name":  "created_at",
+                                                                   "type":  "integer",
+                                                                   "primaryKey":  false,
+                                                                   "notNull":  true,
+                                                                   "autoincrement":  false
+                                                               },
+                                                "mascot_color":  {
+                                                                     "name":  "mascot_color",
+                                                                     "type":  "text",
+                                                                     "primaryKey":  false,
+                                                                     "notNull":  true,
+                                                                     "autoincrement":  false,
+                                                                     "default":  "\u0027blue\u0027"
+                                                                 },
+                                                "mascot_shape":  {
+                                                                     "name":  "mascot_shape",
+                                                                     "type":  "text",
+                                                                     "primaryKey":  false,
+                                                                     "notNull":  true,
+                                                                     "autoincrement":  false,
+                                                                     "default":  "\u0027puff\u0027"
+                                                                 }
+                                            },
+                                "indexes":  {
+
+                                            },
+                                "foreignKeys":  {
+
+                                                },
+                                "compositePrimaryKeys":  {
+
+                                                         },
+                                "uniqueConstraints":  {
+
+                                                      },
+                                "checkConstraints":  {
+
+                                                     }
+                            },
+                   "browser_allowed_hosts":  {
+                                                 "name":  "browser_allowed_hosts",
+                                                 "columns":  {
+                                                                 "id":  {
+                                                                            "name":  "id",
+                                                                            "type":  "text",
+                                                                            "primaryKey":  true,
+                                                                            "notNull":  true,
+                                                                            "autoincrement":  false
+                                                                        },
+                                                                 "host":  {
+                                                                              "name":  "host",
+                                                                              "type":  "text",
+                                                                              "primaryKey":  false,
+                                                                              "notNull":  true,
+                                                                              "autoincrement":  false
+                                                                          },
+                                                                 "port":  {
+                                                                              "name":  "port",
+                                                                              "type":  "integer",
+                                                                              "primaryKey":  false,
+                                                                              "notNull":  true,
+                                                                              "autoincrement":  false
+                                                                          },
+                                                                 "created_at":  {
+                                                                                    "name":  "created_at",
+                                                                                    "type":  "integer",
+                                                                                    "primaryKey":  false,
+                                                                                    "notNull":  true,
+                                                                                    "autoincrement":  false
+                                                                                }
+                                                             },
+                                                 "indexes":  {
+                                                                 "browser_allowed_hosts_host_port":  {
+                                                                                                         "name":  "browser_allowed_hosts_host_port",
+                                                                                                         "columns":  [
+                                                                                                                         "host",
+                                                                                                                         "port"
+                                                                                                                     ],
+                                                                                                         "isUnique":  true
+                                                                                                     }
+                                                             },
+                                                 "foreignKeys":  {
+
+                                                                 },
+                                                 "compositePrimaryKeys":  {
+
+                                                                          },
+                                                 "uniqueConstraints":  {
+
+                                                                       },
+                                                 "checkConstraints":  {
+
+                                                                      }
+                                             },
+                   "channel_members":  {
+                                           "name":  "channel_members",
+                                           "columns":  {
+                                                           "channel_id":  {
+                                                                              "name":  "channel_id",
+                                                                              "type":  "text",
+                                                                              "primaryKey":  false,
+                                                                              "notNull":  true,
+                                                                              "autoincrement":  false
+                                                                          },
+                                                           "bot_id":  {
+                                                                          "name":  "bot_id",
+                                                                          "type":  "text",
+                                                                          "primaryKey":  false,
+                                                                          "notNull":  true,
+                                                                          "autoincrement":  false
+                                                                      },
+                                                           "is_manager":  {
+                                                                              "name":  "is_manager",
+                                                                              "type":  "integer",
+                                                                              "primaryKey":  false,
+                                                                              "notNull":  true,
+                                                                              "autoincrement":  false,
+                                                                              "default":  false
+                                                                          },
+                                                           "joined_at":  {
+                                                                             "name":  "joined_at",
+                                                                             "type":  "integer",
+                                                                             "primaryKey":  false,
+                                                                             "notNull":  true,
+                                                                             "autoincrement":  false
+                                                                         }
+                                                       },
+                                           "indexes":  {
+                                                           "channel_members_bot_id":  {
+                                                                                          "name":  "channel_members_bot_id",
+                                                                                          "columns":  [
+                                                                                                          "bot_id"
+                                                                                                      ],
+                                                                                          "isUnique":  false
+                                                                                      }
+                                                       },
+                                           "foreignKeys":  {
+                                                               "channel_members_channel_id_channels_id_fk":  {
+                                                                                                                 "name":  "channel_members_channel_id_channels_id_fk",
+                                                                                                                 "tableFrom":  "channel_members",
+                                                                                                                 "tableTo":  "channels",
+                                                                                                                 "columnsFrom":  [
+                                                                                                                                     "channel_id"
+                                                                                                                                 ],
+                                                                                                                 "columnsTo":  [
+                                                                                                                                   "id"
+                                                                                                                               ],
+                                                                                                                 "onDelete":  "cascade",
+                                                                                                                 "onUpdate":  "no action"
+                                                                                                             },
+                                                               "channel_members_bot_id_bots_id_fk":  {
+                                                                                                         "name":  "channel_members_bot_id_bots_id_fk",
+                                                                                                         "tableFrom":  "channel_members",
+                                                                                                         "tableTo":  "bots",
+                                                                                                         "columnsFrom":  [
+                                                                                                                             "bot_id"
+                                                                                                                         ],
+                                                                                                         "columnsTo":  [
+                                                                                                                           "id"
+                                                                                                                       ],
+                                                                                                         "onDelete":  "cascade",
+                                                                                                         "onUpdate":  "no action"
+                                                                                                     }
+                                                           },
+                                           "compositePrimaryKeys":  {
+                                                                        "channel_members_channel_id_bot_id_pk":  {
+                                                                                                                     "columns":  [
+                                                                                                                                     "channel_id",
+                                                                                                                                     "bot_id"
+                                                                                                                                 ],
+                                                                                                                     "name":  "channel_members_channel_id_bot_id_pk"
+                                                                                                                 }
+                                                                    },
+                                           "uniqueConstraints":  {
+
+                                                                 },
+                                           "checkConstraints":  {
+
+                                                                }
+                                       },
+                   "channel_messages":  {
+                                            "name":  "channel_messages",
+                                            "columns":  {
+                                                            "sequence":  {
+                                                                             "name":  "sequence",
+                                                                             "type":  "integer",
+                                                                             "primaryKey":  true,
+                                                                             "notNull":  true,
+                                                                             "autoincrement":  true
+                                                                         },
+                                                            "id":  {
+                                                                       "name":  "id",
+                                                                       "type":  "text",
+                                                                       "primaryKey":  false,
+                                                                       "notNull":  true,
+                                                                       "autoincrement":  false
+                                                                   },
+                                                            "channel_id":  {
+                                                                               "name":  "channel_id",
+                                                                               "type":  "text",
+                                                                               "primaryKey":  false,
+                                                                               "notNull":  true,
+                                                                               "autoincrement":  false
+                                                                           },
+                                                            "author_bot_id":  {
+                                                                                  "name":  "author_bot_id",
+                                                                                  "type":  "text",
+                                                                                  "primaryKey":  false,
+                                                                                  "notNull":  false,
+                                                                                  "autoincrement":  false
+                                                                              },
+                                                            "author_name":  {
+                                                                                "name":  "author_name",
+                                                                                "type":  "text",
+                                                                                "primaryKey":  false,
+                                                                                "notNull":  true,
+                                                                                "autoincrement":  false
+                                                                            },
+                                                            "author_color":  {
+                                                                                 "name":  "author_color",
+                                                                                 "type":  "text",
+                                                                                 "primaryKey":  false,
+                                                                                 "notNull":  true,
+                                                                                 "autoincrement":  false
+                                                                             },
+                                                            "author_shape":  {
+                                                                                 "name":  "author_shape",
+                                                                                 "type":  "text",
+                                                                                 "primaryKey":  false,
+                                                                                 "notNull":  true,
+                                                                                 "autoincrement":  false
+                                                                             },
+                                                            "role":  {
+                                                                         "name":  "role",
+                                                                         "type":  "text",
+                                                                         "primaryKey":  false,
+                                                                         "notNull":  true,
+                                                                         "autoincrement":  false
+                                                                     },
+                                                            "kind":  {
+                                                                         "name":  "kind",
+                                                                         "type":  "text",
+                                                                         "primaryKey":  false,
+                                                                         "notNull":  true,
+                                                                         "autoincrement":  false
+                                                                     },
+                                                            "content":  {
+                                                                            "name":  "content",
+                                                                            "type":  "text",
+                                                                            "primaryKey":  false,
+                                                                            "notNull":  true,
+                                                                            "autoincrement":  false
+                                                                        },
+                                                            "created_at":  {
+                                                                               "name":  "created_at",
+                                                                               "type":  "integer",
+                                                                               "primaryKey":  false,
+                                                                               "notNull":  true,
+                                                                               "autoincrement":  false
+                                                                           }
+                                                        },
+                                            "indexes":  {
+                                                            "channel_messages_id_unique":  {
+                                                                                               "name":  "channel_messages_id_unique",
+                                                                                               "columns":  [
+                                                                                                               "id"
+                                                                                                           ],
+                                                                                               "isUnique":  true
+                                                                                           },
+                                                            "channel_messages_channel_id":  {
+                                                                                                "name":  "channel_messages_channel_id",
+                                                                                                "columns":  [
+                                                                                                                "channel_id"
+                                                                                                            ],
+                                                                                                "isUnique":  false
+                                                                                            }
+                                                        },
+                                            "foreignKeys":  {
+                                                                "channel_messages_channel_id_channels_id_fk":  {
+                                                                                                                   "name":  "channel_messages_channel_id_channels_id_fk",
+                                                                                                                   "tableFrom":  "channel_messages",
+                                                                                                                   "tableTo":  "channels",
+                                                                                                                   "columnsFrom":  [
+                                                                                                                                       "channel_id"
+                                                                                                                                   ],
+                                                                                                                   "columnsTo":  [
+                                                                                                                                     "id"
+                                                                                                                                 ],
+                                                                                                                   "onDelete":  "cascade",
+                                                                                                                   "onUpdate":  "no action"
+                                                                                                               },
+                                                                "channel_messages_author_bot_id_bots_id_fk":  {
+                                                                                                                  "name":  "channel_messages_author_bot_id_bots_id_fk",
+                                                                                                                  "tableFrom":  "channel_messages",
+                                                                                                                  "tableTo":  "bots",
+                                                                                                                  "columnsFrom":  [
+                                                                                                                                      "author_bot_id"
+                                                                                                                                  ],
+                                                                                                                  "columnsTo":  [
+                                                                                                                                    "id"
+                                                                                                                                ],
+                                                                                                                  "onDelete":  "set null",
+                                                                                                                  "onUpdate":  "no action"
+                                                                                                              }
+                                                            },
+                                            "compositePrimaryKeys":  {
+
+                                                                     },
+                                            "uniqueConstraints":  {
+
+                                                                  },
+                                            "checkConstraints":  {
+
+                                                                 }
+                                        },
+                   "channels":  {
+                                    "name":  "channels",
+                                    "columns":  {
+                                                    "id":  {
+                                                               "name":  "id",
+                                                               "type":  "text",
+                                                               "primaryKey":  true,
+                                                               "notNull":  true,
+                                                               "autoincrement":  false
+                                                           },
+                                                    "name":  {
+                                                                 "name":  "name",
+                                                                 "type":  "text",
+                                                                 "primaryKey":  false,
+                                                                 "notNull":  true,
+                                                                 "autoincrement":  false
+                                                             },
+                                                    "created_at":  {
+                                                                       "name":  "created_at",
+                                                                       "type":  "integer",
+                                                                       "primaryKey":  false,
+                                                                       "notNull":  true,
+                                                                       "autoincrement":  false
+                                                                   }
+                                                },
+                                    "indexes":  {
+                                                    "channels_name_lower":  {
+                                                                                "name":  "channels_name_lower",
+                                                                                "columns":  [
+                                                                                                "lower(\"name\")"
+                                                                                            ],
+                                                                                "isUnique":  true
+                                                                            }
+                                                },
+                                    "foreignKeys":  {
+
+                                                    },
+                                    "compositePrimaryKeys":  {
+
+                                                             },
+                                    "uniqueConstraints":  {
+
+                                                          },
+                                    "checkConstraints":  {
+
+                                                         }
+                                },
+                   "connected_apps":  {
+                                          "name":  "connected_apps",
+                                          "columns":  {
+                                                          "id":  {
+                                                                     "name":  "id",
+                                                                     "type":  "text",
+                                                                     "primaryKey":  true,
+                                                                     "notNull":  true,
+                                                                     "autoincrement":  false
+                                                                 },
+                                                          "name":  {
+                                                                       "name":  "name",
+                                                                       "type":  "text",
+                                                                       "primaryKey":  false,
+                                                                       "notNull":  true,
+                                                                       "autoincrement":  false
+                                                                   },
+                                                          "url":  {
+                                                                      "name":  "url",
+                                                                      "type":  "text",
+                                                                      "primaryKey":  false,
+                                                                      "notNull":  true,
+                                                                      "autoincrement":  false
+                                                                  },
+                                                          "status":  {
+                                                                         "name":  "status",
+                                                                         "type":  "text",
+                                                                         "primaryKey":  false,
+                                                                         "notNull":  true,
+                                                                         "autoincrement":  false
+                                                                     },
+                                                          "tool_count":  {
+                                                                             "name":  "tool_count",
+                                                                             "type":  "integer",
+                                                                             "primaryKey":  false,
+                                                                             "notNull":  true,
+                                                                             "autoincrement":  false
+                                                                         },
+                                                          "problem":  {
+                                                                          "name":  "problem",
+                                                                          "type":  "text",
+                                                                          "primaryKey":  false,
+                                                                          "notNull":  false,
+                                                                          "autoincrement":  false
+                                                                      },
+                                                          "secret_name":  {
+                                                                              "name":  "secret_name",
+                                                                              "type":  "text",
+                                                                              "primaryKey":  false,
+                                                                              "notNull":  false,
+                                                                              "autoincrement":  false
+                                                                          },
+                                                          "secret_bot_id":  {
+                                                                                "name":  "secret_bot_id",
+                                                                                "type":  "text",
+                                                                                "primaryKey":  false,
+                                                                                "notNull":  false,
+                                                                                "autoincrement":  false
+                                                                            },
+                                                          "created_at":  {
+                                                                             "name":  "created_at",
+                                                                             "type":  "integer",
+                                                                             "primaryKey":  false,
+                                                                             "notNull":  true,
+                                                                             "autoincrement":  false
+                                                                         }
+                                                      },
+                                          "indexes":  {
+                                                          "connected_apps_name":  {
+                                                                                      "name":  "connected_apps_name",
+                                                                                      "columns":  [
+                                                                                                      "name"
+                                                                                                  ],
+                                                                                      "isUnique":  true
+                                                                                  }
+                                                      },
+                                          "foreignKeys":  {
+
+                                                          },
+                                          "compositePrimaryKeys":  {
+
+                                                                   },
+                                          "uniqueConstraints":  {
+
+                                                                },
+                                          "checkConstraints":  {
+
+                                                               }
+                                      },
+                   "email_accounts":  {
+                                          "name":  "email_accounts",
+                                          "columns":  {
+                                                          "bot_id":  {
+                                                                         "name":  "bot_id",
+                                                                         "type":  "text",
+                                                                         "primaryKey":  true,
+                                                                         "notNull":  true,
+                                                                         "autoincrement":  false
+                                                                     },
+                                                          "address":  {
+                                                                          "name":  "address",
+                                                                          "type":  "text",
+                                                                          "primaryKey":  false,
+                                                                          "notNull":  true,
+                                                                          "autoincrement":  false
+                                                                      },
+                                                          "imap_host":  {
+                                                                            "name":  "imap_host",
+                                                                            "type":  "text",
+                                                                            "primaryKey":  false,
+                                                                            "notNull":  true,
+                                                                            "autoincrement":  false
+                                                                        },
+                                                          "imap_port":  {
+                                                                            "name":  "imap_port",
+                                                                            "type":  "integer",
+                                                                            "primaryKey":  false,
+                                                                            "notNull":  true,
+                                                                            "autoincrement":  false
+                                                                        },
+                                                          "smtp_host":  {
+                                                                            "name":  "smtp_host",
+                                                                            "type":  "text",
+                                                                            "primaryKey":  false,
+                                                                            "notNull":  true,
+                                                                            "autoincrement":  false
+                                                                        },
+                                                          "smtp_port":  {
+                                                                            "name":  "smtp_port",
+                                                                            "type":  "integer",
+                                                                            "primaryKey":  false,
+                                                                            "notNull":  true,
+                                                                            "autoincrement":  false
+                                                                        },
+                                                          "smtp_secure":  {
+                                                                              "name":  "smtp_secure",
+                                                                              "type":  "integer",
+                                                                              "primaryKey":  false,
+                                                                              "notNull":  true,
+                                                                              "autoincrement":  false
+                                                                          },
+                                                          "username":  {
+                                                                           "name":  "username",
+                                                                           "type":  "text",
+                                                                           "primaryKey":  false,
+                                                                           "notNull":  true,
+                                                                           "autoincrement":  false
+                                                                       },
+                                                          "uid_validity":  {
+                                                                               "name":  "uid_validity",
+                                                                               "type":  "text",
+                                                                               "primaryKey":  false,
+                                                                               "notNull":  false,
+                                                                               "autoincrement":  false
+                                                                           },
+                                                          "last_uid":  {
+                                                                           "name":  "last_uid",
+                                                                           "type":  "integer",
+                                                                           "primaryKey":  false,
+                                                                           "notNull":  false,
+                                                                           "autoincrement":  false
+                                                                       },
+                                                          "created_at":  {
+                                                                             "name":  "created_at",
+                                                                             "type":  "integer",
+                                                                             "primaryKey":  false,
+                                                                             "notNull":  true,
+                                                                             "autoincrement":  false
+                                                                         },
+                                                          "updated_at":  {
+                                                                             "name":  "updated_at",
+                                                                             "type":  "integer",
+                                                                             "primaryKey":  false,
+                                                                             "notNull":  true,
+                                                                             "autoincrement":  false
+                                                                         }
+                                                      },
+                                          "indexes":  {
+
+                                                      },
+                                          "foreignKeys":  {
+                                                              "email_accounts_bot_id_bots_id_fk":  {
+                                                                                                       "name":  "email_accounts_bot_id_bots_id_fk",
+                                                                                                       "tableFrom":  "email_accounts",
+                                                                                                       "tableTo":  "bots",
+                                                                                                       "columnsFrom":  [
+                                                                                                                           "bot_id"
+                                                                                                                       ],
+                                                                                                       "columnsTo":  [
+                                                                                                                         "id"
+                                                                                                                     ],
+                                                                                                       "onDelete":  "cascade",
+                                                                                                       "onUpdate":  "no action"
+                                                                                                   }
+                                                          },
+                                          "compositePrimaryKeys":  {
+
+                                                                   },
+                                          "uniqueConstraints":  {
+
+                                                                },
+                                          "checkConstraints":  {
+
+                                                               }
+                                      },
+                   "email_deliveries":  {
+                                            "name":  "email_deliveries",
+                                            "columns":  {
+                                                            "bot_id":  {
+                                                                           "name":  "bot_id",
+                                                                           "type":  "text",
+                                                                           "primaryKey":  false,
+                                                                           "notNull":  true,
+                                                                           "autoincrement":  false
+                                                                       },
+                                                            "uid_validity":  {
+                                                                                 "name":  "uid_validity",
+                                                                                 "type":  "text",
+                                                                                 "primaryKey":  false,
+                                                                                 "notNull":  true,
+                                                                                 "autoincrement":  false
+                                                                             },
+                                                            "uid":  {
+                                                                        "name":  "uid",
+                                                                        "type":  "integer",
+                                                                        "primaryKey":  false,
+                                                                        "notNull":  true,
+                                                                        "autoincrement":  false
+                                                                    },
+                                                            "claimed_at":  {
+                                                                               "name":  "claimed_at",
+                                                                               "type":  "integer",
+                                                                               "primaryKey":  false,
+                                                                               "notNull":  true,
+                                                                               "autoincrement":  false
+                                                                           },
+                                                            "handled_at":  {
+                                                                               "name":  "handled_at",
+                                                                               "type":  "integer",
+                                                                               "primaryKey":  false,
+                                                                               "notNull":  false,
+                                                                               "autoincrement":  false
+                                                                           }
+                                                        },
+                                            "indexes":  {
+
+                                                        },
+                                            "foreignKeys":  {
+                                                                "email_deliveries_bot_id_bots_id_fk":  {
+                                                                                                           "name":  "email_deliveries_bot_id_bots_id_fk",
+                                                                                                           "tableFrom":  "email_deliveries",
+                                                                                                           "tableTo":  "bots",
+                                                                                                           "columnsFrom":  [
+                                                                                                                               "bot_id"
+                                                                                                                           ],
+                                                                                                           "columnsTo":  [
+                                                                                                                             "id"
+                                                                                                                         ],
+                                                                                                           "onDelete":  "cascade",
+                                                                                                           "onUpdate":  "no action"
+                                                                                                       }
+                                                            },
+                                            "compositePrimaryKeys":  {
+                                                                         "email_deliveries_bot_id_uid_validity_uid_pk":  {
+                                                                                                                             "columns":  [
+                                                                                                                                             "bot_id",
+                                                                                                                                             "uid_validity",
+                                                                                                                                             "uid"
+                                                                                                                                         ],
+                                                                                                                             "name":  "email_deliveries_bot_id_uid_validity_uid_pk"
+                                                                                                                         }
+                                                                     },
+                                            "uniqueConstraints":  {
+
+                                                                  },
+                                            "checkConstraints":  {
+
+                                                                 }
+                                        },
+                   "integration_runs":  {
+                                            "name":  "integration_runs",
+                                            "columns":  {
+                                                            "id":  {
+                                                                       "name":  "id",
+                                                                       "type":  "text",
+                                                                       "primaryKey":  true,
+                                                                       "notNull":  true,
+                                                                       "autoincrement":  false
+                                                                   },
+                                                            "integration_id":  {
+                                                                                   "name":  "integration_id",
+                                                                                   "type":  "text",
+                                                                                   "primaryKey":  false,
+                                                                                   "notNull":  true,
+                                                                                   "autoincrement":  false
+                                                                               },
+                                                            "started_at":  {
+                                                                               "name":  "started_at",
+                                                                               "type":  "integer",
+                                                                               "primaryKey":  false,
+                                                                               "notNull":  true,
+                                                                               "autoincrement":  false
+                                                                           },
+                                                            "exit_code":  {
+                                                                              "name":  "exit_code",
+                                                                              "type":  "integer",
+                                                                              "primaryKey":  false,
+                                                                              "notNull":  false,
+                                                                              "autoincrement":  false
+                                                                          },
+                                                            "timed_out":  {
+                                                                              "name":  "timed_out",
+                                                                              "type":  "integer",
+                                                                              "primaryKey":  false,
+                                                                              "notNull":  true,
+                                                                              "autoincrement":  false
+                                                                          },
+                                                            "output":  {
+                                                                           "name":  "output",
+                                                                           "type":  "text",
+                                                                           "primaryKey":  false,
+                                                                           "notNull":  true,
+                                                                           "autoincrement":  false
+                                                                       }
+                                                        },
+                                            "indexes":  {
+
+                                                        },
+                                            "foreignKeys":  {
+                                                                "integration_runs_integration_id_integrations_id_fk":  {
+                                                                                                                           "name":  "integration_runs_integration_id_integrations_id_fk",
+                                                                                                                           "tableFrom":  "integration_runs",
+                                                                                                                           "tableTo":  "integrations",
+                                                                                                                           "columnsFrom":  [
+                                                                                                                                               "integration_id"
+                                                                                                                                           ],
+                                                                                                                           "columnsTo":  [
+                                                                                                                                             "id"
+                                                                                                                                         ],
+                                                                                                                           "onDelete":  "cascade",
+                                                                                                                           "onUpdate":  "no action"
+                                                                                                                       }
+                                                            },
+                                            "compositePrimaryKeys":  {
+
+                                                                     },
+                                            "uniqueConstraints":  {
+
+                                                                  },
+                                            "checkConstraints":  {
+
+                                                                 }
+                                        },
+                   "integrations":  {
+                                        "name":  "integrations",
+                                        "columns":  {
+                                                        "id":  {
+                                                                   "name":  "id",
+                                                                   "type":  "text",
+                                                                   "primaryKey":  true,
+                                                                   "notNull":  true,
+                                                                   "autoincrement":  false
+                                                               },
+                                                        "bot_id":  {
+                                                                       "name":  "bot_id",
+                                                                       "type":  "text",
+                                                                       "primaryKey":  false,
+                                                                       "notNull":  true,
+                                                                       "autoincrement":  false
+                                                                   },
+                                                        "name":  {
+                                                                     "name":  "name",
+                                                                     "type":  "text",
+                                                                     "primaryKey":  false,
+                                                                     "notNull":  true,
+                                                                     "autoincrement":  false
+                                                                 },
+                                                        "entry_path":  {
+                                                                           "name":  "entry_path",
+                                                                           "type":  "text",
+                                                                           "primaryKey":  false,
+                                                                           "notNull":  true,
+                                                                           "autoincrement":  false
+                                                                       },
+                                                        "command":  {
+                                                                        "name":  "command",
+                                                                        "type":  "text",
+                                                                        "primaryKey":  false,
+                                                                        "notNull":  true,
+                                                                        "autoincrement":  false
+                                                                    },
+                                                        "secret_name":  {
+                                                                            "name":  "secret_name",
+                                                                            "type":  "text",
+                                                                            "primaryKey":  false,
+                                                                            "notNull":  false,
+                                                                            "autoincrement":  false
+                                                                        },
+                                                        "entry_hash":  {
+                                                                           "name":  "entry_hash",
+                                                                           "type":  "text",
+                                                                           "primaryKey":  false,
+                                                                           "notNull":  true,
+                                                                           "autoincrement":  false
+                                                                       },
+                                                        "created_at":  {
+                                                                           "name":  "created_at",
+                                                                           "type":  "integer",
+                                                                           "primaryKey":  false,
+                                                                           "notNull":  true,
+                                                                           "autoincrement":  false
+                                                                       },
+                                                        "updated_at":  {
+                                                                           "name":  "updated_at",
+                                                                           "type":  "integer",
+                                                                           "primaryKey":  false,
+                                                                           "notNull":  true,
+                                                                           "autoincrement":  false
+                                                                       }
+                                                    },
+                                        "indexes":  {
+                                                        "integrations_bot_name":  {
+                                                                                      "name":  "integrations_bot_name",
+                                                                                      "columns":  [
+                                                                                                      "bot_id",
+                                                                                                      "name"
+                                                                                                  ],
+                                                                                      "isUnique":  true
+                                                                                  }
+                                                    },
+                                        "foreignKeys":  {
+                                                            "integrations_bot_id_bots_id_fk":  {
+                                                                                                   "name":  "integrations_bot_id_bots_id_fk",
+                                                                                                   "tableFrom":  "integrations",
+                                                                                                   "tableTo":  "bots",
+                                                                                                   "columnsFrom":  [
+                                                                                                                       "bot_id"
+                                                                                                                   ],
+                                                                                                   "columnsTo":  [
+                                                                                                                     "id"
+                                                                                                                 ],
+                                                                                                   "onDelete":  "cascade",
+                                                                                                   "onUpdate":  "no action"
+                                                                                               }
+                                                        },
+                                        "compositePrimaryKeys":  {
+
+                                                                 },
+                                        "uniqueConstraints":  {
+
+                                                              },
+                                        "checkConstraints":  {
+
+                                                             }
+                                    },
+                   "messages":  {
+                                    "name":  "messages",
+                                    "columns":  {
+                                                    "sequence":  {
+                                                                     "name":  "sequence",
+                                                                     "type":  "integer",
+                                                                     "primaryKey":  true,
+                                                                     "notNull":  true,
+                                                                     "autoincrement":  true
+                                                                 },
+                                                    "id":  {
+                                                               "name":  "id",
+                                                               "type":  "text",
+                                                               "primaryKey":  false,
+                                                               "notNull":  true,
+                                                               "autoincrement":  false
+                                                           },
+                                                    "bot_id":  {
+                                                                   "name":  "bot_id",
+                                                                   "type":  "text",
+                                                                   "primaryKey":  false,
+                                                                   "notNull":  true,
+                                                                   "autoincrement":  false
+                                                               },
+                                                    "role":  {
+                                                                 "name":  "role",
+                                                                 "type":  "text",
+                                                                 "primaryKey":  false,
+                                                                 "notNull":  true,
+                                                                 "autoincrement":  false
+                                                             },
+                                                    "kind":  {
+                                                                 "name":  "kind",
+                                                                 "type":  "text",
+                                                                 "primaryKey":  false,
+                                                                 "notNull":  true,
+                                                                 "autoincrement":  false
+                                                             },
+                                                    "content":  {
+                                                                    "name":  "content",
+                                                                    "type":  "text",
+                                                                    "primaryKey":  false,
+                                                                    "notNull":  true,
+                                                                    "autoincrement":  false
+                                                                },
+                                                    "created_at":  {
+                                                                       "name":  "created_at",
+                                                                       "type":  "integer",
+                                                                       "primaryKey":  false,
+                                                                       "notNull":  true,
+                                                                       "autoincrement":  false
+                                                                   },
+                                                    "email_delivery_id":  {
+                                                                              "name":  "email_delivery_id",
+                                                                              "type":  "text",
+                                                                              "primaryKey":  false,
+                                                                              "notNull":  false,
+                                                                              "autoincrement":  false
+                                                                          }
+                                                },
+                                    "indexes":  {
+                                                    "messages_id_unique":  {
+                                                                               "name":  "messages_id_unique",
+                                                                               "columns":  [
+                                                                                               "id"
+                                                                                           ],
+                                                                               "isUnique":  true
+                                                                           },
+                                                    "messages_bot_id":  {
+                                                                            "name":  "messages_bot_id",
+                                                                            "columns":  [
+                                                                                            "bot_id"
+                                                                                        ],
+                                                                            "isUnique":  false
+                                                                        },
+                                                    "messages_email_delivery_id":  {
+                                                                                       "name":  "messages_email_delivery_id",
+                                                                                       "columns":  [
+                                                                                                       "email_delivery_id"
+                                                                                                   ],
+                                                                                       "isUnique":  true
+                                                                                   }
+                                                },
+                                    "foreignKeys":  {
+                                                        "messages_bot_id_bots_id_fk":  {
+                                                                                           "name":  "messages_bot_id_bots_id_fk",
+                                                                                           "tableFrom":  "messages",
+                                                                                           "tableTo":  "bots",
+                                                                                           "columnsFrom":  [
+                                                                                                               "bot_id"
+                                                                                                           ],
+                                                                                           "columnsTo":  [
+                                                                                                             "id"
+                                                                                                         ],
+                                                                                           "onDelete":  "cascade",
+                                                                                           "onUpdate":  "no action"
+                                                                                       }
+                                                    },
+                                    "compositePrimaryKeys":  {
+
+                                                             },
+                                    "uniqueConstraints":  {
+
+                                                          },
+                                    "checkConstraints":  {
+
+                                                         }
+                                },
+                   "push_subscriptions":  {
+                                              "name":  "push_subscriptions",
+                                              "columns":  {
+                                                              "id":  {
+                                                                         "name":  "id",
+                                                                         "type":  "text",
+                                                                         "primaryKey":  true,
+                                                                         "notNull":  true,
+                                                                         "autoincrement":  false
+                                                                     },
+                                                              "endpoint":  {
+                                                                               "name":  "endpoint",
+                                                                               "type":  "text",
+                                                                               "primaryKey":  false,
+                                                                               "notNull":  true,
+                                                                               "autoincrement":  false
+                                                                           },
+                                                              "p256dh":  {
+                                                                             "name":  "p256dh",
+                                                                             "type":  "text",
+                                                                             "primaryKey":  false,
+                                                                             "notNull":  true,
+                                                                             "autoincrement":  false
+                                                                         },
+                                                              "auth":  {
+                                                                           "name":  "auth",
+                                                                           "type":  "text",
+                                                                           "primaryKey":  false,
+                                                                           "notNull":  true,
+                                                                           "autoincrement":  false
+                                                                       },
+                                                              "created_at":  {
+                                                                                 "name":  "created_at",
+                                                                                 "type":  "integer",
+                                                                                 "primaryKey":  false,
+                                                                                 "notNull":  true,
+                                                                                 "autoincrement":  false
+                                                                             }
+                                                          },
+                                              "indexes":  {
+                                                              "push_subscriptions_endpoint":  {
+                                                                                                  "name":  "push_subscriptions_endpoint",
+                                                                                                  "columns":  [
+                                                                                                                  "endpoint"
+                                                                                                              ],
+                                                                                                  "isUnique":  true
+                                                                                              }
+                                                          },
+                                              "foreignKeys":  {
+
+                                                              },
+                                              "compositePrimaryKeys":  {
+
+                                                                       },
+                                              "uniqueConstraints":  {
+
+                                                                    },
+                                              "checkConstraints":  {
+
+                                                                   }
+                                          },
+                   "routines":  {
+                                    "name":  "routines",
+                                    "columns":  {
+                                                    "id":  {
+                                                               "name":  "id",
+                                                               "type":  "text",
+                                                               "primaryKey":  true,
+                                                               "notNull":  true,
+                                                               "autoincrement":  false
+                                                           },
+                                                    "bot_id":  {
+                                                                   "name":  "bot_id",
+                                                                   "type":  "text",
+                                                                   "primaryKey":  false,
+                                                                   "notNull":  true,
+                                                                   "autoincrement":  false
+                                                               },
+                                                    "name":  {
+                                                                 "name":  "name",
+                                                                 "type":  "text",
+                                                                 "primaryKey":  false,
+                                                                 "notNull":  true,
+                                                                 "autoincrement":  false
+                                                             },
+                                                    "prompt":  {
+                                                                   "name":  "prompt",
+                                                                   "type":  "text",
+                                                                   "primaryKey":  false,
+                                                                   "notNull":  true,
+                                                                   "autoincrement":  false
+                                                               },
+                                                    "schedule":  {
+                                                                     "name":  "schedule",
+                                                                     "type":  "text",
+                                                                     "primaryKey":  false,
+                                                                     "notNull":  true,
+                                                                     "autoincrement":  false
+                                                                 },
+                                                    "is_enabled":  {
+                                                                       "name":  "is_enabled",
+                                                                       "type":  "integer",
+                                                                       "primaryKey":  false,
+                                                                       "notNull":  true,
+                                                                       "autoincrement":  false
+                                                                   },
+                                                    "next_run_at":  {
+                                                                        "name":  "next_run_at",
+                                                                        "type":  "integer",
+                                                                        "primaryKey":  false,
+                                                                        "notNull":  true,
+                                                                        "autoincrement":  false
+                                                                    },
+                                                    "last_run_at":  {
+                                                                        "name":  "last_run_at",
+                                                                        "type":  "integer",
+                                                                        "primaryKey":  false,
+                                                                        "notNull":  false,
+                                                                        "autoincrement":  false
+                                                                    },
+                                                    "created_at":  {
+                                                                       "name":  "created_at",
+                                                                       "type":  "integer",
+                                                                       "primaryKey":  false,
+                                                                       "notNull":  true,
+                                                                       "autoincrement":  false
+                                                                   }
+                                                },
+                                    "indexes":  {
+                                                    "routines_bot_id":  {
+                                                                            "name":  "routines_bot_id",
+                                                                            "columns":  [
+                                                                                            "bot_id"
+                                                                                        ],
+                                                                            "isUnique":  false
+                                                                        }
+                                                },
+                                    "foreignKeys":  {
+                                                        "routines_bot_id_bots_id_fk":  {
+                                                                                           "name":  "routines_bot_id_bots_id_fk",
+                                                                                           "tableFrom":  "routines",
+                                                                                           "tableTo":  "bots",
+                                                                                           "columnsFrom":  [
+                                                                                                               "bot_id"
+                                                                                                           ],
+                                                                                           "columnsTo":  [
+                                                                                                             "id"
+                                                                                                         ],
+                                                                                           "onDelete":  "cascade",
+                                                                                           "onUpdate":  "no action"
+                                                                                       }
+                                                    },
+                                    "compositePrimaryKeys":  {
+
+                                                             },
+                                    "uniqueConstraints":  {
+
+                                                          },
+                                    "checkConstraints":  {
+
+                                                         }
+                                },
+                   "settings":  {
+                                    "name":  "settings",
+                                    "columns":  {
+                                                    "key":  {
+                                                                "name":  "key",
+                                                                "type":  "text",
+                                                                "primaryKey":  true,
+                                                                "notNull":  true,
+                                                                "autoincrement":  false
+                                                            },
+                                                    "value":  {
+                                                                  "name":  "value",
+                                                                  "type":  "text",
+                                                                  "primaryKey":  false,
+                                                                  "notNull":  true,
+                                                                  "autoincrement":  false
+                                                              }
+                                                },
+                                    "indexes":  {
+
+                                                },
+                                    "foreignKeys":  {
+
+                                                    },
+                                    "compositePrimaryKeys":  {
+
+                                                             },
+                                    "uniqueConstraints":  {
+
+                                                          },
+                                    "checkConstraints":  {
+
+                                                         }
+                                },
+                   "tasks":  {
+                                 "name":  "tasks",
+                                 "columns":  {
+                                                 "id":  {
+                                                            "name":  "id",
+                                                            "type":  "text",
+                                                            "primaryKey":  true,
+                                                            "notNull":  true,
+                                                            "autoincrement":  false
+                                                        },
+                                                 "bot_id":  {
+                                                                "name":  "bot_id",
+                                                                "type":  "text",
+                                                                "primaryKey":  false,
+                                                                "notNull":  true,
+                                                                "autoincrement":  false
+                                                            },
+                                                 "channel_id":  {
+                                                                    "name":  "channel_id",
+                                                                    "type":  "text",
+                                                                    "primaryKey":  false,
+                                                                    "notNull":  false,
+                                                                    "autoincrement":  false
+                                                                },
+                                                 "title":  {
+                                                               "name":  "title",
+                                                               "type":  "text",
+                                                               "primaryKey":  false,
+                                                               "notNull":  true,
+                                                               "autoincrement":  false
+                                                           },
+                                                 "status":  {
+                                                                "name":  "status",
+                                                                "type":  "text",
+                                                                "primaryKey":  false,
+                                                                "notNull":  true,
+                                                                "autoincrement":  false
+                                                            },
+                                                 "blocked_reason":  {
+                                                                        "name":  "blocked_reason",
+                                                                        "type":  "text",
+                                                                        "primaryKey":  false,
+                                                                        "notNull":  false,
+                                                                        "autoincrement":  false
+                                                                    },
+                                                 "created_at":  {
+                                                                    "name":  "created_at",
+                                                                    "type":  "integer",
+                                                                    "primaryKey":  false,
+                                                                    "notNull":  true,
+                                                                    "autoincrement":  false
+                                                                },
+                                                 "updated_at":  {
+                                                                    "name":  "updated_at",
+                                                                    "type":  "integer",
+                                                                    "primaryKey":  false,
+                                                                    "notNull":  true,
+                                                                    "autoincrement":  false
+                                                                }
+                                             },
+                                 "indexes":  {
+                                                 "tasks_bot_id":  {
+                                                                      "name":  "tasks_bot_id",
+                                                                      "columns":  [
+                                                                                      "bot_id"
+                                                                                  ],
+                                                                      "isUnique":  false
+                                                                  }
+                                             },
+                                 "foreignKeys":  {
+                                                     "tasks_bot_id_bots_id_fk":  {
+                                                                                     "name":  "tasks_bot_id_bots_id_fk",
+                                                                                     "tableFrom":  "tasks",
+                                                                                     "tableTo":  "bots",
+                                                                                     "columnsFrom":  [
+                                                                                                         "bot_id"
+                                                                                                     ],
+                                                                                     "columnsTo":  [
+                                                                                                       "id"
+                                                                                                   ],
+                                                                                     "onDelete":  "cascade",
+                                                                                     "onUpdate":  "no action"
+                                                                                 }
+                                                 },
+                                 "compositePrimaryKeys":  {
+
+                                                          },
+                                 "uniqueConstraints":  {
+
+                                                       },
+                                 "checkConstraints":  {
+
+                                                      }
+                             },
+                   "turn_queue":  {
+                                      "name":  "turn_queue",
+                                      "columns":  {
+                                                      "id":  {
+                                                                 "name":  "id",
+                                                                 "type":  "text",
+                                                                 "primaryKey":  true,
+                                                                 "notNull":  true,
+                                                                 "autoincrement":  false
+                                                             },
+                                                      "bot_id":  {
+                                                                     "name":  "bot_id",
+                                                                     "type":  "text",
+                                                                     "primaryKey":  false,
+                                                                     "notNull":  true,
+                                                                     "autoincrement":  false
+                                                                 },
+                                                      "position":  {
+                                                                       "name":  "position",
+                                                                       "type":  "integer",
+                                                                       "primaryKey":  false,
+                                                                       "notNull":  true,
+                                                                       "autoincrement":  false
+                                                                   },
+                                                      "message_id":  {
+                                                                         "name":  "message_id",
+                                                                         "type":  "text",
+                                                                         "primaryKey":  false,
+                                                                         "notNull":  false,
+                                                                         "autoincrement":  false
+                                                                     },
+                                                      "text":  {
+                                                                   "name":  "text",
+                                                                   "type":  "text",
+                                                                   "primaryKey":  false,
+                                                                   "notNull":  true,
+                                                                   "autoincrement":  false
+                                                               },
+                                                      "uploads":  {
+                                                                      "name":  "uploads",
+                                                                      "type":  "text",
+                                                                      "primaryKey":  false,
+                                                                      "notNull":  true,
+                                                                      "autoincrement":  false
+                                                                  },
+                                                      "source":  {
+                                                                     "name":  "source",
+                                                                     "type":  "text",
+                                                                     "primaryKey":  false,
+                                                                     "notNull":  true,
+                                                                     "autoincrement":  false,
+                                                                     "default":  "\u0027chat\u0027"
+                                                                 }
+                                                  },
+                                      "indexes":  {
+                                                      "turn_queue_bot_id":  {
+                                                                                "name":  "turn_queue_bot_id",
+                                                                                "columns":  [
+                                                                                                "bot_id"
+                                                                                            ],
+                                                                                "isUnique":  false
+                                                                            }
+                                                  },
+                                      "foreignKeys":  {
+                                                          "turn_queue_bot_id_bots_id_fk":  {
+                                                                                               "name":  "turn_queue_bot_id_bots_id_fk",
+                                                                                               "tableFrom":  "turn_queue",
+                                                                                               "tableTo":  "bots",
+                                                                                               "columnsFrom":  [
+                                                                                                                   "bot_id"
+                                                                                                               ],
+                                                                                               "columnsTo":  [
+                                                                                                                 "id"
+                                                                                                             ],
+                                                                                               "onDelete":  "cascade",
+                                                                                               "onUpdate":  "no action"
+                                                                                           }
+                                                      },
+                                      "compositePrimaryKeys":  {
+
+                                                               },
+                                      "uniqueConstraints":  {
+
+                                                            },
+                                      "checkConstraints":  {
+
+                                                           }
+                                  },
+                   "turn_waits":  {
+                                      "name":  "turn_waits",
+                                      "columns":  {
+                                                      "bot_id":  {
+                                                                     "name":  "bot_id",
+                                                                     "type":  "text",
+                                                                     "primaryKey":  true,
+                                                                     "notNull":  true,
+                                                                     "autoincrement":  false
+                                                                 },
+                                                      "resume_at":  {
+                                                                        "name":  "resume_at",
+                                                                        "type":  "integer",
+                                                                        "primaryKey":  false,
+                                                                        "notNull":  true,
+                                                                        "autoincrement":  false
+                                                                    }
+                                                  },
+                                      "indexes":  {
+
+                                                  },
+                                      "foreignKeys":  {
+                                                          "turn_waits_bot_id_bots_id_fk":  {
+                                                                                               "name":  "turn_waits_bot_id_bots_id_fk",
+                                                                                               "tableFrom":  "turn_waits",
+                                                                                               "tableTo":  "bots",
+                                                                                               "columnsFrom":  [
+                                                                                                                   "bot_id"
+                                                                                                               ],
+                                                                                               "columnsTo":  [
+                                                                                                                 "id"
+                                                                                                             ],
+                                                                                               "onDelete":  "cascade",
+                                                                                               "onUpdate":  "no action"
+                                                                                           }
+                                                      },
+                                      "compositePrimaryKeys":  {
+
+                                                               },
+                                      "uniqueConstraints":  {
+
+                                                            },
+                                      "checkConstraints":  {
+
+                                                           }
+                                  },
+                   "watches":  {
+                                   "name":  "watches",
+                                   "columns":  {
+                                                   "id":  {
+                                                              "name":  "id",
+                                                              "type":  "text",
+                                                              "primaryKey":  true,
+                                                              "notNull":  true,
+                                                              "autoincrement":  false
+                                                          },
+                                                   "bot_id":  {
+                                                                  "name":  "bot_id",
+                                                                  "type":  "text",
+                                                                  "primaryKey":  false,
+                                                                  "notNull":  true,
+                                                                  "autoincrement":  false
+                                                              },
+                                                   "name":  {
+                                                                "name":  "name",
+                                                                "type":  "text",
+                                                                "primaryKey":  false,
+                                                                "notNull":  true,
+                                                                "autoincrement":  false
+                                                            },
+                                                   "url":  {
+                                                               "name":  "url",
+                                                               "type":  "text",
+                                                               "primaryKey":  false,
+                                                               "notNull":  true,
+                                                               "autoincrement":  false
+                                                           },
+                                                   "interval_minutes":  {
+                                                                            "name":  "interval_minutes",
+                                                                            "type":  "integer",
+                                                                            "primaryKey":  false,
+                                                                            "notNull":  true,
+                                                                            "autoincrement":  false
+                                                                        },
+                                                   "keyword":  {
+                                                                   "name":  "keyword",
+                                                                   "type":  "text",
+                                                                   "primaryKey":  false,
+                                                                   "notNull":  false,
+                                                                   "autoincrement":  false
+                                                               },
+                                                   "text_hash":  {
+                                                                     "name":  "text_hash",
+                                                                     "type":  "text",
+                                                                     "primaryKey":  false,
+                                                                     "notNull":  false,
+                                                                     "autoincrement":  false
+                                                                 },
+                                                   "last_text":  {
+                                                                     "name":  "last_text",
+                                                                     "type":  "text",
+                                                                     "primaryKey":  false,
+                                                                     "notNull":  false,
+                                                                     "autoincrement":  false
+                                                                 },
+                                                   "next_check_at":  {
+                                                                         "name":  "next_check_at",
+                                                                         "type":  "integer",
+                                                                         "primaryKey":  false,
+                                                                         "notNull":  true,
+                                                                         "autoincrement":  false
+                                                                     },
+                                                   "last_checked_at":  {
+                                                                           "name":  "last_checked_at",
+                                                                           "type":  "integer",
+                                                                           "primaryKey":  false,
+                                                                           "notNull":  false,
+                                                                           "autoincrement":  false
+                                                                       },
+                                                   "created_at":  {
+                                                                      "name":  "created_at",
+                                                                      "type":  "integer",
+                                                                      "primaryKey":  false,
+                                                                      "notNull":  true,
+                                                                      "autoincrement":  false
+                                                                  }
+                                               },
+                                   "indexes":  {
+                                                   "watches_bot_id":  {
+                                                                          "name":  "watches_bot_id",
+                                                                          "columns":  [
+                                                                                          "bot_id"
+                                                                                      ],
+                                                                          "isUnique":  false
+                                                                      }
+                                               },
+                                   "foreignKeys":  {
+                                                       "watches_bot_id_bots_id_fk":  {
+                                                                                         "name":  "watches_bot_id_bots_id_fk",
+                                                                                         "tableFrom":  "watches",
+                                                                                         "tableTo":  "bots",
+                                                                                         "columnsFrom":  [
+                                                                                                             "bot_id"
+                                                                                                         ],
+                                                                                         "columnsTo":  [
+                                                                                                           "id"
+                                                                                                       ],
+                                                                                         "onDelete":  "cascade",
+                                                                                         "onUpdate":  "no action"
+                                                                                     }
+                                                   },
+                                   "compositePrimaryKeys":  {
+
+                                                            },
+                                   "uniqueConstraints":  {
+
+                                                         },
+                                   "checkConstraints":  {
+
+                                                        }
+                               },
+                   "webhooks":  {
+                                    "name":  "webhooks",
+                                    "columns":  {
+                                                    "id":  {
+                                                               "name":  "id",
+                                                               "type":  "text",
+                                                               "primaryKey":  true,
+                                                               "notNull":  true,
+                                                               "autoincrement":  false
+                                                           },
+                                                    "bot_id":  {
+                                                                   "name":  "bot_id",
+                                                                   "type":  "text",
+                                                                   "primaryKey":  false,
+                                                                   "notNull":  true,
+                                                                   "autoincrement":  false
+                                                               },
+                                                    "name":  {
+                                                                 "name":  "name",
+                                                                 "type":  "text",
+                                                                 "primaryKey":  false,
+                                                                 "notNull":  true,
+                                                                 "autoincrement":  false
+                                                             },
+                                                    "token_hash":  {
+                                                                       "name":  "token_hash",
+                                                                       "type":  "text",
+                                                                       "primaryKey":  false,
+                                                                       "notNull":  true,
+                                                                       "autoincrement":  false
+                                                                   },
+                                                    "created_at":  {
+                                                                       "name":  "created_at",
+                                                                       "type":  "integer",
+                                                                       "primaryKey":  false,
+                                                                       "notNull":  true,
+                                                                       "autoincrement":  false
+                                                                   }
+                                                },
+                                    "indexes":  {
+                                                    "webhooks_token_hash_unique":  {
+                                                                                       "name":  "webhooks_token_hash_unique",
+                                                                                       "columns":  [
+                                                                                                       "token_hash"
+                                                                                                   ],
+                                                                                       "isUnique":  true
+                                                                                   },
+                                                    "webhooks_bot_id":  {
+                                                                            "name":  "webhooks_bot_id",
+                                                                            "columns":  [
+                                                                                            "bot_id"
+                                                                                        ],
+                                                                            "isUnique":  false
+                                                                        }
+                                                },
+                                    "foreignKeys":  {
+                                                        "webhooks_bot_id_bots_id_fk":  {
+                                                                                           "name":  "webhooks_bot_id_bots_id_fk",
+                                                                                           "tableFrom":  "webhooks",
+                                                                                           "tableTo":  "bots",
+                                                                                           "columnsFrom":  [
+                                                                                                               "bot_id"
+                                                                                                           ],
+                                                                                           "columnsTo":  [
+                                                                                                             "id"
+                                                                                                         ],
+                                                                                           "onDelete":  "cascade",
+                                                                                           "onUpdate":  "no action"
+                                                                                       }
+                                                    },
+                                    "compositePrimaryKeys":  {
+
+                                                             },
+                                    "uniqueConstraints":  {
+
+                                                          },
+                                    "checkConstraints":  {
+
+                                                         }
+                                }
+               },
+    "views":  {
+
+              },
+    "enums":  {
+
+              },
+    "_meta":  {
+                  "schemas":  {
+
+                              },
+                  "tables":  {
+
+                             },
+                  "columns":  {
+
+                              }
+              },
+    "internal":  {
+                     "indexes":  {
+                                     "channels_name_lower":  {
+                                                                 "columns":  {
+                                                                                 "lower(\"name\")":  {
+                                                                                                         "isExpression":  true
+                                                                                                     }
+                                                                             }
+                                                             }
+                                 }
+                 }
 }

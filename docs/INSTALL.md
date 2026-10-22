@@ -56,6 +56,11 @@ read your files, run commands and use your Python, with the same rights you
 have. CloudBot prints a warning at start. The safe way is Docker, or a separate
 user set in `CLOUDBOT_AGENT_USER`.
 
+A local run offers Claude, ChatGPT when `CODEX_PATH` is set, and each other
+provider whose CLI path is set in `CLOUDBOT_<PROVIDER>_PATH`, such as
+`CLOUDBOT_GEMINI_PATH=/usr/local/bin/gemini`. Their sign-ins stay under the
+data folder, never in your own CLI config.
+
 ## Your own domain
 
 Point a DNS `A` record for your domain to the server IP, then install with the
@@ -79,12 +84,13 @@ Four volumes keep your data across updates:
 | Volume | Holds |
 |---|---|
 | `cloudbot-data` | The database and the vault |
-| `cloudbot-home` | The bot home: the Claude login and sessions |
+| `cloudbot-home` | The bot home: the sign-in and sessions of every provider CLI |
 | `cloudbot-workspaces` | Each bot's workspace, with its memory in `CLAUDE.md` |
 | `cloudbot-uploads` | Files attached in chat. The bot can read them but cannot change them |
 
-The CLI comes with the image and does not update itself, so a new image replaces it.
-`docker compose down -v` deletes all four volumes, including the Claude login.
+The provider CLIs come with the image and do not update themselves, so a new
+image replaces them. The sign-ins stay in `cloudbot-home`.
+`docker compose down -v` deletes all four volumes, including every sign-in.
 
 ## Commands
 

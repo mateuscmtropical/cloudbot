@@ -30,11 +30,18 @@ import { BROWSER_ALLOW_TOOL_FULL_NAMES, createBrowserAllowTools } from '../deskt
 import type { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
 import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
+import { EMAIL_PASSWORD_SECRET_NAME } from '../email/EmailPasswordStore.ts';
+import type { EmailAccountService } from '../email/EmailAccountService.ts';
+import type { SmtpEmailSender } from '../email/SmtpEmailSender.ts';
+import { createEmailTools } from '../email/createEmailTools.ts';
+import { EMAIL_STATUS_TOOL_NAME, EMAIL_STATUS_TOOL_ONLY_FULL_NAMES, EMAIL_TOOL_FULL_NAMES } from '../email/emailToolNames.ts';
 import { ROUTINE_TOOL_FULL_NAMES, createRoutineTools } from '../routines/createRoutineTools.ts';
 import { TASK_TOOL_FULL_NAMES, createTaskTools, describeBlockedNotice } from '../tasks/createTaskTools.ts';
 import { INTEGRATION_TOOL_FULL_NAMES, createIntegrationTools } from '../integrations/createIntegrationTools.ts';
 import type { IntegrationService } from '../integrations/IntegrationService.ts';
 import { MODELS_SET_TOOL_FULL_NAME, createModelTools } from '../models/createModelTools.ts';
+import { PROVIDER_TOOL_FULL_NAMES, createProviderTools } from '../providers/createProviderTools.ts';
+import type { ProviderToolDependencies } from '../providers/createProviderTools.ts';
 import { LIMITS_SET_TOOL_FULL_NAME, createLimitTools } from '../limits/createLimitTools.ts';
 import { TurnDeadline } from '../limits/TurnDeadline.ts';
 import { STALL_MESSAGE, StallWatchdog } from './StallWatchdog.ts';
@@ -76,11 +83,17 @@ import { findNameClash } from '../channels/channelCommands.ts';
 import { createStreamMasker, maskSensitiveNumbers } from '../sensitive/sensitiveNumbers.ts';
 import type { StreamMasker } from '../sensitive/sensitiveNumbers.ts';
 import { CHANNEL_TOOL_FULL_NAMES, createChannelTools } from '../channels/createChannelTools.ts';
-import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_SHAPE, BOT_IMPORT_TOOL_FULL_NAME, createBotExportTool, createBotImportTool } from '../bots/createBotTemplateTools.ts';
+import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_SHAPE, BOT_IMPORT_TEXT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME, createBotExportTool, createBotImportTextTool, createBotImportTool } from '../bots/createBotTemplateTools.ts';
 import type { ExportedTemplate, ImportedBot } from '../bots/createBotTemplateTools.ts';
+import { describeBotImportDraft, parseBotImportDraft, readExternalBotFile } from '../bots/externalBotImport.ts';
+import type { BotImportDraft } from '../bots/externalBotImport.ts';
 import { buildBotTemplate, describeBotTemplate, parseBotTemplate, serializeBotTemplate, templateFileName } from '../bots/botTemplate.ts';
 import type { BotTemplate } from '../bots/botTemplate.ts';
+import { GALLERY_INSTALL_SHAPE, createGalleryInstallTool, createGalleryListTool, createGalleryShareTool, describeGalleryListing, galleryToolFullNames } from '../bots/createGalleryTools.ts';
+import { GalleryError, digestOf } from '../bots/templateGallery.ts';
+import type { FetchedTemplate, TemplateGallery } from '../bots/templateGallery.ts';
 import { readBotTemplateFile } from '../bots/readBotTemplateFile.ts';
+import { readGithubToken } from '../github/githubRouting.ts';
 import type { BotCreateInput } from '../bots/createBotTool.ts';
 import { BOT_DELETE_TOOL_FULL_NAME, createBotDeleteTool } from '../bots/createBotDeleteTool.ts';
 import { RULE_LIST_TOOL_FULL_NAME, RULE_TOOL_FULL_NAMES, createRuleTools } from '../rules/createRuleTools.ts';
@@ -129,7 +142,7 @@ type RefusedDeleteOutcome = Exclude<DeleteBotOutcome, 'deleted'>;
 const DELETE_REFUSAL_TEXT: Record<RefusedDeleteOutcome, string> = {
     missing: 'This bot no longer exists.',
     last: 'This is the last bot, so it cannot be deleted.',
-    setup: 'The Claude setup runs in this bot\'s chat, so this bot cannot be deleted until the setup is done.',
+    setup: 'The setup runs in this bot\'s chat, so this bot cannot be deleted until the setup is done.',
     stopping: 'This bot did not stop in time, so it was not deleted. Try again in a moment.',
     deleting: 'This bot is already being deleted.',
     manager: 'This bot manages a channel. Make another member the manager of that channel first, then delete this bot.',
@@ -175,6 +188,12 @@ interface ChatServiceOptions {
     browser?: BrowserControl | undefined;
     // Where the secrets the bot asks for are kept. Without it the bot cannot ask for one.
     botSecrets?: BotSecrets | undefined;
+    templateGallery?: TemplateGallery | undefined;
+    // Lets a bot list the AI providers, connect one and switch its own. Unset leaves the tools out.
+    providerTools?: ProviderToolDependencies | undefined;
+    emailPasswordStore?: Pick<EmailAccountService, 'savePassword'> | undefined;
+    emailAccountService?: EmailAccountService | undefined;
+    emailSender?: SmtpEmailSender | undefined;
     // Who holds the screen. With a browser it gives the bot the request_screen tool.
     screen?: ScreenHolder | undefined;
     // The owner's rules for each bot. Without it turns run without rules.
@@ -366,6 +385,36 @@ function toChatMessage(storedMessage: Message): ChatMessage {
     };
 }
 
+// The export file with the name of its bot. The gallery shares the same text the owner sees in the card.
+interface BuiltExport {
+    name: string;
+    fileName: string;
+    text: string;
+}
+
+// A share card longer than this would not show the owner the whole file, so the share is refused.
+const MAX_SHARE_CARD_CHARS = 12000;
+const NO_GITHUB_FOR_SHARE_MESSAGE = 'Sharing needs GitHub connected for this bot. Ask the owner to save a GitHub token as GITHUB_TOKEN in the secure form, with the site https://github.com, then ask again.';
+const CARD_EXPIRED_MESSAGE = 'The card expired, ask again.';
+const CARD_CHANGED_MESSAGE = 'The template changed after the owner was shown it. Ask again.';
+const CARD_WAITING_MESSAGE = 'An earlier card for this shows other content and is still open. Wait for the owner to answer it, or ask again in ten minutes.';
+
+// Each card for a gallery install or share has its own key, so a card for one never answers for another.
+function galleryInstallKey(botId: string, file: string): string {
+    return ['install', botId, file].join('\n');
+}
+
+function galleryShareKey(botId: string): string {
+    return ['share', botId].join('\n');
+}
+
+function describeGalleryError(error: unknown): string {
+    if (error instanceof GalleryError) {
+        return error.message;
+    }
+
+    return 'The template gallery could not be read right now. Try again later.';
+}
 // How long a template card waits for the owner's answer before its file can no longer be imported.
 const TEMPLATE_CARD_TTL_MS = 10 * 60 * 1000;
 
@@ -561,6 +610,11 @@ class ChatService {
     private readonly maxShareBytes: number;
     private readonly browser: BrowserControl | undefined;
     private readonly botSecrets: BotSecrets | undefined;
+    private readonly templateGallery: TemplateGallery | undefined;
+    private readonly providerTools: ProviderToolDependencies | undefined;
+    private readonly emailPasswordStore: Pick<EmailAccountService, 'savePassword'> | undefined;
+    private readonly emailAccountService: EmailAccountService | undefined;
+    private readonly emailSender: SmtpEmailSender | undefined;
     private readonly screen: ScreenHolder | undefined;
     // Bot secret forms with an answer in progress, by message id.
     private readonly answeringForms = new Set<string>();
@@ -610,6 +664,7 @@ class ChatService {
     private readonly pendingUploads = new Map<string, SavedUpload[]>();
     // Messages waiting for their turn, in run order. The database holds the same rows.
     private readonly queuedTurns = new Map<string, QueuedTurn[]>();
+    private readonly activeTurnMessageIds = new Map<string, string>();
     // A usage limit wait per bot. Its timer starts the queue again at the reset time.
     private readonly usageWaitTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -626,6 +681,11 @@ class ChatService {
         this.maxShareBytes = options.maxShareBytes ?? readMaxShareBytes();
         this.browser = options.browser;
         this.botSecrets = options.botSecrets;
+        this.templateGallery = options.templateGallery;
+        this.providerTools = options.providerTools;
+        this.emailPasswordStore = options.emailPasswordStore;
+        this.emailAccountService = options.emailAccountService;
+        this.emailSender = options.emailSender;
         this.screen = options.screen;
         this.ruleStore = options.ruleStore;
         this.skillStore = options.skillStore;
@@ -765,6 +825,16 @@ class ChatService {
 
     // Exports the bot as a template file, shared in the chat. Only the template's fields go into it.
     async exportBotFromTool(botId: string): Promise<ExportedTemplate> {
+        const exported = await this.buildExport(botId);
+        const bytes = Buffer.from(exported.text, 'utf8');
+
+        await this.storeSharedBytes(botId, exported.fileName, 'application/json', bytes);
+
+        return { name: exported.name };
+    }
+
+    // The bot's template as the file text, checked the way an import checks it. Nothing else of the bot is read.
+    private async buildExport(botId: string): Promise<BuiltExport> {
         const bot = await this.botStore.getById(botId);
 
         if (bot === undefined) {
@@ -789,12 +859,7 @@ class ChatService {
             throw new Error(`This bot cannot be exported. ${check.reason}`);
         }
 
-        const fileName = templateFileName(bot.name);
-        const bytes = Buffer.from(text, 'utf8');
-
-        await this.storeSharedBytes(botId, fileName, 'application/json', bytes);
-
-        return { name: bot.name };
+        return { name: bot.name, fileName: templateFileName(bot.name), text };
     }
 
     // Creates a bot from a template the owner approved. The file must match a card shown for it in the last few minutes.
@@ -802,23 +867,38 @@ class ChatService {
         const uploadDir = this.uploadDirFor(botId);
         const read = await readBotTemplateFile(filePath, uploadDir);
 
-        if (!read.ok) {
-            throw new Error(read.reason);
+        if (read.ok) {
+            const isApproved = this.takePendingTemplateCard(botId, filePath, read.digest);
+
+            if (!isApproved) {
+                throw new Error('The template file changed after the owner was shown it. Attach it again and ask.');
+            }
+
+            return this.createBotFromTemplate(read.template);
         }
 
-        const isApproved = this.takePendingTemplateCard(botId, filePath, read.digest);
+        const externalRead = await readExternalBotFile(filePath, uploadDir);
+
+        if (!externalRead.ok) {
+            throw new Error(externalRead.reason);
+        }
+
+        const isApproved = this.takePendingTemplateCard(botId, filePath, externalRead.digest);
 
         if (!isApproved) {
-            throw new Error('The template file changed after the owner was shown it. Attach it again and ask.');
+            throw new Error('The imported file changed after the owner was shown its draft. Attach it again and ask.');
         }
 
-        const template = read.template;
+        return this.createBotFromImportTool(externalRead.draft);
+    }
+
+    // Makes the bot and its rules and routines. A half made bot is removed, so it never starts without what the owner approved.
+    private async createBotFromTemplate(template: BotTemplate): Promise<ImportedBot> {
         const bot = await this.insertBot({ name: template.name, title: template.title, description: template.description });
 
         try {
             await this.applyTemplate(bot.id, template);
         } catch (error: unknown) {
-            // A half made bot would start without what the owner approved, so it is removed.
             await this.botStore.delete(bot.id);
 
             throw error;
@@ -840,13 +920,201 @@ class ChatService {
         const uploadDir = this.uploadDirFor(botId);
         const read = await readBotTemplateFile(parsed.data.path, uploadDir);
 
-        if (!read.ok) {
-            return { decision: 'deny', reason: read.reason };
+        if (read.ok) {
+            this.addPendingTemplateCard(botId, parsed.data.path, read.digest);
+
+            return { decision: 'ask', summary: 'Create a bot from a template.', detail: describeBotTemplate(read.template) };
         }
 
-        this.addPendingTemplateCard(botId, parsed.data.path, read.digest);
+        const externalRead = await readExternalBotFile(parsed.data.path, uploadDir);
 
-        return { decision: 'ask', summary: 'Create a bot from a template.', detail: describeBotTemplate(read.template) };
+        if (!externalRead.ok) {
+            return { decision: 'deny', reason: externalRead.reason };
+        }
+
+        const detail = describeBotImportDraft(externalRead.draft);
+
+        if (detail === undefined) {
+            return { decision: 'deny', reason: 'The imported bot draft could not be shown in full.' };
+        }
+
+        this.addPendingTemplateCard(botId, parsed.data.path, externalRead.digest);
+
+        return { decision: 'ask', summary: 'Create a bot from imported instructions.', detail };
+    }
+
+    private requireGallery(): TemplateGallery {
+        if (this.templateGallery === undefined) {
+            throw new Error('The template gallery is not set up on this CloudBot.');
+        }
+
+        return this.templateGallery;
+    }
+
+    // The gallery's token for sharing is the bot's own GitHub token. A token saved for another site counts as none.
+    private galleryToken(botId: string): string | undefined {
+        if (this.botSecrets === undefined) {
+            return undefined;
+        }
+
+        try {
+            return readGithubToken(this.botSecrets, botId);
+        } catch {
+            return undefined;
+        }
+    }
+
+    // Tools of the gallery. Listing needs no owner. Install and share wait for the owner, so they need the approval gate.
+    private galleryTools(botId: string): CloudbotTool[] {
+        if (this.templateGallery === undefined) {
+            return [];
+        }
+
+        const listTool = createGalleryListTool(() => this.listGallery());
+
+        if (this.approvals === undefined) {
+            return [listTool];
+        }
+
+        const installTool = createGalleryInstallTool(file => this.installGalleryTemplate(botId, file));
+
+        if (this.botSecrets === undefined) {
+            return [listTool, installTool];
+        }
+
+        const shareTool = createGalleryShareTool(() => this.shareGalleryTemplate(botId));
+
+        return [listTool, installTool, shareTool];
+    }
+
+    private galleryToolNames(): string[] {
+        if (this.templateGallery === undefined) {
+            return [];
+        }
+
+        return galleryToolFullNames({ canAskOwner: this.approvals !== undefined, canShare: this.approvals !== undefined && this.botSecrets !== undefined });
+    }
+
+    private async listGallery(): Promise<string> {
+        const gallery = this.requireGallery();
+        const entries = await gallery.listTemplates();
+        const repoName = gallery.repository();
+
+        return describeGalleryListing(repoName, entries);
+    }
+
+    // The install card shows the whole template from the gallery. Its digest binds the install to these bytes.
+    async describeGalleryInstall(botId: string, input: unknown): Promise<ToolCallVerdict> {
+        const parsed = z.object(GALLERY_INSTALL_SHAPE)
+            .safeParse(input);
+
+        if (!parsed.success) {
+            return { decision: 'deny', reason: 'The gallery file name is not valid. Use a file name from the gallery list.' };
+        }
+
+        const gallery = this.requireGallery();
+        let fetched: FetchedTemplate;
+
+        try {
+            fetched = await gallery.fetchTemplate(parsed.data.file);
+        } catch (error: unknown) {
+            return { decision: 'deny', reason: describeGalleryError(error) };
+        }
+
+        const installKey = galleryInstallKey(botId, fetched.file);
+
+        if (!gallery.rememberCard(installKey, fetched.digest)) {
+            return { decision: 'deny', reason: CARD_WAITING_MESSAGE };
+        }
+
+        const repoName = gallery.repository();
+        const repoText = JSON.stringify(repoName);
+        const fileText = JSON.stringify(fetched.file);
+        const templateText = describeBotTemplate(fetched.template);
+
+        return { decision: 'ask', summary: 'Create a bot from a gallery template.', detail: `From the gallery ${repoText}, file ${fileText}.\n\n${templateText}` };
+    }
+
+    // Creates the bot only when the template still matches the card the owner saw.
+    async installGalleryTemplate(botId: string, file: string): Promise<ImportedBot> {
+        const gallery = this.requireGallery();
+        const fetched = await gallery.fetchTemplate(file);
+        const installKey = galleryInstallKey(botId, fetched.file);
+        const check = gallery.takeCard(installKey, fetched.digest);
+
+        if (check !== 'approved') {
+            throw new Error(check === 'expired' ? CARD_EXPIRED_MESSAGE : CARD_CHANGED_MESSAGE);
+        }
+
+        return this.createBotFromTemplate(fetched.template);
+    }
+
+    // The share card shows the exact file that the pull request adds. Without a GitHub token nothing is asked.
+    async describeGalleryShare(botId: string): Promise<ToolCallVerdict> {
+        if (this.galleryToken(botId) === undefined) {
+            return { decision: 'deny', reason: NO_GITHUB_FOR_SHARE_MESSAGE };
+        }
+
+        let exported: BuiltExport;
+
+        try {
+            exported = await this.buildExport(botId);
+        } catch (error: unknown) {
+            return { decision: 'deny', reason: describeError(error) };
+        }
+
+        if (exported.text.length > MAX_SHARE_CARD_CHARS) {
+            return { decision: 'deny', reason: 'The template is too long to show the owner whole, so it was not shared.' };
+        }
+
+        const gallery = this.requireGallery();
+        let fileExists: boolean;
+
+        try {
+            fileExists = await gallery.fileExists(exported.fileName);
+        } catch (error: unknown) {
+            return { decision: 'deny', reason: describeGalleryError(error) };
+        }
+
+        const digest = digestOf(exported.text);
+        const shareKey = galleryShareKey(botId);
+
+        if (!gallery.rememberCard(shareKey, digest)) {
+            return { decision: 'deny', reason: CARD_WAITING_MESSAGE };
+        }
+
+        const repoName = gallery.repository();
+        const replaceNote = fileExists ? ' (replaces an existing file)' : '';
+        const detail = [
+            `Repository: ${repoName}`,
+            `Pull request from your fork of ${repoName}. It also adds the file to templates/index.json.`,
+            `File: templates/${exported.fileName}${replaceNote}`,
+            '',
+            exported.text,
+        ].join('\n');
+
+        return { decision: 'ask', summary: 'Open a pull request to the template gallery.', detail };
+    }
+
+    // Opens the pull request only for the file the owner approved. A changed file needs a new card.
+    async shareGalleryTemplate(botId: string): Promise<string> {
+        const token = this.galleryToken(botId);
+
+        if (token === undefined) {
+            throw new Error(NO_GITHUB_FOR_SHARE_MESSAGE);
+        }
+
+        const exported = await this.buildExport(botId);
+        const gallery = this.requireGallery();
+        const digest = digestOf(exported.text);
+        const shareKey = galleryShareKey(botId);
+        const check = gallery.takeCard(shareKey, digest);
+
+        if (check !== 'approved') {
+            throw new Error(check === 'expired' ? CARD_EXPIRED_MESSAGE : CARD_CHANGED_MESSAGE);
+        }
+
+        return gallery.openPullRequest({ token, fileName: exported.fileName, text: exported.text, botName: exported.name });
     }
 
     // A card waits for the owner for ten minutes. A newer card for the same path replaces the older one.
@@ -1184,6 +1452,27 @@ class ChatService {
         return this.summarizeBot(bot);
     }
 
+    async createBotFromImportTool(input: BotImportDraft): Promise<ImportedBot> {
+        const parsed = parseBotImportDraft(input);
+
+        if (!parsed.ok) {
+            throw new Error(parsed.reason);
+        }
+
+        const draft = parsed.draft;
+        const bot = await this.insertBot({ name: draft.name, title: draft.title, description: draft.description });
+
+        try {
+            await this.writeFirstMemory(bot.id, `Instructions imported from another platform and approved by the owner:\n\n${draft.instructions}\n`);
+        } catch (error: unknown) {
+            await this.botStore.delete(bot.id);
+
+            throw error;
+        }
+
+        return { name: bot.name };
+    }
+
     private async insertBot(profile: BotProfile): Promise<Bot> {
         return this.botStore.create(profile);
     }
@@ -1339,7 +1628,7 @@ class ChatService {
             return 'manager';
         }
 
-        // The Claude setup runs in the first bot's chat, so that bot stays until the setup is done.
+        // The setup runs in the first bot's chat, so that bot stays until the setup is done.
         if (this.setup !== undefined && this.setup.isSetupBot(botId) && !this.setup.isDone()) {
             return 'setup';
         }
@@ -1435,6 +1724,12 @@ class ChatService {
         this.answeringForms.add(messageId);
 
         try {
+            const emailPasswordForm = action === 'secret' ? await this.findEmailPasswordForm(botId, messageId) : undefined;
+
+            if (emailPasswordForm !== undefined) {
+                return await this.saveEmailPassword(botId, messageId, emailPasswordForm, value);
+            }
+
             const botSecretForm = action === 'secret' ? await this.findBotSecretForm(botId, messageId) : undefined;
 
             if (botSecretForm !== undefined) {
@@ -1618,6 +1913,22 @@ class ChatService {
         return body.kind === 'secureForm' && body.site !== undefined ? body : undefined;
     }
 
+    private async findEmailPasswordForm(botId: string, messageId: string): Promise<SecureFormBody | undefined> {
+        const stored = await this.messageStore.getById(messageId);
+
+        if (stored === undefined || stored.botId !== botId) {
+            return undefined;
+        }
+
+        const body = stored.content as MessageBody;
+
+        return body.kind === 'secureForm'
+            && body.site === undefined
+            && body.secretName === EMAIL_PASSWORD_SECRET_NAME
+            ? body
+            : undefined;
+    }
+
     // The value goes only to the vault. The form closes and a short note says what was saved, without the value.
     private async saveBotSecret(botId: string, messageId: string, form: SecureFormBody, value: string): Promise<ChatMessage> {
         if (form.submitted) {
@@ -1644,6 +1955,47 @@ class ChatService {
         }
 
         return message;
+    }
+
+    private async saveEmailPassword(botId: string, messageId: string, form: SecureFormBody, value: string): Promise<ChatMessage> {
+        if (form.submitted) {
+            throw new SetupAnswerError('This form is already answered.');
+        }
+
+        if (this.emailPasswordStore === undefined) {
+            throw new SetupAnswerError('Email passwords cannot be saved here.');
+        }
+
+        this.emailPasswordStore.savePassword(botId, value);
+
+        const closedForm: SecureFormBody = { ...form, submitted: true };
+        const message = await this.updateSetupMessage(messageId, closedForm);
+
+        try {
+            await this.saveAndPublish(botId, 'system', {
+                kind: 'text',
+                text: 'Saved the mailbox password in the vault. Tell the bot to continue.',
+            });
+        } catch {
+            console.error('Could not post the note for a saved mailbox password.');
+        }
+
+        return message;
+    }
+
+    async postEmailPasswordForm(botId: string): Promise<ChatMessage> {
+        if (this.emailPasswordStore === undefined) {
+            throw new Error('Email password storage is not configured.');
+        }
+
+        const body: SecureFormBody = {
+            kind: 'secureForm',
+            prompt: 'Enter the bot mailbox password. It goes directly to the vault and is never shown in chat.',
+            secretName: EMAIL_PASSWORD_SECRET_NAME,
+            submitted: false,
+        };
+
+        return this.saveAndPublish(botId, 'assistant', body);
     }
 
     async postSetupMessage(botId: string, body: MessageBody): Promise<ChatMessage> {
@@ -1688,7 +2040,7 @@ class ChatService {
 
     // A message sent while the bot is busy is saved as queued and runs after the work ahead of it.
     // The source only picks the model of the turn. Routine messages pass 'routine'.
-    async sendMessage(botId: string, text: string, source: TurnSource = 'chat', handoff?: BotHandoffSource): Promise<ChatMessage | undefined> {
+    async sendMessage(botId: string, text: string, source: TurnSource = 'chat', handoff?: BotHandoffSource, emailDeliveryId?: string): Promise<ChatMessage | undefined> {
         if (this.deletingBots.has(botId)) {
             throw new BotDeletingError();
         }
@@ -1703,8 +2055,8 @@ class ChatService {
             const reminder = this.setup.isStarting()
                 ? 'CloudBot is starting. Try again in a moment.'
                 : this.setup.isSetupBot(botId)
-                    ? 'Finish connecting Claude above to start chatting.'
-                    : 'Finish connecting Claude in the CloudBot conversation to start chatting.';
+                    ? 'Finish connecting an AI provider above to start chatting.'
+                    : 'Finish connecting an AI provider in the CloudBot conversation to start chatting.';
 
             this.publishTurnState(botId);
 
@@ -1743,7 +2095,7 @@ class ChatService {
                 throw new BotDeletingError();
             }
 
-            userMessage = await this.saveAndPublish(botId, 'user', storedBody);
+            userMessage = await this.saveAndPublish(botId, 'user', storedBody, emailDeliveryId);
         } catch (error: unknown) {
             this.restoreUploads(botId, turnUploads);
 
@@ -1771,6 +2123,50 @@ class ChatService {
             });
 
         return userMessage;
+    }
+
+    async sendEmailTask(botId: string, text: string, emailDeliveryId: string): Promise<ChatMessage | undefined> {
+        const existing = await this.messageStore.getByEmailDeliveryId(emailDeliveryId);
+
+        if (existing === undefined) {
+            return this.sendMessage(botId, text, 'routine', undefined, emailDeliveryId);
+        }
+
+        if (existing.emailTaskHandledAt !== null) {
+            return toChatMessage(existing);
+        }
+
+        const queuedTurns = this.queuedTurns.get(botId) ?? [];
+        const isQueued = queuedTurns.some(turn => turn.messageId === existing.id);
+        const isRunning = this.activeTurnMessageIds.get(botId) === existing.id;
+
+        if (!isQueued && !isRunning) {
+            const body = existing.content as TextBody;
+
+            const turn: TurnInput = {
+                botId,
+                text: body.text,
+                uploads: [],
+                messageId: existing.id,
+                source: 'routine',
+            };
+
+            await this.enqueueTurn(botId, turn, false);
+            this.startNextQueuedTurn(botId)
+                .catch(reportBackgroundError);
+        }
+
+        return toChatMessage(existing);
+    }
+
+    async postEmailNotice(botId: string, text: string, emailDeliveryId: string): Promise<ChatMessage> {
+        const existing = await this.messageStore.getByEmailDeliveryId(emailDeliveryId);
+
+        if (existing !== undefined) {
+            return toChatMessage(existing);
+        }
+
+        return this.saveAndPublish(botId, 'system', { kind: 'text', text }, emailDeliveryId);
     }
 
     // The bot_send tool. Checks the target, the caps and the chain depth, then starts the target's turn like any message.
@@ -2501,6 +2897,7 @@ class ChatService {
         this.reviewSpend.delete(botId);
         this.screenWaitBots.delete(botId);
         this.runningTurns.delete(botId);
+        this.activeTurnMessageIds.delete(botId);
         this.releaseChannelRound(botId);
         this.handoffsSentByTurn.delete(botId);
         this.publishTurnState(botId);
@@ -2695,8 +3092,8 @@ class ChatService {
         this.publishTurnState(botId);
     }
 
-    private async saveAndPublish(botId: string, role: ChatRole, body: MessageBody): Promise<ChatMessage> {
-        const storedMessage = await this.messageStore.add({ botId, role, kind: body.kind, content: body });
+    private async saveAndPublish(botId: string, role: ChatRole, body: MessageBody, emailDeliveryId?: string): Promise<ChatMessage> {
+        const storedMessage = await this.messageStore.add({ botId, role, kind: body.kind, content: body, emailDeliveryId });
         const chatMessage = toChatMessage(storedMessage);
 
         this.publish(botId, { type: 'message', message: chatMessage });
@@ -2706,6 +3103,10 @@ class ChatService {
 
     private async runTurn(turn: TurnInput, abortController: AbortController): Promise<void> {
         const { botId, text, uploads } = turn;
+
+        if (turn.messageId !== undefined) {
+            this.activeTurnMessageIds.set(botId, turn.messageId);
+        }
 
         if (turn.channel !== undefined) {
             this.channelRunning.set(botId, turn.channel.roundId);
@@ -2756,10 +3157,21 @@ class ChatService {
                     );
             const screenTools = this.createScreenTools(botId);
             const secretTools = this.createSecretTools(botId);
+            const emailTools = this.emailAccountService === undefined || this.emailSender === undefined
+                ? []
+                : createEmailTools(botId, {
+                        accountService: this.emailAccountService,
+                        sender: this.emailSender,
+                        postPasswordForm: targetBotId => this.postEmailPasswordForm(targetBotId),
+                    });
+            const offeredEmailTools = this.approvals === undefined
+                ? emailTools.filter(emailTool => emailTool.name === EMAIL_STATUS_TOOL_NAME)
+                : emailTools;
             const routineTools = this.routineStore === undefined ? [] : createRoutineTools(this.routineStore, botId);
             const taskTools = this.taskStore === undefined ? [] : createTaskTools(this.taskStore, botId, { onBlocked: task => this.noticeBlockedTask(botId, task), onBoard: (cards, hiddenCount) => this.postTaskBoard(botId, cards, hiddenCount) });
             const integrationTools = this.integrationService === undefined ? [] : createIntegrationTools(this.integrationService, botId);
             const modelTools = this.modelStore === undefined ? [] : createModelTools(this.modelStore, botId);
+            const providerTools = this.providerTools === undefined ? [] : createProviderTools(this.providerTools, botId);
             const limitTools = this.limitStore === undefined ? [] : createLimitTools(this.limitStore, botId);
             const webhookTools = this.webhookTools(botId);
             const watchTools = this.watchStore === undefined ? [] : createWatchTools(this.watchStore, botId);
@@ -2776,7 +3188,7 @@ class ChatService {
                         ...this.channelTools(botId),
                     ];
             // Export is always offered. Import makes a bot, so it is offered only with the approval gate, like bot_create.
-            const templateTools = [createBotExportTool(() => this.exportBotFromTool(botId)), ...(this.approvals === undefined ? [] : [createBotImportTool(filePath => this.importBotFromTool(botId, filePath))])];
+            const templateTools = [createBotExportTool(() => this.exportBotFromTool(botId)), ...(this.approvals === undefined ? [] : [createBotImportTool(filePath => this.importBotFromTool(botId, filePath)), createBotImportTextTool(draft => this.createBotFromImportTool(draft))]), ...this.galleryTools(botId)];
             // The rule list is always offered. A rule change and a bot delete are offered only with the approval gate, since each waits for the owner.
             const ruleTools = this.ruleStore === undefined ? [] : createRuleTools(this.ruleStore, botId, this.approvals !== undefined);
             // Reading skills is always offered. A change waits for the owner, so it is offered only with the approval gate.
@@ -2792,7 +3204,7 @@ class ChatService {
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...taskTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -2844,6 +3256,7 @@ class ChatService {
                     hasHandoffs: this.approvals !== undefined,
                     hasLimits: this.limitStore !== undefined,
                     hasNotifications: this.notifyOwner !== undefined,
+                    hasEmail: this.emailAccountService !== undefined && this.emailSender !== undefined,
                     ownerRules,
                     skills,
                     canChangeSkills: this.approvals !== undefined,
@@ -2879,6 +3292,10 @@ class ChatService {
 
             try {
                 await this.settleTurnEnd(turn, turnState);
+
+                if (turn.source === 'routine' && turn.messageId !== undefined) {
+                    await this.messageStore.markEmailTaskHandled(turn.messageId);
+                }
 
                 // A turn that hit a limit reports from its continuation, so the reply is posted once.
                 if (turnState.limit === undefined) {
@@ -2992,7 +3409,9 @@ class ChatService {
     // Without the approval gate, only the profile tools, the export, the read-only rule list, the read-only skills and the notification switch are allowed up front. The rest need the gate.
     private allowedToolNames(): string[] {
         if (this.approvals === undefined) {
-            return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...this.ruleToolNamesAllowed(), ...this.skillToolNamesAllowed(), ...this.notificationToolNames()];
+            const emailToolNames = this.emailAccountService === undefined || this.emailSender === undefined ? [] : EMAIL_STATUS_TOOL_ONLY_FULL_NAMES;
+
+            return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...emailToolNames, ...this.ruleToolNamesAllowed(), ...this.skillToolNamesAllowed(), ...this.notificationToolNames()];
         }
 
         const browserToolNames = this.browser === undefined ? [] : BROWSER_TOOL_FULL_NAMES;
@@ -3006,6 +3425,7 @@ class ChatService {
         const taskToolNames = this.taskStore === undefined ? [] : TASK_TOOL_FULL_NAMES;
         const integrationToolNames = this.integrationService === undefined ? [] : INTEGRATION_TOOL_FULL_NAMES;
         const modelToolNames = this.modelStore === undefined ? [] : [MODELS_SET_TOOL_FULL_NAME];
+        const providerToolNames = this.providerTools === undefined ? [] : PROVIDER_TOOL_FULL_NAMES;
         const limitToolNames = this.limitStore === undefined ? [] : [LIMITS_SET_TOOL_FULL_NAME];
         const webhookToolNames = this.webhookStore === undefined ? [] : WEBHOOK_TOOL_FULL_NAMES;
         const watchToolNames = this.watchStore === undefined ? [] : WATCH_TOOL_FULL_NAMES;
@@ -3014,15 +3434,16 @@ class ChatService {
         const botCreateToolNames = [BOT_CREATE_TOOL_FULL_NAME];
         // Channel tools are offered with the approval gate, like bot_create. Removal and deletion wait for the owner there.
         const channelToolNames = this.channelStore === undefined ? [] : CHANNEL_TOOL_FULL_NAMES;
-        const templateToolNames = [BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME];
+        const templateToolNames = [BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME, BOT_IMPORT_TEXT_TOOL_FULL_NAME];
         // The rule list needs the rule store. A rule change needs the approval gate too, so without it only the list is allowed.
         const ruleToolNames = this.ruleToolNamesAllowed();
         const botDeleteToolNames = [BOT_DELETE_TOOL_FULL_NAME];
         // bot_send is offered only with the approval gate too, since the receiving turn is reviewed like any other.
         const botSendToolNames = [BOT_SEND_TOOL_FULL_NAME];
         const notificationToolNames = this.notificationToolNames();
+        const emailToolNames = this.emailAccountService === undefined || this.emailSender === undefined ? [] : EMAIL_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.

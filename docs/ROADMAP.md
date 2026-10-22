@@ -69,8 +69,10 @@ starts.
 ## v0.7: any AI
 
 - Use any AI provider, with a subscription or an API key. Each provider's own
-  official SDK is the default. opencode is an option for free models, for
-  providers without an official agent SDK, or when the owner asks for it.
+  official CLI runs the turns: Claude Code, Codex, and over the Agent Client
+  Protocol Gemini CLI, Copilot CLI, Cursor CLI, Grok Build, Mistral Vibe, Qwen
+  Code and Kimi Code. opencode runs the free models and an xAI key.
+- Spending limits and model choices for providers other than Claude.
 
 ## v0.8: reach the owner anywhere
 

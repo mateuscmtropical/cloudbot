@@ -40,6 +40,13 @@ describe('bot_send', () => {
     });
 });
 
+describe('bot_import_text', () => {
+    it('always asks the owner before imported instructions become bot memory', () => {
+        expect(classify('mcp__cloudbot__bot_import_text'))
+            .toBe('always-ask');
+    });
+});
+
 describe('limits_set', () => {
     it('always asks the owner, with the old and new limits on the card', () => {
         expect(classify('mcp__cloudbot__limits_set'))

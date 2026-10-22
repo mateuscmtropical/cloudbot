@@ -29,6 +29,11 @@ interface LoopbackTurnGrant {
     remoteServers?: Record<string, unknown> | undefined;
     // Tools the owner blocked. The CLI already hides them, and the decision route refuses them too (exact name match).
     disallowedTools?: string[] | undefined;
+    // False for an engine that decides calls itself, such as Codex. The permission prompt tool is then not listed.
+    offersPromptTool?: boolean | undefined;
+    // True for an engine whose agent sends no call id with tools/call, such as an ACP agent. Each call then goes to
+    // reviewToolCall here before it runs.
+    reviewsEachCall?: boolean | undefined;
 }
 
 // The files the CLI reads for one turn. They live in a folder of their own, removed on release.
@@ -40,6 +45,11 @@ interface LoopbackTurn {
     noteToolUse(toolUseId: string, toolName: string, input: unknown): void;
     // Writes a file into the turn folder with the turn's file mode, and returns its path.
     writeFile(name: string, text: string): string;
+    // For an engine that reviews a call itself, such as Codex: the one tools/call with this id, name and input may run once.
+    allowCall(toolUseId: string, toolName: string, input: unknown): void;
+    // The address and the token of the turn, for an engine that does not read the MCP config file.
+    mcpUrl: string;
+    token: string;
     release(): void;
 }
 
@@ -77,7 +87,7 @@ interface TurnState {
 }
 
 // Built-in tools the CLI may offer. --tools takes this list, and every entry is also an ask rule, so each call is decided.
-const BUILTIN_TOOLS = ['Bash', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'Task', 'WebFetch', 'WebSearch', 'Write'];
+const BUILTIN_TOOLS = ['Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Task', 'WebFetch', 'WebSearch', 'Write'];
 // The CLI calls the Task tool Agent in its prompt call, so the alias is asked as well and matched to Task.
 const TOOL_NAME_ALIASES: Record<string, string> = { Agent: 'Task' };
 // Built-in tools whose description argument is only a label for the person.
@@ -123,8 +133,8 @@ const approveArgumentsSchema = z.object({
     tool_use_id: stringSchema.optional(),
 });
 
-// The CLI sends the tool use id of the call in the request's _meta.
-const toolCallMetaSchema = z.object({ 'claudecode/toolUseId': stringSchema.optional() });
+// The CLI sends the tool use id of the call in the request's _meta. Codex sends it as callId (seen with codex-cli 0.163.0).
+const toolCallMetaSchema = z.object({ 'claudecode/toolUseId': stringSchema.optional(), 'callId': stringSchema.optional() });
 
 class BodyTooLargeError extends Error {}
 
@@ -350,6 +360,21 @@ function callTool(tool: LoopbackTool, args: unknown): Promise<LoopbackToolResult
 }
 
 // A tools/call runs once, and only with the allowed decision for this exact tool use. The check and the consume are one step.
+// The review of a call that came with no call id. Returns the refusal reason, or undefined when the call may run.
+async function reviewOwnCall(turn: TurnState, fullToolName: string, args: unknown): Promise<string | undefined> {
+    if (turn.grant.disallowedTools?.includes(fullToolName) === true) {
+        return NOT_APPROVED_TEXT;
+    }
+
+    try {
+        const decision = await turn.grant.reviewToolCall({ toolName: fullToolName, input: args ?? {} }, turn.controller.signal);
+
+        return decision.isAllowed ? undefined : decision.reason;
+    } catch {
+        return REVIEW_FAILED_REASON;
+    }
+}
+
 function consumeAllowedCall(turn: TurnState, fullToolName: string, args: unknown, toolUseId: string | undefined): boolean {
     if (toolUseId === undefined) {
         return false;
@@ -435,7 +460,9 @@ async function answerMcp(serverName: string, turn: TurnState, body: string, resp
             inputSchema: { type: 'object', properties: { tool_name: { type: 'string' }, input: { type: 'object' }, tool_use_id: { type: 'string' } } },
         };
 
-        writeJson(response, 200, { jsonrpc: '2.0', id, result: { tools: [...tools, approveTool] } });
+        const listed = turn.grant.offersPromptTool === false ? tools : [...tools, approveTool];
+
+        writeJson(response, 200, { jsonrpc: '2.0', id, result: { tools: listed } });
 
         return;
     }
@@ -459,12 +486,21 @@ async function answerMcp(serverName: string, turn: TurnState, body: string, resp
 
         const fullToolName = `mcp__${serverName}__${tool.name}`;
         const parsedMeta = toolCallMetaSchema.safeParse(params._meta);
-        const metaToolUseId = parsedMeta.success ? parsedMeta.data['claudecode/toolUseId'] : undefined;
+        const metaToolUseId = parsedMeta.success ? parsedMeta.data['claudecode/toolUseId'] ?? parsedMeta.data.callId : undefined;
 
         if (!consumeAllowedCall(turn, fullToolName, params.arguments, metaToolUseId)) {
-            writeJson(response, 200, { jsonrpc: '2.0', id, result: failedResult(NOT_APPROVED_TEXT) });
+            const refusal = turn.grant.reviewsEachCall === true ? await reviewOwnCall(turn, fullToolName, params.arguments) : NOT_APPROVED_TEXT;
 
-            return;
+            if (refusal !== undefined) {
+                writeJson(response, 200, { jsonrpc: '2.0', id, result: failedResult(refusal) });
+
+                return;
+            }
+
+            // A client that gave up during a long review already saw a failure and may ask again, so the call does not run.
+            if (response.socket?.destroyed !== false) {
+                return;
+            }
         }
 
         // The turn may have been released while the body was read. The handler never runs then.
@@ -620,6 +656,14 @@ async function startLoopbackToolServer(serverName: string, options: LoopbackServ
 
                     return path;
                 },
+                allowCall(toolUseId: string, toolName: string, input: unknown): void {
+                    // An id that is known already keeps its first state, so a second allow cannot reopen a used call.
+                    if (!state.calls.has(toolUseId)) {
+                        state.calls.set(toolUseId, { toolName, inputKey: inputKeyOf(input), decided: true, allowed: true, consumed: false });
+                    }
+                },
+                mcpUrl: `${baseUrl}/mcp`,
+                token,
                 release(): void {
                     dropTurn(state, turns, token);
                 },
@@ -646,5 +690,5 @@ async function startLoopbackToolServer(serverName: string, options: LoopbackServ
     };
 }
 
-export { AGENT_TURN_ROOT, APPROVE_TOOL_NAME, BUILTIN_TOOLS, startLoopbackToolServer };
+export { AGENT_TURN_ROOT, APPROVE_TOOL_NAME, BUILTIN_TOOLS, inputKeyOf, startLoopbackToolServer };
 export type { LoopbackServerOptions, LoopbackTool, LoopbackToolResult, LoopbackToolServer, LoopbackTurn, LoopbackTurnGrant };

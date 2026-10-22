@@ -11,6 +11,11 @@
     --color-success: #3fb27f;
     /* A veil of the text color. It lightens a dark control and darkens a light one, on any background. */
     --color-hover: color-mix(in srgb, var(--color-text) 12%, transparent);
+    /* The spacing scale. See Layout in docs/CODING_STANDARDS.md. */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
     --radius-bubble: 18px;
     --radius-control: 999px;
     --sidebar-width: 320px;
@@ -143,6 +148,46 @@ svg {
     display: inline-grid;
     place-items: center;
     flex-shrink: 0;
+}
+
+.mascot-hop-copy {
+    position: fixed;
+    z-index: 10;
+    margin: 0;
+    pointer-events: none;
+    transform-origin: center;
+    will-change: transform;
+    animation: mascot-hop var(--mascot-hop-duration) cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+@keyframes mascot-hop {
+    0% {
+        transform: translate(0, 0) scale(1);
+    }
+
+    10% {
+        transform: translate(var(--mascot-hop-row-first-x), calc(var(--mascot-hop-row-first-y) - 14px)) scale(1.04);
+    }
+
+    20% {
+        transform: translate(var(--mascot-hop-row-second-x), var(--mascot-hop-row-second-y)) scale(1);
+    }
+
+    30% {
+        transform: translate(var(--mascot-hop-row-edge-x), calc(var(--mascot-hop-row-edge-y) - 14px)) scale(1.04);
+    }
+
+    40% {
+        transform: translate(var(--mascot-hop-row-edge-x), var(--mascot-hop-row-edge-y)) scale(1);
+    }
+
+    70% {
+        transform: translate(var(--mascot-hop-landing-middle-x), calc(var(--mascot-hop-landing-middle-y) - 48px)) scale(var(--mascot-hop-landing-middle-scale));
+    }
+
+    100% {
+        transform: translate(var(--mascot-hop-landing-x), var(--mascot-hop-landing-y)) scale(var(--mascot-hop-landing-scale));
+    }
 }
 
 .message.has-mascot {
@@ -453,13 +498,18 @@ svg {
 }
 
 .setup-card p {
-    margin: 0 0 8px;
+    margin: 0 0 var(--space-2);
+}
+
+/* The approval card carries a script, so its line breaks are kept. */
+.card-text {
+    white-space: pre-wrap;
 }
 
 .choice-buttons {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-2);
 }
 
 .choice-button,
@@ -473,8 +523,13 @@ svg {
     text-decoration: none;
 }
 
+/* A link is inline, so its padding would not push the line. As a block it sits under the text like a button. */
+.link-card {
+    display: inline-block;
+}
+
 .setup-alternative {
-    margin-top: 8px;
+    margin-top: var(--space-2);
 }
 
 .choice-button.is-selected {
@@ -486,7 +541,7 @@ svg {
 .setup-form {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-2);
     align-items: center;
 }
 

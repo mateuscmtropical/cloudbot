@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import type { IncomingHttpHeaders, IncomingMessage, Server, ServerResponse } from 'node:http';
 import { Readable, pipeline } from 'node:stream';
 
+import { inputKeyOf } from '../agent/createLoopbackToolServer.ts';
 import { pinnedFetch } from './pinnedFetch.ts';
 import { BodyTooLargeError, readCapped } from './readCapped.ts';
 
@@ -19,6 +20,26 @@ interface AppProxyOptions {
     checkUpstream: (url: URL) => Promise<string[]>;
 }
 
+// One turn's address for a connected server. Resource requests are refused, and a tool call is sent only when the
+// engine allowed that exact call first, so a call that skipped the review never reaches the server.
+interface ProxyCallGate {
+    address: string;
+    // Lets the server run this one call, once. The call id is the one the client sends in the call's _meta.callId.
+    allowCall: (callId: string, toolName: string, input: unknown) => void;
+    close: () => void;
+}
+
+interface GatedCall {
+    toolName: string;
+    inputKey: string;
+    isConsumed: boolean;
+}
+
+interface GateState {
+    routeKey: string;
+    calls: Map<string, GatedCall>;
+}
+
 interface ProxyErrorResponse {
     error: string;
 }
@@ -31,6 +52,17 @@ const DEFAULT_HTTP_METHOD = 'POST';
 const PAYLOAD_TOO_LARGE_STATUS = 413;
 const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 const MIN_REDIRECT_STATUS = 300;
+const OK_STATUS = 200;
+const BAD_REQUEST_STATUS = 400;
+const FORBIDDEN_STATUS = 403;
+// On a gated address every MCP resource request is refused. Codex offers list_mcp_resources and read_mcp_resource
+// with no approval whenever a server is configured (seen with codex-cli 0.163.0), so a Codex turn gets a gated address.
+// Claude turns keep the plain address, where the CLI asks before reading a resource.
+const RESOURCE_METHOD_PREFIX = 'resources/';
+const TOOL_CALL_METHOD = 'tools/call';
+const METHOD_NOT_FOUND_CODE = -32601;
+const RESOURCES_BLOCKED_MESSAGE = 'Resources of connected servers are turned off for this bot.';
+const CALL_NOT_ALLOWED_MESSAGE = 'This call was not approved, so it was not sent.';
 const MAX_REDIRECT_STATUS = 399;
 
 // The agent sends no credentials of its own. The proxy adds the token from the vault, and drops any header that could carry one.
@@ -100,11 +132,113 @@ function readRouteKey(requestUrl: string | undefined): string {
     return pathname.split('/')[1] ?? '';
 }
 
+function readGateKey(requestUrl: string | undefined): string | undefined {
+    const pathname = new URL(requestUrl ?? '/', `http://${LOOPBACK_HOST}`).pathname;
+
+    const segment = pathname.split('/')[2];
+
+    return segment === '' ? undefined : segment;
+}
+
+function readMethod(message: unknown): unknown {
+    return typeof message === 'object' && message !== null ? Reflect.get(message, 'method') : undefined;
+}
+
+type GateCheck = { kind: 'pass' } | { kind: 'unreadable' } | { kind: 'refused'; id: unknown; isBatch: boolean; message: string };
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+    return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+// Uses up the allowed call this tool call names. Anything that does not match one unused allowed call is refused.
+function consumeGatedCall(gate: GateState, message: unknown): boolean {
+    const rawParams: unknown = Reflect.get(message as object, 'params');
+    const params = readRecord(rawParams);
+    const meta = readRecord(params?._meta);
+    const callId = meta?.callId;
+
+    if (params === undefined || typeof callId !== 'string') {
+        return false;
+    }
+
+    const call = gate.calls.get(callId);
+
+    if (call === undefined || call.isConsumed || call.toolName !== params.name || call.inputKey !== inputKeyOf(params.arguments)) {
+        return false;
+    }
+
+    call.isConsumed = true;
+
+    return true;
+}
+
+// An empty body, such as the GET that opens an event stream, passes. A body that is not JSON cannot be checked, so it is refused.
+function checkGatedRequest(body: Buffer, gate: GateState): GateCheck {
+    if (body.length === 0) {
+        return { kind: 'pass' };
+    }
+
+    let parsed: unknown;
+
+    try {
+        const text = body.toString('utf8');
+
+        parsed = JSON.parse(text);
+    } catch {
+        return { kind: 'unreadable' };
+    }
+
+    const isBatch = Array.isArray(parsed);
+    const messages: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+
+    const refusals = messages.map(message => refusalOf(message, gate, isBatch));
+    const refusal = refusals.find(message => message !== undefined);
+
+    if (refusal === undefined) {
+        return { kind: 'pass' };
+    }
+
+    return { kind: 'refused', ...refusal, isBatch };
+}
+
+// Why one message of a gated request is refused, or undefined when it may be sent.
+function refusalOf(message: unknown, gate: GateState, isBatch: boolean): { id: unknown; message: string } | undefined {
+    const method = readMethod(message);
+    const id: unknown = typeof message === 'object' && message !== null ? Reflect.get(message, 'id') : undefined;
+
+    if (typeof method === 'string' && method.startsWith(RESOURCE_METHOD_PREFIX)) {
+        return { id, message: RESOURCES_BLOCKED_MESSAGE };
+    }
+
+    // A batch cannot be partly sent, so a tool call in a batch is refused as a whole. It never uses up an allowed call.
+    if (method === TOOL_CALL_METHOD && (isBatch || !consumeGatedCall(gate, message))) {
+        return { id, message: CALL_NOT_ALLOWED_MESSAGE };
+    }
+
+    return undefined;
+}
+
+// A single request gets a JSON-RPC error, so the client reports it as a failed call. A batch is refused as a whole.
+function refuseGatedRequest(response: ServerResponse, check: { id: unknown; isBatch: boolean; message: string }): void {
+    if (check.isBatch) {
+        sendJsonError(response, FORBIDDEN_STATUS, check.message);
+
+        return;
+    }
+
+    const isValidId = typeof check.id === 'string' || typeof check.id === 'number';
+    const errorBody = JSON.stringify({ jsonrpc: '2.0', id: isValidId ? check.id : null, error: { code: METHOD_NOT_FOUND_CODE, message: check.message } });
+
+    response.writeHead(OK_STATUS, { 'content-type': 'application/json' });
+    response.end(errorBody);
+}
+
 // Only the proxy process holds the token. The agent connects to 127.0.0.1 with a random key per server.
 class AppProxy {
     private readonly checkUpstream: (url: URL) => Promise<string[]>;
     private readonly routes = new Map<string, AppRoute>();
     private readonly keysByAppId = new Map<string, string>();
+    private readonly gates = new Map<string, GateState>();
     private server: Server | undefined;
     private baseUrl: string | undefined;
 
@@ -165,6 +299,36 @@ class AppProxy {
         return key === undefined ? undefined : `${this.requireBaseUrl()}/${key}`;
     }
 
+    // A gated address of a server for one turn, or undefined when the address is not one this proxy gave out.
+    openCallGate(address: string): ProxyCallGate | undefined {
+        const baseUrl = this.requireBaseUrl();
+        const prefix = `${baseUrl}/`;
+        const routeKey = address.startsWith(prefix) ? address.slice(prefix.length) : '';
+
+        if (!this.routes.has(routeKey)) {
+            return undefined;
+        }
+
+        const gateKey = randomBytes(RANDOM_KEY_BYTES)
+            .toString('hex');
+        const gate: GateState = { routeKey, calls: new Map() };
+
+        this.gates.set(gateKey, gate);
+
+        return {
+            address: `${address}/${gateKey}`,
+            allowCall: (callId: string, toolName: string, input: unknown): void => {
+                // An id that is known already keeps its first state, so a second allow cannot reopen a used call.
+                if (!gate.calls.has(callId)) {
+                    gate.calls.set(callId, { toolName, inputKey: inputKeyOf(input), isConsumed: false });
+                }
+            },
+            close: (): void => {
+                this.gates.delete(gateKey);
+            },
+        };
+    }
+
     remove(appId: string): void {
         const key = this.keysByAppId.get(appId);
 
@@ -200,7 +364,11 @@ class AppProxy {
         const routeKey = readRouteKey(incomingRequest.url);
         const route = this.routes.get(routeKey);
 
-        if (route === undefined) {
+        const gateKey = readGateKey(incomingRequest.url);
+        const gate = gateKey === undefined ? undefined : this.gates.get(gateKey);
+
+        // A path past the key must name an open gate of this server. Anything else is refused, never sent ungated.
+        if (route === undefined || (gateKey !== undefined && gate?.routeKey !== routeKey)) {
             sendJsonError(outgoingResponse, NOT_FOUND_STATUS, 'No connected server has this address.');
 
             return;
@@ -237,6 +405,22 @@ class AppProxy {
             }
 
             throw error;
+        }
+
+        if (gate !== undefined) {
+            const check = checkGatedRequest(requestBody, gate);
+
+            if (check.kind === 'unreadable') {
+                sendJsonError(outgoingResponse, BAD_REQUEST_STATUS, 'The request is not JSON, so it was not sent.');
+
+                return;
+            }
+
+            if (check.kind === 'refused') {
+                refuseGatedRequest(outgoingResponse, check);
+
+                return;
+            }
         }
 
         let token: string | undefined;
@@ -287,4 +471,4 @@ class AppProxy {
 }
 
 export { AppProxy };
-export type { AppProxyOptions, AppRoute };
+export type { AppProxyOptions, AppRoute, ProxyCallGate };

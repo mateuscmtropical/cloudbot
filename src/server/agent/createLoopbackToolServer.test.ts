@@ -135,6 +135,25 @@ describe('loopback tool server', () => {
         turn.release();
     });
 
+    it('reviews each tool call itself for an engine that sends no call id', async () => {
+        const handler = vi.fn(() => Promise.resolve({ content: [{ type: 'text', text: 'ran' }] }));
+        const review = vi.fn((call: { input: unknown }): Promise<ToolCallDecision> => Promise.resolve((call.input as { text: string }).text === 'ok' ? { isAllowed: true } : { isAllowed: false, reason: 'Not this one.' }));
+        const turn = server.grantTurn({ tools: [{ ...echoTool(), handler }], reviewToolCall: review, offersPromptTool: false, reviewsEachCall: true });
+
+        const allowed = await postMcp(turn, toolCall('echo', { text: 'ok' }, undefined));
+        const refused = await postMcp(turn, toolCall('echo', { text: 'bad' }, undefined));
+
+        expect(review.mock.calls.map(call => call[0]))
+            .toEqual([{ toolName: 'mcp__cloudbot__echo', input: { text: 'ok' } }, { toolName: 'mcp__cloudbot__echo', input: { text: 'bad' } }]);
+        expect(handler)
+            .toHaveBeenCalledOnce();
+        expect(JSON.stringify(allowed.json))
+            .toContain('ran');
+        expect(JSON.stringify(refused.json))
+            .toContain('Not this one.');
+        turn.release();
+    });
+
     it('denies a prompt whose name or input differs from the one the CLI reported', async () => {
         const review = allowingReview();
         const turn = server.grantTurn({ tools: [], reviewToolCall: review });
@@ -239,6 +258,45 @@ describe('loopback tool server', () => {
             .toMatchObject([{ behavior: 'deny' }, { behavior: 'deny', message: 'The template file could not be read.' }, { behavior: 'allow' }]);
         expect(review)
             .toHaveBeenCalledTimes(3);
+        turn.release();
+    });
+
+    it('runs a call that the engine allowed itself once, by the callId Codex sends, and hides the prompt tool', async () => {
+        const review = allowingReview();
+        const turn = server.grantTurn({ tools: [echoTool()], reviewToolCall: review, offersPromptTool: false });
+        const callWithId = (callId: string, text: string): unknown => ({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo', arguments: { text }, _meta: { callId } } });
+
+        turn.allowCall('call_1', `mcp__${SERVER_NAME}__echo`, { text: 'hi' });
+        const listed = await postMcp(turn, { jsonrpc: '2.0', id: 3, method: 'tools/list' });
+        const first = await postMcp(turn, callWithId('call_1', 'hi'));
+        const again = await postMcp(turn, callWithId('call_1', 'hi'));
+        const otherInput = await postMcp(turn, callWithId('call_1', 'bye'));
+        const notAllowed = await postMcp(turn, callWithId('call_2', 'hi'));
+        const names = (listed.json as { result: { tools: { name: string }[] } }).result.tools.map(tool => tool.name);
+
+        expect(names)
+            .toEqual(['echo']);
+        expect(first.json)
+            .toMatchObject({ result: { content: [{ text: 'echo hi' }] } });
+        const refusals = [again.json, otherInput.json, notAllowed.json].map(json => (json as { result: { isError?: boolean } }).result.isError);
+
+        expect(refusals)
+            .toEqual([true, true, true]);
+        expect(review)
+            .not.toHaveBeenCalled();
+        turn.release();
+    });
+
+    it('keeps the first state of a call, so an allow cannot reopen a call that was already decided', async () => {
+        const turn = server.grantTurn({ tools: [echoTool()], reviewToolCall: allowingReview(), offersPromptTool: false });
+
+        turn.allowCall('call_1', `mcp__${SERVER_NAME}__echo`, { text: 'hi' });
+        await postMcp(turn, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo', arguments: { text: 'hi' }, _meta: { callId: 'call_1' } } });
+        turn.allowCall('call_1', `mcp__${SERVER_NAME}__echo`, { text: 'hi' });
+        const second = await postMcp(turn, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo', arguments: { text: 'hi' }, _meta: { callId: 'call_1' } } });
+
+        expect(second.json)
+            .toMatchObject({ result: { isError: true } });
         turn.release();
     });
 

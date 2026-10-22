@@ -1,6 +1,8 @@
 import { useId, useState } from 'react';
 import type { ReactElement, SyntheticEvent } from 'react';
 
+import { ChatCard } from './ChatCard.tsx';
+
 // Another way to answer the form. Both answers are disabled while either one is pending.
 interface SecureFormAlternative {
     label: string;
@@ -65,18 +67,16 @@ function SecureForm({ prompt, secretName, submitted, onSubmit, alternative, site
 
     if (submitted) {
         return (
-            <div className="setup-card">
-                <p>{prompt}</p>
+            <ChatCard text={prompt}>
                 <p className="setup-done">
                     This form is closed. Check the conversation for the result.
                 </p>
-            </div>
+            </ChatCard>
         );
     }
 
     return (
-        <div className="setup-card">
-            <p>{prompt}</p>
+        <ChatCard text={prompt}>
             {site === undefined
                 ? null
                 : <p className="secret-site">{`The bot asks for this. It is for ${site}, and the bot never sees the value.`}</p>}
@@ -108,7 +108,7 @@ function SecureForm({ prompt, secretName, submitted, onSubmit, alternative, site
                     {alternative.label}
                 </button>
             )}
-        </div>
+        </ChatCard>
     );
 }
 
