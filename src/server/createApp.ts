@@ -40,6 +40,9 @@ import { createWatchRoutes } from './watches/createWatchRoutes.ts';
 import { createWebhookHookRoutes } from './webhooks/createWebhookHookRoutes.ts';
 import { createWebhookRoutes } from './webhooks/createWebhookRoutes.ts';
 import { DeliveryMemory, WebhookRefusalLog } from './webhooks/webhookMemory.ts';
+import type { WhatsAppStore } from './store/WhatsAppStore.ts';
+import { createWhatsAppWebhookRoutes } from './whatsapp/createWhatsAppWebhookRoutes.ts';
+import type { WhatsAppSecretReader } from './whatsapp/whatsappSecrets.ts';
 
 interface HealthResponse {
     status: 'ok';
@@ -61,6 +64,9 @@ interface AppOptions {
     modelStore?: ModelStore;
     limitStore?: LimitStore;
     webhookStore?: WebhookStore;
+    // The WhatsApp number each bot receives from. With the secrets, the public Meta webhook route is served.
+    whatsappStore?: WhatsAppStore;
+    whatsappSecrets?: WhatsAppSecretReader;
     // The refused webhook calls, shared with the ChatService so the bot sees them too. Without it a new log is used.
     webhookRefusals?: WebhookRefusalLog;
     // The delivery ids of each webhook, shared by the call route and the owner routes. Without it a new memory is used.
@@ -155,6 +161,21 @@ function createApp(options: AppOptions): Hono {
         });
 
         app.route('/', webhookHookRoutes);
+    }
+
+    // Meta calls the WhatsApp webhook from outside, so this route also sits outside the session check.
+    // Each call is checked against the app secret of its number before anything happens.
+    if (options.chatService !== undefined && options.whatsappStore !== undefined && options.whatsappSecrets !== undefined) {
+        const chatService = options.chatService;
+        const whatsappRoutes = createWhatsAppWebhookRoutes({
+            store: options.whatsappStore,
+            secrets: options.whatsappSecrets,
+            isReady: options.isReady ?? (() => true),
+            sendMessage: (botId, text) => chatService.sendMessage(botId, text),
+            postSystemNote: (botId, text) => chatService.postSystemNote(botId, text),
+        });
+
+        app.route('/', whatsappRoutes);
     }
 
     const sessionCheck = requireSession(options.access);

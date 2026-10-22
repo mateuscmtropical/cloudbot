@@ -116,6 +116,7 @@ src/
     store/         SQLite storage: bots, messages, settings and migrations
     vault/         Encrypted secrets, secure form route and key proxy
     webhooks/      Webhook URLs: the public hook route, owner routes and bot tools
+    whatsapp/      Owner's WhatsApp number: setup forms, signature check and the public route
   shared/          Types shared by the server and the web app
     chatTypes.ts   Messages, bots and chat events
   web/             Chat interface in React, built with Vite to dist/web and served by the server
@@ -935,6 +936,61 @@ The owner lists, creates and removes webhooks with `GET`, `POST` and `DELETE
 them at the bottom. The bot has `webhook_list` (on the skip list of
 `classifyToolCall`), `webhook_create` and `webhook_delete` (both reviewed). The review agent reads a
 webhook message as `Webhook (outside data)`, not as the owner.
+
+## WhatsApp
+
+The owner can send text instructions to one bot from their own WhatsApp number
+through the official Meta WhatsApp Business Cloud API. It only receives:
+CloudBot never sends a WhatsApp message. The answer stays in the web app, and
+the existing push notification announces it when notifications are enabled.
+
+A bot is linked to one Meta phone number ID. The `whatsapp_connections` table
+keeps the phone number ID, the bot and the time, with one row per bot. The
+`whatsapp_messages` table keeps the id of each handled message and its bot, so
+Meta's retries are handled once. Accepted webhook calls remove ids older than
+8 days, a little longer than Meta's 7-day retry window.
+
+The app secret, the verify token and the owner's number are bot secrets in the
+vault, under `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` and
+`WHATSAPP_OWNER_NUMBER`, with the site `https://graph.facebook.com`. They go in
+through the secure form and never reach the model, a message, the database in
+plaintext or the log. The owner's number is compared as digits after the usual
+punctuation is removed, and Meta sends the sender as digits only.
+
+The bot sets it up in the chat with `whatsapp_connect` and `whatsapp_disconnect`,
+both on the skip list of `classifyToolCall`. `whatsapp_connect` takes the numeric
+phone number ID. It posts the next missing secure form: the app secret (32 hex
+characters), a verify token (1 to 256 characters) and the owner's number (8 to
+15 digits). The owner fills the form, tells the bot to continue, and the tool is
+called again. When all three are saved, it links the number and gives the model
+the callback URL, `<public address>/whatsapp`, to show the owner. The owner
+pastes it in Meta under WhatsApp, Configuration, Webhook, with the same verify
+token, and subscribes to the `messages` field. `whatsapp_disconnect` removes the
+connection and the three secrets.
+
+`GET /whatsapp` is Meta's verification handshake. It needs `hub.mode=subscribe`,
+a non-empty token and challenge. The token is compared in constant time with the
+token of any connected bot, because one callback URL may serve several, and the
+challenge is returned as plain text. Anything else gets 403.
+
+`POST /whatsapp` is public, like `/hooks/<token>`, so it sits outside the session
+check. The body is at most 1 MiB, and malformed JSON gets 400. The route reads
+the phone number IDs in the body, looks up their connections, and checks
+`X-Hub-Signature-256` as an HMAC SHA-256 of the exact raw bytes with each
+candidate bot's app secret, compared in constant time. If no connection could
+have signed it, the answer is 401. Unconnected phone number IDs and status
+callbacks change nothing. Only a message from the owner's number is accepted.
+Any other sender is dropped silently, with no turn, no note and no reply. A
+message is claimed in `whatsapp_messages` before it is handled, so a retry is a
+200 that does nothing. If handling fails, the claim is given back and the answer
+is 500, so Meta can retry.
+
+A text message goes through `ChatService.sendMessage` with the default `chat`
+source, so it uses the chat model, effort and limits and the same queue as a
+chat message. Any other type posts a system note in the chat that only text is
+supported yet. Nothing is ever sent back to WhatsApp. A message waits for the
+setup to finish, with 503 before that. Status callbacks are answered even while
+CloudBot starts. After every accepted call, old message ids are removed.
 
 ## Page watches
 

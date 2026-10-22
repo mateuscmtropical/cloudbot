@@ -51,6 +51,8 @@ import { ModelStore } from './store/ModelStore.ts';
 import { WebhookStore } from './store/WebhookStore.ts';
 import { DeliveryMemory, WebhookRefusalLog } from './webhooks/webhookMemory.ts';
 import { WatchStore } from './store/WatchStore.ts';
+import { WhatsAppSetup } from './whatsapp/WhatsAppSetup.ts';
+import { WhatsAppStore } from './store/WhatsAppStore.ts';
 import { WatchScheduler } from './watches/WatchScheduler.ts';
 import { fetchWatchedPage } from './watches/fetchWatchedPage.ts';
 import { ensureDefaultBot } from './store/ensureDefaultBot.ts';
@@ -410,6 +412,15 @@ const telegramBridge = new TelegramBridge({
     readToken: readTelegramToken,
     createApi: token => createTelegramApi(token),
 });
+// The number each bot receives from. The app secret, the verify token and the owner's number stay in the vault.
+const whatsappStore = new WhatsAppStore(opened.db);
+// Setup posts a secure form into the chat for each value it still needs. chatService is set below, before a turn can run.
+const whatsappSetup = new WhatsAppSetup({
+    store: whatsappStore,
+    secrets: botSecrets,
+    requestSecret: (botId, name, purpose, site) => chatService.requestSecret(botId, name, purpose, site),
+    publicBaseUrl: readPublicBaseUrl(process.env),
+});
 const chatService: ChatService = new ChatService({
     notifyOwner: notice => pushNotifier.notify(notice),
     telegram: telegramBridge,
@@ -427,6 +438,7 @@ const chatService: ChatService = new ChatService({
     connectedApps,
     integrationService,
     browserAllowStore,
+    whatsapp: whatsappSetup,
     webhookBaseUrl: readPublicBaseUrl(process.env),
     webhookRefusals,
     webhookDeliveries,
@@ -559,7 +571,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

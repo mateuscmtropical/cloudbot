@@ -223,6 +223,35 @@ const tasks = sqliteTable('tasks', {
         .on(table.botId),
 ]);
 
+// The Meta WhatsApp phone number a bot receives from. The app secret, the verify token and the owner's
+// number stay in the vault. A number belongs to one bot, and a bot has one number.
+const whatsappConnections = sqliteTable('whatsapp_connections', {
+    phoneNumberId: text('phone_number_id')
+        .primaryKey(),
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at')
+        .notNull(),
+}, table => [
+    uniqueIndex('whatsapp_connections_bot_id')
+        .on(table.botId),
+]);
+
+// The message ids Meta already delivered, so a retry is handled once. Old rows are removed after Meta's retry window.
+const whatsappMessages = sqliteTable('whatsapp_messages', {
+    messageId: text('message_id')
+        .primaryKey(),
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    receivedAt: integer('received_at')
+        .notNull(),
+}, table => [
+    index('whatsapp_messages_received_at')
+        .on(table.receivedAt),
+]);
+
 // A URL that wakes a bot. Only the SHA-256 hash of the token is stored, so the URL is shown once, at creation.
 const webhooks = sqliteTable('webhooks', {
     id: text('id')
@@ -510,5 +539,5 @@ const pushSubscriptions = sqliteTable('push_subscriptions', {
         .on(table.endpoint),
 ]);
 
-export { botLimits, botModels, botRules, botSkills, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, emailAccounts, emailDeliveries, integrationRuns, integrations, messages, passkeys, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks };
+export { botLimits, botModels, botRules, botSkills, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, emailAccounts, emailDeliveries, integrationRuns, integrations, messages, passkeys, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks, whatsappConnections, whatsappMessages };
 export type { StoredUploadRecord };
