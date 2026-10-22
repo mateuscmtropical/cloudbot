@@ -380,6 +380,7 @@ const MAX_SHARE_CARD_CHARS = 12000;
 const NO_GITHUB_FOR_SHARE_MESSAGE = 'Sharing needs GitHub connected for this bot. Ask the owner to save a GitHub token as GITHUB_TOKEN in the secure form, with the site https://github.com, then ask again.';
 const CARD_EXPIRED_MESSAGE = 'The card expired, ask again.';
 const CARD_CHANGED_MESSAGE = 'The template changed after the owner was shown it. Ask again.';
+const CARD_WAITING_MESSAGE = 'An earlier card for this shows other content and is still open. Wait for the owner to answer it, or ask again in ten minutes.';
 
 // Each card for a gallery install or share has its own key, so a card for one never answers for another.
 function galleryInstallKey(botId: string, file: string): string {
@@ -968,7 +969,9 @@ class ChatService {
 
         const installKey = galleryInstallKey(botId, fetched.file);
 
-        gallery.rememberCard(installKey, fetched.digest);
+        if (!gallery.rememberCard(installKey, fetched.digest)) {
+            return { decision: 'deny', reason: CARD_WAITING_MESSAGE };
+        }
 
         const repoName = gallery.repository();
         const repoText = JSON.stringify(repoName);
@@ -1022,7 +1025,9 @@ class ChatService {
         const digest = digestOf(exported.text);
         const shareKey = galleryShareKey(botId);
 
-        gallery.rememberCard(shareKey, digest);
+        if (!gallery.rememberCard(shareKey, digest)) {
+            return { decision: 'deny', reason: CARD_WAITING_MESSAGE };
+        }
 
         const repoName = gallery.repository();
         const replaceNote = fileExists ? ' (replaces an existing file)' : '';

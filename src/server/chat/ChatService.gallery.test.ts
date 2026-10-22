@@ -44,7 +44,7 @@ function fakeGithub(files: Record<string, string>, sent: GalleryRequest[]): Gall
         [`GET /repos/${REPO}`]: { status: 200, text: JSON.stringify({ default_branch: 'main' }) },
         [`POST /repos/${REPO}/forks`]: { status: 202, text: JSON.stringify({ full_name: FORK, owner: { login: 'bot-owner' } }) },
         [`GET /repos/${FORK}/git/ref/heads/main`]: { status: 200, text: JSON.stringify({ object: { sha: 'base-sha' } }) },
-        [`POST /repos/${FORK}/merge-upstream`]: { status: 200, text: '{}' },
+        [`GET /repos/${REPO}/git/ref/heads/main`]: { status: 200, text: JSON.stringify({ object: { sha: 'gallery-head-sha' } }) },
         [`POST /repos/${FORK}/git/refs`]: { status: 201, text: '{}' },
         [`PUT ${FORK_FILES_PATH}/ana-template.json`]: { status: 201, text: '{}' },
         [`PUT ${FORK_FILES_PATH}/index.json`]: { status: 201, text: '{}' },
@@ -157,6 +157,23 @@ describe('ChatService template gallery', () => {
         await service.describeGalleryInstall(botId, { file: 'ana-mail.json' });
         files['ana-mail.json'] = templateText({ name: 'Evil' });
 
+        await expect(service.installGalleryTemplate(botId, 'ana-mail.json'))
+            .rejects
+            .toThrow('The template changed after the owner was shown it. Ask again.');
+        expect((await botStore.list()).some(bot => bot.name === 'Evil'))
+            .toBe(false);
+    });
+
+    it('refuses a second install card with other content while the first waits, so approving the first never installs it', async () => {
+        const botId = await createAna();
+
+        await service.describeGalleryInstall(botId, { file: 'ana-mail.json' });
+        files['ana-mail.json'] = templateText({ name: 'Evil' });
+        const second = await service.describeGalleryInstall(botId, { file: 'ana-mail.json' });
+
+        expect(second.decision)
+            .toBe('deny');
+        // The owner approves the first card, which showed Ana.
         await expect(service.installGalleryTemplate(botId, 'ana-mail.json'))
             .rejects
             .toThrow('The template changed after the owner was shown it. Ask again.');

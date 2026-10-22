@@ -17,7 +17,6 @@ const API_ORIGIN = 'https://api.github.com';
 const JSON_ACCEPT = 'application/vnd.github+json';
 const RAW_ACCEPT = 'application/vnd.github.raw+json';
 const NOT_FOUND_STATUS = 404;
-const CONFLICT_STATUS = 409;
 const LIMIT_STATUSES = [403, 429];
 const SUCCESS_MIN_STATUS = 200;
 const SUCCESS_MAX_STATUS = 299;
@@ -33,7 +32,6 @@ const GITHUB_LIMIT_MESSAGE = 'GitHub limit reached for the template gallery. Try
 const INDEX_INVALID_MESSAGE = 'The template gallery index is not valid, so the gallery cannot be listed right now.';
 const SHARE_INDEX_MESSAGE = 'The gallery index on GitHub could not be read, so the template was not shared.';
 const INDEX_FULL_MESSAGE = 'The gallery index is full, so the template was not shared.';
-const FORK_DIVERGED_MESSAGE = 'Your fork of the gallery has its own changes, so GitHub could not bring it up to date and the template was not shared. Sync or reset the fork on GitHub, then ask again.';
 const FORK_NOT_READY_MESSAGE = 'GitHub is still making your fork of the gallery, so the template was not shared. Ask again in a minute.';
 const ONE_LINE_MESSAGE = 'Use one line of plain text without hidden characters.';
 const PLAIN_TEXT_MESSAGE = 'Use plain text without hidden characters.';
@@ -344,12 +342,21 @@ class TemplateGallery {
             throw new GalleryError(GALLERY_UNREADABLE_MESSAGE);
         }
 
+        // Waits until the fork answers. The branch then starts at the gallery's own head, not the fork's. A fork made earlier
+        // may be behind the gallery or hold commits of its owner, and the pull request must hold only the approved file and
+        // its index row. Syncing the fork instead would write to the owner's default branch and carry their commits along.
+        // A fork shares the objects of its gallery, so the fork can point a branch at that commit. If GitHub refuses that,
+        // the branch step fails and nothing is shared.
         await this.readForkBase(forkRepo, defaultBranch, plan.token);
-        // GitHub does not keep a fork in step with the gallery. A branch from an old fork would rewrite the index without
-        // the templates added since, so the pull request would conflict. The sync is documented at
-        // https://docs.github.com/en/rest/branches/branches#sync-a-fork-branch-with-the-upstream-repository
-        await this.syncFork(forkRepo, defaultBranch, plan.token);
-        const baseSha = await this.readForkBase(forkRepo, defaultBranch, plan.token);
+        const upstreamRef = await this.expectSuccess('GET', `/repos/${this.repo}/git/ref/heads/${defaultBranch}`, undefined, plan.token, 'read the gallery head');
+        const upstreamRefJson = parseJson(upstreamRef.text);
+        const upstreamObject = readField(upstreamRefJson, 'object');
+        const baseSha = readString(upstreamObject, 'sha');
+
+        if (baseSha === undefined) {
+            throw new GalleryError(GALLERY_UNREADABLE_MESSAGE);
+        }
+
         const slug = plan.fileName.replace(/\.json$/, '');
         const stamp = this.now()
             .toString(36);
@@ -369,9 +376,10 @@ class TemplateGallery {
         }
     }
 
-    // A card waits for the owner for ten minutes. A newer card for the same key replaces the older one.
-    // Cards already past their time are dropped whenever a new one is added.
-    rememberCard(key: string, digest: string): void {
+    // A card waits for the owner for ten minutes. Cards already past their time are dropped whenever a new one is added.
+    // While a card waits, a card for the same key with other content is refused and the waiting card is kept. Replacing it
+    // would let the owner's answer to the first card approve content shown only on the second. Returns false on a refusal.
+    rememberCard(key: string, digest: string): boolean {
         const now = this.now();
 
         this.pendingCards.forEach((card, cardKey) => {
@@ -379,7 +387,16 @@ class TemplateGallery {
                 this.pendingCards.delete(cardKey);
             }
         });
+        const waiting = this.pendingCards.get(key);
+
+        // The same content shown again starts its ten minutes again, so the newest showing can still be answered.
+        if (waiting !== undefined && waiting.digest !== digest) {
+            return false;
+        }
+
         this.pendingCards.set(key, { digest, shownAt: now });
+
+        return true;
     }
 
     // Every check removes the card, so an answer is used once, whatever its result.
@@ -520,24 +537,6 @@ class TemplateGallery {
         const existingJson = parseJson(response.text);
 
         return readString(existingJson, 'sha');
-    }
-
-    // GitHub answers 409 when the fork has commits of its own that clash with the gallery. Trying again never helps.
-    private async syncFork(forkRepo: string, branch: string, token: string): Promise<void> {
-        const syncBody = jsonBody({ branch });
-        const response = await this.request('POST', `/repos/${forkRepo}/merge-upstream`, JSON_ACCEPT, token, syncBody);
-
-        if (response.status === CONFLICT_STATUS) {
-            throw new GalleryError(FORK_DIVERGED_MESSAGE);
-        }
-
-        if (isLimit(response.status)) {
-            throw new GalleryError(GITHUB_LIMIT_MESSAGE);
-        }
-
-        if (!isSuccess(response.status)) {
-            throw new GalleryError(`GitHub refused to bring the fork up to date (status ${String(response.status)}), so the template was not shared.`);
-        }
     }
 
     private async expectSuccess(method: string, path: string, body: string | undefined, token: string, step: string): Promise<GalleryResponse> {
