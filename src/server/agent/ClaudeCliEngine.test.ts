@@ -13,6 +13,7 @@ import type { AgentEvent } from './AgentEvent.ts';
 import type { TurnRequest } from './AgentRunner.ts';
 import { buildCliArguments, buildUserMessage, ClaudeCliEngine, noProxyValues } from './ClaudeCliEngine.ts';
 import type { SpawnFunction } from './ClaudeCliEngine.ts';
+import { buildCliDisallowedTools } from './buildCliDisallowedTools.ts';
 import type { LoopbackToolServer, LoopbackTurn, LoopbackTurnGrant } from './createLoopbackToolServer.ts';
 import { mapCliMessage } from './mapCliMessage.ts';
 import type { CliMessage } from './mapCliMessage.ts';
@@ -199,19 +200,24 @@ describe('buildCliArguments', () => {
             disallowedTools: ['Bash'],
             additionalDirectories: ['/uploads'],
         }), files);
+        const disallowedToolIndex = args.indexOf('--disallowedTools');
+        const addDirectoryIndex = args.indexOf('--add-dir');
 
-        expect(args.slice(-5))
-            .toEqual(['--disallowedTools', 'mcp__cloudbot__approve', 'Bash', '--add-dir', '/uploads']);
+        expect(args.slice(disallowedToolIndex, addDirectoryIndex))
+            .toEqual(['--disallowedTools', 'mcp__cloudbot__approve', ...buildCliDisallowedTools(['Bash'])]);
+        expect(args.slice(addDirectoryIndex))
+            .toEqual(['--add-dir', '/uploads']);
     });
 
     it('lists only the built-in tools the server knows, and hides the prompt tool from the model', () => {
         const args = buildCliArguments(makeRequest(), files);
         const tools = args[args.indexOf('--tools') + 1] ?? '';
+        const disallowedToolIndex = args.indexOf('--disallowedTools');
 
         expect(tools.split(','))
-            .toEqual(['Bash', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'Task', 'WebFetch', 'WebSearch', 'Write']);
-        expect(args.slice(args.indexOf('--disallowedTools'), args.indexOf('--disallowedTools') + 2))
-            .toEqual(['--disallowedTools', 'mcp__cloudbot__approve']);
+            .toEqual(['Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Task', 'WebFetch', 'WebSearch', 'Write']);
+        expect(args.slice(disallowedToolIndex + 1))
+            .toEqual(['mcp__cloudbot__approve', ...buildCliDisallowedTools([])]);
     });
 
     it('sends every call through the permission prompt tool and loads no user or project settings', () => {

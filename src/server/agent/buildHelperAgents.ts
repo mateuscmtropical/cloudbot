@@ -1,6 +1,7 @@
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
 import type { EffortLevel } from '../models/modelChoices.ts';
 import type { AgentDefinition } from './AgentRunner.ts';
+import { buildCliDisallowedTools } from './buildCliDisallowedTools.ts';
 import { SHARE_FILE_TOOL_FULL_NAME } from './createProfileToolServer.ts';
 
 type HelperKind = 'browsing' | 'documents';
@@ -53,6 +54,7 @@ function buildHelperDefinition(
     effort: EffortLevel | null,
 ): AgentDefinition {
     const effortOption = effort === null ? {} : { effort };
+    const disallowedTools = buildCliDisallowedTools(options.disallowedTools);
 
     return {
         description: text.description,
@@ -61,7 +63,7 @@ function buildHelperDefinition(
         tools,
         ...effortOption,
         // The tools this agent may not use. The turn also passes the owner's blocked tools to the CLI.
-        disallowedTools: options.disallowedTools,
+        disallowedTools,
     };
 }
 

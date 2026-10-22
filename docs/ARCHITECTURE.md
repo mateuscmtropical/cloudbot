@@ -1168,6 +1168,20 @@ The server runs the `claude` CLI installed by Anthropic's installer
 (`CLAUDE_PATH`). Sign-in, status and the agent all use that one
 CLI. See [provider terms](PROVIDER_TERMS.md).
 
+Each turn passes an explicit built-in tool list to `--tools`. It includes the
+shell, file, web and helper tools CloudBot uses, and does not include
+`NotebookEdit`. The CLI still offers `ToolSearch`, which only loads the schema
+of a tool, so it is not an ask rule. The turn also passes a fixed `--disallowedTools` list:
+`CronCreate`, `CronDelete`, `CronList`, `ScheduleWakeup`, `RemoteTrigger`,
+`PushNotification`, `SendMessage`, `ListAgents`, `Workflow`, `Monitor`,
+`EnterWorktree`, `ExitWorktree`, `DesignSync`, `ReportFindings`, `TaskStop`,
+`NotebookEdit`, `PowerShell` and `Skill`. This keeps scheduling, cloud
+triggers, notifications, CLI messaging, workflows, worktrees, design sync and
+other CLI-only actions out of the bot's tool set. Each helper agent gets the
+same list alongside the owner's blocked tools. MCP tools from CloudBot and the
+owner remain available through their existing review path. CloudBot does not
+load CLI skills, so `Skill` stays disallowed.
+
 The bot profile reaches the agent in two ways. `buildSystemPrompt` turns the
 name, title and description into a prompt that is appended to Claude Code's
 default prompt, so the bot keeps its tool and coding instructions. The prompt
