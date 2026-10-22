@@ -18,6 +18,7 @@ import { buildMultipartUpload } from '../attachments/testMultipart.ts';
 import type { MultipartFile } from '../attachments/testMultipart.ts';
 import { ChatService } from './ChatService.ts';
 import { createChatRoutes } from './createChatRoutes.ts';
+import { CLEANUP_RETRIES } from './testCleanup.ts';
 
 async function postUpload(app: Hono, botId: string, files: MultipartFile[]): Promise<Response> {
     const upload = await buildMultipartUpload(files);
@@ -148,7 +149,7 @@ describe('chat routes', () => {
 
     afterEach(async () => {
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     function buildApp(script: ScriptedAgentStep[]): Hono {
@@ -499,7 +500,7 @@ describe('GET /api/bots/:id/messages paging', () => {
 
     afterEach(async () => {
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     function buildApp(): Hono {
@@ -618,7 +619,7 @@ describe('shared files', () => {
 
     afterEach(async () => {
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     async function seedWorkspaceFile(botId: string, name: string, content: string): Promise<void> {

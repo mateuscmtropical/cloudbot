@@ -14,6 +14,7 @@ import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
 import type { ChatEvent } from '../../shared/chatTypes.ts';
 import { ChatService } from './ChatService.ts';
+import { CLEANUP_RETRIES } from './testCleanup.ts';
 
 // Replies with one text and records each prompt it gets, so a test can see how the hand-off reached the bot.
 class ReplyingRunner implements AgentRunner {
@@ -103,7 +104,7 @@ describe('ChatService bot hand-off', () => {
 
     afterEach(async () => {
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     it('starts the target as a turn that shows the sender, and posts its reply to the sender chat', async () => {

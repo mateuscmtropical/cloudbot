@@ -14,6 +14,7 @@ import { openDatabase } from '../store/openDatabase.ts';
 import type { ChatEvent } from '../../shared/chatTypes.ts';
 import { ChatService } from './ChatService.ts';
 import { STALL_MESSAGE, STALL_MS } from './StallWatchdog.ts';
+import { CLEANUP_RETRIES } from './testCleanup.ts';
 
 const MINUTE_MS = 60_000;
 
@@ -139,7 +140,7 @@ describe('ChatService stall watch', () => {
     afterEach(async () => {
         vi.useRealTimers();
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     it('stops a turn that sends nothing for 10 minutes, and the chat says why', async () => {
