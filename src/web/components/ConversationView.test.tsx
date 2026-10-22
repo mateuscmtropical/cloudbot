@@ -604,6 +604,19 @@ describe('ConversationView thinking bubble', () => {
             .not.toBeNull();
     });
 
+    it('scrolls the bubble into view when it shows up after the delay', () => {
+        const { container } = render(viewWith({ isRunning: true, draftText: '' }));
+        const messageList = messageListOf(container);
+
+        Object.defineProperty(messageList, 'scrollHeight', { configurable: true, value: 900 });
+        act(() => {
+            vi.advanceTimersByTime(BUBBLE_DELAY_MS);
+        });
+
+        expect(messageList.scrollTop)
+            .toBe(900);
+    });
+
     it('does not show the bubble before the delay has passed', () => {
         const { container } = render(viewWith({ isRunning: true, draftText: '' }));
 

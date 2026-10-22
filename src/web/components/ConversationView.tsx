@@ -195,7 +195,8 @@ function ConversationView({
         previousNewestSequenceRef.current = messages.at(-1)?.sequence;
         previousIsLoadingRef.current = isLoadingOlder;
         previousScrollHeightRef.current = messageListElement.scrollHeight;
-    }, [messages, draftText, botId, isLoadingOlder]);
+        // The working bubble shows up after a delay, so its arrival scrolls the list too.
+    }, [messages, draftText, botId, isLoadingOlder, isThinkingShown]);
 
     // A tapped notification names a message. It is scrolled into view once the list has messages, found or not,
     // so a message that is not in the newest page never scrolls the view later. This effect follows the bottom scroll above.
