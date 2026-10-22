@@ -38,6 +38,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Talk to a bot from Telegram. The owner saves a Telegram bot token through the secure form and sends a one-time code from the chat to the Telegram bot. Only that Telegram account can then talk to the bot, in a private chat, and the replies to its messages come back there. Text only for now.
 - A bot can connect its own mailbox with owner-provided IMAP and SMTP settings. The password goes from a secure chat form into the vault. New mail arrives as an outside-data task, with delivery ids persisted across restarts. Every outgoing email waits for owner approval of all recipients, the subject and the full text. Attachments are not supported.
 - The message box has a microphone button in browsers with speech recognition, such as Chrome and Edge. The spoken words are added to the text in the box. The browser's speech service turns the audio into text, and the app never receives the audio.
 - The web app installs on a phone or computer as an app, with the cloud mascot as its icon. It has a web app manifest and a small service worker that caches nothing.
@@ -61,6 +62,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- Telegram no longer sends the same message to the bot twice after a restart. The poll resumes from the saved update offset, and a disconnect forgets it.
 - The bot's mascot shows only beside its latest message, so it no longer stays on an earlier reply above the owner's message.
 - A background process that a command started in its own session no longer keeps running after the turn ends. Each turn marks its processes, and the marked ones are ended when it is over.
 - The plus in the new bot and attach buttons sits exactly in the center of the round button.

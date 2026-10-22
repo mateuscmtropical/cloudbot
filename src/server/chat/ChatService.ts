@@ -54,6 +54,8 @@ import type { DeliveryMemory, WebhookRefusalLog } from '../webhooks/webhookMemor
 import { WATCH_TOOL_FULL_NAMES, createWatchTools } from '../watches/createWatchTools.ts';
 import type { WatchStore } from '../store/WatchStore.ts';
 import { NOTIFICATIONS_DISABLE_TOOL_FULL_NAME, NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, createNotificationsDisableTool, createNotificationsEnableTool } from '../push/createNotificationTools.ts';
+import { TELEGRAM_TOOL_FULL_NAMES, createTelegramTools } from '../telegram/createTelegramTools.ts';
+import type { TelegramConnector } from '../telegram/createTelegramTools.ts';
 import type { OwnerNotice } from '../push/PushNotifier.ts';
 import { DISABLE_NOTIFICATIONS_CHOICE_ID, ENABLE_NOTIFICATIONS_CHOICE_ID, KEEP_NOTIFICATIONS_CHOICE_ID, LATER_NOTIFICATIONS_CHOICE_ID } from '../../shared/pushTypes.ts';
 import type { PushNoticeKind } from '../../shared/pushTypes.ts';
@@ -225,6 +227,8 @@ interface ChatServiceOptions {
     forgetGithub?: ((botId: string) => Promise<void>) | undefined;
     // Sends a push notification to the owner's browsers. Without it the bot has no notification tool and nothing is sent.
     notifyOwner?: ((notice: OwnerNotice) => Promise<void>) | undefined;
+    // Connects a bot to the owner's Telegram account. Unset means the Telegram tools are not offered.
+    telegram?: TelegramConnector | undefined;
 }
 
 interface SharedFileDownload {
@@ -634,6 +638,7 @@ class ChatService {
     private readonly githubEnvironment: ((botId: string) => Promise<Record<string, string>>) | undefined;
     private readonly forgetGithub: ((botId: string) => Promise<void>) | undefined;
     private readonly notifyOwner: ((notice: OwnerNotice) => Promise<void>) | undefined;
+    private readonly telegram: TelegramConnector | undefined;
     // Bots whose delete is running. New messages and uploads for them are refused.
     private readonly deletingBots = new Set<string>();
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
@@ -699,6 +704,7 @@ class ChatService {
         this.githubEnvironment = options.githubEnvironment;
         this.forgetGithub = options.forgetGithub;
         this.notifyOwner = options.notifyOwner;
+        this.telegram = options.telegram;
         this.approvals = options.toolCallReviewer === undefined
             ? undefined
             : new ApprovalGate({
@@ -3193,11 +3199,12 @@ class ChatService {
                         createNotificationsEnableTool(() => this.postNotificationCard(botId)),
                         createNotificationsDisableTool(() => this.postNotificationOffCard(botId)),
                     ];
+            const telegramTools = this.telegram === undefined ? [] : createTelegramTools(this.telegram, botId);
             const profileTools = createProfileTools(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...botDeleteTools, ...notificationTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...botDeleteTools, ...notificationTools, ...telegramTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -3424,7 +3431,9 @@ class ChatService {
         const notificationToolNames = this.notificationToolNames();
         const emailToolNames = this.emailAccountService === undefined || this.emailSender === undefined ? [] : EMAIL_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames];
+        const telegramToolNames = this.telegram === undefined ? [] : TELEGRAM_TOOL_FULL_NAMES;
+
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...telegramToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.

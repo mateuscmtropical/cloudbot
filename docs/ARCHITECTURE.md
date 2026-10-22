@@ -1116,6 +1116,18 @@ The worker keys a notification by bot and kind (`botId:kind`) and sets `renotify
 
 Limits. There is no notification for a usage limit, a stall or an owner Stop. A dead subscription is removed when the push service reports it gone.
 
+## Telegram
+
+`TelegramBridge` lets the owner talk to a bot from Telegram. It uses the official Bot API (https://core.telegram.org/bots/api) with `getUpdates` long polling, so the server needs no public address and no webhook.
+
+- The owner makes a Telegram bot with @BotFather. The bot asks for its token with `request_secret`, name `TELEGRAM_BOT_TOKEN`, site `https://api.telegram.org`. The token is read from the vault for each poll and is used only when its site is that one. The token is part of every request address, so no log line or error names the address.
+- `telegram_connect` posts a one-time code of 8 characters in the web chat. The model never sees it. The code works for 10 minutes. Five wrong codes end it.
+- The account that sends `/start <code>` in a private chat becomes the only one the bot answers. Its user id and chat id are kept in `settings` under `telegram.link.<botId>`. The next update offset is kept under `telegram.offset.<botId>` and is saved after a batch is handled, so a restart does not pass a handled message to the bot again. Messages from anyone else, and anything from a group, get no answer at all.
+- A text from the owner goes to the bot like a chat message, so it shows in the web chat too. While a turn that Telegram started is running, each assistant text message of the bot is sent back, in order, cut into parts of 4096 characters (the Bot API limit for `sendMessage`).
+- `telegram_disconnect` forgets the link and the offset. Deleting the bot does too. A restart polls again for every saved link.
+
+Limits. Text only. Approval cards, files and screenshots stay in the web app. The bot does not say on Telegram that an approval waits. Turns run one after the other, so when the owner writes on Telegram while a web turn runs, the replies of that web turn go to Telegram too, and the ones of the Telegram turn may not. Replies go back until the bot is idle with an empty queue. One Telegram bot token serves one CloudBot bot, since Telegram lets only one poll read its updates.
+
 ## Bot hand-offs
 
 A bot passes a message or a task to another bot with `bot_send`, found by the target's name. The tool is offered only with the approval gate. Its handler is `ChatService.handoffFromTool`. It refuses an unknown name, a name shared by two bots, and the sending bot itself.
