@@ -55,6 +55,8 @@ function startCodexLogin(options: CodexLoginOptions): CodexLoginSession {
     const finishedResolvers = Promise.withResolvers<CodexLoginResult>();
     let server: CodexAppServer | undefined;
     let loginId: string | undefined;
+    // Completions that arrive before the start answer is read, such as in the same output chunk.
+    const earlyCompletions: unknown[] = [];
     const state = { isFinished: false };
     // A function, so a check after an await is not narrowed away by the type checker.
     const isOver = (): boolean => state.isFinished;
@@ -85,19 +87,29 @@ function startCodexLogin(options: CodexLoginOptions): CodexLoginSession {
         }
     }
 
-    function onNotification(method: string, params: unknown): void {
-        if (method !== 'account/login/completed' || loginId === undefined) {
-            return;
-        }
-
+    function onCompleted(params: unknown): void {
         const completed = readRecord(params);
 
-        // Only this sign-in runs in this app server, so a missing id is still ours.
+        // Only this sign-in runs in this app server, so a null id is still ours.
         if (completed.loginId !== loginId && completed.loginId !== null) {
             return;
         }
 
         finish(completed.success === true ? { ok: true } : { ok: false, reason: 'refused' });
+    }
+
+    function onNotification(method: string, params: unknown): void {
+        if (method !== 'account/login/completed') {
+            return;
+        }
+
+        if (loginId === undefined) {
+            earlyCompletions.push(params);
+
+            return;
+        }
+
+        onCompleted(params);
     }
 
     async function run(): Promise<void> {
@@ -144,6 +156,8 @@ function startCodexLogin(options: CodexLoginOptions): CodexLoginSession {
         }
 
         codeResolvers.resolve({ verificationUrl: started.verificationUrl as string, userCode: started.userCode as string });
+        earlyCompletions.forEach(onCompleted);
+        earlyCompletions.length = 0;
     }
 
     timer.unref();

@@ -78,6 +78,19 @@ describe('startCodexLogin', () => {
         await expect(session.finished).resolves.toEqual({ ok: false, reason: 'refused' });
     });
 
+    it('keeps a completion that arrives together with the start answer', async () => {
+        const { session } = startFake([
+            ['account/login/start', (message, server) => {
+                server.say({ id: message.id, result: DEVICE_CODE });
+                server.say({ method: 'account/login/completed', params: { loginId: 'login-1', success: true, error: null, onboardingEntrypoint: null } });
+
+                return undefined;
+            }],
+        ]);
+
+        await expect(session.finished).resolves.toEqual({ ok: true });
+    });
+
     it('cancels the sign-in in Codex when the owner cancels', async () => {
         const { session, servers } = startFake(START_ONLY);
 
