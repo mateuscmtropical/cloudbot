@@ -5,7 +5,9 @@ import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
 import { setCookie } from 'hono/cookie';
 
+import { readPublicHost, requireSameOrigin } from './access/requireSameOrigin.ts';
 import { requireSession, SESSION_COOKIE_NAME } from './access/requireSession.ts';
+import { createSecurityHeaders } from './access/securityHeaders.ts';
 import type { AccessErrorResponse } from './access/requireSession.ts';
 import type { SetupAccess } from './access/SetupAccess.ts';
 import { readPublicBaseUrl } from './access/setupLinkUrl.ts';
@@ -62,6 +64,8 @@ interface AppOptions {
     connectedApps?: ConnectedApps;
     // The address new webhook URLs start with. Without it the server's own address is used.
     publicBaseUrl?: string;
+    // CLOUDBOT_PUBLIC_URL. Requests that change state may also come from the host of this address.
+    publicUrl?: string | undefined;
     // Webhook calls wait for the setup to finish. Without it the server is always ready.
     isReady?: () => boolean;
     screen?: ScreenHolder;
@@ -118,6 +122,11 @@ function createApp(options: AppOptions): Hono {
     const webhookRefusals = options.webhookRefusals ?? new WebhookRefusalLog();
     const webhookDeliveries = options.webhookDeliveries ?? new DeliveryMemory();
 
+    const publicHost = readPublicHost(options.publicUrl);
+    const securityHeaders = createSecurityHeaders(publicHost);
+
+    app.use('*', securityHeaders);
+
     // Health is registered before the session check, so it answers without a cookie.
     app.get('/api/health', (context) => {
         const body: HealthResponse = { status: 'ok', version: options.version };
@@ -141,7 +150,10 @@ function createApp(options: AppOptions): Hono {
     }
 
     const sessionCheck = requireSession(options.access);
+    const sameOriginCheck = requireSameOrigin({ publicHost });
 
+    // The origin check runs first, so a request from another page is refused before the cookie is read.
+    app.use('/api/*', sameOriginCheck);
     app.use('/api/*', sessionCheck);
 
     // Chat routes sit behind the session check. The web fallback would otherwise answer them.

@@ -23,6 +23,14 @@ All notable changes to this project are listed here. The format follows
 - A chain of hand-offs allows 3 hand-offs in a row, so 4 bots at most. The owner is told in the sender's chat when a chain stops.
 - A bot sends at most 3 hand-offs in one turn, and a bot can have at most 3 hand-offs waiting for it.
 
+### Security
+
+- A local run listens on `127.0.0.1` only, so it is not open to the network. Set `HOST` to listen elsewhere. The Docker image sets `HOST=0.0.0.0`. The start log prints the address the server really listens on.
+- A request that changes state under `/api` must come from the page itself. The `Origin` must be the server's own host or the host of `CLOUDBOT_PUBLIC_URL`, and a request with no `Origin` needs `Sec-Fetch-Site: same-origin`. Another site or another local port can no longer send it with the owner's cookie. A script that calls the API without a browser must now send an `Origin` header.
+- A request with a body must be `application/json`, or `multipart/form-data` on the upload route. Other types get a 415.
+- Every response sends a Content Security Policy that allows only the app's own files, `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer` and same-origin opener and resource policies. Images from other sites, such as in bot replies, no longer load.
+- The setup link and the start log use the address the server really listens on, `127.0.0.1` by default, and not `localhost`.
+
 ### Fixed
 
 - The plus in the new bot and attach buttons sits exactly in the center of the round button.

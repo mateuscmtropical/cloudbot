@@ -20,6 +20,8 @@ import { openDatabase } from './store/openDatabase.ts';
 import { SettingsStore } from './store/SettingsStore.ts';
 
 const createdDirectories: string[] = [];
+// app.request builds its URL on http://localhost, so this is the page's own origin.
+const OWN_ORIGIN = 'http://localhost';
 
 async function createWebRoot(): Promise<string> {
     const webRoot = await mkdtemp(join(tmpdir(), 'cloudbot-web-'));
@@ -148,8 +150,8 @@ describe('createApp', () => {
         const withoutCookie = await app.request(`/api/bots/${bot.id}/routines`);
         const listed = await requestWithSession(app, `/api/bots/${bot.id}/routines`, sessionToken);
         const unknownBot = await requestWithSession(app, '/api/bots/missing/routines', sessionToken);
-        const removed = await app.request(`/api/bots/${bot.id}/routines/${routine.id}`, { method: 'DELETE', headers: { cookie } });
-        const removedAgain = await app.request(`/api/bots/${bot.id}/routines/${routine.id}`, { method: 'DELETE', headers: { cookie } });
+        const removed = await app.request(`/api/bots/${bot.id}/routines/${routine.id}`, { method: 'DELETE', headers: { cookie, origin: OWN_ORIGIN } });
+        const removedAgain = await app.request(`/api/bots/${bot.id}/routines/${routine.id}`, { method: 'DELETE', headers: { cookie, origin: OWN_ORIGIN } });
 
         expect(withoutCookie.status)
             .toBe(401);
@@ -182,19 +184,19 @@ describe('createApp', () => {
         const withoutCookie = await app.request(`/api/bots/${bot.id}/rules`);
         const added = await app.request(`/api/bots/${bot.id}/rules`, {
             method: 'POST',
-            headers: { cookie, 'content-type': 'application/json' },
+            headers: { 'cookie': cookie, 'origin': OWN_ORIGIN, 'content-type': 'application/json' },
             body: JSON.stringify({ kind: 'block', text: 'Never delete files.', blockedTools: ['Bash(rm:*)'] }),
         });
         const addedRule = await added.json() as { id: string };
         const listed = await requestWithSession(app, `/api/bots/${bot.id}/rules`, sessionToken);
         const invalid = await app.request(`/api/bots/${bot.id}/rules`, {
             method: 'POST',
-            headers: { cookie, 'content-type': 'application/json' },
+            headers: { 'cookie': cookie, 'origin': OWN_ORIGIN, 'content-type': 'application/json' },
             body: JSON.stringify({ kind: 'allow', text: 'x', blockedTools: ['Bash'] }),
         });
         const unknownBot = await requestWithSession(app, '/api/bots/missing/rules', sessionToken);
-        const removed = await app.request(`/api/bots/${bot.id}/rules/${addedRule.id}`, { method: 'DELETE', headers: { cookie } });
-        const removedAgain = await app.request(`/api/bots/${bot.id}/rules/${addedRule.id}`, { method: 'DELETE', headers: { cookie } });
+        const removed = await app.request(`/api/bots/${bot.id}/rules/${addedRule.id}`, { method: 'DELETE', headers: { cookie, origin: OWN_ORIGIN } });
+        const removedAgain = await app.request(`/api/bots/${bot.id}/rules/${addedRule.id}`, { method: 'DELETE', headers: { cookie, origin: OWN_ORIGIN } });
 
         expect(withoutCookie.status)
             .toBe(401);
@@ -225,7 +227,7 @@ describe('createApp', () => {
 
         const response = await app.request(`/api/bots/${bot.id}/rules`, {
             method: 'POST',
-            headers: { 'cookie': `cloudbot_session=${sessionToken}`, 'content-type': 'application/json' },
+            headers: { 'cookie': `cloudbot_session=${sessionToken}`, 'origin': OWN_ORIGIN, 'content-type': 'application/json' },
             body: JSON.stringify({ kind: 'allow', text: 'One more.' }),
         });
 
@@ -379,7 +381,7 @@ describe('createApp', () => {
         const screen = new ScreenHolder();
         const app = createApp({ version: '1.2.3', access, screen });
         const sessionToken = await signIn(app, access);
-        const post = (path: string): Response | Promise<Response> => app.request(path, { method: 'POST', headers: { cookie: `cloudbot_session=${sessionToken}` } });
+        const post = (path: string): Response | Promise<Response> => app.request(path, { method: 'POST', headers: { cookie: `cloudbot_session=${sessionToken}`, origin: OWN_ORIGIN } });
 
         expect(await (await requestWithSession(app, '/api/desktop/screen', sessionToken)).json())
             .toEqual({ holder: 'bot' });
@@ -396,9 +398,51 @@ describe('createApp', () => {
     it('rejects the screen routes without the cookie', async () => {
         const screen = new ScreenHolder();
         const app = createApp({ version: '1.2.3', access, screen });
-        const response = await app.request('/api/desktop/screen/release', { method: 'POST' });
+        const response = await app.request('/api/desktop/screen/release', { method: 'POST', headers: { origin: OWN_ORIGIN } });
 
         expect(response.status)
             .toBe(401);
+    });
+
+    it('refuses a change from another page or with a form body, even with a valid session', async () => {
+        const chatService = buildChatService(opened);
+        const bot = await new BotStore(opened.db)
+            .create({ name: 'Ana', title: 'Assistant', description: '' });
+        const app = createApp({ version: '1.2.3', access, chatService });
+        const sessionToken = await signIn(app, access);
+        const cookie = `cloudbot_session=${sessionToken}`;
+        const messagesPath = `/api/bots/${bot.id}/messages`;
+        const otherPort = await app.request('/api/bots', { method: 'POST', headers: { cookie, origin: 'http://localhost:5173' } });
+        const noOrigin = await app.request('/api/bots', { method: 'POST', headers: { cookie } });
+        const formBody = await app.request(messagesPath, { method: 'POST', headers: { cookie, 'origin': OWN_ORIGIN, 'content-type': 'text/plain', 'content-length': '13' }, body: JSON.stringify({ text: 'hi' }) });
+        const created = await app.request('/api/bots', { method: 'POST', headers: { cookie, origin: OWN_ORIGIN } });
+
+        expect([otherPort.status, noOrigin.status, formBody.status, created.status])
+            .toEqual([403, 403, 415, 201]);
+    });
+
+    it('lets the public address change state when CLOUDBOT_PUBLIC_URL names it', async () => {
+        const chatService = buildChatService(opened);
+        const app = createApp({ version: '1.2.3', access, chatService, publicUrl: 'https://bot.example.com' });
+        const sessionToken = await signIn(app, access);
+        const cookie = `cloudbot_session=${sessionToken}`;
+        const response = await app.request('/api/bots', { method: 'POST', headers: { cookie, origin: 'https://bot.example.com' } });
+
+        expect(response.status)
+            .toBe(201);
+    });
+
+    it('sends the security headers with the page and with the API', async () => {
+        const webRoot = await createWebRoot();
+        const app = createApp({ version: '1.2.3', access, webRoot });
+        const page = await app.request('/');
+        const health = await app.request('/api/health');
+
+        expect(page.headers.get('content-security-policy'))
+            .toContain('frame-ancestors \'none\'');
+        expect(page.headers.get('x-frame-options'))
+            .toBe('DENY');
+        expect(health.headers.get('x-content-type-options'))
+            .toBe('nosniff');
     });
 });

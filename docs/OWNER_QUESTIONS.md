@@ -145,8 +145,8 @@ Status: **open** means the default is in use and waits for the owner.
 
 - Status: open
 - Default: rules live per bot, at most 50. Only the owner changes them,
-  through owner-only routes and the Rules panel in the web app. The bot has no tool for them, so a
-  web page cannot talk it into more rights.
+  through owner-only routes and the Rules panel in the web app. The bot can propose a change with
+  `rule_change`, and the owner approves each one in the chat, so a web page cannot talk it into more rights.
 - Each rule is a sentence. Every sentence goes into the system prompt as an
   owner rule. Block rules can also name tools, such as `Bash(rm:*)` or
   `WebFetch`, and the SDK refuses those through `disallowedTools`.

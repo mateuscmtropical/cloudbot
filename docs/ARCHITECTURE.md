@@ -325,9 +325,33 @@ clears the session, which ends old sessions. This keeps strangers out. It is
 not a sign-in.
 
 The link starts with `CLOUDBOT_PUBLIC_URL` when it is set, and with
-`http://localhost:PORT` otherwise. `buildSetupLink` in `setupLinkUrl.ts` builds
+`http://<HOST>:PORT` otherwise. That is `127.0.0.1` by default, and `localhost` when `HOST`
+is a wildcard address such as `0.0.0.0`. `buildSetupLink` in `setupLinkUrl.ts` builds
 it for both the server start and the `setup-link` entry point. The cookie is
 `Secure`, so the link works only on localhost or over HTTPS.
+
+The server listens on `HOST` and `PORT`. `HOST` defaults to `127.0.0.1`, so a local run
+is not open to the network. The Docker image sets `HOST=0.0.0.0`, because Caddy reaches the
+server from another container, and compose does not publish the server port. The start log
+prints the address the socket really got.
+
+A request that changes state (`POST`, `PUT`, `PATCH` or `DELETE` under `/api`) passes
+`requireSameOrigin` before the session check. The cookie does not tell localhost ports or
+sibling subdomains apart, so the `Origin` must name the server's own host or the host of
+`CLOUDBOT_PUBLIC_URL`. A request with no `Origin` passes only when the browser marks it
+`Sec-Fetch-Site: same-origin`, and any other `Sec-Fetch-Site` value is refused. A
+refusal is a 403. A request with a body must have the content type `application/json`,
+or `multipart/form-data` on the upload route, and anything else gets a 415. A request
+without a body needs no content type. So a script that calls the API without a browser
+must send an `Origin` header. The two screen sockets keep their own `Origin` check.
+
+Every response carries a Content Security Policy that allows only the app's own files,
+`data:` images, `object-src` and `base-uri` of none and `frame-ancestors` of none. Its
+`connect-src` also names `ws://` and `wss://` for the request's own host, and for the host of
+`CLOUDBOT_PUBLIC_URL`, because older Safari does not match `'self'` to a WebSocket. It also
+sends `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer` and the
+cross-origin opener and resource policies of `same-origin`. HSTS stays with the proxy.
+The code is in `access/securityHeaders.ts`.
 
 `pnpm setup-link` runs `dist/server/newSetupLink.js`. It opens the same
 database, issues a new code and prints the link, which ends every session. The
@@ -585,8 +609,11 @@ routes `GET` and `POST /api/bots/:id/rules` and `DELETE
 checks the input: a sentence of 1 to 300 characters, at most 20 tool names as
 the SDK spells them, optionally with a pattern such as `Bash(rm:*)` without
 commas. Only a block rule can name tools, and a bot has at most 50 rules. The
-bot has no tool to read or change rules. A misspelled tool name blocks
-nothing, so the sentence carries the intent.
+bot has `rule_list` to read its rules. It also has `rule_change` to propose adding
+or removing one, and that tool is offered only with the approval gate. Rules are
+permissions, so `rule_change` always asks the owner in the chat and shows the rule
+on the card. A misspelled tool name blocks nothing, so the sentence carries the
+intent.
 
 The web app shows them in `RulesPanel`, opened with the Rules button in the
 conversation header. It lists, adds and removes rules through these routes and
