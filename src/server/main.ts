@@ -67,6 +67,9 @@ import { createPushSender } from './push/createPushSender.ts';
 import { loadOrCreateVapidKeys } from './push/loadVapidKeys.ts';
 import { PushNotifier } from './push/PushNotifier.ts';
 import { readPushSubject } from './push/readPushSubject.ts';
+import { TELEGRAM_API_ORIGIN, createTelegramApi } from './telegram/TelegramApi.ts';
+import { TelegramBridge } from './telegram/TelegramBridge.ts';
+import { TELEGRAM_TOKEN_SECRET_NAME } from './telegram/createTelegramTools.ts';
 
 interface RuntimeConnection {
     proxy?: KeyProxy;
@@ -276,8 +279,29 @@ const pushNotifier = new PushNotifier({
     send: createPushSender(),
     subject: readPushSubject(process.env),
 });
+
+// The token is used only for the Telegram API site the owner saved it for.
+function readTelegramToken(botId: string): string | undefined {
+    const secret = botSecrets.read(botId, TELEGRAM_TOKEN_SECRET_NAME);
+
+    return secret?.site === TELEGRAM_API_ORIGIN ? secret.value : undefined;
+}
+
+const telegramBridge = new TelegramBridge({
+    chat: {
+        sendMessage: (botId, text) => chatService.sendMessage(botId, text),
+        subscribe: (botId, listener) => chatService.subscribe(botId, listener),
+        postNotice: async (botId, text) => {
+            await chatService.postSetupMessage(botId, { kind: 'text', text });
+        },
+    },
+    settings,
+    readToken: readTelegramToken,
+    createApi: token => createTelegramApi(token),
+});
 const chatService: ChatService = new ChatService({
     notifyOwner: notice => pushNotifier.notify(notice),
+    telegram: telegramBridge,
     botStore, channelStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, ruleStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     watchStore,
@@ -292,6 +316,10 @@ const chatService: ChatService = new ChatService({
 });
 const bots = await botStore.list();
 const firstBot = bots[0];
+
+const botIds = bots.map(bot => bot.id);
+
+await telegramBridge.resume(botIds);
 
 if (firstBot === undefined) {
     throw new Error('The default bot is missing.');
@@ -420,6 +448,7 @@ function shutdown(): void {
     gateController.abort();
     void browserGate?.close();
     void appProxy.close();
+    void telegramBridge.close();
     void githubProxy?.close();
     // The certificate's public folder is removed on exit. Its key was only on disk in a private folder while openssl ran.
     if (githubCertificate !== undefined) {

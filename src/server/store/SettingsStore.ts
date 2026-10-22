@@ -24,6 +24,13 @@ class SettingsStore {
             .values({ key, value })
             .onConflictDoUpdate({ target: settings.key, set: { value } });
     }
+
+    async delete(key: string): Promise<void> {
+        const keyCondition = eq(settings.key, key);
+
+        await this.database.delete(settings)
+            .where(keyCondition);
+    }
 }
 
 export { SettingsStore };
