@@ -1,6 +1,8 @@
 import type { ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
+import { z } from 'zod/v4';
+
 import { namesProtectedFolder, toReviewedCall } from './AcpEngine.ts';
 import type { AcpLaunch } from './AcpEngine.ts';
 import type { AgentEvent } from './AgentEvent.ts';
@@ -19,6 +21,18 @@ interface AgyEngineOptions {
     loopback: LoopbackToolServer;
     // Folders agy loads its sign-in, hooks and config from. A call that names one is refused without a review.
     protectedFolders: string[];
+}
+
+// The part of a JSON schema the tool list reads.
+interface JsonSchemaNode {
+    type?: string | string[];
+    enum?: unknown[];
+    const?: unknown;
+    anyOf?: JsonSchemaNode[];
+    oneOf?: JsonSchemaNode[];
+    items?: JsonSchemaNode;
+    properties?: Record<string, JsonSchemaNode>;
+    required?: string[];
 }
 
 interface AgyStep {
@@ -142,16 +156,53 @@ function toAgyModel(model: string | undefined, effort: string | undefined): stri
     return `${model}-${effort === 'low' || effort === 'medium' ? effort : 'high'}`;
 }
 
-// agy calls MCP tools through call_mcp_tool without seeing their arguments, so it guessed wrong names. The prompt lists them.
+// A short type text from a JSON schema, such as {kind: "interval"|"daily", everyMinutes?: number}.
+function describeType(node: JsonSchemaNode): string {
+    if (node.enum !== undefined) {
+        return node.enum.map(value => JSON.stringify(value))
+            .join('|');
+    }
+
+    if (node.const !== undefined) {
+        return JSON.stringify(node.const);
+    }
+
+    const choices = node.anyOf ?? node.oneOf;
+
+    if (choices !== undefined) {
+        return choices.map(describeType)
+            .join('|');
+    }
+
+    if (node.type === 'array') {
+        return `${describeType(node.items ?? {})}[]`;
+    }
+
+    if (node.properties !== undefined) {
+        const required = new Set(node.required ?? []);
+        const fields = Object.entries(node.properties)
+            .map(([name, field]) => `${name}${required.has(name) ? '' : '?'}: ${describeType(field)}`);
+
+        return `{${fields.join(', ')}}`;
+    }
+
+    return Array.isArray(node.type) ? node.type.join('|') : node.type ?? 'any';
+}
+
+// agy calls MCP tools through call_mcp_tool without seeing their arguments, so it guessed wrong names and types. The prompt lists them.
 function describeTools(tools: LoopbackTool[]): string {
     if (tools.length === 0) {
         return '';
     }
 
-    const lines = tools.map(tool => `- ${tool.name}(${Object.keys(tool.inputSchema)
-        .join(', ')})`);
+    const lines = tools.map((tool) => {
+        const objectSchema = z.object(tool.inputSchema);
+        const schema = z.toJSONSchema(objectSchema) as JsonSchemaNode;
 
-    return `Your CloudBot tools run through call_mcp_tool with ServerName ${PROFILE_SERVER_NAME}, the tool name as ToolName and an Arguments object. These are the tools and their argument names:\n${lines.join('\n')}\n\n`;
+        return `- ${tool.name} ${describeType(schema)}`;
+    });
+
+    return `Your CloudBot tools run through call_mcp_tool with ServerName ${PROFILE_SERVER_NAME}, the tool name as ToolName and an Arguments object. These are the tools and their arguments, where ? marks an optional one:\n${lines.join('\n')}\n\n`;
 }
 
 // Runs a turn on the Antigravity CLI (agy), which Google points Gemini subscriptions to. agy runs headless with

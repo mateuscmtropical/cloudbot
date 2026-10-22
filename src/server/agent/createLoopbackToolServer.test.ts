@@ -154,6 +154,24 @@ describe('loopback tool server', () => {
         turn.release();
     });
 
+    it('refuses wrong arguments before the review and says which ones are wrong', async () => {
+        const handler = vi.fn(() => Promise.resolve({ content: [] }));
+        const review = allowingReview();
+        const turn = server.grantTurn({ tools: [{ ...echoTool(), handler }], reviewToolCall: review, offersPromptTool: false, reviewsEachCall: true });
+
+        const response = await postMcp(turn, toolCall('echo', { text: 5 }, undefined));
+
+        expect(JSON.stringify(response.json))
+            .toContain('expected string');
+        expect(JSON.stringify(response.json))
+            .toContain('text');
+        expect(review)
+            .not.toHaveBeenCalled();
+        expect(handler)
+            .not.toHaveBeenCalled();
+        turn.release();
+    });
+
     it('denies a prompt whose name or input differs from the one the CLI reported', async () => {
         const review = allowingReview();
         const turn = server.grantTurn({ tools: [], reviewToolCall: review });

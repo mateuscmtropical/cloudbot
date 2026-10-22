@@ -47,7 +47,8 @@ const CREATE_SHAPE = {
         .max(MAX_PROMPT_LENGTH),
     isQuiet: z.boolean()
         .optional(),
-    schedule: z.object({
+    // Strict, so a wrong key such as hours is refused by name before the review.
+    schedule: z.strictObject({
         kind: z.enum(['interval', 'daily', 'weekly']),
         everyMinutes: z.number()
             .optional(),
