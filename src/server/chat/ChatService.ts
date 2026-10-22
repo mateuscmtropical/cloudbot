@@ -2989,10 +2989,10 @@ class ChatService {
     }
 
     // Headless turns cannot answer a permission prompt, so the cloudbot tools the bot has are allowed up front.
-    // Without the approval gate, only the profile tools, the export, the read-only rule list and the notification switch are allowed up front. The rest need the gate.
+    // Without the approval gate, only the profile tools, the export, the read-only rule list, the read-only skills and the notification switch are allowed up front. The rest need the gate.
     private allowedToolNames(): string[] {
         if (this.approvals === undefined) {
-            return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...this.ruleToolNamesAllowed(), ...this.notificationToolNames()];
+            return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...this.ruleToolNamesAllowed(), ...this.skillToolNamesAllowed(), ...this.notificationToolNames()];
         }
 
         const browserToolNames = this.browser === undefined ? [] : BROWSER_TOOL_FULL_NAMES;
