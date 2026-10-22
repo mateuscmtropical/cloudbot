@@ -238,8 +238,6 @@ interface TurnState {
     savedMessageIds: string[];
     // True while the last message the turn stored is the quiet reply of a check-in.
     endsQuiet: boolean;
-    // True once the turn stored any text that is not the quiet reply. A check-in that said something is never removed.
-    hasSpoken: boolean;
     // The messages of the earlier parts of a check-in that waited for the usage limit. Empty for any other turn.
     carriedMessageIds: string[];
 }
@@ -2734,7 +2732,7 @@ class ChatService {
         if (turn.channel !== undefined) {
             this.channelRunning.set(botId, turn.channel.roundId);
         }
-        const turnState: TurnState = { agentStarted: false, isRejectedByLimit: false, rejectedResetsAt: undefined, limit: undefined, hasError: false, savedMessageIds: [], endsQuiet: false, hasSpoken: false, carriedMessageIds: this.takeCheckinCarry(turn) };
+        const turnState: TurnState = { agentStarted: false, isRejectedByLimit: false, rejectedResetsAt: undefined, limit: undefined, hasError: false, savedMessageIds: [], endsQuiet: false, carriedMessageIds: this.takeCheckinCarry(turn) };
         // Set when the turn ends on an error, so its hand-off reply says so.
         let hasFailed = false;
 
@@ -2922,7 +2920,7 @@ class ChatService {
     // A stopped or failed run stays, so the owner sees what happened.
     // Returns true when the run was quiet and its messages were removed.
     private async dropQuietCheckin(turn: TurnInput, turnState: TurnState, hasStoppedOrFailed: boolean): Promise<boolean> {
-        const isQuietRun = turn.source === 'checkin' && turnState.endsQuiet && !turnState.hasSpoken && !turnState.hasError && !hasStoppedOrFailed;
+        const isQuietRun = turn.source === 'checkin' && turnState.endsQuiet && !turnState.hasError && !hasStoppedOrFailed;
 
         if (!isQuietRun) {
             return false;
@@ -3193,7 +3191,6 @@ class ChatService {
                 this.streamMaskers.delete(botId);
                 await this.saveTurnMessage(botId, 'assistant', textBody, channel, turnState);
                 turnState.endsQuiet = isQuietReply(agentEvent.text);
-                turnState.hasSpoken = turnState.hasSpoken || !turnState.endsQuiet;
 
                 return;
             }

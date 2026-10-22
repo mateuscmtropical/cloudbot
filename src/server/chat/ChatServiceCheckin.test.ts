@@ -150,22 +150,6 @@ describe('ChatService check-ins', () => {
             .toBe(false);
     });
 
-    it('keeps a check-in that said something before it ended with the quiet reply', async () => {
-        const { service, botId, published } = await runCheckin([
-            { type: 'text', text: 'Urgent: the invoice is overdue.' },
-            { type: 'tool_started', toolUseId: 't1', toolName: 'WebFetch', input: {} },
-            { type: 'tool_finished', toolUseId: 't1', isError: false, output: 'ok' },
-            { type: 'text', text: 'NOTHING_TO_REPORT' },
-            { type: 'turn_finished' },
-        ]);
-        const remainingMessages = await service.listMessages(botId);
-
-        expect(remainingMessages?.some(message => message.body.kind === 'text' && message.body.text.startsWith('Urgent')))
-            .toBe(true);
-        expect(published.some(event => event.type === 'messagesRemoved'))
-            .toBe(false);
-    });
-
     it('sends no done notification for a quiet check-in, and one for a check-in with news', async () => {
         const notices: OwnerNotice[] = [];
         const notifyOwner = (notice: OwnerNotice): Promise<void> => {

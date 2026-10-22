@@ -862,7 +862,7 @@ the system prompt describes. It needs no code of its own and runs like any
 routine.
 
 A check-in is a routine with `isQuiet` true (the `is_quiet` column, migration
-`0014_checkins`). The scheduler sends it with the turn source `checkin`, and
+`0018_checkins`). The scheduler sends it with the turn source `checkin`, and
 the message ends with the instruction to reply with exactly `NOTHING_TO_REPORT`
 when nothing needs the owner. A check-in turn differs from a routine turn in
 three ways:
@@ -877,6 +877,15 @@ three ways:
   event so an open web app drops them. The owner's messages are never in the
   list. A check-in that failed, was stopped or said anything else stays in the
   chat.
+- A quiet check-in sends no "done" push notification, since it left nothing
+  to look at.
+
+Limits of this version. The last reply decides. Text the run wrote before a
+final `NOTHING_TO_REPORT` is removed with the rest, so the prompt asks for the
+marker only when nothing needs the owner. Messages that are not turn text, tool
+rows or turn errors, such as a shared file or a screen request, are not tracked
+and stay in the chat. After a restart during a usage limit wait, the part
+before the wait stays in the chat.
 
 ## Helper agents
 
