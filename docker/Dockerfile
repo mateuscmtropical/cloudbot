@@ -58,6 +58,7 @@ COPY --chmod=0755 docker/cloudbot-desktop /usr/local/bin/cloudbot-desktop
 COPY --chmod=0755 docker/cloudbot-remove-workspace /usr/local/bin/cloudbot-remove-workspace
 COPY --chmod=0755 docker/cloudbot-signal-group /usr/local/bin/cloudbot-signal-group
 COPY --chmod=0755 docker/cloudbot-end-turn /usr/local/bin/cloudbot-end-turn
+COPY --chmod=0755 docker/cloudbot-codex /usr/local/bin/cloudbot-codex
 RUN visudo -cf /etc/sudoers.d/cloudbot-agent
 
 # pipefail makes a failed download fail the build instead of piping nothing into bash.
@@ -75,6 +76,11 @@ RUN cp -L /home/bot/.local/bin/claude /usr/local/bin/claude \
     && ! find /home/bot -name claude \( -type f -o -type l \) -print | grep -q . \
     && /usr/local/bin/claude --version
 
+# The Codex CLI for bots that run on a ChatGPT subscription. The version must match CODEX_PROTOCOL_VERSION in
+# src/server/agent/codexProtocol.ts. npm installs it as root, so the bot user cannot replace it.
+RUN npm install --global @openai/codex@0.163.0 \
+    && /usr/local/bin/codex --version
+
 USER cloudbot
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
@@ -89,6 +95,7 @@ ENV NODE_ENV=production \
     CLOUDBOT_AGENT_USER=bot \
     CLOUDBOT_INTEGRATION_USER=cloudbot-integrations \
     CLAUDE_PATH=/usr/local/bin/claude \
+    CODEX_PATH=/usr/local/bin/codex \
     CLOUDBOT_DESKTOP_COMMAND=/usr/local/bin/cloudbot-desktop
 
 EXPOSE 3000

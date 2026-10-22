@@ -5,6 +5,13 @@ import { filterOwnerEnvironment, localClaudeConfigDir, validateAgentIsolation } 
 
 import { CLEANUP_INTERVAL_MS } from './attachments/cleanUploads.ts';
 import { ClaudeCliEngine } from './agent/ClaudeCliEngine.ts';
+import { CodexEngine } from './agent/CodexEngine.ts';
+import { join } from 'node:path';
+import { ProviderChoices } from './providers/ProviderChoices.ts';
+import { ProviderRunner } from './providers/ProviderRunner.ts';
+import type { ProviderEngine } from './providers/ProviderRunner.ts';
+import { createChatgptSignIn } from './providers/chatgptSignIn.ts';
+import type { ProviderId } from './providers/providerIds.ts';
 import { PROFILE_SERVER_NAME } from './agent/createProfileToolServer.ts';
 import { AGENT_TURN_ROOT, startLoopbackToolServer } from './agent/createLoopbackToolServer.ts';
 import { SetupAccess } from './access/SetupAccess.ts';
@@ -126,7 +133,14 @@ const loopback = await startLoopbackToolServer(PROFILE_SERVER_NAME, {
     turnRoot: agentUser ? AGENT_TURN_ROOT : undefined,
     agentReadable: agentUser !== undefined,
 });
-const runner = new ClaudeCliEngine({ loopback, pathToClaudeCodeExecutable: claudePath, environment });
+const claudeRunner = new ClaudeCliEngine({ loopback, pathToClaudeCodeExecutable: claudePath, environment });
+// The Codex CLI runs bots on a ChatGPT subscription. The image sets CODEX_PATH. Without it, ChatGPT is not offered.
+const codexPath = process.env.CODEX_PATH?.startsWith('/') === true ? process.env.CODEX_PATH : undefined;
+// Local mode keeps CloudBot's ChatGPT sign-in under the data dir, never in the owner's ~/.codex. Docker keeps it in the bot home.
+const codexHome = join(dataDir, 'codex', 'home');
+const codexAuthOptions = codexPath === undefined ? undefined : { codexPath, codexHome, ...(agentUser ? { agentUser } : {}) };
+const chatgptSignIn = codexAuthOptions === undefined ? undefined : createChatgptSignIn(codexAuthOptions);
+const providerChoices = new ProviderChoices(settings);
 // The image sets CLOUDBOT_DESKTOP_COMMAND, and its desktop starts Chromium. Without it, local runs start an installed
 // Chrome, Chromium or Edge with its own profile, and the browser tools stay off when none is found.
 const desktopCommand = buildDesktopCommand(process.env.CLOUDBOT_DESKTOP_COMMAND, agentUser);
@@ -282,11 +296,52 @@ const pushNotifier = new PushNotifier({
 });
 // The public gallery of templates. CLOUDBOT_GALLERY_REPO points it at another repository, such as a fork.
 const templateGallery = new TemplateGallery({ repo: readGalleryRepo(process.env.CLOUDBOT_GALLERY_REPO), transport: createDefaultGalleryTransport() });
+// How long a ChatGPT sign-in check is trusted, so a turn does not start an extra app server each time.
+const CHATGPT_STATUS_CACHE_MS = 5 * 60 * 1000;
+let chatgptCheckedAt = 0;
+const engines: Partial<Record<ProviderId, ProviderEngine>> = {
+    claude: {
+        runner: claudeRunner,
+        isConnected: () => {
+            const isConnected = setup.isClaudeConnected();
+
+            return Promise.resolve(isConnected);
+        },
+    },
+};
+
+if (codexPath !== undefined && chatgptSignIn !== undefined) {
+    const signIn = chatgptSignIn;
+
+    engines.chatgpt = {
+        runner: new CodexEngine({ codexPath, codexHomeFor: () => codexHome, loopback, callGates: appProxy, ...(agentUser ? { agentUser, imageRoot: AGENT_TURN_ROOT } : {}) }),
+        isConnected: async () => {
+            if (Date.now() - chatgptCheckedAt < CHATGPT_STATUS_CACHE_MS) {
+                return true;
+            }
+
+            const isSignedIn = await signIn.isSignedIn() === true;
+
+            chatgptCheckedAt = isSignedIn ? Date.now() : 0;
+
+            return isSignedIn;
+        },
+    };
+}
+
+const providerRunner = new ProviderRunner({ engines, providerFor: botId => providerChoices.forBot(botId) });
 const chatService: ChatService = new ChatService({
     notifyOwner: notice => pushNotifier.notify(notice),
-    botStore, channelStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, ruleStore, routineStore, taskStore, modelStore, limitStore, screen,
+    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, ruleStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     templateGallery,
+    providerTools: {
+        available: ['claude', ...(chatgptSignIn === undefined ? [] : ['chatgpt' as const])],
+        connected: () => setup.connectedProviders(),
+        providerFor: botId => providerChoices.forBot(botId),
+        setProvider: (botId, provider) => providerChoices.setForBot(botId, provider),
+        offerProviders: () => setup.offerProviders(),
+    },
     watchStore,
     connectedApps,
     integrationService,
@@ -313,7 +368,19 @@ const setup = new SetupConversation({
     ...(!agentUser && process.platform === 'darwin' ? {} : { signOut: () => signOutClaude(authOptions) }),
     localMode: !agentUser,
     noBrowser: isReusedGateBusy ? 'leftover' : noBrowserReason,
+    ...(chatgptSignIn === undefined ? {} : { signIns: [chatgptSignIn] }),
     connect: async (mode) => {
+        const provider: ProviderId = mode === 'subscription' || mode === 'apiKey' ? 'claude' : mode;
+
+        // The first provider the owner connects is the default of every bot without its own choice.
+        if (await settings.get('provider.default') === undefined) {
+            await providerChoices.setDefault(provider);
+        }
+
+        if (provider !== 'claude') {
+            return;
+        }
+
         if (mode === 'apiKey') {
             connection.proxy ??= await startKeyProxy({ vault, secretName: API_KEY_NAME });
             environment.ANTHROPIC_BASE_URL = connection.proxy.url;
@@ -438,7 +505,7 @@ function shutdown(): void {
     void connection.proxy?.close();
     // The CLI processes stop first, so no tool call reaches the loopback server after it closes.
     // The loopback closes even when a stop fails, so the port is never left open.
-    void runner.close()
+    void providerRunner.close()
         .catch((error: unknown) => {
             console.error('Could not stop the CLI processes:', error);
         })

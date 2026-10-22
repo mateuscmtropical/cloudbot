@@ -1,0 +1,16 @@
+#!/bin/sh
+# Runs the Codex CLI for CloudBot as the bot user, see src/server/agent/codexAgentLaunch.ts.
+# Only `codex app-server` is allowed. CODEX_HOME lives in the bot user's home, which is a volume,
+# so the ChatGPT sign-in survives a rebuild of the image. The server never reads that folder.
+set -eu
+
+if [ "${1:-}" != "app-server" ]; then
+    echo "cloudbot-codex runs only codex app-server." >&2
+    exit 2
+fi
+
+umask 077
+mkdir -p "$HOME/.cloudbot-codex"
+CODEX_HOME="$HOME/.cloudbot-codex"
+export CODEX_HOME
+exec /usr/local/bin/codex "$@"

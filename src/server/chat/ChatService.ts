@@ -35,6 +35,8 @@ import { TASK_TOOL_FULL_NAMES, createTaskTools, describeBlockedNotice } from '..
 import { INTEGRATION_TOOL_FULL_NAMES, createIntegrationTools } from '../integrations/createIntegrationTools.ts';
 import type { IntegrationService } from '../integrations/IntegrationService.ts';
 import { MODELS_SET_TOOL_FULL_NAME, createModelTools } from '../models/createModelTools.ts';
+import { PROVIDER_TOOL_FULL_NAMES, createProviderTools } from '../providers/createProviderTools.ts';
+import type { ProviderToolDependencies } from '../providers/createProviderTools.ts';
 import { LIMITS_SET_TOOL_FULL_NAME, createLimitTools } from '../limits/createLimitTools.ts';
 import { TurnDeadline } from '../limits/TurnDeadline.ts';
 import { STALL_MESSAGE, StallWatchdog } from './StallWatchdog.ts';
@@ -178,6 +180,8 @@ interface ChatServiceOptions {
     // Where the secrets the bot asks for are kept. Without it the bot cannot ask for one.
     botSecrets?: BotSecrets | undefined;
     templateGallery?: TemplateGallery | undefined;
+    // Lets a bot list the AI providers, connect one and switch its own. Unset leaves the tools out.
+    providerTools?: ProviderToolDependencies | undefined;
     // Who holds the screen. With a browser it gives the bot the request_screen tool.
     screen?: ScreenHolder | undefined;
     // The owner's rules for each bot. Without it turns run without rules.
@@ -594,6 +598,7 @@ class ChatService {
     private readonly browser: BrowserControl | undefined;
     private readonly botSecrets: BotSecrets | undefined;
     private readonly templateGallery: TemplateGallery | undefined;
+    private readonly providerTools: ProviderToolDependencies | undefined;
     private readonly screen: ScreenHolder | undefined;
     // Bot secret forms with an answer in progress, by message id.
     private readonly answeringForms = new Set<string>();
@@ -659,6 +664,7 @@ class ChatService {
         this.browser = options.browser;
         this.botSecrets = options.botSecrets;
         this.templateGallery = options.templateGallery;
+        this.providerTools = options.providerTools;
         this.screen = options.screen;
         this.ruleStore = options.ruleStore;
         this.routineStore = options.routineStore;
@@ -2974,6 +2980,7 @@ class ChatService {
             const taskTools = this.taskStore === undefined ? [] : createTaskTools(this.taskStore, botId, { onBlocked: task => this.noticeBlockedTask(botId, task), onBoard: (cards, hiddenCount) => this.postTaskBoard(botId, cards, hiddenCount) });
             const integrationTools = this.integrationService === undefined ? [] : createIntegrationTools(this.integrationService, botId);
             const modelTools = this.modelStore === undefined ? [] : createModelTools(this.modelStore, botId);
+            const providerTools = this.providerTools === undefined ? [] : createProviderTools(this.providerTools, botId);
             const limitTools = this.limitStore === undefined ? [] : createLimitTools(this.limitStore, botId);
             const webhookTools = this.webhookTools(botId);
             const watchTools = this.watchStore === undefined ? [] : createWatchTools(this.watchStore, botId);
@@ -3004,7 +3011,7 @@ class ChatService {
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...taskTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...botDeleteTools, ...notificationTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...botDeleteTools, ...notificationTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -3206,6 +3213,7 @@ class ChatService {
         const taskToolNames = this.taskStore === undefined ? [] : TASK_TOOL_FULL_NAMES;
         const integrationToolNames = this.integrationService === undefined ? [] : INTEGRATION_TOOL_FULL_NAMES;
         const modelToolNames = this.modelStore === undefined ? [] : [MODELS_SET_TOOL_FULL_NAME];
+        const providerToolNames = this.providerTools === undefined ? [] : PROVIDER_TOOL_FULL_NAMES;
         const limitToolNames = this.limitStore === undefined ? [] : [LIMITS_SET_TOOL_FULL_NAME];
         const webhookToolNames = this.webhookStore === undefined ? [] : WEBHOOK_TOOL_FULL_NAMES;
         const watchToolNames = this.watchStore === undefined ? [] : WATCH_TOOL_FULL_NAMES;
@@ -3222,7 +3230,7 @@ class ChatService {
         const botSendToolNames = [BOT_SEND_TOOL_FULL_NAME];
         const notificationToolNames = this.notificationToolNames();
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.

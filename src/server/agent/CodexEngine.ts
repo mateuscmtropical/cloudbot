@@ -15,6 +15,7 @@ import type { CodexFileChange, CodexMessage, CodexRequestId, CodexThreadItem, Co
 import type { LoopbackToolServer, LoopbackTurn } from './createLoopbackToolServer.ts';
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
 import { mapCodexNotification, mapCodexTurnEnd, readItem } from './mapCodexNotification.ts';
+import { codexAgentLaunch } from './codexAgentLaunch.ts';
 import { writeCodexTurnImages } from './writeCodexTurnImages.ts';
 import type { CodexTurnImages } from './writeCodexTurnImages.ts';
 
@@ -34,6 +35,10 @@ interface CodexEngineOptions {
     callGates?: { openCallGate: (address: string) => ProxyCallGate | undefined } | undefined;
     // How long a review may take before the call is declined. The approval gate waits one hour, so this outlasts it.
     reviewTimeoutMs?: number | undefined;
+    // Runs Codex as this user through docker/cloudbot-codex, which keeps CODEX_HOME in that user's home. codexHomeFor is then unused.
+    agentUser?: string | undefined;
+    // Where a turn writes the attached images when Codex runs as the agent user. The agent user's group must read it.
+    imageRoot?: string | undefined;
     // Tests inject fakes here. Production spawns the binary and signals its process group.
     spawnFunction?: SpawnFunction | undefined;
     signalProcess?: ((child: ChildProcess, action: SignalAction) => void) | undefined;
@@ -208,8 +213,10 @@ class CodexEngine implements AgentRunner {
             throw new Error('The Codex path must be absolute.');
         }
 
-        this.options = options;
-        this.spawnFunction = options.spawnFunction ?? spawn;
+        const agentLaunch = options.agentUser === undefined ? undefined : codexAgentLaunch(options.agentUser, options.spawnFunction);
+
+        this.options = agentLaunch === undefined ? options : { ...options, signalProcess: options.signalProcess ?? agentLaunch.signalProcess };
+        this.spawnFunction = agentLaunch?.spawnFunction ?? options.spawnFunction ?? spawn;
     }
 
     async* runTurn(request: TurnRequest): AsyncGenerator<AgentEvent> {
@@ -219,9 +226,13 @@ class CodexEngine implements AgentRunner {
 
         const codexHome = this.options.codexHomeFor(request.botId);
         const userHome = codexUserHomeFor(codexHome);
+        const isAgent = this.options.agentUser !== undefined;
 
-        preparePrivateFolder(codexHome);
-        preparePrivateFolder(userHome);
+        // The agent user's wrapper makes its own CODEX_HOME. The server only prepares the local one.
+        if (!isAgent) {
+            preparePrivateFolder(codexHome);
+            preparePrivateFolder(userHome);
+        }
 
         const tools = request.tools ?? [];
         // The engine decides each call itself, so the prompt route of the loopback server refuses everything.
@@ -235,7 +246,7 @@ class CodexEngine implements AgentRunner {
         // The images are written inside the try, so the tool turn, the gates and the image folder are all cleaned up on any error.
         try {
             openRemoteServers(request, this.options.callGates, remoteServers);
-            images = writeCodexTurnImages(codexHome, request.images ?? []);
+            images = writeCodexTurnImages(isAgent ? this.options.imageRoot ?? request.workspaceDir : codexHome, request.images ?? [], isAgent);
             yield* this.runProcess(request, codexHome, userHome, toolTurn, remoteServers, images.paths);
         } finally {
             toolTurn?.release();

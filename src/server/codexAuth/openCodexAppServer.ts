@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline';
 import { signalProcessTree } from '../agent/ClaudeCliEngine.ts';
 import type { SignalAction, SpawnFunction } from '../agent/ClaudeCliEngine.ts';
 import { buildCodexArguments, codexUserHomeFor, preparePrivateFolder } from '../agent/CodexEngine.ts';
+import { codexAgentLaunch } from '../agent/codexAgentLaunch.ts';
 import type { CodexMessage, CodexRequestId } from '../agent/codexProtocol.ts';
 
 interface CodexAppServerOptions {
@@ -14,6 +15,8 @@ interface CodexAppServerOptions {
     codexHome: string;
     // The environment of the app server. Unset gives PATH only, so no variable of the CloudBot server reaches Codex.
     environment?: Record<string, string> | undefined;
+    // Runs Codex as this user through docker/cloudbot-codex, which keeps CODEX_HOME in that user's home. codexHome is then unused.
+    agentUser?: string | undefined;
     // Tests inject fakes here. Production spawns the binary and signals its process group.
     spawnFunction?: SpawnFunction | undefined;
     signalProcess?: ((child: ChildProcess, action: SignalAction) => void) | undefined;
@@ -73,17 +76,20 @@ function exitsWithin(exited: Promise<unknown>, milliseconds: number): Promise<bo
 // Starts the bot's own `codex app-server` for account calls and runs the initialize handshake. Server requests are
 // never expected here, so each one is refused. Nothing that Codex prints is logged, since it may hold account details.
 async function openCodexAppServer(options: CodexAppServerOptions): Promise<CodexAppServer> {
-    const spawnFunction = options.spawnFunction ?? spawn;
-
+    const agentLaunch = options.agentUser === undefined ? undefined : codexAgentLaunch(options.agentUser, options.spawnFunction);
+    const spawnFunction = agentLaunch?.spawnFunction ?? options.spawnFunction ?? spawn;
     const userHome = codexUserHomeFor(options.codexHome);
 
-    preparePrivateFolder(options.codexHome);
-    preparePrivateFolder(userHome);
+    if (agentLaunch === undefined) {
+        preparePrivateFolder(options.codexHome);
+        preparePrivateFolder(userHome);
+    }
 
     const environment = { PATH: process.env.PATH ?? '', ...options.environment, HOME: userHome, CODEX_HOME: options.codexHome };
     const args = buildCodexArguments([]);
     const child = spawnFunction(options.codexPath, args, {
-        cwd: options.codexHome,
+        // The agent user's home is not open to the server, so that run starts in the root folder.
+        cwd: agentLaunch === undefined ? options.codexHome : '/',
         env: environment,
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: false,
@@ -99,7 +105,7 @@ async function openCodexAppServer(options: CodexAppServerOptions): Promise<Codex
 
     const pending = new Map<CodexRequestId, (message: CodexMessage) => void>();
     const handlers: CodexNotificationHandler[] = [];
-    const signalChild = options.signalProcess ?? ((target: ChildProcess, action: SignalAction) => {
+    const signalChild = options.signalProcess ?? agentLaunch?.signalProcess ?? ((target: ChildProcess, action: SignalAction) => {
         signalProcessTree(target, action, undefined);
     });
     let hasExited = false;

@@ -16,10 +16,13 @@ const EXTENSIONS: Record<TurnImageMediaType, string> = {
 };
 const PRIVATE_FOLDER_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
+// With an agent user, Codex runs as that user and reads the images through the group of the turn root.
+const GROUP_FOLDER_MODE = 0o750;
+const GROUP_FILE_MODE = 0o640;
 
 // Codex takes an image as a file path (a localImage input) and reads the file itself. Each turn writes its images to a
 // new private folder in the bot's CODEX_HOME, which CloudBot owns, and removes it when the turn ends.
-function writeCodexTurnImages(codexHome: string, images: TurnImage[]): CodexTurnImages {
+function writeCodexTurnImages(codexHome: string, images: TurnImage[], isGroupReadable = false): CodexTurnImages {
     if (images.length === 0) {
         return { paths: [], remove: () => undefined };
     }
@@ -34,12 +37,12 @@ function writeCodexTurnImages(codexHome: string, images: TurnImage[]): CodexTurn
 
     // A write that fails part way, such as on a full disk, removes what was written before the error goes up.
     try {
-        chmodSync(folder, PRIVATE_FOLDER_MODE);
+        chmodSync(folder, isGroupReadable ? GROUP_FOLDER_MODE : PRIVATE_FOLDER_MODE);
         paths = images.map((image, index) => {
             const path = join(folder, `image-${String(index + 1)}.${EXTENSIONS[image.mediaType]}`);
             const bytes = Buffer.from(image.data, 'base64');
 
-            writeFileSync(path, bytes, { mode: PRIVATE_FILE_MODE });
+            writeFileSync(path, bytes, { mode: isGroupReadable ? GROUP_FILE_MODE : PRIVATE_FILE_MODE });
 
             return path;
         });
