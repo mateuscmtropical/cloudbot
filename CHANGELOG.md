@@ -38,6 +38,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- An approval card for a Gemini bot's own tool, such as a message to another bot, no longer expires after 3 minutes. The card is now asked in agy's hook, which waits for the owner.
 - An owner who connected only Gemini no longer gets an approval card for every tool call. When Claude is not signed in, the tool call review runs on Gemini through agy, with every tool refused.
 - A bot now knows the names of the owner's other bots, so a request to message the bot called CloudBot reaches it with bot_send instead of being read as the app.
 - A Gemini bot on the Antigravity CLI no longer shows an old API error after each reply. agy repeats the last error of the conversation on later turns, so a turn that answered now counts as finished.

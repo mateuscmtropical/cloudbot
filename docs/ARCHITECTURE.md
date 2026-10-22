@@ -1544,6 +1544,12 @@ ACP:
   which runs the turn's review. `allow` answers `auto_approve`, anything else
   answers `deny`. Headless `agy` refuses every call it cannot ask about, so a
   call runs only after a review.
+- A call to the bot's own tools reaches the hook as `call_mcp_tool`. The
+  loopback reads the tool and its arguments out of it, checks them and reviews
+  them there, because agy ends an MCP call after 3 minutes and the hook may
+  wait an hour. The `tools/call` that follows runs without a second review
+  only when its tool and input match that call exactly, once. Any other call
+  is reviewed again.
 - The engine maps agy names (`run_command`, `write_file` and the rest) to the
   kinds the rules read, refuses agy's own schedules, workflows, messages and
   subagents, and refuses calls that name `.gemini` or `.agents`.

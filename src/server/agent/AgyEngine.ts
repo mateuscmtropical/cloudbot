@@ -7,7 +7,7 @@ import { namesProtectedFolder, toReviewedCall } from './AcpEngine.ts';
 import type { AcpLaunch } from './AcpEngine.ts';
 import type { AgentEvent } from './AgentEvent.ts';
 import type { AgentRunner, ToolCall, ToolCallDecision, TurnRequest } from './AgentRunner.ts';
-import type { LoopbackTool, LoopbackToolServer } from './createLoopbackToolServer.ts';
+import type { LoopbackTool, LoopbackToolServer, OwnToolCall } from './createLoopbackToolServer.ts';
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
 import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
 
@@ -130,6 +130,18 @@ function isOwnToolCall(name: string, args: unknown): boolean {
     return name === 'call_mcp_tool' && readString(input, 'ServerName', 'serverName', 'server_name', 'Server') === PROFILE_SERVER_NAME;
 }
 
+// The tool name and arguments inside a call_mcp_tool to the bot's own tools, so the hook review covers that call.
+function readOwnToolCall(name: string, args: unknown): OwnToolCall | undefined {
+    if (!isOwnToolCall(name, args)) {
+        return undefined;
+    }
+
+    const input = readRecord(args);
+    const toolName = readString(input, 'ToolName', 'toolName', 'tool_name', 'Tool');
+
+    return toolName === undefined ? undefined : { name: toolName, input: input.Arguments ?? input.arguments ?? {} };
+}
+
 // Reads the flag at call time. A check after an await is not narrowed to the value read before it.
 function isAborted(signal: AbortSignal): boolean {
     return signal.aborted;
@@ -235,6 +247,7 @@ class AgyEngine implements AgentRunner {
             disallowedTools: request.disallowedTools,
             offersPromptTool: false,
             reviewsEachCall: true,
+            readOwnToolCall,
         });
         const sessionId = request.sessionId !== undefined && UUID.test(request.sessionId) ? request.sessionId : undefined;
         const model = toAgyModel(request.model, request.effort);

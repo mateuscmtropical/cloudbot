@@ -172,6 +172,47 @@ describe('loopback tool server', () => {
         turn.release();
     });
 
+    it('reviews an own tool call in the hook, then runs only the matching tool call once without a second review', async () => {
+        const handler = vi.fn(() => Promise.resolve({ content: [{ type: 'text', text: 'ran' }] }));
+        const review = vi.fn<LoopbackTurnGrant['reviewToolCall']>(() => Promise.resolve({ isAllowed: true }));
+        const readOwnToolCall = (name: string, input: unknown): { name: string; input: unknown } | undefined => (name === 'wrapper' ? { name: 'echo', input } : undefined);
+        const turn = server.grantTurn({ tools: [{ ...echoTool(), handler }], reviewToolCall: review, offersPromptTool: false, reviewsEachCall: true, readOwnToolCall });
+
+        const prompt = await postMcp(turn, promptCall({ tool_name: 'wrapper', input: { text: 'ok' } }));
+        const first = await postMcp(turn, toolCall('echo', { text: 'ok' }, undefined));
+        const other = await postMcp(turn, toolCall('echo', { text: 'other' }, undefined));
+        const second = await postMcp(turn, toolCall('echo', { text: 'ok' }, undefined));
+
+        expect(resultText(prompt.json))
+            .toEqual({ behavior: 'allow' });
+        expect(JSON.stringify(first.json))
+            .toContain('ran');
+        // The other input and the repeat are not covered by the hook review, so each goes to the review again.
+        expect(review.mock.calls.map(call => call[0]))
+            .toEqual([
+                { toolName: 'mcp__cloudbot__echo', input: { text: 'ok' } },
+                { toolName: 'mcp__cloudbot__echo', input: { text: 'other' } },
+                { toolName: 'mcp__cloudbot__echo', input: { text: 'ok' } },
+            ]);
+        expect(JSON.stringify(other.json) + JSON.stringify(second.json))
+            .toContain('ran');
+        turn.release();
+    });
+
+    it('refuses wrong arguments of an own tool call in the hook, before the review', async () => {
+        const review = allowingReview();
+        const readOwnToolCall = (_name: string, input: unknown): { name: string; input: unknown } => ({ name: 'echo', input });
+        const turn = server.grantTurn({ tools: [echoTool()], reviewToolCall: review, offersPromptTool: false, reviewsEachCall: true, readOwnToolCall });
+
+        const prompt = await postMcp(turn, promptCall({ tool_name: 'wrapper', input: { text: 5 } }));
+
+        expect(resultText(prompt.json))
+            .toMatchObject({ behavior: 'deny', message: expect.stringContaining('expected string') as unknown });
+        expect(review)
+            .not.toHaveBeenCalled();
+        turn.release();
+    });
+
     it('denies a prompt whose name or input differs from the one the CLI reported', async () => {
         const review = allowingReview();
         const turn = server.grantTurn({ tools: [], reviewToolCall: review });
