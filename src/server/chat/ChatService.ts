@@ -490,7 +490,7 @@ function readTextOf(content: unknown): string[] {
 }
 
 // A channel turn uses the bot choice for its model, limit and effort. It is never stored as a queued turn.
-function settingsSource(source: TurnSource): 'chat' | 'routine' | 'webhook' | 'bot' {
+function settingsSource(source: TurnSource): 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot' {
     return source === 'channel' ? 'bot' : source;
 }
 

@@ -163,6 +163,7 @@ describe('createApp', () => {
                 prompt: 'Check.',
                 schedule: { kind: 'daily', hour: 8, minute: 0 },
                 isEnabled: true,
+                isQuiet: false,
                 nextRunAt: routine.nextRunAt,
                 lastRunAt: null,
             }]);
