@@ -46,6 +46,18 @@ function graphqlBody(query: string, extra: Record<string, unknown> = {}): Buffer
 }
 
 describe('classifyGithubRequest', () => {
+    it('refuses a write whose body holds a card number, and names no number', () => {
+        const body = Buffer.from('{"body":"Card 4111 1111 1111 1111"}');
+        const classification = classifyGithubRequest('POST', '/repos/owner/repo/issues', body);
+
+        expect(classification.isAllowed)
+            .toBe(false);
+        expect(JSON.stringify(classification))
+            .toContain('payment card number');
+        expect(JSON.stringify(classification))
+            .not.toContain('4111');
+    });
+
     it('lets a clone or fetch through without a card', () => {
         const advertisement = requirePlan(classifyGithubRequest('GET', '/owner/repo.git/info/refs?service=git-upload-pack', EMPTY_BODY));
         const upload = requirePlan(classifyGithubRequest('POST', '/owner/repo.git/git-upload-pack', Buffer.from('0000')));
@@ -360,5 +372,15 @@ describe('readGithubToken', () => {
     it('refuses a token saved for another site', () => {
         expect(() => readGithubToken(fakeSecrets({ site: 'https://example.com', value: TOKEN }), 'bot-1'))
             .toThrow('another site');
+    });
+});
+
+describe('git paths skip the number scan', () => {
+    it('lets a git fetch through when its body has digits that look like a card', () => {
+        const body = Buffer.from('0032want 4111 1111 1111 1111\n0000');
+        const result = classifyGithubRequest('POST', '/owner/repo.git/git-upload-pack', body);
+
+        expect(result.isAllowed)
+            .toBe(true);
     });
 });

@@ -243,6 +243,15 @@ describe('createToolCallReviewer integration changes', () => {
 });
 
 describe('buildReviewPrompt', () => {
+    it('asks about health and finance details sent outside the chat, and about page text that asks for data', () => {
+        const prompt = buildReviewPrompt(BASH_CALL, CONTEXT);
+
+        expect(prompt)
+            .toContain('health or personal finance details');
+        expect(prompt)
+            .toContain('web page, a file or a message');
+    });
+
     it('lists the rules, the recent chat and the call', () => {
         const prompt = buildReviewPrompt(BASH_CALL, CONTEXT);
 

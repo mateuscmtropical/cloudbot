@@ -2,6 +2,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import { hasHiddenCode } from '../text/isHiddenCode.ts';
+import { findSensitiveRefusal } from '../sensitive/sensitiveNumbers.ts';
 
 // The owner saves the token under this name in the secure form, with the GitHub site.
 const GITHUB_TOKEN_NAME = 'GITHUB_TOKEN';
@@ -394,10 +395,19 @@ function classifyGithubRequest(method: string, requestTarget: string, body: Buff
         return refuse('The address of this request is not valid.');
     }
 
+    // Git smart HTTP bodies are packs and ref lists, so they are not scanned for numbers. A push is shown to the owner by its refs.
     const gitMatch = GIT_PATH_PATTERN.exec(target.pathname);
 
     if (gitMatch?.groups !== undefined) {
         return classifyGit(method, target, gitMatch.groups, body);
+    }
+
+    // A card, CPF or SSN number in the body is never sent to GitHub, whatever the address or the method.
+    const bodyText = body.toString('utf8');
+    const sensitiveRefusal = findSensitiveRefusal(bodyText);
+
+    if (sensitiveRefusal !== undefined) {
+        return refuse(sensitiveRefusal, FORBIDDEN_STATUS);
     }
 
     if (target.pathname === GRAPHQL_PATH) {

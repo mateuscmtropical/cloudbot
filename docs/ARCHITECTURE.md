@@ -601,6 +601,19 @@ does it type the value with `Input.insertText`. A search box or a text field is
 refused, so a page cannot get the value into an address, onto the screen or
 into a post. The tool result never holds the value.
 
+## Sensitive data
+
+`src/server/sensitive/` finds three kinds of number. A payment card number has 13 to 19 digits, has a known brand prefix and length (Visa 16 or 19 digits, Mastercard 16, Amex 15, UnionPay 16 to 19, Maestro 12 to 19, and the others in `sensitiveNumbers.ts`), passes the Luhn check, and may have up to two spaces, dots, dashes, underscores, slashes or non-breaking spaces between groups. A run right after `+`, `tel:` or `wa.me/` is not a card. A run inside a hex id of 32 characters or more, such as a git sha, is not a card. Zero-width characters are removed before matching. A CPF has valid check digits and is either in the dotted form (ddd.ddd.ddd-dd) or 11 plain digits right after the word CPF, so phone numbers are not taken for one. A US Social Security number has the dashed form, and areas that are never issued are not matched.
+
+- `ApprovalGate.review` checks each tool call first, before the reviewer and the classifier, so every engine gets the check. A call is outbound when it is browser typing or opening, `bot_send`, `integration_run`, `watch_create`, `bot_create`, `routine_create`, `WebFetch`, `WebSearch`, any outside connector tool, or a Bash command that sends data (curl with a body, a mail command, or a GitHub CLI write). A call that is outbound and holds such a number is refused with a short reason.
+- The reason names the kind of number and never the number. It tells the bot to ask the owner for the value with `request_secret`. The owner sees the reason on the tool's line in the chat. `request_secret` itself is not checked, because its value goes through the secure form.
+- `share_file` scans a text file of up to 5 MB and copies the same bytes it scanned. Binary files and bigger files are copied without a scan.
+- The GitHub proxy refuses a request whose body holds such a number, for any method. Git smart HTTP paths (`info/refs`, `git-upload-pack`, `git-receive-pack`) are not scanned, because their bodies are packs. A push is shown to the owner by its refs.
+- Bot text is masked where it is stored and where it streams. All digits except the last four become `*`. The stream masker holds back a trailing run of digits and spaces until the text after it arrives, so a number that comes in pieces is masked too. A CPF label is held back too, so a streamed CPF is masked live. The held digits are cleared when a turn starts and when it ends, so nothing crosses into the next turn. Only the bot's text and its tool summaries are masked.
+- Health and personal finance details, and page text that asks the bot to send data elsewhere, have no pattern. The system prompt and the review prompt cover them.
+
+Known gaps: the body of a file passed to a Bash command is not scanned, only the command text. Bash coverage is best effort: only curl with a body, wget with post, mail commands and GitHub CLI writes are seen, not other ways to send data from a shell, such as python or nc. A number split across two tool calls, such as one call per group, is not seen. Other message kinds, such as choices and links, are not masked.
+
 ## Owner rules
 
 `RuleStore` keeps the owner's rules in the `bot_rules` table. Each row has the

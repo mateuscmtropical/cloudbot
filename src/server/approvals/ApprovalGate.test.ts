@@ -56,6 +56,40 @@ describe('ApprovalGate', () => {
             .toEqual([]);
     });
 
+    it('refuses an outbound call that holds a card number before the reviewer sees it', async () => {
+        const reviewer = vi.fn<ToolCallReviewer>(() => Promise.resolve({ decision: 'allow' }));
+        const { gate, posted } = createGate(reviewer);
+        const call = { toolName: 'mcp__cloudbot__browser_type', input: { text: '4111 1111 1111 1111' } };
+
+        const decision = await gate.review('bot-1', call, new AbortController().signal);
+
+        const reason = decision.isAllowed ? '' : decision.reason;
+
+        expect(decision.isAllowed)
+            .toBe(false);
+        expect(reason)
+            .toContain('payment card number');
+        expect(reason)
+            .not.toContain('4111');
+        expect(reviewer)
+            .not.toHaveBeenCalled();
+        expect(posted)
+            .toEqual([]);
+    });
+
+    it('sends a clean outbound call on to the reviewer', async () => {
+        const reviewer = vi.fn<ToolCallReviewer>(() => Promise.resolve({ decision: 'allow' }));
+        const { gate } = createGate(reviewer);
+        const call = { toolName: 'mcp__cloudbot__browser_type', input: { text: 'hello' } };
+
+        const decision = await gate.review('bot-1', call, new AbortController().signal);
+
+        expect(decision)
+            .toEqual({ isAllowed: true });
+        expect(reviewer)
+            .toHaveBeenCalledTimes(1);
+    });
+
     it('refuses a denied call and gives the reason', async () => {
         const { gate, posted } = createGate(() => Promise.resolve({ decision: 'deny', reason: 'Not on the list.' }));
 
