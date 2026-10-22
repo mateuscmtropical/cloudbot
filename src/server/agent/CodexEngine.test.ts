@@ -1,6 +1,6 @@
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -434,14 +434,38 @@ describe('CodexEngine', () => {
             .toBe(1);
     });
 
-    it('refuses images without starting Codex', async () => {
-        const { engine, servers } = makeEngine(completeTurn);
+    it('passes images as private files for the turn, and removes them when the turn ends', async () => {
+        const seen: { path: string; mode: number; bytes: string }[] = [];
+        const { engine, servers } = makeEngine((server) => {
+            const turnStart = server.sent.find(message => message.method === 'turn/start');
+            const inputs = (turnStart?.params?.input ?? []) as { type: string; path?: string }[];
 
-        const events = await collect(engine.runTurn(makeRequest({ images: [{ mediaType: 'image/png', data: 'AAAA' }] })));
+            inputs.filter(input => input.type === 'localImage')
+                .forEach((input) => {
+                    const path = input.path ?? '';
 
-        expect(events)
-            .toEqual([{ type: 'turn_error', message: 'This bot runs on Codex, which cannot read images in CloudBot yet.', isUsageLimit: false }]);
-        expect(servers)
-            .toHaveLength(0);
+                    seen.push({ path, mode: statSync(path).mode & 0o777, bytes: readFileSync(path)
+                        .toString('base64') });
+                });
+            completeTurn(server);
+        });
+
+        await collect(engine.runTurn(makeRequest({ prompt: 'Look.', images: [{ mediaType: 'image/png', data: 'iVBORw0K' }, { mediaType: 'image/jpeg', data: '/9j/4AAQ' }] })));
+        const turnStart = servers[0]?.sent.find(message => message.method === 'turn/start');
+
+        expect((turnStart?.params?.input as unknown[])[0])
+            .toEqual({ type: 'text', text: 'Look.', text_elements: [] });
+        expect(seen.map(image => ({ bytes: image.bytes, extension: image.path.split('.')
+            .at(-1) })))
+            .toEqual([
+                { bytes: 'iVBORw0K', extension: 'png' },
+                { bytes: '/9j/4AAQ', extension: 'jpg' },
+            ]);
+        if (process.platform !== 'win32') {
+            expect(seen.map(image => image.mode))
+                .toEqual([0o600, 0o600]);
+        }
+        expect(seen.every(image => !existsSync(image.path)))
+            .toBe(true);
     });
 });

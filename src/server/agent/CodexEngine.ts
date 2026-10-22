@@ -14,6 +14,8 @@ import type { CodexFileChange, CodexMessage, CodexRequestId, CodexThreadItem, Co
 import type { LoopbackToolServer, LoopbackTurn } from './createLoopbackToolServer.ts';
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
 import { mapCodexNotification, mapCodexTurnEnd, readItem } from './mapCodexNotification.ts';
+import { writeCodexTurnImages } from './writeCodexTurnImages.ts';
+import type { CodexTurnImages } from './writeCodexTurnImages.ts';
 
 interface CodexEngineOptions {
     // The absolute path of the codex binary.
@@ -59,7 +61,6 @@ const PRIVATE_FOLDER_MODE = 0o700;
 const CODEX_USER_HOME_SUFFIX = '-home';
 const CLIENT_NAME = 'cloudbot';
 const CLIENT_VERSION = '0.0.0';
-const IMAGES_NOT_SUPPORTED = 'This bot runs on Codex, which cannot read images in CloudBot yet.';
 const START_FAILED = 'Codex could not start the turn.';
 const STOPPED_EARLY = 'Codex stopped before the turn ended.';
 // The setup calls answer at once when Codex works. A Codex that never answers would hold the turn open.
@@ -155,8 +156,7 @@ function preparePrivateFolder(folder: string): void {
 
 // Runs each turn in its own `codex app-server`, the route with an approval channel. Every command and file change asks
 // CloudBot first (approval policy untrusted), and each question goes to the same review as a Claude tool call.
-// Not covered yet, see issue #128: outside MCP servers, images, the spending limit and the
-// agent user. The model choices of the owner name Claude models, so Codex keeps its own default model.
+// Not covered yet, see issue #128: outside MCP servers, the spending limit and the agent user. The model choices of the owner name Claude models, so Codex keeps its own default model.
 class CodexEngine implements AgentRunner {
     private readonly options: CodexEngineOptions;
     private readonly spawnFunction: SpawnFunction;
@@ -175,12 +175,6 @@ class CodexEngine implements AgentRunner {
             return;
         }
 
-        if ((request.images ?? []).length > 0) {
-            yield { type: 'turn_error', message: IMAGES_NOT_SUPPORTED, isUsageLimit: false };
-
-            return;
-        }
-
         const codexHome = this.options.codexHomeFor(request.botId);
         const userHome = codexUserHomeFor(codexHome);
 
@@ -192,15 +186,19 @@ class CodexEngine implements AgentRunner {
         const toolTurn = this.options.loopback === undefined || tools.length === 0
             ? undefined
             : this.options.loopback.grantTurn({ tools, reviewToolCall: refuseOnPromptRoute, disallowedTools: request.disallowedTools, offersPromptTool: false });
+        let images: CodexTurnImages | undefined;
 
+        // The images are written inside the try, so the tool turn and the image folder are both cleaned up on any error.
         try {
-            yield* this.runProcess(request, codexHome, userHome, toolTurn);
+            images = writeCodexTurnImages(codexHome, request.images ?? []);
+            yield* this.runProcess(request, codexHome, userHome, toolTurn, images.paths);
         } finally {
             toolTurn?.release();
+            images?.remove();
         }
     }
 
-    private async* runProcess(request: TurnRequest, codexHome: string, userHome: string, toolTurn: LoopbackTurn | undefined): AsyncGenerator<AgentEvent> {
+    private async* runProcess(request: TurnRequest, codexHome: string, userHome: string, toolTurn: LoopbackTurn | undefined, imagePaths: string[]): AsyncGenerator<AgentEvent> {
         const tokenVariable = toolTurn === undefined ? {} : { [TOOL_TOKEN_VARIABLE]: toolTurn.token };
         const environment = { PATH: process.env.PATH ?? '', ...this.options.environment, ...request.extraEnvironment, ...tokenVariable, HOME: userHome, CODEX_HOME: codexHome };
         const toolConfig = toolTurn === undefined ? [] : toolServerConfig(toolTurn);
@@ -386,7 +384,8 @@ class CodexEngine implements AgentRunner {
 
             progress.threadId = threadId;
 
-            const input = [{ type: 'text', text: request.prompt, text_elements: [] }];
+            const imageInputs = imagePaths.map(path => ({ type: 'localImage', path }));
+            const input = [{ type: 'text', text: request.prompt, text_elements: [] }, ...imageInputs];
             const turnAnswer = await call('turn/start', { threadId, input });
             const turnId = readId(turnAnswer.result, 'turn');
 
