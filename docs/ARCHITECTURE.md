@@ -1124,9 +1124,10 @@ Limits. There is no notification for a usage limit, a stall or an owner Stop. A 
 - `telegram_connect` posts a one-time code of 8 characters in the web chat. The model never sees it. The code works for 10 minutes. Five wrong codes end it.
 - The account that sends `/start <code>` in a private chat becomes the only one the bot answers. Its user id and chat id are kept in `settings` under `telegram.link.<botId>`. The next update offset is kept under `telegram.offset.<botId>` and is saved after a batch is handled, so a restart does not pass a handled message to the bot again. Messages from anyone else, and anything from a group, get no answer at all.
 - A text from the owner goes to the bot like a chat message, so it shows in the web chat too. While a turn that Telegram started is running, each assistant text message of the bot is sent back, in order, cut into parts of 4096 characters (the Bot API limit for `sendMessage`).
+- During such a turn, an open approval card or a screen hand-off sends one fixed line to Telegram that says to open the web app. The line never holds the card text and has no buttons, so nothing is answered from Telegram. A card that is published again, such as after it was answered, sends nothing more.
 - `telegram_disconnect` forgets the link and the offset. Deleting the bot does too. A restart polls again for every saved link.
 
-Limits. Text only. Approval cards, files and screenshots stay in the web app. The bot does not say on Telegram that an approval waits. Turns run one after the other, so when the owner writes on Telegram while a web turn runs, the replies of that web turn go to Telegram too, and the ones of the Telegram turn may not. Replies go back until the bot is idle with an empty queue. One Telegram bot token serves one CloudBot bot, since Telegram lets only one poll read its updates.
+Limits. Text only. Approval cards, files and screenshots stay in the web app. Turns run one after the other, so when the owner writes on Telegram while a web turn runs, the replies of that web turn go to Telegram too, and the ones of the Telegram turn may not. Replies go back until the bot is idle with an empty queue. One Telegram bot token serves one CloudBot bot, since Telegram lets only one poll read its updates.
 
 ## Bot hand-offs
 

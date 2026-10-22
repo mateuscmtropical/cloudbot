@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatEvent } from '../../shared/chatTypes.ts';
 import type { TelegramApi, TelegramUpdate } from './TelegramApi.ts';
-import { LINK_KEY_PREFIX, MAX_FAILED_TRIES, OFFSET_KEY_PREFIX, PAIRING_LIFETIME_MS, TelegramBridge } from './TelegramBridge.ts';
+import { APPROVAL_WAITING_TEXT, LINK_KEY_PREFIX, MAX_FAILED_TRIES, OFFSET_KEY_PREFIX, PAIRING_LIFETIME_MS, SCREEN_WAITING_TEXT, TelegramBridge } from './TelegramBridge.ts';
 import type { TelegramSettings } from './TelegramBridge.ts';
 
 const BOT_ID = 'bot-1';
@@ -161,6 +161,15 @@ function assistantText(text: string): ChatEvent {
     return { type: 'message', message: { id: 'm1', botId: BOT_ID, role: 'assistant', createdAt: 1, sequence: 1, body: { kind: 'text', text } } };
 }
 
+function approvalCard(id: string, chosenId?: string): ChatEvent {
+    const options = [{ id: 'allow', label: 'Allow' }, { id: 'deny', label: 'Deny' }];
+    const body = chosenId === undefined
+        ? { kind: 'choice' as const, prompt: 'Run rm -rf build?', options, isApproval: true }
+        : { kind: 'choice' as const, prompt: 'Run rm -rf build?', options, isApproval: true, chosenId };
+
+    return { type: 'message', message: { id, botId: BOT_ID, role: 'assistant', createdAt: 1, sequence: 1, body } };
+}
+
 const bridges: TelegramBridge[] = [];
 
 afterEach(async () => {
@@ -282,6 +291,33 @@ describe('TelegramBridge', () => {
                 .map(message => message.text))
                 .toEqual(['first part', 'second part']);
         });
+    });
+
+    it('says once on Telegram that an approval or the screen waits, without the card text', async () => {
+        const setup = makeBridge();
+
+        await pair(setup);
+        setup.emit(approvalCard('web-card'));
+        setup.telegram.receive('clean the build folder');
+        await vi.waitFor(() => {
+            expect(setup.sentToBot)
+                .toHaveLength(1);
+        });
+        setup.emit(approvalCard('card-1'));
+        setup.emit(approvalCard('card-1'));
+        setup.emit(approvalCard('card-1', 'allow'));
+        setup.emit(approvalCard('card-2', 'deny'));
+        setup.emit({ type: 'message', message: { id: 'screen-1', botId: BOT_ID, role: 'assistant', createdAt: 1, sequence: 2, body: { kind: 'screenLink', text: 'I need you on my screen.' } } });
+        setup.emit({ type: 'turn', botId: BOT_ID, isRunning: false });
+        setup.emit(approvalCard('card-3'));
+        await vi.waitFor(() => {
+            expect(setup.telegram.sent.slice(1)
+                .map(message => message.text))
+                .toEqual([APPROVAL_WAITING_TEXT, SCREEN_WAITING_TEXT]);
+        });
+        expect(setup.telegram.sent.map(message => message.text)
+            .join('\n'))
+            .not.toContain('rm -rf');
     });
 
     it('answers a message with no text', async () => {
