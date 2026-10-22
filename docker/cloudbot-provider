@@ -1,0 +1,66 @@
+#!/bin/sh
+# Runs the agent CLI of one provider for CloudBot as the bot user, see src/server/providers/acpProviders.ts.
+# Only fixed commands are allowed: `acp` starts the ACP server and `login` starts the sign-in. No argument of the
+# server reaches the CLI. Each CLI keeps its sign-in in the bot home, which is a volume, so it survives a rebuild.
+set -eu
+
+provider="${1:-}"
+action="${2:-}"
+
+if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "acp-key" ] && [ "$action" != "login" ]; }; then
+    echo "cloudbot-provider takes a provider and acp, acp-key or login." >&2
+    exit 2
+fi
+
+umask 077
+# The CLIs are root-owned copies, so an update check could only fail. These turn it off where the CLI offers it.
+export NO_UPDATE_NOTIFIER=1 OPENCODE_DISABLE_AUTOUPDATE=1 COPILOT_AUTO_UPDATE=false KIMI_CODE_NO_AUTO_UPDATE=1
+# Kimi Code can schedule prompts with CronCreate. A schedule would run outside CloudBot's turns, so it is off.
+export KIMI_DISABLE_CRON=1
+# A CLI that wants to open a browser prints the link instead, which the server reads from the sign-in output.
+export BROWSER=/usr/local/bin/cloudbot-print-url NO_BROWSER=true NO_OPEN_BROWSER=1
+LOGIN=/usr/local/lib/cloudbot/acp-login.js
+
+case "$provider:$action" in
+    gemini:acp) exec /usr/local/bin/gemini --acp ;;
+    gemini:login) exec /usr/local/bin/node "$LOGIN" oauth-personal /usr/local/bin/gemini --acp ;;
+    copilot:acp) exec /usr/local/bin/copilot --acp --stdio ;;
+    copilot:login) exec /usr/local/bin/copilot login --device-code ;;
+    cursor:acp) exec /usr/local/bin/cursor-agent acp ;;
+    cursor:login) exec /usr/local/bin/cursor-agent login ;;
+    grok:acp) exec /usr/local/bin/grok --no-auto-update agent stdio ;;
+    grok:login) exec /usr/local/bin/grok login --device-auth ;;
+    mistral:acp) exec /usr/local/bin/vibe-acp ;;
+    mistral:login) exec /usr/local/bin/node "$LOGIN" browser-auth /usr/local/bin/vibe-acp ;;
+    kimi:acp) exec /usr/local/bin/kimi acp ;;
+    kimi:login) exec /usr/local/bin/kimi login ;;
+    qwen:acp) exec /usr/local/bin/qwen --acp --auth-type openai ;;
+    # opencode asks before every tool, so each call goes to the CloudBot review.
+    opencode:acp)
+        export OPENCODE_CONFIG_CONTENT='{"permission":{"*":"ask"},"autoupdate":false}'
+        exec /usr/local/bin/opencode acp
+        ;;
+    # Grok Build signs in only with a Grok account over ACP, so an xAI API key runs through opencode's xAI provider.
+    # The key proxy adds the real key. The server sets only the proxy address, which must be a loopback port.
+    grok:acp-key)
+        case "${CLOUDBOT_KEY_PROXY_URL:-}" in
+            http://127.0.0.1:[0-9]*) ;;
+            *)
+                echo "cloudbot-provider needs the key proxy address." >&2
+                exit 2
+                ;;
+        esac
+        port="${CLOUDBOT_KEY_PROXY_URL#http://127.0.0.1:}"
+        case "$port" in
+            *[!0-9]*)
+                echo "cloudbot-provider needs the key proxy address." >&2
+                exit 2
+                ;;
+        esac
+        export OPENCODE_CONFIG_CONTENT="{\"permission\":{\"*\":\"ask\"},\"autoupdate\":false,\"model\":\"xai/grok-4.7\",\"provider\":{\"xai\":{\"options\":{\"baseURL\":\"http://127.0.0.1:$port/v1\",\"apiKey\":\"cloudbot-key-proxy\"}}}}"
+        exec /usr/local/bin/opencode acp
+        ;;    *)
+        echo "cloudbot-provider does not know $provider $action." >&2
+        exit 2
+        ;;
+esac
