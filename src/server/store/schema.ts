@@ -92,7 +92,7 @@ const turnQueue = sqliteTable('turn_queue', {
         .$type<StoredUploadRecord[]>()
         .notNull(),
     // Routine turns pick the routines model. Rows from before this column were chat turns.
-    source: text('source', { enum: ['chat', 'routine', 'webhook', 'bot'] })
+    source: text('source', { enum: ['chat', 'routine', 'checkin', 'webhook', 'bot'] })
         .notNull()
         .default('chat'),
 }, table => [
@@ -187,6 +187,10 @@ const routines = sqliteTable('routines', {
         .notNull(),
     isEnabled: integer('is_enabled', { mode: 'boolean' })
         .notNull(),
+    // A check-in posts to the owner only when something needs them. A quiet run leaves nothing in the chat.
+    isQuiet: integer('is_quiet', { mode: 'boolean' })
+        .notNull()
+        .default(false),
     nextRunAt: integer('next_run_at')
         .notNull(),
     lastRunAt: integer('last_run_at'),

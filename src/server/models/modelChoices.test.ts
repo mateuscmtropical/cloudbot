@@ -131,6 +131,16 @@ describe('chooseTurnModel', () => {
         expect(chooseTurnModel({ chat: null, routines: null, review: null, browsing: null, documents: null }, 'routine'))
             .toBeUndefined();
     });
+
+    it('uses the routines choice for a check-in', () => {
+        expect(chooseTurnModel(choices, 'checkin'))
+            .toBe('opus');
+    });
+
+    it('gives a check-in the cheap model when the routines choice is unset, whatever the chat choice is', () => {
+        expect(chooseTurnModel({ ...choices, chat: 'opus', routines: null }, 'checkin'))
+            .toBe('haiku');
+    });
 });
 
 describe('chooseTurnEffort', () => {
@@ -146,6 +156,13 @@ describe('chooseTurnEffort', () => {
     it('uses the chat effort for a chat turn', () => {
         expect(chooseTurnEffort(efforts, 'chat'))
             .toBe('low');
+    });
+
+    it('never gives a check-in the chat effort', () => {
+        expect(chooseTurnEffort(efforts, 'checkin'))
+            .toBe('max');
+        expect(chooseTurnEffort({ ...efforts, routines: null }, 'checkin'))
+            .toBeUndefined();
     });
 
     it('falls back to the chat effort when the routines effort is unset', () => {

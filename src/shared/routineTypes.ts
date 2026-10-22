@@ -11,6 +11,8 @@ interface BotRoutine {
     prompt: string;
     schedule: RoutineSchedule;
     isEnabled: boolean;
+    // A check-in messages the owner only when something needs them.
+    isQuiet: boolean;
     nextRunAt: number;
     lastRunAt: number | null;
 }

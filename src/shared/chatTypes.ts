@@ -167,7 +167,14 @@ interface ChatBotDeletedEvent {
     botId: string;
 }
 
-type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent | ChatToolStartedEvent | ChatWebhookUrlEvent | ChatScreenEvent | ChatBotDeletedEvent;
+// A check-in found nothing for the owner, so its messages were deleted. The web app drops them from the list.
+interface ChatMessagesRemovedEvent {
+    type: 'messagesRemoved';
+    botId: string;
+    messageIds: string[];
+}
+
+type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent | ChatToolStartedEvent | ChatWebhookUrlEvent | ChatScreenEvent | ChatBotDeletedEvent | ChatMessagesRemovedEvent;
 
 // A rule the owner set for a bot. Block rules may name tools the bot cannot use.
 interface BotRule {
@@ -210,5 +217,6 @@ export type {
     ChatWebhookUrlEvent,
     ChatScreenEvent,
     ChatBotDeletedEvent,
+    ChatMessagesRemovedEvent,
     ScreenLinkBody,
 };

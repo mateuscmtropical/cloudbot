@@ -52,6 +52,33 @@ describe('RoutineScheduler', () => {
             .toEqual([[botId, 'Routine "Inbox": Check my inbox.']]);
     });
 
+    it('sends a quiet routine as a check-in with its own source', async () => {
+        const sources: string[] = [];
+        const checkinScheduler = new RoutineScheduler({
+            routineStore: store,
+            sendMessage: (targetBotId, text, source) => {
+                sent.push([targetBotId, text]);
+                sources.push(source);
+
+                return Promise.resolve();
+            },
+            now: () => clock,
+        });
+
+        await store.add(botId, { name: 'Inbox', prompt: 'Check my inbox.', schedule: EVERY_TEN_MINUTES, isQuiet: true });
+        await store.add(botId, { name: 'Brief', prompt: 'Brief me.', schedule: EVERY_TEN_MINUTES });
+        clock += 10 * MINUTE_MS;
+        await checkinScheduler.checkDueRoutines();
+
+        expect(sources.toSorted())
+            .toEqual(['checkin', 'routine']);
+
+        const checkinText = sent.find(([, text]) => text.startsWith('Check-in "Inbox"'));
+
+        expect(checkinText?.[1])
+            .toContain('reply with exactly NOTHING_TO_REPORT');
+    });
+
     it('keeps a due routine for later while it is not ready', async () => {
         let isReady = false;
         const waitingScheduler = new RoutineScheduler({ routineStore: store, sendMessage, isReady: () => isReady, now: () => clock });

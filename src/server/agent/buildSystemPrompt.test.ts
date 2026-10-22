@@ -193,6 +193,7 @@ describe('buildSystemPrompt', () => {
         expect(buildSystemPrompt(profile))
             .not.toContain('routine_create');
     });
+
     it('explains the task board only when the bot has one', () => {
         const profile = { name: 'Ana', title: 'Assistant', description: '' };
 
@@ -200,6 +201,16 @@ describe('buildSystemPrompt', () => {
             .toContain('task_board');
         expect(buildSystemPrompt(profile))
             .not.toContain('task_board');
+    });
+
+    it('tells the bot how to set up a brief and a quiet check-in', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+        const prompt = buildSystemPrompt(profile, { hasRoutines: true });
+
+        expect(prompt)
+            .toContain('morning brief');
+        expect(prompt)
+            .toContain('isQuiet true');
     });
 
     it('names the skills and their descriptions only when the bot can keep skills', () => {
