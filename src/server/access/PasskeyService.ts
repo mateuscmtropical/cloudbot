@@ -132,23 +132,36 @@ class PasskeyService {
 
     async verifyRegistration(response: RegistrationResponseJSON, name: unknown): Promise<PasskeySummary> {
         let usedChallenge = '';
-        const verification = await this.library.verifyRegistrationResponse({
-            response,
-            expectedChallenge: (challenge) => {
-                usedChallenge = challenge;
+        let verification: Awaited<ReturnType<WebAuthnLibrary['verifyRegistrationResponse']>>;
 
-                return this.isChallengeValid(challenge, 'register');
-            },
-            expectedOrigin: this.origin,
-            expectedRPID: this.rpID,
-            requireUserVerification: true,
-        });
+        try {
+            verification = await this.library.verifyRegistrationResponse({
+                response,
+                expectedChallenge: (challenge) => {
+                    // Reserved at once, with no await in between, so two copies of one answer cannot both pass.
+                    if (!this.isChallengeValid(challenge, 'register')) {
+                        return false;
+                    }
 
-        if (!verification.verified) {
-            throw new PasskeyError('The passkey could not be checked. Try again.');
+                    usedChallenge = challenge;
+                    this.markChallengeUsed(challenge);
+
+                    return true;
+                },
+                expectedOrigin: this.origin,
+                expectedRPID: this.rpID,
+                requireUserVerification: true,
+            });
+        } catch (error: unknown) {
+            this.usedChallenges.delete(usedChallenge);
+            throw error;
         }
 
-        this.markChallengeUsed(usedChallenge);
+        // A reserved challenge whose answer failed is released, so a flood of bad answers keeps nothing.
+        if (!verification.verified) {
+            this.usedChallenges.delete(usedChallenge);
+            throw new PasskeyError('The passkey could not be checked. Try again.');
+        }
 
         // Two adds that ran at the same time are checked again here, so the cap holds.
         const existing = await this.store.list();
@@ -187,24 +200,37 @@ class PasskeyService {
 
         const publicKey = Buffer.from(passkey.publicKey, 'base64url');
         let usedChallenge = '';
-        const verification = await this.library.verifyAuthenticationResponse({
-            response,
-            expectedChallenge: (challenge) => {
-                usedChallenge = challenge;
+        let verification: Awaited<ReturnType<WebAuthnLibrary['verifyAuthenticationResponse']>>;
 
-                return this.isChallengeValid(challenge, 'login');
-            },
-            expectedOrigin: this.origin,
-            expectedRPID: this.rpID,
-            credential: { id: passkey.id, publicKey: new Uint8Array(publicKey), counter: passkey.counter, transports: passkey.transports },
-            requireUserVerification: true,
-        });
+        try {
+            verification = await this.library.verifyAuthenticationResponse({
+                response,
+                expectedChallenge: (challenge) => {
+                    // Reserved at once, with no await in between, so two copies of one answer cannot both pass.
+                    if (!this.isChallengeValid(challenge, 'login')) {
+                        return false;
+                    }
 
-        if (!verification.verified) {
-            throw new PasskeyError('The passkey could not be checked. Try again.');
+                    usedChallenge = challenge;
+                    this.markChallengeUsed(challenge);
+
+                    return true;
+                },
+                expectedOrigin: this.origin,
+                expectedRPID: this.rpID,
+                credential: { id: passkey.id, publicKey: new Uint8Array(publicKey), counter: passkey.counter, transports: passkey.transports },
+                requireUserVerification: true,
+            });
+        } catch (error: unknown) {
+            this.usedChallenges.delete(usedChallenge);
+            throw error;
         }
 
-        this.markChallengeUsed(usedChallenge);
+        // A reserved challenge whose answer failed is released, so a flood of bad answers keeps nothing.
+        if (!verification.verified) {
+            this.usedChallenges.delete(usedChallenge);
+            throw new PasskeyError('The passkey could not be checked. Try again.');
+        }
         await this.store.markUsed(passkey.id, verification.authenticationInfo.newCounter);
 
         return this.access.issueSession();

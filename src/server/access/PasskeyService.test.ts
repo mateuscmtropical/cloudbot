@@ -107,6 +107,39 @@ describe('PasskeyService', () => {
             .rejects.toThrow('could not be checked');
     });
 
+    it('gives one session for two copies of one answer sent at the same time', async () => {
+        const passkeys = service(fakeLibrary());
+
+        await store.add({ id: 'cred-1', publicKey: 'AQID', counter: 0, transports: [], name: 'Phone' });
+        await passkeys.loginOptions();
+        const results = await Promise.allSettled([passkeys.verifyLogin(LOGIN), passkeys.verifyLogin(LOGIN)]);
+
+        expect(results.map(result => result.status)
+            .sort())
+            .toEqual(['fulfilled', 'rejected']);
+    });
+
+    it('releases a challenge whose answer failed, so a good answer to it still works', async () => {
+        const library = fakeLibrary();
+        const passkeys = service(library);
+
+        await store.add({ id: 'cred-1', publicKey: 'AQID', counter: 0, transports: [], name: 'Phone' });
+        await passkeys.loginOptions();
+        vi.mocked(library.verifyAuthenticationResponse)
+            .mockImplementationOnce((options) => {
+                const check = options.expectedChallenge as (value: string) => boolean;
+
+                check(library.lastChallenge());
+
+                return Promise.reject(new Error('bad signature'));
+            });
+
+        await expect(passkeys.verifyLogin(LOGIN))
+            .rejects.toThrow('bad signature');
+        await expect(passkeys.verifyLogin(LOGIN))
+            .resolves.toEqual(expect.any(String));
+    });
+
     it('refuses a sign-in with a registration challenge, and one after five minutes', async () => {
         const passkeys = service(fakeLibrary());
 
