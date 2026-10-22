@@ -37,6 +37,8 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__task_board',
     // The export only shares a copy of the bot's template in the chat, so it needs no review.
     'mcp__cloudbot__bot_export',
+    // Listing reads the public gallery and changes nothing, so it needs no review.
+    'mcp__cloudbot__gallery_list',
     'mcp__cloudbot__screen_show',
     // It only posts a card. The browser asks the owner for permission after the owner taps the button.
     'mcp__cloudbot__notifications_enable',
@@ -53,6 +55,9 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
     'mcp__cloudbot__bot_create',
     // An imported bot gets the rules and description of a file, so the owner approves the whole template first.
     'mcp__cloudbot__bot_import',
+    // A gallery template becomes a bot, and a share opens a pull request to a public repository. Each waits for the owner's card.
+    'mcp__cloudbot__gallery_install',
+    'mcp__cloudbot__gallery_share',
     // A new or changed script runs with a secret, so the owner approves the file that is registered.
     'mcp__cloudbot__integration_create',
     'mcp__cloudbot__integration_update',

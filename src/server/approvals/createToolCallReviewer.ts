@@ -4,6 +4,7 @@ import type { ToolCall } from '../agent/AgentRunner.ts';
 import { BOT_CREATE_SHAPE, BOT_CREATE_TOOL_FULL_NAME } from '../bots/createBotTool.ts';
 import { BOT_SEND_TOOL_FULL_NAME } from '../bots/createBotSendTool.ts';
 import { BOT_IMPORT_TOOL_FULL_NAME } from '../bots/createBotTemplateTools.ts';
+import { GALLERY_INSTALL_TOOL_FULL_NAME, GALLERY_SHARE_TOOL_FULL_NAME } from '../bots/createGalleryTools.ts';
 import { hasHiddenCode } from '../text/isHiddenCode.ts';
 import { checkCommandFloor } from './commandFloor.ts';
 import { classifyToolCall } from './classifyToolCall.ts';
@@ -51,6 +52,9 @@ interface ToolCallReviewerOptions {
     // Builds the verdict of a rule change: the card with the rule text, or a refusal. Rules are permissions, so the owner approves each one.
     describeRuleChange?: ((botId: string, input: unknown) => Promise<ToolCallVerdict>) | undefined;
     describeBotImport?: ((botId: string, input: unknown) => Promise<ToolCallVerdict>) | undefined;
+    // The gallery install card shows the whole template, and the share card shows the exact file of the pull request.
+    describeGalleryInstall?: ((botId: string, input: unknown) => Promise<ToolCallVerdict>) | undefined;
+    describeGalleryShare?: ((botId: string) => Promise<ToolCallVerdict>) | undefined;
     // Checks a bot deletion: the name for the card, or the reason the delete is refused, such as the last bot.
     describeBotDelete?: ((botId: string) => Promise<BotDeleteCheck>) | undefined;
     // Builds the card of a limit change, with the old and new value of each limit.
@@ -305,6 +309,14 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
             // These cards are built by the owner's stores. Without the builder the change is refused, never asked with a generic card.
             if (call.toolName === BOT_IMPORT_TOOL_FULL_NAME) {
                 return options.describeBotImport === undefined ? CHECK_MISSING_VERDICT : options.describeBotImport(botId, call.input);
+            }
+
+            if (call.toolName === GALLERY_INSTALL_TOOL_FULL_NAME) {
+                return options.describeGalleryInstall === undefined ? CHECK_MISSING_VERDICT : options.describeGalleryInstall(botId, call.input);
+            }
+
+            if (call.toolName === GALLERY_SHARE_TOOL_FULL_NAME) {
+                return options.describeGalleryShare === undefined ? CHECK_MISSING_VERDICT : options.describeGalleryShare(botId);
             }
 
             if (call.toolName === RULE_CHANGE_TOOL_NAME) {

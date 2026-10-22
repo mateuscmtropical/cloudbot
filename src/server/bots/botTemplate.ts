@@ -296,11 +296,17 @@ function parseJson(text: string): unknown {
 }
 
 export {
+    MAX_BLOCKED_TOOLS,
+    MAX_DESCRIPTION_LENGTH,
+    MAX_NAME_LENGTH,
+    MAX_RULES,
     MAX_TEMPLATE_BYTES,
+    MAX_TITLE_LENGTH,
     TEMPLATE_VERSION,
     buildBotTemplate,
     describeBotTemplate,
     describeSchedule,
+    isOneLine,
     parseBotTemplate,
     serializeBotTemplate,
     templateFileName,
