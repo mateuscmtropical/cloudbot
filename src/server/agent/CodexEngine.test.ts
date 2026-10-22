@@ -489,6 +489,35 @@ describe('CodexEngine', () => {
             .not.toContain('linear');
     });
 
+    it('closes the opened gates when a later gate fails to open', async () => {
+        const closed: string[] = [];
+        const home = join(mkdtempSync(join(tmpdir(), 'cloudbot-codex-test-')), 'codex-home');
+        const engine = new CodexEngine({
+            codexPath: '/usr/local/bin/codex',
+            codexHomeFor: () => home,
+            callGates: {
+                openCallGate: (address: string) => {
+                    if (address.endsWith('key2')) {
+                        throw new Error('The app proxy has not started.');
+                    }
+
+                    return { address: `${address}/gate`, allowCall: () => undefined, close: () => closed.push(address) };
+                },
+            },
+            spawnFunction: () => new FakeAppServer(completeTurn) as unknown as ChildProcess,
+            signalProcess: () => undefined,
+        });
+        const mcpServers = {
+            first: { type: 'http' as const, url: 'http://127.0.0.1:6000/key1' },
+            second: { type: 'http' as const, url: 'http://127.0.0.1:6000/key2' },
+        };
+
+        await expect(collect(engine.runTurn(makeRequest({ mcpServers }))))
+            .rejects.toThrow('The app proxy has not started.');
+        expect(closed)
+            .toEqual(['http://127.0.0.1:6000/key1']);
+    });
+
     it('refuses images without starting Codex', async () => {
         const { engine, servers } = makeEngine(completeTurn);
 

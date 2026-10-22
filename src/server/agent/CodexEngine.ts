@@ -133,19 +133,22 @@ interface RemoteServer {
 }
 
 // The owner's connected servers, each at a gated proxy address of this turn. Only http servers are added, under a plain
-// name, so a name cannot reach another config key. Every call asks first, like the bot's own server.
-function openRemoteServers(request: TurnRequest, callGates: CodexEngineOptions['callGates']): RemoteServer[] {
+// name, so a name cannot reach another config key. Every call asks first, like the bot's own server. Each gate is added
+// to opened right away, so the caller closes every gate even when a later one fails to open.
+function openRemoteServers(request: TurnRequest, callGates: CodexEngineOptions['callGates'], opened: RemoteServer[]): void {
     if (callGates === undefined) {
-        return [];
+        return;
     }
 
-    return Object.entries(request.mcpServers ?? {})
+    Object.entries(request.mcpServers ?? {})
         .filter((entry): entry is [string, { type: 'http'; url: string }] => entry[1].type === 'http')
         .filter(([name]) => REMOTE_SERVER_NAME_PATTERN.test(name) && name !== PROFILE_SERVER_NAME)
-        .flatMap(([name, config]) => {
+        .forEach(([name, config]) => {
             const gate = callGates.openCallGate(config.url);
 
-            return gate === undefined ? [] : [{ name, gate }];
+            if (gate !== undefined) {
+                opened.push({ name, gate });
+            }
         });
 }
 
@@ -224,9 +227,10 @@ class CodexEngine implements AgentRunner {
             ? undefined
             : this.options.loopback.grantTurn({ tools, reviewToolCall: refuseOnPromptRoute, disallowedTools: request.disallowedTools, offersPromptTool: false });
 
-        const remoteServers = openRemoteServers(request, this.options.callGates);
+        const remoteServers: RemoteServer[] = [];
 
         try {
+            openRemoteServers(request, this.options.callGates, remoteServers);
             yield* this.runProcess(request, codexHome, toolTurn, remoteServers);
         } finally {
             toolTurn?.release();
