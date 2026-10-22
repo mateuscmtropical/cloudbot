@@ -190,7 +190,8 @@ describe('buildSystemPrompt', () => {
 
     it('names the skills and their descriptions only when the bot can keep skills', () => {
         const profile = { name: 'Ana', title: 'Assistant', description: '' };
-        const withSkills = buildSystemPrompt(profile, { skills: [{ name: 'weekly-report', description: 'Writes the\nweekly report.' }] });
+        const withSkills = buildSystemPrompt(profile, { skills: [{ name: 'weekly-report', description: 'Writes the\nweekly report.' }], canChangeSkills: true });
+        const readOnly = buildSystemPrompt(profile, { skills: [] });
         const withNone = buildSystemPrompt(profile, { skills: [] });
 
         expect(withSkills)
@@ -199,6 +200,10 @@ describe('buildSystemPrompt', () => {
             .toContain('skill_read');
         expect(withNone)
             .toContain('You have no skills yet.');
+        expect(withSkills)
+            .toContain('skill_add');
+        expect(readOnly)
+            .not.toContain('skill_add');
         expect(buildSystemPrompt(profile))
             .not.toContain('skill_read');
     });

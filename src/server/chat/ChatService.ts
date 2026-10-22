@@ -2846,6 +2846,7 @@ class ChatService {
                     hasNotifications: this.notifyOwner !== undefined,
                     ownerRules,
                     skills,
+                    canChangeSkills: this.approvals !== undefined,
                     helpers: helperKinds,
                 }),
                 disallowedTools,

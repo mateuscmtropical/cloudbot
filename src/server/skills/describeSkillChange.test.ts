@@ -70,7 +70,12 @@ describe('skill approvals', () => {
             { ...SKILL, description: 'x'.repeat(201) },
             { ...SKILL, text: 'Do this‮evil' },
             { ...SKILL, text: '   ' },
-            { ...SKILL, text: 'x'.repeat(20001) },
+            { ...SKILL, text: 'x'.repeat(12001) },
+            { ...SKILL, text: 'Step one.\uFE0F hidden' },
+            { ...SKILL, text: 'Step\u3164one.' },
+            { ...SKILL, text: 'Step one.\tTab.' },
+            { ...SKILL, text: `Step one.${' '.repeat(9)}Approve.` },
+            { ...SKILL, text: 'Step\u2003one.' },
         ];
 
         const verdictPromises = inputs.map(input => describeSkillChange(skillStore, botId, 'add', input));
