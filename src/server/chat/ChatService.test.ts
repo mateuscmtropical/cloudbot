@@ -728,6 +728,66 @@ describe('ChatService', () => {
             .toEqual(['user', 'assistant']);
     });
 
+    it('stores the reply and streams it with a card number masked, even when the number comes in pieces', async () => {
+        const { service } = buildSetup([
+            { event: { type: 'text_delta', text: 'Card 4111 11' } },
+            { event: { type: 'text_delta', text: '11 1111 1111 ok' } },
+            { event: { type: 'text', text: 'Card 4111 1111 1111 1111 ok' } },
+        ]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const receivedEvents: ChatEvent[] = [];
+        const unsubscribe = service.subscribe(bot.id, (event) => {
+            receivedEvents.push(event);
+        });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+        unsubscribe();
+
+        const streamedText = receivedEvents.flatMap(event => (event.type === 'textDelta' ? [event.text] : []))
+            .join('');
+        const storedMessages = await service.listMessages(bot.id);
+
+        expect(streamedText)
+            .toBe('Card **** **** **** 1111 ok');
+        expect(storedMessages?.map(message => message.body))
+            .toContainEqual({ kind: 'text', text: 'Card **** **** **** 1111 ok' });
+    });
+
+    it('never streams the digits held back when a stop arrives mid-number', async () => {
+        const { service } = buildSetup([
+            { event: { type: 'text_delta', text: 'Card 4111 11' } },
+            { event: { type: 'text_delta', text: '11 1111 1111 ok' }, delayMs: 60_000 },
+        ]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const receivedEvents: ChatEvent[] = [];
+        const unsubscribe = service.subscribe(bot.id, (event) => {
+            receivedEvents.push(event);
+        });
+        const finished = waitForTurnFinish(service, bot.id);
+        const firstDelta = new Promise<void>((resolve) => {
+            const stopWatching = service.subscribe(bot.id, (event) => {
+                if (event.type === 'textDelta') {
+                    stopWatching();
+                    resolve();
+                }
+            });
+        });
+
+        await service.sendMessage(bot.id, 'Hi');
+        await firstDelta;
+        await service.stopTurn(bot.id);
+        await finished;
+        unsubscribe();
+
+        const streamedText = receivedEvents.flatMap(event => (event.type === 'textDelta' ? [event.text] : []))
+            .join('');
+
+        expect(streamedText)
+            .toBe('Card');
+    });
+
     it('publishes the events of a turn in order', async () => {
         const { service } = buildSetup([{ event: { type: 'text', text: 'Hello' } }]);
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });

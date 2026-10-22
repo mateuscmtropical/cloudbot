@@ -1,9 +1,11 @@
 import { constants } from 'node:fs';
 import type { BigIntStats } from 'node:fs';
-import { open, realpath, rm, stat } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
+import { open, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { findSensitiveRefusal } from '../sensitive/sensitiveNumbers.ts';
 
 interface SharedFileCopy {
     id: string;
@@ -27,6 +29,29 @@ class ShareFileError extends Error {
         super(message);
         this.name = 'ShareFileError';
     }
+}
+
+// Text files up to this size are scanned for card, CPF and SSN numbers. A bigger file is copied without a scan.
+const SCAN_MAX_BYTES = 5 * 1024 * 1024;
+// A file with a zero byte in its first part is treated as binary, and it is not scanned.
+const BINARY_PROBE_BYTES = 8000;
+
+// Reads a file up to the scan size from its start, without moving the stream position. The copy writes these same bytes.
+async function readScanBytes(sourceHandle: FileHandle, sizeBytes: bigint): Promise<Buffer | undefined> {
+    if (sizeBytes > BigInt(SCAN_MAX_BYTES)) {
+        return undefined;
+    }
+
+    const size = Number(sizeBytes);
+    const buffer = Buffer.alloc(size);
+    const { bytesRead } = await sourceHandle.read(buffer, 0, size, 0);
+
+    return buffer.subarray(0, bytesRead);
+}
+
+function isBinaryContent(content: Buffer): boolean {
+    return content.subarray(0, BINARY_PROBE_BYTES)
+        .includes(0);
 }
 
 const BYTES_PER_MEGABYTE = 1024 * 1024;
@@ -178,13 +203,27 @@ async function shareWorkspaceFile(options: ShareWorkspaceFileOptions): Promise<S
             throw new ShareFileError(`The file is larger than ${String(limitMb)} MB.`);
         }
 
-        const destinationHandle = await open(destinationPath, CREATE_FLAGS, COPY_FILE_MODE);
+        // The scanned bytes are the bytes that get copied, so the file cannot change between the scan and the copy.
+        const scanBytes = await readScanBytes(sourceHandle, sourceStat.size);
 
-        const sourceStream = sourceHandle.createReadStream({ autoClose: false });
-        const sizeLimit = limitBytes(options.maxBytes);
-        const destinationStream = destinationHandle.createWriteStream();
+        if (scanBytes !== undefined) {
+            const scannedText = scanBytes.toString('utf8');
+            const sensitiveRefusal = isBinaryContent(scanBytes) ? undefined : findSensitiveRefusal(scannedText);
 
-        await pipeline(sourceStream, sizeLimit, destinationStream);
+            if (sensitiveRefusal !== undefined) {
+                throw new ShareFileError(sensitiveRefusal);
+            }
+
+            await writeFile(destinationPath, scanBytes, { flag: 'wx', mode: COPY_FILE_MODE });
+        } else {
+            const destinationHandle = await open(destinationPath, CREATE_FLAGS, COPY_FILE_MODE);
+
+            const sourceStream = sourceHandle.createReadStream({ autoClose: false });
+            const sizeLimit = limitBytes(options.maxBytes);
+            const destinationStream = destinationHandle.createWriteStream();
+
+            await pipeline(sourceStream, sizeLimit, destinationStream);
+        }
 
         const realName = basename(requestedReal);
         const name = cleanShareName(realName);

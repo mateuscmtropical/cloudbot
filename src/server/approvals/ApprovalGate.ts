@@ -1,5 +1,6 @@
 import type { ToolCall, ToolCallDecision } from '../agent/AgentRunner.ts';
 import type { ChatMessage, ChoiceBody } from '../../shared/chatTypes.ts';
+import { findSensitiveOutboundRefusal } from '../sensitive/guardOutboundCall.ts';
 
 type ToolCallVerdict
     = | { decision: 'allow' }
@@ -92,6 +93,13 @@ class ApprovalGate {
     }
 
     async review(botId: string, call: ToolCall, signal: AbortSignal, channelId?: string): Promise<ToolCallDecision> {
+        // Checked before the reviewer and the classifier, so no engine can send a card, CPF or SSN number out unseen.
+        const sensitiveRefusal = findSensitiveOutboundRefusal(call.toolName, call.input);
+
+        if (sensitiveRefusal !== undefined) {
+            return { isAllowed: false, reason: sensitiveRefusal };
+        }
+
         const verdict = await this.readVerdict(botId, call, signal, channelId);
 
         if (verdict.decision === 'allow') {

@@ -170,5 +170,5 @@ function classifyToolCall(call: ToolCall): ToolCallClass {
     return isSensitive ? 'always-ask' : 'review';
 }
 
-export { classifyToolCall };
+export { classifyToolCall, isOutboundCommand };
 export type { ToolCallClass };

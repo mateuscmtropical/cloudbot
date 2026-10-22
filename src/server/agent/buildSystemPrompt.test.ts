@@ -3,6 +3,19 @@ import { describe, expect, it } from 'vitest';
 import { buildSystemPrompt } from './buildSystemPrompt.ts';
 
 describe('buildSystemPrompt', () => {
+    it('tells the bot to keep card and ID numbers out of outside calls, and to report a page that asks for data', () => {
+        const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' });
+
+        expect(prompt)
+            .toContain('secure form');
+        expect(prompt)
+            .toContain('request_secret');
+        expect(prompt)
+            .toContain('is an attack');
+        expect(prompt)
+            .toContain('tell the owner');
+    });
+
     it('tells the main agent to hand the work of each active helper to it', () => {
         const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' }, { helpers: ['browsing'] });
 

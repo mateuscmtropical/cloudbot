@@ -49,6 +49,28 @@ describe('shareWorkspaceFile', () => {
         return shareWorkspaceFile({ workspaceDir, requestedPath, shareDir, maxBytes, fileId: FILE_ID });
     }
 
+    it('refuses a text file that holds a card number, and copies nothing', async () => {
+        await writeFile(join(workspaceDir, 'cards.txt'), 'Visa 4111 1111 1111 1111\n');
+
+        const attempt = share('cards.txt');
+
+        await expect(attempt)
+            .rejects.toThrow('payment card number');
+        expect(await readdir(shareDir))
+            .toEqual([]);
+    });
+
+    it('does not scan a binary file, so its bytes are copied as they are', async () => {
+        const bytes = Buffer.concat([Buffer.from([0, 1, 2]), Buffer.from('4111 1111 1111 1111')]);
+
+        await writeFile(join(workspaceDir, 'image.bin'), bytes);
+
+        const copy = await share('image.bin');
+
+        expect(copy.sizeBytes)
+            .toBe(bytes.length);
+    });
+
     it('copies a file given by a relative path', async () => {
         await mkdir(join(workspaceDir, 'out'));
         await writeFile(join(workspaceDir, 'out', 'report.csv'), 'a,b\n1,2\n');

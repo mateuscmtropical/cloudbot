@@ -74,6 +74,8 @@ import type { StoredUploadRecord } from '../store/schema.ts';
 import type { Bot, BotProfile, Message } from '../store/types.ts';
 import { BOT_CREATE_TOOL_FULL_NAME, createBotCreateTool } from '../bots/createBotTool.ts';
 import { findNameClash } from '../channels/channelCommands.ts';
+import { createStreamMasker, maskSensitiveNumbers } from '../sensitive/sensitiveNumbers.ts';
+import type { StreamMasker } from '../sensitive/sensitiveNumbers.ts';
 import { CHANNEL_TOOL_FULL_NAMES, createChannelTools } from '../channels/createChannelTools.ts';
 import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_SHAPE, BOT_IMPORT_TOOL_FULL_NAME, createBotExportTool, createBotImportTool } from '../bots/createBotTemplateTools.ts';
 import type { ExportedTemplate, ImportedBot } from '../bots/createBotTemplateTools.ts';
@@ -316,6 +318,19 @@ const USAGE_LIMIT_FALLBACK_WAIT_MS = 5 * 60 * 1000;
 const USAGE_LIMIT_MIN_WAIT_MS = 60 * 1000;
 const USAGE_LIMIT_MAX_WAIT_MS = 8 * 24 * 60 * 60 * 1000;
 const CONTINUE_PROMPT = 'Continue.';
+
+// Only the text the bot writes is masked. Other parts of a message, such as a choice or a link, are not free text.
+function maskMessageBody(body: MessageBody): MessageBody {
+    if (body.kind === 'text') {
+        return { ...body, text: maskSensitiveNumbers(body.text) };
+    }
+
+    if (body.kind === 'toolActivity') {
+        return { ...body, summary: maskSensitiveNumbers(body.summary) };
+    }
+
+    return body;
+}
 const PREVIEW_LENGTH = 80;
 const NOTIFICATION_OFF_CARD_TEXT = 'I can stop the notifications on this browser. Tap the button and this browser forgets them. Other browsers keep theirs until you do the same there.';
 const NOTIFICATION_CARD_TEXT = 'I can send a notification to this browser when I finish a task, when something waits for your approval, and when I need you on my screen. It shows my name and a short line, never the text of a message. Tap the button, then allow notifications when your browser asks. You can turn them off later in the site settings of your browser.';
@@ -574,6 +589,8 @@ class ChatService {
     // The rounds of the channel messages, by round id, and the round each bot's running channel turn belongs to.
     private readonly channelRounds = new Map<string, ChannelRound>();
     private readonly channelRunning = new Map<string, string>();
+    // Masks the streamed text of each bot's reply, so a number split across two deltas is still hidden.
+    private readonly streamMaskers = new Map<string, StreamMasker>();
     // The limits and the clock of the running turn of each bot. They are set when the turn starts and cleared when it ends.
     private readonly runningLimits = new Map<string, TurnLimit>();
     private readonly turnDeadlines = new Map<string, TurnDeadline>();
@@ -2162,7 +2179,10 @@ class ChatService {
     }
 
     // A channel turn's text is posted in its channel. Its tool cards stay out, and the bot's own chat gets nothing from it.
-    private async saveTurnMessage(botId: string, role: ChatRole, body: MessageBody, channel: ChannelTurnSource | undefined): Promise<void> {
+    private async saveTurnMessage(botId: string, role: ChatRole, unmaskedBody: MessageBody, channel: ChannelTurnSource | undefined): Promise<void> {
+        // The stored and shown text never holds a card, CPF or SSN number in full.
+        const body = maskMessageBody(unmaskedBody);
+
         if (channel === undefined) {
             await this.saveAndPublish(botId, role, body);
 
@@ -2688,6 +2708,9 @@ class ChatService {
         // Set when the turn ends on an error, so its hand-off reply says so.
         let hasFailed = false;
 
+        // A number held back by the stream masker never crosses into the next turn.
+        this.streamMaskers.delete(botId);
+
         try {
             const bot = await this.botStore.getById(botId);
 
@@ -2840,6 +2863,8 @@ class ChatService {
 
             await this.saveAndPublish(botId, 'system', errorBody);
         } finally {
+            this.streamMaskers.delete(botId);
+
             try {
                 await this.settleTurnEnd(turn, turnState);
 
@@ -3085,6 +3110,8 @@ class ChatService {
             case 'text': {
                 const textBody: TextBody = { kind: 'text', text: agentEvent.text };
 
+                // The final message replaces the streamed text, so what the masker still holds is dropped.
+                this.streamMaskers.delete(botId);
                 await this.saveTurnMessage(botId, 'assistant', textBody, channel);
 
                 return;
@@ -3114,13 +3141,21 @@ class ChatService {
 
                 return;
             }
-            case 'text_delta':
+            case 'text_delta': {
                 // A channel turn's partial text is not shown in the bot's own chat.
                 if (channel === undefined) {
-                    this.publish(botId, { type: 'textDelta', botId, text: agentEvent.text });
+                    const masker = this.streamMaskers.get(botId) ?? createStreamMasker();
+                    const shownText = masker.push(agentEvent.text);
+
+                    this.streamMaskers.set(botId, masker);
+
+                    if (shownText !== '') {
+                        this.publish(botId, { type: 'textDelta', botId, text: shownText });
+                    }
                 }
 
                 return;
+            }
             case 'turn_limit': {
                 const turnLimit = this.runningLimits.get(botId) ?? NO_LIMIT;
                 const isSteps = agentEvent.limit === 'steps';
