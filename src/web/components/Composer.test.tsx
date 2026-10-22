@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ReactElement } from 'react';
 
 import type { DraftAttachment } from './Composer.tsx';
 import { Composer } from './Composer.tsx';
@@ -134,5 +135,244 @@ describe('Composer', () => {
 
         expect(onRemoveAttachment)
             .toHaveBeenCalledWith('server-1');
+    });
+
+    it('shows no voice button when the browser has no speech recognition', () => {
+        renderComposer();
+
+        expect(screen.queryByRole('button', { name: 'Voice input' }))
+            .toBeNull();
+    });
+
+    it('puts the spoken words after the typed text, and shows the press state of the mic', () => {
+        class HearingRecognition {
+            lang = '';
+            continuous = false;
+            interimResults = false;
+            onresult: ((event: { readonly results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null = null;
+            onerror: ((event: { readonly error: string }) => void) | null = null;
+            onend: (() => void) | null = null;
+
+            start(): void {
+                // The fake hears words only when the test says so.
+            }
+
+            stop(): void {
+                this.onend?.();
+            }
+
+            abort(): void {
+                this.onend?.();
+            }
+
+            hear(transcript: string): void {
+                this.onresult?.({ results: [[{ transcript }]] });
+            }
+        }
+
+        const instances: HearingRecognition[] = [];
+
+        vi.stubGlobal('SpeechRecognition', class extends HearingRecognition {
+            constructor() {
+                super();
+                instances.push(this);
+            }
+        });
+
+        try {
+            const textarea = renderComposer();
+
+            fireEvent.change(textarea, { target: { value: 'Hello' } });
+            fireEvent.click(screen.getByRole('button', { name: 'Voice input' }));
+
+            expect(screen.getByRole('button', { name: 'Voice input' })
+                .getAttribute('aria-pressed'))
+                .toBe('true');
+
+            const recognition = instances[0];
+
+            act(() => {
+                recognition?.hear('book a table');
+            });
+
+            expect(textarea.value)
+                .toBe('Hello book a table');
+
+            fireEvent.click(screen.getByRole('button', { name: 'Voice input' }));
+
+            expect(screen.getByRole('button', { name: 'Voice input' })
+                .getAttribute('aria-pressed'))
+                .toBe('false');
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+});
+
+interface RecordingRecognition {
+    aborted: boolean;
+    onresult: ((event: { readonly results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+    onend: (() => void) | null;
+    hear: (transcript: string) => void;
+}
+
+// A fake recognizer that records whether it was aborted, and hears words only when the test says so.
+function stubRecognition(): RecordingRecognition[] {
+    const instances: RecordingRecognition[] = [];
+
+    class FakeRecognition {
+        lang = '';
+        continuous = false;
+        interimResults = false;
+        aborted = false;
+        onresult: RecordingRecognition['onresult'] = null;
+        onerror: ((event: { readonly error: string }) => void) | null = null;
+        onend: (() => void) | null = null;
+
+        constructor() {
+            instances.push(this);
+        }
+
+        start(): void {
+            // Nothing is heard until the test calls hear.
+        }
+
+        stop(): void {
+            this.onend?.();
+        }
+
+        abort(): void {
+            this.aborted = true;
+            this.onend?.();
+        }
+
+        hear(transcript: string): void {
+            this.onresult?.({ results: [[{ transcript }]] });
+        }
+    }
+
+    vi.stubGlobal('SpeechRecognition', FakeRecognition);
+
+    return instances;
+}
+
+function composerElement(botName: string, onSend: (text: string) => void): ReactElement {
+    return (
+        <Composer
+            botName={botName}
+            isRunning={false}
+            isUploading={false}
+            attachments={[]}
+            onSend={onSend}
+            onStop={vi.fn()}
+            onAttach={vi.fn()}
+            onRemoveAttachment={vi.fn()}
+        />
+    );
+}
+
+describe('Composer voice input while listening', () => {
+    afterEach(() => {
+        cleanup();
+        vi.unstubAllGlobals();
+    });
+
+    it('sending ends listening, and words heard afterwards never reach the draft', () => {
+        const instances = stubRecognition();
+        const onSend = vi.fn();
+
+        render(composerElement('CloudBot', onSend));
+
+        const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Message CloudBot');
+
+        fireEvent.change(textarea, { target: { value: 'Hello' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Voice input' }));
+        act(() => {
+            instances[0]?.hear('book a table');
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+        act(() => {
+            instances[0]?.hear('late words');
+        });
+
+        expect(onSend)
+            .toHaveBeenCalledWith('Hello book a table');
+        expect(instances[0]?.aborted)
+            .toBe(true);
+        expect(textarea.value)
+            .toBe('');
+        expect(screen.getByRole('button', { name: 'Voice input' })
+            .getAttribute('aria-pressed'))
+            .toBe('false');
+    });
+
+    it('typing while listening stops listening first, and later words do not replace the typed text', () => {
+        const instances = stubRecognition();
+
+        render(composerElement('CloudBot', vi.fn()));
+
+        const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Message CloudBot');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Voice input' }));
+        fireEvent.change(textarea, { target: { value: 'Typed' } });
+
+        expect(instances[0]?.aborted)
+            .toBe(true);
+        expect(screen.getByRole('button', { name: 'Voice input' })
+            .getAttribute('aria-pressed'))
+            .toBe('false');
+
+        act(() => {
+            instances[0]?.hear('spoken');
+        });
+
+        expect(textarea.value)
+            .toBe('Typed');
+    });
+
+    it('an empty transcript leaves the draft as it is', () => {
+        const instances = stubRecognition();
+
+        render(composerElement('CloudBot', vi.fn()));
+
+        const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Message CloudBot');
+
+        fireEvent.change(textarea, { target: { value: 'Hi' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Voice input' }));
+        act(() => {
+            instances[0]?.hear('   ');
+        });
+
+        expect(textarea.value)
+            .toBe('Hi');
+    });
+
+    it('changing the bot stops listening', () => {
+        const instances = stubRecognition();
+        const view = render(composerElement('Ana', vi.fn()));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Voice input' }));
+        view.rerender(composerElement('Ben', vi.fn()));
+
+        expect(instances[0]?.aborted)
+            .toBe(true);
+    });
+
+    it('keeps the status line in the page, and changes only its text', () => {
+        stubRecognition();
+
+        render(composerElement('CloudBot', vi.fn()));
+
+        const status = screen.getByRole('status');
+
+        expect(status.textContent)
+            .toBe('');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Voice input' }));
+
+        expect(screen.getByRole('status'))
+            .toBe(status);
+        expect(status.textContent)
+            .toBe('Listening. Speak now.');
     });
 });

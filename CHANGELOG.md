@@ -16,6 +16,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- The message box has a microphone button in browsers with speech recognition, such as Chrome and Edge. The spoken words are added to the text in the box. The browser's speech service turns the audio into text, and the app never receives the audio.
 - A bot can send a message or a task to another bot by name, with the `bot_send` tool. The other bot runs it as a new turn under its own rules and approvals. Its reply goes back to the sender's chat. Both chats show the hand-off.
 - A chain of hand-offs allows 3 hand-offs in a row, so 4 bots at most. The owner is told in the sender's chat when a chain stops.
 - A bot sends at most 3 hand-offs in one turn, and a bot can have at most 3 hand-offs waiting for it.

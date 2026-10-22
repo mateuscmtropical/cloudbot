@@ -1045,3 +1045,25 @@ svg {
         max-width: calc(100% - 24px);
     }
 }
+
+/* Voice input (#122). The mic shows only where the browser has speech recognition. Listening is a steady fill, with no animation. */
+.voice-button svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+.voice-button.is-listening {
+    background: var(--color-accent);
+    color: var(--color-text);
+}
+
+.voice-status {
+    margin: 4px 0 0;
+    min-height: 1.2em;
+    color: var(--color-text);
+    font-size: 0.85rem;
+}
