@@ -13,15 +13,24 @@ const PUBLIC_URL = 'https://bot.example.test';
 const REGISTRATION = { id: 'cred-1', rawId: 'cred-1', type: 'public-key', response: {}, clientExtensionResults: {} } as unknown as RegistrationResponseJSON;
 const LOGIN = { id: 'cred-1', rawId: 'cred-1', type: 'public-key', response: {}, clientExtensionResults: {} } as unknown as AuthenticationResponseJSON;
 
-// A fake library: the options carry a fixed challenge, and a verify runs the challenge check it was given, as the real one does.
-function fakeLibrary(challenge: string, isVerified = true): WebAuthnLibrary {
+// A fake library that acts like a browser and the real library: it echoes the last challenge the server issued,
+// base64url encoded, and runs the challenge check it was given.
+function fakeLibrary(isVerified = true): WebAuthnLibrary & { lastChallenge: () => string } {
+    let lastChallenge = '';
+    const issue = (options: { challenge: Uint8Array }): Promise<{ challenge: string }> => {
+        lastChallenge = Buffer.from(options.challenge)
+            .toString('base64url');
+
+        return Promise.resolve({ challenge: lastChallenge });
+    };
+
     return {
-        generateRegistrationOptions: vi.fn(() => Promise.resolve({ challenge })),
-        generateAuthenticationOptions: vi.fn(() => Promise.resolve({ challenge })),
+        lastChallenge: () => lastChallenge,
+        generateRegistrationOptions: vi.fn(issue),
+        generateAuthenticationOptions: vi.fn(issue),
         verifyRegistrationResponse: vi.fn((options: { expectedChallenge: unknown }) => {
             const check = options.expectedChallenge as (value: string) => boolean;
-
-            const result = check(challenge) && isVerified
+            const result = check(lastChallenge) && isVerified
                 ? { verified: true, registrationInfo: { credential: { id: 'cred-1', publicKey: new Uint8Array([1, 2, 3]), counter: 0, transports: ['internal'] } } }
                 : { verified: false };
 
@@ -29,12 +38,11 @@ function fakeLibrary(challenge: string, isVerified = true): WebAuthnLibrary {
         }),
         verifyAuthenticationResponse: vi.fn((options: { expectedChallenge: unknown }) => {
             const check = options.expectedChallenge as (value: string) => boolean;
-
-            const result = { verified: check(challenge) && isVerified, authenticationInfo: { newCounter: 7 } };
+            const result = { verified: check(lastChallenge) && isVerified, authenticationInfo: { newCounter: 7 } };
 
             return Promise.resolve(result);
         }),
-    } as unknown as WebAuthnLibrary;
+    } as unknown as WebAuthnLibrary & { lastChallenge: () => string };
 }
 
 describe('PasskeyService', () => {
@@ -59,7 +67,7 @@ describe('PasskeyService', () => {
     }
 
     it('binds the passkey to the public host and origin, and stores it with a clean name', async () => {
-        const library = fakeLibrary('challenge-a');
+        const library = fakeLibrary();
         const passkeys = service(library);
 
         await passkeys.registrationOptions();
@@ -76,7 +84,7 @@ describe('PasskeyService', () => {
     });
 
     it('signs in with a known passkey, saves its counter and issues a valid session', async () => {
-        const passkeys = service(fakeLibrary('challenge-b'));
+        const passkeys = service(fakeLibrary());
 
         await store.add({ id: 'cred-1', publicKey: 'AQID', counter: 0, transports: [], name: 'Phone' });
         await passkeys.loginOptions();
@@ -89,7 +97,7 @@ describe('PasskeyService', () => {
     });
 
     it('uses a challenge once: a replayed sign-in fails', async () => {
-        const passkeys = service(fakeLibrary('challenge-c'));
+        const passkeys = service(fakeLibrary());
 
         await store.add({ id: 'cred-1', publicKey: 'AQID', counter: 0, transports: [], name: 'Phone' });
         await passkeys.loginOptions();
@@ -100,7 +108,7 @@ describe('PasskeyService', () => {
     });
 
     it('refuses a sign-in with a registration challenge, and one after five minutes', async () => {
-        const passkeys = service(fakeLibrary('challenge-d'));
+        const passkeys = service(fakeLibrary());
 
         await store.add({ id: 'cred-1', publicKey: 'AQID', counter: 0, transports: [], name: 'Phone' });
         await passkeys.registrationOptions();
@@ -116,10 +124,10 @@ describe('PasskeyService', () => {
     });
 
     it('refuses an unknown passkey and gives no session when the check fails', async () => {
-        const passkeys = service(fakeLibrary('challenge-e', false));
+        const passkeys = service(fakeLibrary(false));
 
         await expect(passkeys.verifyLogin(LOGIN))
-            .rejects.toThrow('not known');
+            .rejects.toThrow('could not be checked');
 
         await store.add({ id: 'cred-1', publicKey: 'AQID', counter: 0, transports: [], name: 'Phone' });
         await passkeys.loginOptions();
@@ -130,11 +138,13 @@ describe('PasskeyService', () => {
             .toBe(false);
     });
 
-    it('offers no sign-in before a passkey exists, and refuses a 21st passkey', async () => {
-        const passkeys = service(fakeLibrary('challenge-f'));
+    it('names no credential in the public sign-in options, and refuses a 21st passkey', async () => {
+        const library = fakeLibrary();
+        const passkeys = service(library);
 
-        await expect(passkeys.loginOptions())
-            .rejects.toThrow('No passkey');
+        await passkeys.loginOptions();
+        expect(vi.mocked(library.generateAuthenticationOptions).mock.calls[0]?.[0].allowCredentials)
+            .toEqual([]);
 
         const adds = Array.from({ length: 20 }, (_unused, index) => store.add({ id: `cred-${String(index)}`, publicKey: 'AQID', counter: 0, transports: [], name: 'Key' }));
 
@@ -144,8 +154,62 @@ describe('PasskeyService', () => {
             .rejects.toThrow('already 20');
     });
 
+    it('keeps a sign-in working while others ask for many challenges', async () => {
+        const library = fakeLibrary();
+        const passkeys = service(library);
+
+        await store.add({ id: 'cred-1', publicKey: 'AQID', counter: 0, transports: [], name: 'Phone' });
+        await passkeys.loginOptions();
+        const ownerChallenge = library.lastChallenge();
+        const floods = Array.from({ length: 100 }, () => passkeys.loginOptions());
+
+        await Promise.all(floods);
+        vi.mocked(library.verifyAuthenticationResponse)
+            .mockImplementationOnce((options) => {
+                const check = options.expectedChallenge as (value: string) => boolean;
+                const result = { verified: check(ownerChallenge), authenticationInfo: { newCounter: 7 } };
+
+                return Promise.resolve(result as Awaited<ReturnType<WebAuthnLibrary['verifyAuthenticationResponse']>>);
+            });
+
+        await expect(passkeys.verifyLogin(LOGIN))
+            .resolves.toEqual(expect.any(String));
+    });
+
+    it('refuses passkeys on an IP address, which WebAuthn cannot use as the relying party id', async () => {
+        const passkeys = new PasskeyService({ store, access, publicUrl: 'http://127.0.0.1:3000', library: fakeLibrary() });
+
+        await expect(passkeys.registrationOptions())
+            .rejects.toThrow('host name');
+        await expect(passkeys.loginOptions())
+            .rejects.toThrow('host name');
+    });
+
+    it('refuses a tampered challenge', async () => {
+        const library = fakeLibrary();
+        const passkeys = service(library);
+
+        await store.add({ id: 'cred-1', publicKey: 'AQID', counter: 0, transports: [], name: 'Phone' });
+        await passkeys.loginOptions();
+        const bytes = Buffer.from(library.lastChallenge(), 'base64url');
+
+        bytes[0] = (bytes[0] ?? 0) ^ 1;
+        const tampered = bytes.toString('base64url');
+
+        vi.mocked(library.verifyAuthenticationResponse)
+            .mockImplementationOnce((options) => {
+                const check = options.expectedChallenge as (value: string) => boolean;
+                const result = { verified: check(tampered), authenticationInfo: { newCounter: 7 } };
+
+                return Promise.resolve(result as Awaited<ReturnType<WebAuthnLibrary['verifyAuthenticationResponse']>>);
+            });
+
+        await expect(passkeys.verifyLogin(LOGIN))
+            .rejects.toThrow('could not be checked');
+    });
+
     it('lists and removes passkeys without their public keys', async () => {
-        const passkeys = service(fakeLibrary('challenge-g'));
+        const passkeys = service(fakeLibrary());
 
         await store.add({ id: 'cred-1', publicKey: 'AQID', counter: 0, transports: [], name: 'Phone' });
 

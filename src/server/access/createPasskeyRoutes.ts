@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import type { Context, MiddlewareHandler } from 'hono';
 import { setCookie } from 'hono/cookie';
 import type { CookieOptions } from 'hono/utils/cookie';
@@ -20,6 +21,8 @@ interface PasskeyRefusal {
 }
 
 const FAILED_MESSAGE = 'The passkey could not be checked. Try again.';
+// A browser's passkey answer is a few kilobytes. The sign-in routes are public, so a bigger body is refused unread.
+const MAX_PASSKEY_BODY_BYTES = 64 * 1024;
 
 async function readJson(context: Context): Promise<unknown> {
     try {
@@ -87,6 +90,10 @@ function createPasskeyRoutes(options: PasskeyRoutesOptions): Hono {
     });
 
     routes.use('/auth/passkey/*', options.sameOriginCheck);
+    const passkeyBodyLimit = bodyLimit({ maxSize: MAX_PASSKEY_BODY_BYTES, onError: context => context.json({ error: 'The request is too large.' }, 413) });
+
+    routes.use('/auth/passkey/*', passkeyBodyLimit);
+    routes.use('/api/passkeys/*', passkeyBodyLimit);
 
     routes.post('/auth/passkey/options', async (context) => {
         try {

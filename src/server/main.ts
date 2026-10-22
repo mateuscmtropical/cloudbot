@@ -83,10 +83,22 @@ const dataDir = resolveDataDir();
 const databaseFilePath = databasePath(dataDir);
 // One database handle serves the setup access and the chat stores.
 const opened = await openDatabase(databaseFilePath);
+
+function createPasskeyService(): PasskeyService | undefined {
+    try {
+        return new PasskeyService({ store: new PasskeyStore(opened.db), access, publicUrl: readPublicBaseUrl(process.env) });
+    } catch {
+        console.error('Passkeys are off: CLOUDBOT_PUBLIC_URL is not a full address such as https://bot.example.com.');
+
+        return undefined;
+    }
+}
+
 const settings = new SettingsStore(opened.db);
 const access = new SetupAccess(settings);
-// Passkeys are bound to the host name the owner opens, the same address the setup link uses.
-const passkeys = new PasskeyService({ store: new PasskeyStore(opened.db), access, publicUrl: readPublicBaseUrl(process.env) });
+// Passkeys are bound to the host name the owner opens, the same address the setup link uses. A public address that is
+// not a URL leaves passkeys off, and the setup link still works.
+const passkeys = createPasskeyService();
 const botStore = new BotStore(opened.db);
 const channelStore = new ChannelStore(opened.db);
 const messageStore = new MessageStore(opened.db);

@@ -14,13 +14,20 @@ const OWN_ORIGIN = 'http://localhost';
 const JSON_HEADERS = { 'content-type': 'application/json', 'origin': OWN_ORIGIN };
 
 function fakeLibrary(): WebAuthnLibrary {
+    let lastChallenge = '';
+    const issue = (options: { challenge: Uint8Array }): Promise<{ challenge: string }> => {
+        lastChallenge = Buffer.from(options.challenge)
+            .toString('base64url');
+
+        return Promise.resolve({ challenge: lastChallenge });
+    };
+
     return {
-        generateRegistrationOptions: vi.fn(() => Promise.resolve({ challenge: 'c1' })),
-        generateAuthenticationOptions: vi.fn(() => Promise.resolve({ challenge: 'c1' })),
+        generateRegistrationOptions: vi.fn(issue),
+        generateAuthenticationOptions: vi.fn(issue),
         verifyRegistrationResponse: vi.fn((options: { expectedChallenge: unknown }) => {
             const check = options.expectedChallenge as (value: string) => boolean;
-
-            const result = check('c1')
+            const result = check(lastChallenge)
                 ? { verified: true, registrationInfo: { credential: { id: 'cred-1', publicKey: new Uint8Array([1]), counter: 0 } } }
                 : { verified: false };
 
@@ -28,8 +35,7 @@ function fakeLibrary(): WebAuthnLibrary {
         }),
         verifyAuthenticationResponse: vi.fn((options: { expectedChallenge: unknown }) => {
             const check = options.expectedChallenge as (value: string) => boolean;
-
-            const result = { verified: check('c1'), authenticationInfo: { newCounter: 1 } };
+            const result = { verified: check(lastChallenge), authenticationInfo: { newCounter: 1 } };
 
             return Promise.resolve(result);
         }),

@@ -1,3 +1,6 @@
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { isIP } from 'node:net';
+
 import {
     generateAuthenticationOptions,
     generateRegistrationOptions,
@@ -44,8 +47,12 @@ const RP_NAME = 'CloudBot';
 const USER_NAME = 'owner';
 // A challenge works for five minutes and once.
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
-// Sign-in options are a public route, so the number of open challenges is capped. The oldest one goes first.
-const MAX_OPEN_CHALLENGES = 20;
+const NONCE_BYTES = 16;
+const EXPIRY_BYTES = 8;
+const MAC_BYTES = 32;
+const SIGNED_PART_BYTES = NONCE_BYTES + EXPIRY_BYTES + 1;
+const CHALLENGE_KIND_CODES: Record<ChallengeKind, number> = { register: 1, login: 2 };
+const IP_HOST_MESSAGE = 'Passkeys need a host name, not an IP address. Set CLOUDBOT_PUBLIC_URL to the name you open CloudBot at.';
 const MAX_PASSKEYS = 20;
 const MAX_NAME_LENGTH = 60;
 
@@ -80,20 +87,29 @@ class PasskeyService {
     private readonly rpID: string;
     private readonly now: () => number;
     private readonly library: WebAuthnLibrary;
-    private readonly challenges = new Map<string, { kind: ChallengeKind; expiresAt: number }>();
+    // Challenges are signed with a key of this process, so the server keeps no list of open ones that a flood could
+    // fill. Only the challenges of good answers are kept, until they expire, so each one works once.
+    private readonly challengeKey = randomBytes(32);
+    private readonly usedChallenges = new Map<string, number>();
+    private readonly isIpHost: boolean;
 
+    // Throws when the address is not a URL, so a bad setting is found at start.
     constructor(options: PasskeyServiceOptions) {
         const url = new URL(options.publicUrl);
+        const hostName = url.hostname.replace(/^\[|\]$/g, '');
 
         this.store = options.store;
         this.access = options.access;
         this.origin = url.origin;
         this.rpID = url.hostname;
+        // WebAuthn takes a domain as the relying party id, so an address such as 127.0.0.1 cannot hold a passkey.
+        this.isIpHost = isIP(hostName) !== 0;
         this.now = options.now ?? (() => Date.now());
         this.library = options.library ?? DEFAULT_LIBRARY;
     }
 
     async registrationOptions(): Promise<PublicKeyCredentialCreationOptionsJSON> {
+        this.refuseIpHost();
         const existing = await this.store.list();
 
         if (existing.length >= MAX_PASSKEYS) {
@@ -104,20 +120,25 @@ class PasskeyService {
             rpName: RP_NAME,
             rpID: this.rpID,
             userName: USER_NAME,
+            challenge: this.makeChallenge('register'),
             attestationType: 'none',
             excludeCredentials: existing.map(passkey => ({ id: passkey.id, transports: passkey.transports })),
-            authenticatorSelection: { residentKey: 'preferred', userVerification: 'required' },
+            // A discoverable passkey lets the sign-in name no credential, so the public route lists none.
+            authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
         });
-
-        this.rememberChallenge(options.challenge, 'register');
 
         return options;
     }
 
     async verifyRegistration(response: RegistrationResponseJSON, name: unknown): Promise<PasskeySummary> {
+        let usedChallenge = '';
         const verification = await this.library.verifyRegistrationResponse({
             response,
-            expectedChallenge: challenge => this.takeChallenge(challenge, 'register'),
+            expectedChallenge: (challenge) => {
+                usedChallenge = challenge;
+
+                return this.isChallengeValid(challenge, 'register');
+            },
             expectedOrigin: this.origin,
             expectedRPID: this.rpID,
             requireUserVerification: true,
@@ -125,6 +146,15 @@ class PasskeyService {
 
         if (!verification.verified) {
             throw new PasskeyError('The passkey could not be checked. Try again.');
+        }
+
+        this.markChallengeUsed(usedChallenge);
+
+        // Two adds that ran at the same time are checked again here, so the cap holds.
+        const existing = await this.store.list();
+
+        if (existing.length >= MAX_PASSKEYS) {
+            throw new PasskeyError(`There are already ${String(MAX_PASSKEYS)} passkeys. Remove one first.`);
         }
 
         const { credential } = verification.registrationInfo;
@@ -135,22 +165,16 @@ class PasskeyService {
         return summarize(added);
     }
 
+    // Public. It names no credential, so it tells nothing about the owner's passkeys.
     async loginOptions(): Promise<PublicKeyCredentialRequestOptionsJSON> {
-        const existing = await this.store.list();
+        this.refuseIpHost();
 
-        if (existing.length === 0) {
-            throw new PasskeyError('No passkey is set up yet. Open the setup link printed by the server.');
-        }
-
-        const options = await this.library.generateAuthenticationOptions({
+        return await this.library.generateAuthenticationOptions({
             rpID: this.rpID,
-            allowCredentials: existing.map(passkey => ({ id: passkey.id, transports: passkey.transports })),
+            challenge: this.makeChallenge('login'),
+            allowCredentials: [],
             userVerification: 'required',
         });
-
-        this.rememberChallenge(options.challenge, 'login');
-
-        return options;
     }
 
     // Returns a new session token, or throws a PasskeyError with a message for the owner.
@@ -158,13 +182,18 @@ class PasskeyService {
         const passkey = typeof response.id === 'string' ? await this.store.get(response.id) : undefined;
 
         if (passkey === undefined) {
-            throw new PasskeyError('This passkey is not known here.');
+            throw new PasskeyError('The passkey could not be checked. Try again.');
         }
 
         const publicKey = Buffer.from(passkey.publicKey, 'base64url');
+        let usedChallenge = '';
         const verification = await this.library.verifyAuthenticationResponse({
             response,
-            expectedChallenge: challenge => this.takeChallenge(challenge, 'login'),
+            expectedChallenge: (challenge) => {
+                usedChallenge = challenge;
+
+                return this.isChallengeValid(challenge, 'login');
+            },
             expectedOrigin: this.origin,
             expectedRPID: this.rpID,
             credential: { id: passkey.id, publicKey: new Uint8Array(publicKey), counter: passkey.counter, transports: passkey.transports },
@@ -175,6 +204,7 @@ class PasskeyService {
             throw new PasskeyError('The passkey could not be checked. Try again.');
         }
 
+        this.markChallengeUsed(usedChallenge);
         await this.store.markUsed(passkey.id, verification.authenticationInfo.newCounter);
 
         return this.access.issueSession();
@@ -190,32 +220,74 @@ class PasskeyService {
         return this.store.remove(id);
     }
 
-    private rememberChallenge(challenge: string, kind: ChallengeKind): void {
-        const now = this.now();
-
-        this.challenges.forEach((entry, key) => {
-            if (entry.expiresAt <= now) {
-                this.challenges.delete(key);
-            }
-        });
-
-        const oldest = this.challenges.keys()
-            .next();
-
-        if (this.challenges.size >= MAX_OPEN_CHALLENGES && oldest.done !== true) {
-            this.challenges.delete(oldest.value);
+    private refuseIpHost(): void {
+        if (this.isIpHost) {
+            throw new PasskeyError(IP_HOST_MESSAGE);
         }
-
-        this.challenges.set(challenge, { kind, expiresAt: now + CHALLENGE_TTL_MS });
     }
 
-    // A challenge is used once, whatever the outcome, and only for the kind it was made for.
-    private takeChallenge(challenge: string, kind: ChallengeKind): boolean {
-        const entry = this.challenges.get(challenge);
+    // A random nonce, the expiry and the kind, signed with the process key.
+    private makeChallenge(kind: ChallengeKind): Uint8Array<ArrayBuffer> {
+        const nonce = randomBytes(NONCE_BYTES);
+        const expiry = Buffer.alloc(EXPIRY_BYTES);
 
-        this.challenges.delete(challenge);
+        const expiresAt = BigInt(this.now() + CHALLENGE_TTL_MS);
 
-        return entry !== undefined && entry.kind === kind && entry.expiresAt > this.now();
+        expiry.writeBigUInt64BE(expiresAt);
+        const signedPart = Buffer.concat([nonce, expiry, Buffer.from([CHALLENGE_KIND_CODES[kind]])]);
+        const mac = this.signChallenge(signedPart);
+        const challenge = Buffer.concat([signedPart, mac]);
+        const copy = new Uint8Array(new ArrayBuffer(challenge.length));
+
+        copy.set(challenge);
+
+        return copy;
+    }
+
+    private signChallenge(signedPart: Buffer): Buffer {
+        const hmac = createHmac('sha256', this.challengeKey);
+
+        hmac.update(signedPart);
+
+        return hmac.digest();
+    }
+
+    // The challenge comes back base64url encoded in the browser's answer.
+    private isChallengeValid(challenge: string, kind: ChallengeKind): boolean {
+        this.forgetExpiredChallenges();
+        const bytes = Buffer.from(challenge, 'base64url');
+
+        if (bytes.length !== SIGNED_PART_BYTES + MAC_BYTES || this.usedChallenges.has(challenge)) {
+            return false;
+        }
+
+        const signedPart = bytes.subarray(0, SIGNED_PART_BYTES);
+        const mac = bytes.subarray(SIGNED_PART_BYTES);
+        const expectedMac = this.signChallenge(signedPart);
+        const expiryValue = signedPart.readBigUInt64BE(NONCE_BYTES);
+        const expiresAt = Number(expiryValue);
+        const kindCode = signedPart[SIGNED_PART_BYTES - 1];
+
+        return timingSafeEqual(mac, expectedMac) && kindCode === CHALLENGE_KIND_CODES[kind] && expiresAt > this.now();
+    }
+
+    // Only good answers get here, so the list grows only with the owner's own sign-ins and adds.
+    private markChallengeUsed(challenge: string): void {
+        const bytes = Buffer.from(challenge, 'base64url');
+        const expiryValue = bytes.length >= SIGNED_PART_BYTES ? bytes.readBigUInt64BE(NONCE_BYTES) : undefined;
+        const expiresAt = expiryValue === undefined ? this.now() + CHALLENGE_TTL_MS : Number(expiryValue);
+
+        this.usedChallenges.set(challenge, expiresAt);
+    }
+
+    private forgetExpiredChallenges(): void {
+        const now = this.now();
+
+        this.usedChallenges.forEach((expiresAt, challenge) => {
+            if (expiresAt <= now) {
+                this.usedChallenges.delete(challenge);
+            }
+        });
     }
 }
 

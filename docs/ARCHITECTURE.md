@@ -376,13 +376,21 @@ on HTTPS or localhost.
   behind the session check, so the setup link stays the root of trust.
 - Anyone can start a sign-in: `POST /auth/passkey/options`, then `POST /auth/passkey/verify`. These routes have the
   same origin check as `/api`. A good answer gets a new session cookie, made by `SetupAccess.issueSession`.
-- User verification is required. Attestation is `none`. Each challenge works once, for its own kind (add or sign in),
-  for five minutes. At most 20 challenges are open, and the oldest is dropped first. At most 20 passkeys are kept.
+- User verification is required. Attestation is `none`. Passkeys are discoverable, so the public sign-in options name
+  no credential and tell nothing about the owner's passkeys.
+- A challenge is a random nonce, its expiry and its kind (add or sign in), signed with a key made at start. The server
+  keeps no list of open challenges, so a flood of sign-in requests cannot push out the owner's. A challenge that passed
+  is kept until it expires, so it works once. A restart ends the open challenges.
+- The routes take a body of at most 64 KB. At most 20 passkeys are kept, checked again when one is saved.
+- A public address on an IP, such as `127.0.0.1`, cannot hold a passkey, since WebAuthn takes a domain as the relying
+  party id. The routes then say so. A `CLOUDBOT_PUBLIC_URL` that is not a full URL turns passkeys off at start, and the
+  setup link still works.
 - The table `passkeys` keeps the credential id, the public key, the signature counter, the transports and the name.
   The counter is updated on each sign-in.
 
 Limits: there is one session at a time, as with the setup link, so a sign-in on one device ends the session on
-another. The web sign-in page and the device list in the chat come next.
+another. The origin must match the address exactly, so a container published on another port than
+`CLOUDBOT_PUBLIC_URL` names refuses every passkey. The web sign-in page and the device list in the chat come next.
 
 ## Chat
 

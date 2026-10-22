@@ -50,7 +50,7 @@ interface AppOptions {
     version: string;
     access: SetupAccess;
     // Passkey sign-in. Without it only the setup link signs the owner in.
-    passkeys?: PasskeyService;
+    passkeys?: PasskeyService | undefined;
     webRoot?: string;
     chatService?: ChatService;
     // The channels the owner can see and post in. Without both stores the channel routes are not served.
