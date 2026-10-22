@@ -643,6 +643,35 @@ Each turn reads the skills, and the system prompt names each one with its descri
 with `skill_read` before a task it covers. A skill from a link works by the bot fetching the page with its usual tools
 and passing the text to `skill_add`, so the card still shows every word. A bot export does not carry its skills yet.
 
+### Teaching a skill by recording the screen
+
+`screen_record` hands the screen to the owner, as `request_screen` does, and starts a `ScreenRecorder`
+(`desktop/ScreenRecorder.ts`) on its own page connection. The recorder adds a CDP binding with a random name and a page
+script, for the open page and every page that loads after it. The script reports clicks, changed fields and form
+submits, and `Page.frameNavigated` gives the page opens. A page open keeps only the origin and the path, since the
+query and the fragment often hold tokens.
+
+A field is secret when its type is password or hidden, or when its autocomplete hint, name, id, label or placeholder
+has a word such as password, code, token, card, cvc, pin, senha, código, cartão or cpf. A secret field is recorded only
+as "typed a secret into <field>", and its value never leaves the page. A field is never labeled by its value, so a
+password cannot become a label either. A card, CPF or SSN number in typed text or in a label is masked. Labels and text
+are cut to 80 and 200 characters, and a recording keeps at most 200 steps.
+
+The shared screen has one recording at a time. The slot is taken before the recorder starts, so two starts at the same
+moment cannot both run. If the owner gets the screen for something else while the recorder starts, the recording is
+dropped. While a recording runs, another bot's `request_screen` is refused, so the owner's work is never recorded for
+the wrong bot. It ends when the owner gives the screen back, and its steps are kept
+in memory for the bot that asked, until its next recording or its deletion. `screen_recording` gives the bot the steps
+as numbered, quoted lines, marked as data from web pages. The bot then writes them as a skill and saves it with
+`skill_add`, so the owner reads and fixes every step on the card. Both tools skip the review: one hands the screen to
+the owner, the other reads what the owner did.
+
+Limits: the binding is a global of the page, and its random name does not hide it. A page script can call it to add
+steps, fill the 200 steps with its own, or stop the recorder seeing anything. So a step is what the page reported, and
+the owner checks every step on the skill card. Frames that were already open when the recording started, popups and new
+tabs are not recorded. A one-time code typed into a field with no secret hint is recorded as text. Typing that does not fire a change event, such as in some custom editors, and actions outside the browser
+are not recorded. A restart drops a running recording and the kept steps.
+
 ## Owner rules
 
 `RuleStore` keeps the owner's rules in the `bot_rules` table. Each row has the
