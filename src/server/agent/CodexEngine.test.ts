@@ -1,6 +1,6 @@
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -11,6 +11,7 @@ import type { AgentEvent } from './AgentEvent.ts';
 import type { ToolCallDecision, TurnRequest } from './AgentRunner.ts';
 import { CodexEngine, buildCodexArguments } from './CodexEngine.ts';
 import type { SpawnFunction } from './ClaudeCliEngine.ts';
+import type { LoopbackToolServer, LoopbackTurnGrant } from './createLoopbackToolServer.ts';
 
 interface SentMessage {
     id?: number;
@@ -97,14 +98,30 @@ function completeTurn(server: FakeAppServer): void {
     server.say({ method: 'turn/completed', params: { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed', error: null, durationMs: 50 } } });
 }
 
-function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThreadStart?: boolean; environment?: Record<string, string> } = {}): {
+function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThreadStart?: boolean; loopback?: LoopbackToolServer; environment?: Record<string, string> } = {}): {
     engine: CodexEngine;
     servers: FakeAppServer[];
     spawnOptions: SpawnOptions[];
     spawnArgs: string[][];
     signals: string[];
     home: string;
+    gates: { allowed: unknown[][]; closed: string[] };
 } {
+    const gates: { allowed: unknown[][]; closed: string[] } = { allowed: [], closed: [] };
+    // A stand-in for the app proxy. An address ending in key9 is not one it gave out.
+    const callGates = {
+        openCallGate: (address: string) => address.endsWith('key9')
+            ? undefined
+            : {
+                    address: `${address}/gate`,
+                    allowCall: (...call: unknown[]) => {
+                        gates.allowed.push(call);
+                    },
+                    close: () => {
+                        gates.closed.push(address);
+                    },
+                },
+    };
     const servers: FakeAppServer[] = [];
     const spawnOptions: SpawnOptions[] = [];
     const spawnArgs: string[][] = [];
@@ -123,13 +140,15 @@ function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThre
         codexPath: '/usr/local/bin/codex',
         codexHomeFor: () => home,
         environment: options.environment ?? { PATH: '/usr/bin' },
+        loopback: options.loopback,
+        callGates,
         spawnFunction,
         signalProcess: (_child, action) => {
             signals.push(action);
         },
     });
 
-    return { engine, servers, spawnOptions, spawnArgs, signals, home };
+    return { engine, servers, spawnOptions, spawnArgs, signals, home, gates };
 }
 
 function makeRequest(overrides: Partial<TurnRequest> = {}): TurnRequest {
@@ -152,9 +171,9 @@ function significant(events: AgentEvent[]): AgentEvent[] {
 }
 
 describe('buildCodexArguments', () => {
-    it('runs the app server with the built-ins that have no approval turned off', () => {
+    it('runs the app server with the built-ins that have no approval turned off, and the tool token and CODEX_HOME kept out of commands', () => {
         expect(buildCodexArguments([]))
-            .toEqual(['app-server', '-c', 'web_search="disabled"', '-c', 'features.view_image=false', '-c', 'features.multi_agent=false', '-c', 'features.goals=false', '-c', 'shell_environment_policy.exclude=["CODEX_HOME"]']);
+            .toEqual(['app-server', '-c', 'web_search="disabled"', '-c', 'features.view_image=false', '-c', 'features.multi_agent=false', '-c', 'features.goals=false', '-c', 'shell_environment_policy.exclude=["CLOUDBOT_TOOLS_TOKEN","CODEX_HOME"]']);
     });
 });
 
@@ -386,14 +405,188 @@ describe('CodexEngine', () => {
             .toEqual({ type: 'turn_limit', limit: 'steps' });
     });
 
-    it('refuses images without starting Codex', async () => {
-        const { engine, servers } = makeEngine(completeTurn);
+    it('serves the bot tools through the loopback server, with every call asking first and the token in the environment', async () => {
+        const grants: LoopbackTurnGrant[] = [];
+        let releases = 0;
+        const loopback: LoopbackToolServer = {
+            grantTurn: (grant) => {
+                grants.push(grant);
 
-        const events = await collect(engine.runTurn(makeRequest({ images: [{ mediaType: 'image/png', data: 'AAAA' }] })));
+                return {
+                    folder: '/t',
+                    mcpConfigPath: '/t/mcp.json',
+                    settingsPath: '/t/settings.json',
+                    noteToolUse: () => undefined,
+                    writeFile: name => `/t/${name}`,
+                    allowCall: () => undefined,
+                    mcpUrl: 'http://127.0.0.1:5555/mcp',
+                    token: 'fake-loopback-token',
+                    release: () => {
+                        releases += 1;
+                    },
+                };
+            },
+            close: () => Promise.resolve(),
+        };
+        const { engine, spawnArgs, spawnOptions } = makeEngine(completeTurn, { loopback });
+        const tool = { name: 'echo', description: 'Repeats.', inputSchema: {}, handler: () => Promise.resolve({ content: [] }) };
 
-        expect(events)
-            .toEqual([{ type: 'turn_error', message: 'This bot runs on Codex, which cannot read images in CloudBot yet.', isUsageLimit: false }]);
-        expect(servers)
-            .toHaveLength(0);
+        await collect(engine.runTurn(makeRequest({ tools: [tool], disallowedTools: ['mcp__cloudbot__echo'] })));
+
+        expect(spawnArgs[0])
+            .toEqual(expect.arrayContaining([
+                'mcp_servers.cloudbot.url="http://127.0.0.1:5555/mcp"',
+                'mcp_servers.cloudbot.bearer_token_env_var="CLOUDBOT_TOOLS_TOKEN"',
+                'mcp_servers.cloudbot.default_tools_approval_mode="prompt"',
+            ]));
+        expect(spawnArgs[0]?.join(' '))
+            .not.toContain('fake-loopback-token');
+        expect(spawnOptions[0]?.env)
+            .toMatchObject({ CLOUDBOT_TOOLS_TOKEN: 'fake-loopback-token' });
+        expect(grants[0])
+            .toMatchObject({ tools: [tool], offersPromptTool: false, disallowedTools: ['mcp__cloudbot__echo'] });
+        await expect(grants[0]?.reviewToolCall({ toolName: 'Bash', input: {} }, new AbortController().signal))
+            .resolves.toMatchObject({ isAllowed: false });
+        expect(releases)
+            .toBe(1);
+    });
+
+    it('gives Codex the connected http servers at a gated address of the turn, and leaves the rest out', async () => {
+        const { engine, spawnArgs, gates } = makeEngine(completeTurn);
+        const mcpServers = {
+            'linear': { type: 'http' as const, url: 'http://127.0.0.1:6000/key1' },
+            'unknown': { type: 'http' as const, url: 'http://127.0.0.1:6000/key9' },
+            'cloudbot': { type: 'http' as const, url: 'http://127.0.0.1:6000/key2' },
+            'bad.name': { type: 'http' as const, url: 'http://127.0.0.1:6000/key3' },
+            'local': { command: '/bin/server' },
+        };
+
+        await collect(engine.runTurn(makeRequest({ mcpServers })));
+
+        const joined = spawnArgs[0]?.join(' ') ?? '';
+
+        expect(spawnArgs[0])
+            .toEqual(expect.arrayContaining([
+                'mcp_servers.linear.url="http://127.0.0.1:6000/key1/gate"',
+                'mcp_servers.linear.default_tools_approval_mode="prompt"',
+            ]));
+        expect(joined)
+            .not.toContain('key9');
+        expect(gates.closed)
+            .toEqual(['http://127.0.0.1:6000/key1']);
+        expect(joined)
+            .not.toContain('key2');
+        expect(joined)
+            .not.toContain('key3');
+        expect(joined)
+            .not.toContain('/bin/server');
+    });
+
+    it('reviews a connected server\'s tool call and answers with the decision', async () => {
+        const review = vi.fn((): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: true }));
+        const { engine, servers, gates } = makeEngine((server) => {
+            server.say({ method: 'item/started', params: { item: { type: 'mcpToolCall', id: 'call_1', server: 'linear', tool: 'create_issue', status: 'inProgress', arguments: { title: 'Bug' } } } });
+            server.say({
+                id: 'question-1',
+                method: 'mcpServer/elicitation/request',
+                params: { threadId: 'thread-1', turnId: 'turn-1', serverName: 'linear', mode: 'form', message: 'Allow?', requestedSchema: {}, _meta: { codex_approval_kind: 'mcp_tool_call', tool_params: { title: 'Bug' } } },
+            });
+            setTimeout(() => {
+                completeTurn(server);
+            }, 20);
+        });
+
+        await collect(engine.runTurn(makeRequest({ reviewToolCall: review, mcpServers: { linear: { type: 'http', url: 'http://127.0.0.1:6000/key1' } } })));
+        const answer = servers[0]?.sent.find(message => (message as { id?: unknown }).id === 'question-1');
+
+        expect(review)
+            .toHaveBeenCalledWith({ toolName: 'mcp__linear__create_issue', input: { title: 'Bug' } }, expect.any(AbortSignal));
+        expect(answer)
+            .toMatchObject({ result: { action: 'accept' } });
+        expect(gates.allowed)
+            .toEqual([['call_1', 'create_issue', { title: 'Bug' }]]);
+    });
+
+    it('gives Codex no connected servers without the app proxy', async () => {
+        const spawnArgs: string[][] = [];
+        const home = join(mkdtempSync(join(tmpdir(), 'cloudbot-codex-test-')), 'codex-home');
+        const engine = new CodexEngine({
+            codexPath: '/usr/local/bin/codex',
+            codexHomeFor: () => home,
+            spawnFunction: (_command, args) => {
+                spawnArgs.push(args);
+
+                return new FakeAppServer(completeTurn) as unknown as ChildProcess;
+            },
+            signalProcess: () => undefined,
+        });
+
+        await collect(engine.runTurn(makeRequest({ mcpServers: { linear: { type: 'http', url: 'http://127.0.0.1:6000/key1' } } })));
+        expect(spawnArgs[0]?.join(' '))
+            .not.toContain('linear');
+    });
+
+    it('closes the opened gates when a later gate fails to open', async () => {
+        const closed: string[] = [];
+        const home = join(mkdtempSync(join(tmpdir(), 'cloudbot-codex-test-')), 'codex-home');
+        const engine = new CodexEngine({
+            codexPath: '/usr/local/bin/codex',
+            codexHomeFor: () => home,
+            callGates: {
+                openCallGate: (address: string) => {
+                    if (address.endsWith('key2')) {
+                        throw new Error('The app proxy has not started.');
+                    }
+
+                    return { address: `${address}/gate`, allowCall: () => undefined, close: () => closed.push(address) };
+                },
+            },
+            spawnFunction: () => new FakeAppServer(completeTurn) as unknown as ChildProcess,
+            signalProcess: () => undefined,
+        });
+        const mcpServers = {
+            first: { type: 'http' as const, url: 'http://127.0.0.1:6000/key1' },
+            second: { type: 'http' as const, url: 'http://127.0.0.1:6000/key2' },
+        };
+
+        await expect(collect(engine.runTurn(makeRequest({ mcpServers }))))
+            .rejects.toThrow('The app proxy has not started.');
+        expect(closed)
+            .toEqual(['http://127.0.0.1:6000/key1']);
+    });
+
+    it('passes images as private files for the turn, and removes them when the turn ends', async () => {
+        const seen: { path: string; mode: number; bytes: string }[] = [];
+        const { engine, servers } = makeEngine((server) => {
+            const turnStart = server.sent.find(message => message.method === 'turn/start');
+            const inputs = (turnStart?.params?.input ?? []) as { type: string; path?: string }[];
+
+            inputs.filter(input => input.type === 'localImage')
+                .forEach((input) => {
+                    const path = input.path ?? '';
+
+                    seen.push({ path, mode: statSync(path).mode & 0o777, bytes: readFileSync(path)
+                        .toString('base64') });
+                });
+            completeTurn(server);
+        });
+
+        await collect(engine.runTurn(makeRequest({ prompt: 'Look.', images: [{ mediaType: 'image/png', data: 'iVBORw0K' }, { mediaType: 'image/jpeg', data: '/9j/4AAQ' }] })));
+        const turnStart = servers[0]?.sent.find(message => message.method === 'turn/start');
+
+        expect((turnStart?.params?.input as unknown[])[0])
+            .toEqual({ type: 'text', text: 'Look.', text_elements: [] });
+        expect(seen.map(image => ({ bytes: image.bytes, extension: image.path.split('.')
+            .at(-1) })))
+            .toEqual([
+                { bytes: 'iVBORw0K', extension: 'png' },
+                { bytes: '/9j/4AAQ', extension: 'jpg' },
+            ]);
+        if (process.platform !== 'win32') {
+            expect(seen.map(image => image.mode))
+                .toEqual([0o600, 0o600]);
+        }
+        expect(seen.every(image => !existsSync(image.path)))
+            .toBe(true);
     });
 });

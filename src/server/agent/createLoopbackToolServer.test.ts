@@ -242,6 +242,45 @@ describe('loopback tool server', () => {
         turn.release();
     });
 
+    it('runs a call that the engine allowed itself once, by the callId Codex sends, and hides the prompt tool', async () => {
+        const review = allowingReview();
+        const turn = server.grantTurn({ tools: [echoTool()], reviewToolCall: review, offersPromptTool: false });
+        const callWithId = (callId: string, text: string): unknown => ({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo', arguments: { text }, _meta: { callId } } });
+
+        turn.allowCall('call_1', `mcp__${SERVER_NAME}__echo`, { text: 'hi' });
+        const listed = await postMcp(turn, { jsonrpc: '2.0', id: 3, method: 'tools/list' });
+        const first = await postMcp(turn, callWithId('call_1', 'hi'));
+        const again = await postMcp(turn, callWithId('call_1', 'hi'));
+        const otherInput = await postMcp(turn, callWithId('call_1', 'bye'));
+        const notAllowed = await postMcp(turn, callWithId('call_2', 'hi'));
+        const names = (listed.json as { result: { tools: { name: string }[] } }).result.tools.map(tool => tool.name);
+
+        expect(names)
+            .toEqual(['echo']);
+        expect(first.json)
+            .toMatchObject({ result: { content: [{ text: 'echo hi' }] } });
+        const refusals = [again.json, otherInput.json, notAllowed.json].map(json => (json as { result: { isError?: boolean } }).result.isError);
+
+        expect(refusals)
+            .toEqual([true, true, true]);
+        expect(review)
+            .not.toHaveBeenCalled();
+        turn.release();
+    });
+
+    it('keeps the first state of a call, so an allow cannot reopen a call that was already decided', async () => {
+        const turn = server.grantTurn({ tools: [echoTool()], reviewToolCall: allowingReview(), offersPromptTool: false });
+
+        turn.allowCall('call_1', `mcp__${SERVER_NAME}__echo`, { text: 'hi' });
+        await postMcp(turn, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo', arguments: { text: 'hi' }, _meta: { callId: 'call_1' } } });
+        turn.allowCall('call_1', `mcp__${SERVER_NAME}__echo`, { text: 'hi' });
+        const second = await postMcp(turn, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo', arguments: { text: 'hi' }, _meta: { callId: 'call_1' } } });
+
+        expect(second.json)
+            .toMatchObject({ result: { isError: true } });
+        turn.release();
+    });
+
     it('decides a tool use once when two prompts for it arrive together', async () => {
         const review = vi.fn(async (): Promise<ToolCallDecision> => {
             await new Promise(resolve => setTimeout(resolve, 30));
