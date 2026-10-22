@@ -321,6 +321,21 @@ class SetupConversation {
                 return;
             }
 
+            // A provider list from an older version misses the newer providers, so it is closed and posted again.
+            const currentIds = this.providerOptions()
+                .map(option => option.id)
+                .join(',');
+            const isOldList = body?.kind === 'choice' && body.chosenId === undefined && this.state.step === 'choice'
+                && body.options.map(option => option.id)
+                    .join(',') !== currentIds;
+
+            if (isOldList) {
+                await this.options.chat.updateSetupMessage(this.state.messageId, { kind: 'text', text: 'This list was replaced by a newer one.' });
+                await this.askMode();
+
+                return;
+            }
+
             if (body !== undefined && !(body.kind === 'secureForm' && body.submitted)) {
                 return;
             }
