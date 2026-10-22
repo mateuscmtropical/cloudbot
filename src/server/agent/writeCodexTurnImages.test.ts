@@ -19,8 +19,10 @@ describe('writeCodexTurnImages', () => {
         expect(readFileSync(path)
             .toString('base64'))
             .toBe('UklGRg==');
-        expect(statSync(path).mode & 0o777)
-            .toBe(0o600);
+        if (process.platform !== 'win32') {
+            expect(statSync(path).mode & 0o777)
+                .toBe(0o600);
+        }
         images.remove();
         expect(readdirSync(home))
             .toEqual([]);
