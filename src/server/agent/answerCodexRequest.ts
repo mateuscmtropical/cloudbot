@@ -1,3 +1,6 @@
+import { lstatSync, realpathSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+
 import type { ToolCall, ToolCallDecision } from './AgentRunner.ts';
 import { isFileChangeItem } from './codexProtocol.ts';
 import type { CodexFileChange, CodexMcpToolCallItem, CodexThreadItem } from './codexProtocol.ts';
@@ -12,6 +15,8 @@ interface CodexRequestContext {
     timeoutMs: number;
     // The folder of the turn. A command that runs elsewhere is reviewed with a visible cd first.
     workspaceDir: string;
+    // The Codex config and sign-in folder of the bot. A write here could run programs without a review next turn.
+    codexHome: string;
     // False once the turn has used its steps. A further command or file change is declined without a review.
     hasStepsLeft: () => boolean;
     // The bot's own MCP server, when the turn has tools. Any other server's question is declined.
@@ -38,6 +43,9 @@ const NOT_SUPPORTED_MESSAGE = 'CloudBot does not answer this request.';
 // command of one plain word, as `/bin/bash -lc ls` (seen with codex-cli 0.163.0 in the canary). The command floor and
 // the reviewer must see the command itself.
 const SHELL_WRAPPER_PATTERN = /^(?:\/usr)?(?:\/bin\/)?(?:bash|sh|zsh) -lc (?:'([^']*)'|([\w./@%+=:,-]+))$/;
+// Any folder named .codex, with either separator and with quotes or spaces around it, so a project config path is
+// found in a command.
+const CODEX_FOLDER_PATTERN = /(?:^|[\s\\/'"])\.codex(?:[\s\\/'"]|$)/i;
 
 const DECLINE_COMMAND: CodexAnswer = { result: { decision: 'decline' } };
 const ACCEPT_COMMAND: CodexAnswer = { result: { decision: 'accept' } };
@@ -67,6 +75,128 @@ function readText(record: Record<string, unknown>, key: string): string | undefi
     const value = record[key];
 
     return typeof value === 'string' ? value : undefined;
+}
+
+function isOutsideFolder(relativePath: string): boolean {
+    return relativePath === '..' || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath);
+}
+
+function isInsideFolder(folder: string, target: string): boolean {
+    const relativePath = relative(folder, target);
+
+    return relativePath === '' || !isOutsideFolder(relativePath);
+}
+
+function isInsideCodexFolder(workspaceDir: string, target: string): boolean {
+    const relativePath = relative(workspaceDir, target);
+
+    if (relativePath === '' || isOutsideFolder(relativePath)) {
+        return false;
+    }
+
+    const segments = relativePath.split(sep);
+
+    return segments.some(segment => segment.toLowerCase() === '.codex');
+}
+
+// A missing file or folder is expected, since a patch creates them. Any other failure is not.
+function isMissingPath(error: unknown): boolean {
+    return error instanceof Error && 'code' in error && error.code === 'ENOENT';
+}
+
+// A patch creates files that do not exist yet, so the nearest ancestor that exists is found first. A symlink in the
+// workspace is resolved, since its target is the path that is really written.
+function nearestExistingAncestor(target: string): string | undefined {
+    try {
+        lstatSync(target);
+
+        return target;
+    } catch (error) {
+        if (!isMissingPath(error)) {
+            throw error;
+        }
+    }
+
+    const parent = dirname(target);
+
+    return parent === target ? undefined : nearestExistingAncestor(parent);
+}
+
+function realPathOfChange(target: string): string | undefined {
+    try {
+        const ancestor = nearestExistingAncestor(target);
+
+        if (ancestor === undefined) {
+            return undefined;
+        }
+
+        const realAncestor = realpathSync(ancestor);
+        const tail = relative(ancestor, target);
+
+        return tail === '' ? realAncestor : join(realAncestor, tail);
+    } catch {
+        return undefined;
+    }
+}
+
+function realPathOrUndefined(target: string): string | undefined {
+    try {
+        return realpathSync(target);
+    } catch {
+        return undefined;
+    }
+}
+
+// The path of a change can be relative to the workspace. It is resolved before it is checked, so `..` cannot hide
+// the Codex home or a project .codex folder.
+// A path of a change that cannot be resolved is forbidden. A refused patch is better than a missed symlink.
+function isForbiddenPath(targetPath: string, context: CodexRequestContext): boolean {
+    const resolvedWorkspace = resolve(context.workspaceDir);
+    const resolvedCodexHome = resolve(context.codexHome);
+    const resolvedTarget = resolve(resolvedWorkspace, targetPath);
+
+    // A link named .codex still makes Codex read the folder it points at, so this is checked before links are resolved.
+    if (isInsideFolder(resolvedCodexHome, resolvedTarget) || isInsideCodexFolder(resolvedWorkspace, resolvedTarget)) {
+        return true;
+    }
+
+    const realTarget = realPathOfChange(resolvedTarget);
+    const realHome = realPathOrUndefined(resolvedCodexHome);
+    const realWorkspace = realPathOrUndefined(resolvedWorkspace);
+
+    if (realTarget === undefined || realHome === undefined || realWorkspace === undefined) {
+        return true;
+    }
+
+    return isInsideFolder(realHome, realTarget) || isInsideCodexFolder(realWorkspace, realTarget);
+}
+
+function normalizeForMatch(text: string): string {
+    return text.replaceAll('\\', '/')
+        .toLowerCase();
+}
+
+function namesForbiddenLocation(text: string, context: CodexRequestContext): boolean {
+    const normalizedText = normalizeForMatch(text);
+    const rawHome = normalizeForMatch(context.codexHome);
+    const resolvedCodexHome = resolve(context.codexHome);
+    const resolvedHome = normalizeForMatch(resolvedCodexHome);
+
+    return normalizedText.includes(rawHome) || normalizedText.includes(resolvedHome) || CODEX_FOLDER_PATTERN.test(text);
+}
+
+function fileChangePaths(change: CodexFileChange): string[] {
+    if (change.kind.type === 'update' && change.kind.move_path !== null) {
+        return [change.path, change.kind.move_path];
+    }
+
+    return [change.path];
+}
+
+function isForbiddenFileChange(change: CodexFileChange, context: CodexRequestContext): boolean {
+    const paths = fileChangePaths(change);
+
+    return paths.some(targetPath => isForbiddenPath(targetPath, context));
 }
 
 // A wrapped command with a quote inside is kept whole, since the inner text could not be read back exactly.
@@ -126,6 +256,13 @@ async function answerCommand(params: Record<string, unknown>, context: CodexRequ
 
     const unwrapped = unwrapShellCommand(command);
     const cwd = readText(params, 'cwd') ?? context.workspaceDir;
+
+    // This is a floor, not a parser. A command that builds the path at run time, such as one that derives it from
+    // HOME, gets past it. The review still sees such a command.
+    if (namesForbiddenLocation(unwrapped, context) || namesForbiddenLocation(cwd, context)) {
+        return DECLINE_COMMAND;
+    }
+
     // The model picks the folder of each command. The review sees it the way a Claude Bash call would show it.
     const reviewedCommand = cwd === context.workspaceDir ? unwrapped : `cd ${quoteForShell(cwd)} && ${unwrapped}`;
     const isAllowed = await reviewInTime({ toolName: 'Bash', input: { command: reviewedCommand } }, context);
@@ -157,6 +294,12 @@ async function answerFileChange(params: Record<string, unknown>, context: CodexR
     }
 
     if (item === undefined || !isFileChangeItem(item) || item.changes.length === 0) {
+        return DECLINE_COMMAND;
+    }
+
+    // Codex loads its config and sign-in from the Codex home, and a project .codex folder when the project is
+    // trusted. A write there could make Codex run a program without a review next turn, so it never reaches one.
+    if (item.changes.some(change => isForbiddenFileChange(change, context))) {
         return DECLINE_COMMAND;
     }
 

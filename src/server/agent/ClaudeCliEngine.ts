@@ -12,6 +12,7 @@ import type { LoopbackToolServer, LoopbackTurn, LoopbackTurnGrant } from './crea
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
 import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
 import { readWorkspaceMemoryBlock } from './readWorkspaceMemory.ts';
+import { TURN_MARKER_VARIABLE, createTurnMarker, endTurnLeftovers } from './endTurnLeftovers.ts';
 import { mapCliMessage, rememberResetsAt, withResetsAt } from './mapCliMessage.ts';
 import type { CliMessage } from './mapCliMessage.ts';
 
@@ -27,6 +28,8 @@ interface ClaudeCliEngineOptions {
     spawnFunction?: SpawnFunction | undefined;
     // Tests inject a fake here too. Production sends TERM, then KILL, to the process tree.
     signalProcess?: ((child: ChildProcess, action: SignalAction) => void) | undefined;
+    // Tests inject a fake here too. Production ends the processes that still carry the turn's marker.
+    endLeftovers?: ((marker: string, agentUser: string | undefined) => void) | undefined;
 }
 
 interface CliTurnFiles {
@@ -321,7 +324,9 @@ class ClaudeCliEngine implements AgentRunner {
         const agentsPath = agentsText === undefined ? undefined : turn.writeFile('agents.json', agentsText);
         const args = buildCliArguments(request, { mcpConfigPath: turn.mcpConfigPath, settingsPath: turn.settingsPath, systemPromptPath, agentsPath });
         const inherited = this.options.environment ?? process.env;
-        const extraEnvironment = { ...noProxyValues(inherited), ...request.extraEnvironment };
+        // The marker comes last, so no variable of the request can replace it.
+        const turnMarker = createTurnMarker();
+        const extraEnvironment = { ...noProxyValues(inherited), ...request.extraEnvironment, [TURN_MARKER_VARIABLE]: turnMarker };
         const environment = buildEnvironment(this.options, extraEnvironment);
         const command = this.commandFor(args);
         const child = this.spawnFunction(command.file, command.args, {
@@ -489,6 +494,8 @@ class ClaudeCliEngine implements AgentRunner {
             // Every path ends here, so the group is killed even after a clean exit: an approved command may still run in it.
             await stopChild();
             this.stops.delete(stopChild);
+            // A command that started its own session is outside the group, so it is found by the turn's marker (#165).
+            (this.options.endLeftovers ?? endTurnLeftovers)(turnMarker, this.options.agentUser);
         }
 
         const result = await exited;

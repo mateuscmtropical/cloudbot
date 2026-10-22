@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SetupAccess } from '../access/SetupAccess.ts';
 import { FakeAgentRunner } from '../agent/FakeAgentRunner.ts';
 import { ChatService } from '../chat/ChatService.ts';
+import { CLEANUP_RETRIES } from '../chat/testCleanup.ts';
 import { createApp } from '../createApp.ts';
 import { BotStore } from '../store/BotStore.ts';
 import { MessageStore } from '../store/MessageStore.ts';
@@ -222,7 +223,7 @@ describe('createWebhookHookRoutes', () => {
     afterEach(async () => {
         const directories = createdDirectories.splice(0);
 
-        await Promise.all(directories.map(directory => rm(directory, { recursive: true, force: true })));
+        await Promise.all(directories.map(directory => rm(directory, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES })));
     });
 
     it('creates tokens that are long, random and URL safe', () => {

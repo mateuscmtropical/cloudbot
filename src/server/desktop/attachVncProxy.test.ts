@@ -159,12 +159,19 @@ describe('attachVncProxy', () => {
         vncServer.close();
         httpServer.closeAllConnections();
 
-        const deadVncPort = await listenOnFreePort(createTcpServer());
         const secondServer = createServer();
-
-        attachVncProxy({ server: secondServer, access, screen, vncPort: deadVncPort + 1 });
-
         const secondPort = await listenOnFreePort(secondServer);
+        const deadVncServer = createTcpServer();
+        const deadVncPort = await listenOnFreePort(deadVncServer);
+
+        await new Promise<void>((resolve) => {
+            deadVncServer.close(() => {
+                resolve();
+            });
+        });
+
+        attachVncProxy({ server: secondServer, access, screen, vncPort: deadVncPort });
+
         const webSocket = new WebSocket(`ws://127.0.0.1:${String(secondPort)}/api/desktop/vnc`, {
             headers: { cookie: `cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(secondPort)}` },
         });
