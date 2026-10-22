@@ -35,6 +35,8 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__task_add',
     'mcp__cloudbot__task_move',
     'mcp__cloudbot__task_board',
+    // The export only shares a copy of the bot's template in the chat, so it needs no review.
+    'mcp__cloudbot__bot_export',
     'mcp__cloudbot__screen_show',
 ]);
 
@@ -45,6 +47,8 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
     'mcp__cloudbot__app_connect',
     // A new bot gets its own workspace and its first instructions, so the owner approves it before it is made.
     'mcp__cloudbot__bot_create',
+    // An imported bot gets the rules and description of a file, so the owner approves the whole template first.
+    'mcp__cloudbot__bot_import',
     // A new or changed script runs with a secret, so the owner approves the file that is registered.
     'mcp__cloudbot__integration_create',
     'mcp__cloudbot__integration_update',

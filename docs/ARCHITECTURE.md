@@ -956,6 +956,18 @@ Dropped hand-offs. A hand-off waiting in a queue that is dropped, by Stop during
 
 Limits of this version. A queued hand-off keeps its depth and reply routing only in memory. After a restart, a queued hand-off runs with depth 0 and no reply note. The reply scan reads the newest 500 messages of the target, so a longer turn can lose its earliest replies.
 
+## Bot templates
+
+bot_export writes the bot's template as a JSON file and shares it in the chat through the same path as share_file. The file has a cloudbotTemplate version (1), the name, title, description (empty when the bot has none), look, rules (kind, text and blocked tools) and routines (name, prompt and schedule). Nothing else is read from the bot, so sessions, secrets, webhook addresses, uploads and learned memory never reach the file.
+
+bot_import reads a file the owner attached in the chat. The path must resolve inside the bot's own upload folder (uploadDirFor(botId)), so a bot imports only files from its own chat. The file is at most 64 KB and is parsed with a strict schema: unknown keys, other versions, control or hidden characters and values past their caps are refused. Line breaks and tabs are kept in the description, rules and prompts. A Windows line end is read as a line break. Each blocked tool name must have the format the owner's rule tool uses. No registry of tool names exists in this version, so a name in that format is accepted.
+
+The review card shows the whole template. Names, titles, rules, prompts and descriptions are JSON-quoted on the card, so a line break cannot start a new section. Each routine shows its schedule. Each card keeps the SHA-256 of the file it showed. The import takes the card with the same digest, and that card is then gone. A newer card for the same path replaces the older one. A card expires after ten minutes. The tool call carries no id and the approval gate has no deny hook, so a denied card is not removed. It expires instead.
+
+Imported routines start turned off, and the bot gets no secrets. A secret it needs goes through the secure form as usual. The rules are added in file order, one at a time.
+
+Skipped in this version: the template does not carry the bot's shared files, its learned memory, or any routine state such as its last run.
+
 ## Bots
 
 The "+" button calls `POST /api/bots`. The server makes a bot named "New bot" and posts a question in its chat, which asks for the name and the job. The owner answers there, and the bot sets them with `update_profile`. The bot's `bot_create` tool makes a bot from a name, a title and first instructions. The instructions are written to the new bot's CLAUDE.md as its first memory, under a header that names the bot that made it. They are not a rule, since a bot wrote them and a rule would be an owner permission. The tool is in the always-ask list, so the owner approves a card with the name, the title and the whole instructions before anything is made. The card refuses hidden characters, and a name or title that is not one short line. Every bot uses the same Claude sign-in and the same key proxy. Nothing of the key is copied into a bot.

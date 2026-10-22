@@ -31,6 +31,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A bot exports itself as a template file, shared in the chat, when you ask. The file holds the name, title, description, look, rules (with their blocked tools) and routines (with their schedules). It never holds secrets, sign-ins, webhook addresses, shared files or learned memory. Version 1 of the format is read, and a file of another version is refused.
+- A bot can be made from a template file attached in the chat. The owner sees the whole template on the approval card first, with the blocked tools of each rule and the schedule of each routine. Routines start turned off. Each card works for ten minutes and for one import. A file that changed after its card is refused. So is a file from another chat, a file with unknown keys or a blocked tool name in the wrong format, and any file over 64 KB.
 - A thinking bubble shows beside the mascot while the bot works on a reply. It shows the thinking face and pulsing dots, changes its line every few seconds, and names the tool the bot is using in plain words. It goes away when the reply starts and comes back if the bot keeps working. It also shows for routine, webhook and watch turns while the chat is open.
 - Tool calls no longer show as rows in the chat. Approvals, screenshots, shared files, errors and the final reply still show.
 - A task board per bot, with To do, Doing, Blocked and Done. The bot adds and moves tasks in the chat with task_add and task_move, and posts the board as a card with task_board when you ask to see it.

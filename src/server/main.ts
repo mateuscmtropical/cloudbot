@@ -228,6 +228,7 @@ const toolCallReviewer = createToolCallReviewer({
     describeRuleChange: (botId, input) => describeRuleChange(ruleStore, botId, input),
     describeLimitChange: (botId, input) => describeLimitChange(limitStore, botId, input),
     describeBotDelete: botId => chatService.describeBotDelete(botId),
+    describeBotImport: (botId, input) => chatService.describeBotImport(botId, input),
     // The review cost counts against the spending limit of the turn that asked for the review.
     reportCost: (botId, costUsd, turnSignal) => {
         chatService.recordReviewCost(botId, costUsd, turnSignal);
