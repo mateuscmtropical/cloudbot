@@ -330,8 +330,11 @@ class SetupConversation {
                     .join(',') !== currentIds;
 
             if (isOldList) {
-                await this.options.chat.updateSetupMessage(this.state.messageId, { kind: 'text', text: 'This list was replaced by a newer one.' });
-                await this.askMode();
+                // Closing the old list edits it in place, so it runs beside posting the new one.
+                const closing = this.options.chat.updateSetupMessage(this.state.messageId, { kind: 'text', text: 'This list was replaced by a newer one.' });
+                const asking = this.askMode();
+
+                await Promise.all([closing, asking]);
 
                 return;
             }

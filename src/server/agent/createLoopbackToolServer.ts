@@ -31,6 +31,9 @@ interface LoopbackTurnGrant {
     disallowedTools?: string[] | undefined;
     // False for an engine that decides calls itself, such as Codex. The permission prompt tool is then not listed.
     offersPromptTool?: boolean | undefined;
+    // True for an engine whose agent sends no call id with tools/call, such as an ACP agent. Each call then goes to
+    // reviewToolCall here before it runs.
+    reviewsEachCall?: boolean | undefined;
 }
 
 // The files the CLI reads for one turn. They live in a folder of their own, removed on release.
@@ -357,6 +360,21 @@ function callTool(tool: LoopbackTool, args: unknown): Promise<LoopbackToolResult
 }
 
 // A tools/call runs once, and only with the allowed decision for this exact tool use. The check and the consume are one step.
+// The review of a call that came with no call id. Returns the refusal reason, or undefined when the call may run.
+async function reviewOwnCall(turn: TurnState, fullToolName: string, args: unknown): Promise<string | undefined> {
+    if (turn.grant.disallowedTools?.includes(fullToolName) === true) {
+        return NOT_APPROVED_TEXT;
+    }
+
+    try {
+        const decision = await turn.grant.reviewToolCall({ toolName: fullToolName, input: args ?? {} }, turn.controller.signal);
+
+        return decision.isAllowed ? undefined : decision.reason;
+    } catch {
+        return REVIEW_FAILED_REASON;
+    }
+}
+
 function consumeAllowedCall(turn: TurnState, fullToolName: string, args: unknown, toolUseId: string | undefined): boolean {
     if (toolUseId === undefined) {
         return false;
@@ -471,9 +489,13 @@ async function answerMcp(serverName: string, turn: TurnState, body: string, resp
         const metaToolUseId = parsedMeta.success ? parsedMeta.data['claudecode/toolUseId'] ?? parsedMeta.data.callId : undefined;
 
         if (!consumeAllowedCall(turn, fullToolName, params.arguments, metaToolUseId)) {
-            writeJson(response, 200, { jsonrpc: '2.0', id, result: failedResult(NOT_APPROVED_TEXT) });
+            const refusal = turn.grant.reviewsEachCall === true ? await reviewOwnCall(turn, fullToolName, params.arguments) : NOT_APPROVED_TEXT;
 
-            return;
+            if (refusal !== undefined) {
+                writeJson(response, 200, { jsonrpc: '2.0', id, result: failedResult(refusal) });
+
+                return;
+            }
         }
 
         // The turn may have been released while the body was read. The handler never runs then.

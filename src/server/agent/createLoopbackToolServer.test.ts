@@ -135,6 +135,25 @@ describe('loopback tool server', () => {
         turn.release();
     });
 
+    it('reviews each tool call itself for an engine that sends no call id', async () => {
+        const handler = vi.fn(() => Promise.resolve({ content: [{ type: 'text', text: 'ran' }] }));
+        const review = vi.fn((call: { input: unknown }): Promise<ToolCallDecision> => Promise.resolve((call.input as { text: string }).text === 'ok' ? { isAllowed: true } : { isAllowed: false, reason: 'Not this one.' }));
+        const turn = server.grantTurn({ tools: [{ ...echoTool(), handler }], reviewToolCall: review, offersPromptTool: false, reviewsEachCall: true });
+
+        const allowed = await postMcp(turn, toolCall('echo', { text: 'ok' }, undefined));
+        const refused = await postMcp(turn, toolCall('echo', { text: 'bad' }, undefined));
+
+        expect(review.mock.calls.map(call => call[0]))
+            .toEqual([{ toolName: 'mcp__cloudbot__echo', input: { text: 'ok' } }, { toolName: 'mcp__cloudbot__echo', input: { text: 'bad' } }]);
+        expect(handler)
+            .toHaveBeenCalledOnce();
+        expect(JSON.stringify(allowed.json))
+            .toContain('ran');
+        expect(JSON.stringify(refused.json))
+            .toContain('Not this one.');
+        turn.release();
+    });
+
     it('denies a prompt whose name or input differs from the one the CLI reported', async () => {
         const review = allowingReview();
         const turn = server.grantTurn({ tools: [], reviewToolCall: review });
