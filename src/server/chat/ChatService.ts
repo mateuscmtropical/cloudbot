@@ -3230,6 +3230,11 @@ class ChatService {
         return this.notifyOwner === undefined ? [] : [NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, NOTIFICATIONS_DISABLE_TOOL_FULL_NAME];
     }
 
+    // The notification tools need the push sender. They do not need the approval gate.
+    private notificationToolNames(): string[] {
+        return this.notifyOwner === undefined ? [] : [NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, NOTIFICATIONS_DISABLE_TOOL_FULL_NAME];
+    }
+
     // A task that moves to Blocked is a notice in the chat. The bot wrote it, so the line starts with the bot's prefix.
     private async noticeBlockedTask(botId: string, task: TaskCard): Promise<void> {
         const text = describeBlockedNotice(task);

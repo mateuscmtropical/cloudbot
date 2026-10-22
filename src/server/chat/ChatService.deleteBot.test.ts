@@ -20,6 +20,7 @@ import { openDatabase } from '../store/openDatabase.ts';
 import { RuleStore } from '../store/RuleStore.ts';
 import { Vault } from '../vault/Vault.ts';
 import { ChatService } from './ChatService.ts';
+import { CLEANUP_RETRIES } from './testCleanup.ts';
 
 type AppDatabase = OpenedDatabase['db'];
 
@@ -107,7 +108,7 @@ describe('ChatService.deleteBot', () => {
 
     afterEach(async () => {
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     function buildService(script: ScriptedAgentStep[] = []): ChatService {
