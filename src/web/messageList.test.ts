@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChatMessage } from '../shared/chatTypes.ts';
-import { mergeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
+import { mergeMessages, removeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
 
 function createMessage(id: string, text: string, sequence = 1): ChatMessage {
     return {
@@ -13,6 +13,15 @@ function createMessage(id: string, text: string, sequence = 1): ChatMessage {
         body: { kind: 'text', text },
     };
 }
+
+describe('removeMessages', () => {
+    it('drops the listed messages and ignores ids it does not hold', () => {
+        const held = [createMessage('m1', 'one', 1), createMessage('m2', 'two', 2), createMessage('m3', 'three', 3)];
+
+        expect(removeMessages(held, ['m1', 'm3', 'missing']))
+            .toEqual([held[1]]);
+    });
+});
 
 describe('upsertLiveMessage', () => {
     it('leaves out an unheld message older than the oldest held one, so paging skips nothing', () => {

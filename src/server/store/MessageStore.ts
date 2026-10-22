@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, desc, eq, isNotNull, isNull, lt } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 
 import { messages } from './schema.ts';
 import type { AppDatabase, ListMessagesOptions, Message, NewMessage, StoreOptions } from './types.ts';
@@ -83,6 +83,16 @@ class MessageStore {
             .returning();
 
         return rows[0];
+    }
+
+    // Only the messages of this bot are removed, so a wrong id cannot touch another conversation.
+    async removeMany(botId: string, messageIds: string[]): Promise<void> {
+        const botCondition = eq(messages.botId, botId);
+        const idCondition = inArray(messages.id, messageIds);
+        const removeCondition = and(botCondition, idCondition);
+
+        await this.database.delete(messages)
+            .where(removeCondition);
     }
 
     async listByKind(kind: string): Promise<Message[]> {

@@ -15,7 +15,7 @@ import { ConversationView } from './components/ConversationView.tsx';
 import { createBot, getChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload } from './apiClient.ts';
 import { mergeLoadedUploads } from './attachmentChips.ts';
 import { applyTabIcon } from './tabIcon.ts';
-import { MESSAGE_PAGE_SIZE, mergeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
+import { MESSAGE_PAGE_SIZE, mergeMessages, removeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
 import { withoutToolRows } from './thinkingBubble.ts';
 import { openSignInTab, settleSignInTab, SIGN_IN_TAB_WAIT_MS } from './signInTab.ts';
 import type { SignInTab } from './signInTab.ts';
@@ -519,6 +519,16 @@ function App(): ReactElement {
             // A tool has started. Its row is stored only when it finishes, so the bubble is the only sign until then.
             if (event.type === 'toolStarted') {
                 setActiveTool({ botId: event.botId, toolName: event.toolName });
+
+                return;
+            }
+
+            // A check-in found nothing for the owner, so the server deleted its messages.
+            if (event.type === 'messagesRemoved') {
+                setChatState(previousState => ({
+                    ...previousState,
+                    messages: removeMessages(previousState.messages, event.messageIds),
+                }));
 
                 return;
             }

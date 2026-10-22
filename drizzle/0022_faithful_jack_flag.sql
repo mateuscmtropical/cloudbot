@@ -1,0 +1,1 @@
+ALTER TABLE `routines` ADD `is_quiet` integer DEFAULT false NOT NULL;

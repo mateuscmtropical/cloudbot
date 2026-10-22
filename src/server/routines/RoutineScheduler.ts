@@ -1,8 +1,12 @@
 import type { RoutineRecord, RoutineStore } from '../store/RoutineStore.ts';
+import { buildCheckinMessage } from './checkin.ts';
+
+type RoutineTurnSource = 'routine' | 'checkin';
 
 interface RoutineSchedulerOptions {
     routineStore: RoutineStore;
-    sendMessage: (botId: string, text: string) => Promise<unknown>;
+    // The source is 'checkin' for a quiet routine, so the chat can drop a run that found nothing.
+    sendMessage: (botId: string, text: string, source: RoutineTurnSource) => Promise<unknown>;
     // Routines wait while this returns false. ChatService answers a message with a reminder until Claude setup is done.
     isReady?: () => boolean;
     now?: () => number;
@@ -18,7 +22,7 @@ function buildRoutineMessage(routine: RoutineRecord): string {
 // so the turn queue, usage waits and approvals apply as for any message.
 class RoutineScheduler {
     private readonly routineStore: RoutineStore;
-    private readonly sendMessage: (botId: string, text: string) => Promise<unknown>;
+    private readonly sendMessage: RoutineSchedulerOptions['sendMessage'];
     private readonly isReady: () => boolean;
     private readonly now: () => number;
     private timer: NodeJS.Timeout | undefined;
@@ -77,9 +81,10 @@ class RoutineScheduler {
         try {
             await this.routineStore.markRun(routine, nowMs);
 
-            const message = buildRoutineMessage(routine);
+            const message = routine.isQuiet ? buildCheckinMessage(routine) : buildRoutineMessage(routine);
+            const source: RoutineTurnSource = routine.isQuiet ? 'checkin' : 'routine';
 
-            await this.sendMessage(routine.botId, message);
+            await this.sendMessage(routine.botId, message, source);
         } catch {
             // One failing routine must not stop the others. The log names the routine, not its prompt.
             console.error(`Could not run the routine ${routine.id}.`);

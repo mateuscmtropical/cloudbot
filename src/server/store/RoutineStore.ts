@@ -14,6 +14,7 @@ interface NewRoutine {
     name: string;
     prompt: string;
     schedule: RoutineSchedule;
+    isQuiet?: boolean;
 }
 
 class RoutineStore {
@@ -43,6 +44,7 @@ class RoutineStore {
             id: randomUUID(),
             botId,
             ...routine,
+            isQuiet: routine.isQuiet ?? false,
             isEnabled: true,
             nextRunAt: computeNextRun(routine.schedule, createdAt),
             lastRunAt: null,

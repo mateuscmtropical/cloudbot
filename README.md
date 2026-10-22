@@ -40,6 +40,7 @@ comes back when the job is done or when it needs you.
 - **Ask before it acts.** Rules written in plain language, and a review step
   before sensitive actions such as sending a message or paying.
 - **Run routines.** Scheduled tasks and tasks started by events.
+- **Morning brief and quiet check-ins.** Ask in the chat for a daily brief of what matters, or for a check-in every few hours on your apps and accounts. A check-in messages you only when something needs you, and a run that finds nothing leaves no trace in the chat. Check-ins run on a small model unless you pick one for routines, and they follow the routines limits.
 - **Wake it from outside.** Webhooks: a URL that another service calls to send the bot a message. A call with a delivery id is not queued twice within 24 hours, and the refused calls are listed for the owner.
 - **Give a bot its own mailbox.** Tell it the provider's IMAP and SMTP settings in chat, approve the settings, then enter the password through the secure form. New mail arrives as an outside-data task. Each send waits for approval of the full recipient list, subject and text. Attachments are not supported.
 - **Set limits.** Optional time, spending and step limits per turn, one set for chat and one for routines. A stopped turn says which limit it hit. The agent and the review agent are each held to the spending limit, so a turn can spend up to twice the limit. The spending is an estimate, and a subscription is not billed by it.
