@@ -146,7 +146,10 @@ function makeEngine(options: FakeOptions = {}, authMethodId?: string, askModeId?
 
             return agent as unknown as ChildProcess;
         },
-        signalProcess: () => undefined,
+        // A signal ends the stand-in as it ends a real agent.
+        signalProcess: (child) => {
+            (child as unknown as FakeAcpAgent).exit();
+        },
     });
 
     return { engine, agents };
@@ -383,6 +386,18 @@ describe('AcpEngine', () => {
             .toMatchObject({ type: 'turn_error', message: 'Gemini started in a mode that runs tools without asking, so the turn was stopped.' });
         expect(agents[0]?.sent.some(message => message.method === 'session/prompt'))
             .toBe(false);
+    });
+
+    it('stops a turn when the agent switches to a mode that approves calls by itself', async () => {
+        const { engine } = makeEngine({
+            onPrompt: (agent) => {
+                agent.say({ method: 'session/update', params: { sessionId: 'session-1', update: { sessionUpdate: 'current_mode_update', currentModeId: 'autoEdit' } } });
+            },
+        });
+        const events = await collect(engine.runTurn(makeRequest()));
+
+        expect(events.at(-1))
+            .toMatchObject({ type: 'turn_error', message: 'Gemini switched to a mode that runs tools without asking, so the turn was stopped.' });
     });
 
     it('maps each ACP tool kind to the CloudBot rule that reviews it', () => {

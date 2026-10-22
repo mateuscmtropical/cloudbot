@@ -1252,7 +1252,9 @@ other provider runs on `AcpEngine`, which speaks the Agent Client Protocol
   where a model approves calls, and Vibe in `accept-edits`. opencode gets
   `{"permission":{"*":"ask"}}` in `OPENCODE_CONFIG_CONTENT`. A CLI without a
   known asking mode (Copilot, Cursor, Grok) that starts in a mode named like
-  yolo, auto or accept ends the turn before the prompt.
+  yolo, auto or accept ends the turn before the prompt. A switch to such a
+  mode during the turn, such as leaving plan mode for auto edits, kills the
+  process at once.
 - Kimi and Qwen send `kind: other` with the tool name in the title, and Kimi
   puts the command only in the question text. A call with no kind or `other`
   takes the kind its title names (`Bash`, `Write`, `run_shell_command` and so

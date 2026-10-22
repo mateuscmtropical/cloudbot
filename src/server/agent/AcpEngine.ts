@@ -434,6 +434,18 @@ class AcpEngine implements AgentRunner {
                 return;
             }
 
+            // A mode change in the turn, such as leaving plan mode for auto edits, would let tools run without a
+            // question, so the process is killed before it runs one.
+            const newMode = kind === 'current_mode_update' ? readString(update, 'currentModeId') : (kind === 'config_option_update' ? readModeId(update) : undefined);
+
+            if (newMode !== undefined && newMode !== this.options.askModeId && SELF_APPROVING_MODE.test(newMode)) {
+                push({ type: 'turn_error', message: `${this.options.label} switched to a mode that runs tools without asking, so the turn was stopped.`, isUsageLimit: false });
+                queue.end();
+                signalChild(child, 'KILL');
+
+                return;
+            }
+
             if (kind === 'agent_message_chunk') {
                 const content = readRecord(update.content);
                 const text = readString(content, 'text');
