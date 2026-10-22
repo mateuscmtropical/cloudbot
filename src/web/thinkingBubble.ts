@@ -10,7 +10,7 @@ const BUBBLE_DELAY_MS = 300;
 // The line for a tool with no phrase of its own below. It is also used when the name is not known.
 const FALLBACK_TOOL_PHRASE = 'Working on it';
 
-// Tool names as the SDK and the bot's own tool server spell them, in plain words.
+// Tool names as the CLI and the bot's own tool server spell them, in plain words.
 const TOOL_PHRASES = new Map<string, string>([
     ['Bash', 'Running a command'],
     ['PowerShell', 'Running a command'],

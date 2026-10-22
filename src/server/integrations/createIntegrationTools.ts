@@ -1,4 +1,4 @@
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from '../agent/cloudbotTool.ts';
 import { z } from 'zod/v4';
 
 import { INTEGRATION_COMMANDS } from '../../shared/integrations.ts';

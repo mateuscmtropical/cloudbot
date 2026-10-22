@@ -1,5 +1,5 @@
-import { tool } from '@anthropic-ai/claude-agent-sdk';
-import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
+import { tool } from '../agent/cloudbotTool.ts';
+import type { CloudbotTool } from '../agent/cloudbotTool.ts';
 import { z } from 'zod/v4';
 
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
@@ -31,7 +31,7 @@ function textResult(text: string, isError = false): ScreenToolResult {
     return isError ? { content: [content], isError: true } : { content: [content] };
 }
 
-function createRequestScreenTool(requestScreen: ScreenRequestHandler): SdkMcpToolDefinition<typeof REQUEST_SCREEN_SHAPE> {
+function createRequestScreenTool(requestScreen: ScreenRequestHandler): CloudbotTool<typeof REQUEST_SCREEN_SHAPE> {
     return tool(
         REQUEST_SCREEN_TOOL_NAME,
         REQUEST_SCREEN_DESCRIPTION,
@@ -53,7 +53,7 @@ const SCREEN_SHOW_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${SCREEN_SHOW_T
 const SCREEN_SHOW_DESCRIPTION = 'Open your screen for the owner in the chat, when the owner asks to see it. It hands nothing over and needs no approval.';
 
 // Only opens the Screen panel. The handler is the ChatService's, so the web app is told the panel should open.
-function createScreenShowTool(showScreen: () => void): SdkMcpToolDefinition<Record<string, never>> {
+function createScreenShowTool(showScreen: () => void): CloudbotTool<Record<string, never>> {
     return tool(
         SCREEN_SHOW_TOOL_NAME,
         SCREEN_SHOW_DESCRIPTION,

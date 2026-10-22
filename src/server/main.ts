@@ -4,7 +4,9 @@ import { serve } from '@hono/node-server';
 import { filterOwnerEnvironment, localClaudeConfigDir, validateAgentIsolation } from './agent/buildClaudeCommand.ts';
 
 import { CLEANUP_INTERVAL_MS } from './attachments/cleanUploads.ts';
-import { SdkAgentRunner } from './agent/SdkAgentRunner.ts';
+import { ClaudeCliEngine } from './agent/ClaudeCliEngine.ts';
+import { PROFILE_SERVER_NAME } from './agent/createProfileToolServer.ts';
+import { AGENT_TURN_ROOT, startLoopbackToolServer } from './agent/createLoopbackToolServer.ts';
 import { SetupAccess } from './access/SetupAccess.ts';
 import { buildSetupLink, readPublicBaseUrl, readServerHost, readServerPort } from './access/setupLinkUrl.ts';
 import { createClaudeReviewModel } from './approvals/createClaudeReviewModel.ts';
@@ -116,7 +118,13 @@ if (claudeConfigDir !== undefined) {
     environment.CLAUDE_CONFIG_DIR = claudeConfigDir;
 }
 const connection: RuntimeConnection = {};
-const runner = new SdkAgentRunner({ pathToClaudeCodeExecutable: claudePath, environment });
+// The CLI reaches the bot's tools and the approval hook through this loopback server. Docker keeps the turn folders under a
+// root the bot user can read, see docker/Dockerfile. Local mode uses the temp folder.
+const loopback = await startLoopbackToolServer(PROFILE_SERVER_NAME, {
+    turnRoot: agentUser ? AGENT_TURN_ROOT : undefined,
+    agentReadable: agentUser !== undefined,
+});
+const runner = new ClaudeCliEngine({ loopback, pathToClaudeCodeExecutable: claudePath, environment });
 // The image sets CLOUDBOT_DESKTOP_COMMAND, and its desktop starts Chromium. Without it, local runs start an installed
 // Chrome, Chromium or Edge with its own profile, and the browser tools stay off when none is found.
 const desktopCommand = buildDesktopCommand(process.env.CLOUDBOT_DESKTOP_COMMAND, agentUser);
@@ -421,6 +429,16 @@ function shutdown(): void {
     server.close();
     (server as Server).closeAllConnections();
     void connection.proxy?.close();
+    // The CLI processes stop first, so no tool call reaches the loopback server after it closes.
+    // The loopback closes even when a stop fails, so the port is never left open.
+    void runner.close()
+        .catch((error: unknown) => {
+            console.error('Could not stop the CLI processes:', error);
+        })
+        .then(() => loopback.close())
+        .catch((error: unknown) => {
+            console.error('Could not close the loopback server:', error);
+        });
 }
 
 process.once('SIGINT', shutdown);

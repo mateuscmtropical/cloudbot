@@ -14,14 +14,14 @@ interface MascotStateInput {
     messages: ChatMessage[];
 }
 
-// The texts the server writes for each failure, copied from ChatService, StallWatchdog, turnLimits and SdkAgentRunner.
+// The texts the server writes for each failure, copied from ChatService, StallWatchdog, turnLimits and ClaudeCliEngine.
 // Any other system note is not a failure, so it leaves the face idle.
 // A usage limit wait, shown as sleepy.
 const USAGE_LIMIT_TEXT_PATTERN = /^The usage limit was reached\./;
 // A limit stop, such as "The turn stopped at the time limit of 5 minutes. Raise it in the Limits section ...".
 const LIMIT_STOP_TEXT_PATTERN = /^The turn stopped at the (time limit|spending limit|step limit) of /;
 const STALL_STOP_TEXT = 'The turn stopped because it sent nothing for 10 minutes.';
-// The fixed texts of a turn error. Other turn errors carry the text of the SDK, which is not fixed, so they stay idle.
+// The fixed texts of a turn error. Other turn errors carry the text of the CLI, which is not fixed, so they stay idle.
 const TURN_ERROR_TEXTS = new Set([
     'The turn ended with an error.',
     'Could not prepare the agent workspace. Please try again.',

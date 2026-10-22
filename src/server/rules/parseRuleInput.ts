@@ -6,9 +6,9 @@ interface RuleInputError {
 
 const MAX_RULE_TEXT_LENGTH = 300;
 const MAX_BLOCKED_TOOLS = 20;
-// A tool name as the SDK spells it, such as Bash, WebFetch or mcp__cloudbot__browser_open,
+// A tool name as the CLI spells it, such as Bash, WebFetch or mcp__cloudbot__browser_open,
 // optionally with a pattern in parentheses, such as Bash(rm:*).
-// The SDK joins the list with commas, so a pattern cannot hold one.
+// The CLI joins the list with commas, so a pattern cannot hold one.
 const TOOL_RULE_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,99}(\([^(),\n]{1,200}\))?$/;
 
 // The same check the owner's rule tool makes. No registry of tool names exists, so the format is what is checked.

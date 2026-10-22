@@ -44,9 +44,6 @@ vi.mock('./agent/buildClaudeCommand.ts', async () => {
 
     return { ...actual, validateAgentIsolation: vi.fn(), localClaudeConfigDir: () => path.join(os.tmpdir(), 'cloudbot-main-test-claude-config') };
 });
-vi.mock('./agent/SdkAgentRunner.ts', () => ({ SdkAgentRunner: class {
-    readonly testStub = true;
-} }));
 vi.mock('./access/SetupAccess.ts', () => ({
     SetupAccess: class {
         hasSession(): Promise<boolean> {

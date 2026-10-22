@@ -49,7 +49,7 @@ describe('startClaudeLogin', () => {
             expect(spawnProcess)
                 .toHaveBeenCalledExactlyOnceWith('script', [
                     '-q', '-e', '-c', '\'/usr/bin/sudo\' \'-n\' \'-u\' \'bot\' \'--\' \'/home/bot/.local/bin/claude\' \'auth\' \'login\' \'--claudeai\'', '/dev/null',
-                ], { env: { HOME: '/home/bot', PATH: '/usr/local/bin:/usr/bin:/bin' } });
+                ], { env: { HOME: '/home/bot', PATH: '/usr/local/bin:/usr/bin:/bin', DISABLE_AUTOUPDATER: '1' } });
             await session.signInUrl;
             session.cancel();
         } finally {

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatEvent } from '../../shared/chatTypes.ts';
 import { FakeAgentRunner } from '../agent/FakeAgentRunner.ts';
+import { BOT_SEND_TOOL_FULL_NAME } from '../bots/createBotSendTool.ts';
 import { CHANNEL_CREATE_TOOL_FULL_NAME, CHANNEL_TOOL_FULL_NAMES } from '../channels/createChannelTools.ts';
 import { BotStore } from '../store/BotStore.ts';
 import { ChannelStore } from '../store/ChannelStore.ts';
@@ -108,6 +109,22 @@ describe('ChatService deleting a bot that manages a channel', () => {
             .toEqual(channelToolNames);
         expect(withoutGate.receivedRequests[0]?.allowedTools)
             .toEqual(withoutChannelTools);
+    });
+
+    it('serves the channel tools and bot_send to the CLI as the turn tools, behind the same cloudbot prefix', async () => {
+        const toolCallReviewer = vi.fn(() => Promise.resolve({ decision: 'ask' as const, summary: 'Change a channel.' }));
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const service = new ChatService({ botStore, messageStore: new MessageStore(opened.db), runner, dataDir, channelStore, toolCallReviewer, ruleStore: new RuleStore(opened.db) });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const served = (runner.receivedRequests[0]?.tools ?? []).map(tool => `mcp__cloudbot__${tool.name}`);
+
+        expect(served)
+            .toEqual(expect.arrayContaining([...CHANNEL_TOOL_FULL_NAMES, BOT_SEND_TOOL_FULL_NAME]));
     });
 });
 

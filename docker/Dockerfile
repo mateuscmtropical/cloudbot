@@ -49,19 +49,30 @@ RUN groupadd --system cloudbot \
     && install -d -o cloudbot -g cloudbot -m 0700 /var/lib/cloudbot \
     && install -d -o bot -g bot -m 2770 /var/lib/cloudbot-workspaces \
     && install -d -o cloudbot -g bot -m 2750 /var/lib/cloudbot-uploads \
+    && install -d -o cloudbot -g bot -m 2710 /var/lib/cloudbot-turns \
     && install -d -o cloudbot-integrations -g cloudbot-integrations -m 0700 /var/lib/cloudbot-integrations \
     && install -d -m 1777 /tmp/.X11-unix
 
 COPY --chmod=0440 docker/cloudbot-agent.sudoers /etc/sudoers.d/cloudbot-agent
 COPY --chmod=0755 docker/cloudbot-desktop /usr/local/bin/cloudbot-desktop
 COPY --chmod=0755 docker/cloudbot-remove-workspace /usr/local/bin/cloudbot-remove-workspace
+COPY --chmod=0755 docker/cloudbot-signal-group /usr/local/bin/cloudbot-signal-group
 RUN visudo -cf /etc/sudoers.d/cloudbot-agent
 
 # pipefail makes a failed download fail the build instead of piping nothing into bash.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 USER bot
 RUN curl -fsSL https://claude.ai/install.sh | bash
-RUN /home/bot/.local/bin/claude --version
+
+# bot can write its own home, so the CLI runs from a root-owned copy instead. The bot's copies are removed,
+# and the build fails if any file named claude is left under the bot home.
+USER root
+RUN cp -L /home/bot/.local/bin/claude /usr/local/bin/claude \
+    && chown root:root /usr/local/bin/claude \
+    && chmod 0755 /usr/local/bin/claude \
+    && rm -rf /home/bot/.local/bin/claude /home/bot/.local/share/claude \
+    && ! find /home/bot -name claude \( -type f -o -type l \) -print | grep -q . \
+    && /usr/local/bin/claude --version
 
 USER cloudbot
 WORKDIR /app
@@ -76,7 +87,7 @@ ENV NODE_ENV=production \
     CLOUDBOT_DATA_DIR=/var/lib/cloudbot \
     CLOUDBOT_AGENT_USER=bot \
     CLOUDBOT_INTEGRATION_USER=cloudbot-integrations \
-    CLAUDE_PATH=/home/bot/.local/bin/claude \
+    CLAUDE_PATH=/usr/local/bin/claude \
     CLOUDBOT_DESKTOP_COMMAND=/usr/local/bin/cloudbot-desktop
 
 EXPOSE 3000

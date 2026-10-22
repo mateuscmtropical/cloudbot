@@ -1,7 +1,6 @@
-import type { AgentDefinition } from '@anthropic-ai/claude-agent-sdk';
-
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
 import type { EffortLevel } from '../models/modelChoices.ts';
+import type { AgentDefinition } from './AgentRunner.ts';
 import { SHARE_FILE_TOOL_FULL_NAME } from './createProfileToolServer.ts';
 
 type HelperKind = 'browsing' | 'documents';
@@ -61,8 +60,7 @@ function buildHelperDefinition(
         model,
         tools,
         ...effortOption,
-        // AgentDefinition.disallowedTools in the SDK types lists the tools this agent may not use. SdkAgentRunner also
-        // refuses blocked tools in a PreToolUse hook, which runs for helper calls too.
+        // The tools this agent may not use. The turn also passes the owner's blocked tools to the CLI.
         disallowedTools: options.disallowedTools,
     };
 }

@@ -10,7 +10,7 @@ comes back when the job is done or when it needs you.
 
 > **Not an Anthropic product.** CloudBot is an independent open source project.
 > It is not made, endorsed or supported by Anthropic. It runs the official
-> Claude Code CLI and the official Claude Agent SDK, with your own Claude
+> Claude Code CLI, with your own Claude
 > subscription or your own API key.
 
 > [!WARNING]
@@ -56,10 +56,8 @@ The full plan, version by version, is in the [roadmap](docs/ROADMAP.md).
 
 CloudBot never talks to Claude on its own. It runs Anthropic's tools:
 
-- The [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview)
-  drives the agent.
-- The SDK runs the Claude Code CLI (`claude`), installed from Anthropic's
-  official installer and never modified.
+- The Claude Code CLI (`claude`), installed from Anthropic's official
+  installer and never modified, runs each turn of the agent.
 - With a subscription, you sign in through Anthropic's own page. The CLI keeps
   the credentials. CloudBot does not read, copy or store them.
 - With an API key, the key stays in CloudBot's vault and the bot cannot read

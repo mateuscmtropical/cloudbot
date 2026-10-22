@@ -46,13 +46,13 @@ interface RateLimitEvent {
     resetsAt?: number;
 }
 
-// The SDK stopped the turn at the step limit or at the spending limit it was given.
+// The CLI stopped the turn at the step limit or at the spending limit it was given.
 interface TurnLimitEvent {
     type: 'turn_limit';
     limit: 'steps' | 'spending';
 }
 
-// The SDK sent a message that shows the turn is alive, such as tool progress or a retry. Nothing is shown or stored.
+// The CLI sent a message that shows the turn is alive, such as tool progress or a retry. Nothing is shown or stored.
 interface ActivityEvent {
     type: 'activity';
 }

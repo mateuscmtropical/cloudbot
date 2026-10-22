@@ -13,11 +13,10 @@ import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
 import { AGENT_TOOL_NAME, buildHelperAgents } from '../agent/buildHelperAgents.ts';
 import type { HelperKind } from '../agent/buildHelperAgents.ts';
 import {
-    PROFILE_SERVER_NAME,
     SET_MASCOT_TOOL_FULL_NAME,
     SHARE_FILE_TOOL_FULL_NAME,
     UPDATE_PROFILE_TOOL_FULL_NAME,
-    createProfileToolServer,
+    createProfileTools,
 } from '../agent/createProfileToolServer.ts';
 import type { CloudbotTool } from '../agent/createProfileToolServer.ts';
 import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from '../agent/prepareAgentWorkspace.ts';
@@ -284,6 +283,8 @@ interface TurnContext {
     images: TurnImage[];
     systemPrompt: string;
     mcpServers: NonNullable<TurnRequest['mcpServers']>;
+    // The bot's own tools, served over the loopback endpoint by the CLI engine.
+    tools: CloudbotTool[];
     disallowedTools: string[];
     reviewToolCall?: TurnRequest['reviewToolCall'];
     additionalDirectories: string[];
@@ -2383,7 +2384,7 @@ class ChatService {
     }
 
     // Counts the estimated cost of a review call in the running turn. The turn stops once the review spending passes its limit.
-    // The main agent's spending is limited by the SDK. Its cost is not known until the SDK reports it, so it is not added here.
+    // The main agent's spending is limited by the CLI. Its cost is not known until the CLI reports it, so it is not added here.
     // The cost counts only for the turn that asked for the review. A review of an earlier or stopped turn is dropped.
     recordReviewCost(botId: string, costUsd: number, turnSignal?: AbortSignal): void {
         const runningController = this.runningTurns.get(botId);
@@ -2780,7 +2781,7 @@ class ChatService {
                         createNotificationsEnableTool(() => this.postNotificationCard(botId)),
                         createNotificationsDisableTool(() => this.postNotificationOffCard(botId)),
                     ];
-            const profileServer = createProfileToolServer(
+            const profileTools = createProfileTools(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
@@ -2797,8 +2798,7 @@ class ChatService {
             const ownerRules = this.ruleStore === undefined ? [] : await this.ruleStore.list(botId);
             const blockedToolNames = ownerRules.flatMap(rule => rule.blockedTools);
             const disallowedTools = [...new Set(blockedToolNames)];
-            const toolCallReview = this.createToolCallReview(botId, turn.channel?.channelId);
-            const reviewOption = toolCallReview === undefined ? {} : { reviewToolCall: toolCallReview };
+            const reviewToolCall = this.createToolCallReview(botId, turn.channel?.channelId);
             // The model and effort choices are read for each turn, so a change in the web app applies to the next message.
             const modelChoices = this.modelStore === undefined ? undefined : await this.modelStore.get(botId);
             const efforts = this.modelStore === undefined ? undefined : await this.modelStore.getEfforts(botId);
@@ -2839,11 +2839,12 @@ class ChatService {
                     helpers: helperKinds,
                 }),
                 disallowedTools,
-                ...reviewOption,
+                reviewToolCall,
                 ...modelOption,
                 ...effortOption,
                 limit: turnLimit,
-                mcpServers: { [PROFILE_SERVER_NAME]: profileServer, ...remoteServers },
+                mcpServers: remoteServers,
+                tools: profileTools,
             };
             const firstAttempt = await this.runAttempt(turnContext, bot.sessionId, turnState);
 
@@ -2900,11 +2901,19 @@ class ChatService {
         }
     }
 
-    private createToolCallReview(botId: string, channelId?: string): TurnRequest['reviewToolCall'] {
+    // Every turn has a review, because the CLI refuses any call without one. Without an approval gate the owner cannot be
+    // asked, so only the profile tools and the rule list run, the same list that allowedToolNames offers up front.
+    private createToolCallReview(botId: string, channelId?: string): NonNullable<TurnRequest['reviewToolCall']> {
         const approvals = this.approvals;
 
         if (approvals === undefined) {
-            return undefined;
+            const noGateTools = this.allowedToolNames();
+
+            return (call) => {
+                const isAllowedNow = noGateTools.includes(call.toolName);
+
+                return Promise.resolve(isAllowedNow ? { isAllowed: true } : { isAllowed: false, reason: 'The owner has no approval channel, so this action was not run.' });
+            };
         }
 
         return (call, signal) => approvals.review(botId, call, signal, channelId);
@@ -2961,7 +2970,12 @@ class ChatService {
     }
 
     // Headless turns cannot answer a permission prompt, so the cloudbot tools the bot has are allowed up front.
+    // Without the approval gate, only the profile tools, the export, the read-only rule list and the notification switch are allowed up front. The rest need the gate.
     private allowedToolNames(): string[] {
+        if (this.approvals === undefined) {
+            return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...this.ruleToolNamesAllowed(), ...this.notificationToolNames()];
+        }
+
         const browserToolNames = this.browser === undefined ? [] : BROWSER_TOOL_FULL_NAMES;
         const browserAllowToolNames = this.browserAllowStore === undefined || this.browser === undefined ? [] : BROWSER_ALLOW_TOOL_FULL_NAMES;
         const typeSecretToolNames = this.browser === undefined ? [] : [TYPE_SECRET_TOOL_FULL_NAME];
@@ -2978,18 +2992,23 @@ class ChatService {
         const watchToolNames = this.watchStore === undefined ? [] : WATCH_TOOL_FULL_NAMES;
         const appToolNames = this.connectedApps === undefined ? [] : APP_TOOL_FULL_NAMES;
         // bot_create is offered only with the approval gate, the same condition as the tool itself.
-        const botCreateToolNames = this.approvals === undefined ? [] : [BOT_CREATE_TOOL_FULL_NAME];
+        const botCreateToolNames = [BOT_CREATE_TOOL_FULL_NAME];
         // Channel tools are offered with the approval gate, like bot_create. Removal and deletion wait for the owner there.
-        const channelToolNames = this.channelStore === undefined || this.approvals === undefined ? [] : CHANNEL_TOOL_FULL_NAMES;
-        const templateToolNames = [BOT_EXPORT_TOOL_FULL_NAME, ...(this.approvals === undefined ? [] : [BOT_IMPORT_TOOL_FULL_NAME])];
+        const channelToolNames = this.channelStore === undefined ? [] : CHANNEL_TOOL_FULL_NAMES;
+        const templateToolNames = [BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME];
         // The rule list needs the rule store. A rule change needs the approval gate too, so without it only the list is allowed.
         const ruleToolNames = this.ruleToolNamesAllowed();
-        const botDeleteToolNames = this.approvals === undefined ? [] : [BOT_DELETE_TOOL_FULL_NAME];
+        const botDeleteToolNames = [BOT_DELETE_TOOL_FULL_NAME];
         // bot_send is offered only with the approval gate too, since the receiving turn is reviewed like any other.
-        const botSendToolNames = this.approvals === undefined ? [] : [BOT_SEND_TOOL_FULL_NAME];
-        const notificationToolNames = this.notifyOwner === undefined ? [] : [NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, NOTIFICATIONS_DISABLE_TOOL_FULL_NAME];
+        const botSendToolNames = [BOT_SEND_TOOL_FULL_NAME];
+        const notificationToolNames = this.notificationToolNames();
 
         return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames];
+    }
+
+    // The notification tools need the push sender. They do not need the approval gate.
+    private notificationToolNames(): string[] {
+        return this.notifyOwner === undefined ? [] : [NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, NOTIFICATIONS_DISABLE_TOOL_FULL_NAME];
     }
 
     // A task that moves to Blocked is a notice in the chat. The bot wrote it, so the line starts with the bot's prefix.
@@ -3024,9 +3043,8 @@ class ChatService {
         const toolNamesById = new Map<string, string>();
         const sessionOption = buildSessionOption(sessionId);
         const hasHelpers = Object.keys(turnContext.agents).length > 0;
-        // Every server in the turn except the bot's own gets a pattern, such as mcp__linear__*.
-        const remoteServerNames = Object.keys(turnContext.mcpServers)
-            .filter(name => name !== PROFILE_SERVER_NAME);
+        // Every remote server of the owner gets a pattern, such as mcp__linear__*.
+        const remoteServerNames = Object.keys(turnContext.mcpServers);
         const remoteToolPatterns = remoteServerNames.map(name => `mcp__${name}__*`);
         const githubEnvironment = this.githubEnvironment === undefined ? undefined : await this.githubEnvironment(botId);
         const turnRequest: TurnRequest = {
@@ -3037,6 +3055,7 @@ class ChatService {
             abortSignal: turnContext.abortController.signal,
             systemPrompt: turnContext.systemPrompt,
             mcpServers: turnContext.mcpServers,
+            tools: turnContext.tools,
             // The Agent tool lets the main turn hand work to its helpers. It is allowed only when there are helpers.
             // The tools of the connected servers are listed here so they reach the review hook. The review still decides each call.
             allowedTools: hasHelpers ? [...this.allowedToolNames(), ...remoteToolPatterns, AGENT_TOOL_NAME] : [...this.allowedToolNames(), ...remoteToolPatterns],
@@ -3161,7 +3180,7 @@ class ChatService {
                 const isSteps = agentEvent.limit === 'steps';
                 const value = isSteps ? turnLimit.steps : turnLimit.usd;
 
-                // The SDK only stops at a limit that was passed to it, so a missing value cannot happen. Nothing is posted then.
+                // The CLI only stops at a limit that was passed to it, so a missing value cannot happen. Nothing is posted then.
                 if (value === null) {
                     return;
                 }
