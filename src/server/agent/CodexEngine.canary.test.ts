@@ -53,11 +53,13 @@ const MODEL_CALLS = [
 // With an MCP server Codex adds the resource tools, which have no approval. The loopback server has no resources.
 const EXPECTED_TOOLS = ['exec_command', 'list_mcp_resource_templates', 'list_mcp_resources', `mcp__${PROFILE_SERVER_NAME}`, `mcp__${REMOTE_SERVER_NAME}`, 'read_mcp_resource', 'request_user_input', 'write_stdin'];
 const EXPECTED_BOT_TOOLS = ['echo'];
+// A 1 by 1 PNG, attached to the canary turn.
+const ONE_PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';
 const USAGE = { input_tokens: 5, input_tokens_details: null, output_tokens: 5, output_tokens_details: null, total_tokens: 10 };
 
 interface ModelRequest {
     tools?: { name?: string; type?: string; tools?: { name: string }[] }[];
-    input?: { type?: string; call_id?: string; output?: unknown }[];
+    input?: { type?: string; call_id?: string; output?: unknown; content?: { type?: string; image_url?: string }[] }[];
 }
 
 // A fake Responses API. Each request gets the next scripted call, then a final message.
@@ -206,6 +208,7 @@ describe.skipIf(CODEX_PATH === '')(`Codex canary (checked with ${CODEX_PROTOCOL_
             botId: 'canary',
             workspaceDir: workspaceFolder,
             prompt: 'Run the canary.',
+            images: [{ mediaType: 'image/png', data: ONE_PIXEL_PNG }],
             abortSignal: new AbortController().signal,
             mcpServers: { [REMOTE_SERVER_NAME]: { type: 'http', url: remoteAddress } },
             tools: [{
@@ -320,6 +323,14 @@ describe.skipIf(CODEX_PATH === '')(`Codex canary (checked with ${CODEX_PROTOCOL_
             .toContain('tools/list');
         expect(resourceRequests)
             .toEqual([]);
+    });
+
+    it('sends the attached image to the model', () => {
+        const parts = requests[0]?.input?.flatMap(item => item.content ?? []) ?? [];
+        const image = parts.find(part => part.type === 'input_image');
+
+        expect(image?.image_url)
+            .toBe(`data:image/png;base64,${ONE_PIXEL_PNG}`);
     });
 
     it('ends the turn normally', () => {
