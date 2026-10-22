@@ -3396,6 +3396,9 @@ class ChatService {
                         efforts: { browsing: efforts?.browsing ?? null, documents: efforts?.documents ?? null },
                     });
             const helperKinds = Object.keys(helperAgents) as HelperKind[];
+            const allBots = await this.botStore.list();
+            const otherBotNames = allBots.filter(otherBot => otherBot.id !== botId)
+                .map(otherBot => otherBot.name);
             const turnContext: TurnContext = {
                 additionalDirectories,
                 agents: helperAgents,
@@ -3414,6 +3417,7 @@ class ChatService {
                     hasWatches: this.watchStore !== undefined,
                     hasGithub: this.githubEnvironment !== undefined,
                     hasHandoffs: this.approvals !== undefined,
+                    otherBotNames,
                     hasLimits: this.limitStore !== undefined,
                     hasNotifications: this.notifyOwner !== undefined,
                     hasEmail: this.emailAccountService !== undefined && this.emailSender !== undefined,

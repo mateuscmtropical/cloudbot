@@ -43,6 +43,15 @@ describe('buildSystemPrompt', () => {
             .not.toContain('bot_send');
     });
 
+    it('names the other bots, so a bot named like the app is not taken for it', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+
+        expect(buildSystemPrompt(profile, { hasHandoffs: true, otherBotNames: ['CloudBot', 'Writer'] }))
+            .toContain('The owner\'s other bots: CloudBot, Writer.');
+        expect(buildSystemPrompt(profile, { hasHandoffs: true }))
+            .toContain('The owner has no other bots yet.');
+    });
+
     it('explains the notification card only when notifications can be sent', () => {
         const profile = { name: 'Ana', title: 'Assistant', description: '' };
 
