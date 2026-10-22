@@ -9,6 +9,8 @@
     --color-accent: #2f80ed;
     --color-danger: #e5484d;
     --color-success: #3fb27f;
+    /* A veil of the text color. It lightens a dark control and darkens a light one, on any background. */
+    --color-hover: color-mix(in srgb, var(--color-text) 12%, transparent);
     --radius-bubble: 18px;
     --radius-control: 999px;
     --sidebar-width: 320px;
@@ -42,6 +44,17 @@ button {
 button:disabled {
     cursor: default;
     opacity: 0.5;
+}
+
+/* One hover for every button and link card: the veil sits over the background, so it works for each fill and for a
+   transparent one, and it keeps any shadow. A disabled button gets none. The full-screen scrim is a button too and
+   would tint the whole page. Hover only applies where a pointer can hover, so a tap on a phone does not stay lit.
+   It is a color change with no transition, so reduced motion needs no exception. The focus ring is not touched. */
+@media (hover: hover) {
+    button:not(:disabled, .scrim):hover,
+    a.link-card:hover {
+        background-image: linear-gradient(var(--color-hover), var(--color-hover));
+    }
 }
 
 svg {
