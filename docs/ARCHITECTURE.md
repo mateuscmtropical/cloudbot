@@ -941,7 +941,8 @@ becomes one call to `reviewToolCall`, the same review the Claude engine uses:
 
 - `item/commandExecution/requestApproval` is reviewed as `Bash` with the whole command line and its folder.
 - `item/fileChange/requestApproval` names only the item. The changes come from the earlier `item/started`
-  notification of that item, and the call is reviewed as `Edit`.
+  notification of that item, updated by `item/fileChange/patchUpdated`, and the call is reviewed as `Edit`. A patch
+  that changes while its review runs is declined.
 - `mcpServer/elicitation/request` with `_meta.codex_approval_kind` `mcp_tool_call` names only the server. It is
   matched to the one undecided `mcpToolCall` item of that server in the turn with the same arguments, and reviewed as
   `mcp__<server>__<tool>`.

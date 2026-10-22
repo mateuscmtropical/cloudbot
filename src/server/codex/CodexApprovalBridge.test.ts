@@ -174,6 +174,35 @@ describe('CodexApprovalBridge file changes', () => {
             .not.toHaveBeenCalled();
     });
 
+    it('reviews the newest changes after a patch update', async () => {
+        const review = allowing();
+        const bridge = new CodexApprovalBridge({ threadId: THREAD_ID, reviewToolCall: review });
+        const newer = [{ path: '/work/other.txt', kind: { type: 'add' }, diff: 'bye\n' }];
+
+        bridge.noteNotification(itemStarted(FILE_ITEM));
+        bridge.noteNotification({ method: 'item/fileChange/patchUpdated', params: { threadId: THREAD_ID, turnId: TURN_ID, itemId: 'call_2', changes: newer } });
+        await bridge.answerRequest(fileRequest(), SIGNAL);
+
+        expect(review)
+            .toHaveBeenCalledWith({ toolName: 'Edit', input: { changes: newer } }, expect.any(AbortSignal));
+    });
+
+    it('declines a patch that changed while its review was running', async () => {
+        const bridge = new CodexApprovalBridge({
+            threadId: THREAD_ID,
+            reviewToolCall: () => {
+                bridge.noteNotification({ method: 'item/fileChange/patchUpdated', params: { threadId: THREAD_ID, turnId: TURN_ID, itemId: 'call_2', changes: [] } });
+
+                return Promise.resolve({ isAllowed: true });
+            },
+        });
+
+        bridge.noteNotification(itemStarted(FILE_ITEM));
+
+        await expect(bridge.answerRequest(fileRequest(), SIGNAL))
+            .resolves.toEqual({ result: { decision: 'decline' } });
+    });
+
     it('declines a patch whose item came from another turn', async () => {
         const review = allowing();
         const bridge = new CodexApprovalBridge({ threadId: THREAD_ID, reviewToolCall: review });

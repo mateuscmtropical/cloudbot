@@ -91,6 +91,12 @@ class CodexApprovalBridge {
     // Called for every notification. item/started carries the file changes and the MCP call that a later request names.
     // item/completed forgets the item, so a finished call never makes a later MCP approval ambiguous.
     noteNotification(message: CodexMessage): void {
+        if (message.method === 'item/fileChange/patchUpdated') {
+            this.notePatchUpdate(message.params);
+
+            return;
+        }
+
         const isStarted = message.method === 'item/started';
         const isCompleted = message.method === 'item/completed';
 
@@ -175,6 +181,23 @@ class CodexApprovalBridge {
         return isAllowed ? { decision: 'accept' } : DECLINED_COMMAND;
     }
 
+    // A patch can change after item/started. The newest changes replace the noted ones, as a new object, so a review that
+    // was already running for the old changes can tell (answerFileChange).
+    private notePatchUpdate(params: unknown): void {
+        if (!isRecord(params) || readString(params, 'threadId') !== this.threadId || !Array.isArray(params.changes)) {
+            return;
+        }
+
+        const itemId = readString(params, 'itemId');
+        const noted = itemId === undefined ? undefined : this.items.get(itemId);
+
+        if (itemId === undefined || noted?.type !== 'fileChange' || noted.turnId !== params.turnId) {
+            return;
+        }
+
+        this.items.set(itemId, { type: 'fileChange', turnId: noted.turnId, changes: params.changes });
+    }
+
     // A patch. The request names only the item, so the changes come from its item/started notification.
     private async answerFileChange(params: Record<string, unknown>, signal: AbortSignal): Promise<unknown> {
         const itemId = readString(params, 'itemId');
@@ -192,8 +215,10 @@ class CodexApprovalBridge {
 
         const call: ToolCall = { toolName: EDIT_TOOL_NAME, input: { changes: item.changes } };
         const isAllowed = await reviewWithin(this.reviewToolCall, call, signal, this.reviewTimeoutMs);
+        // A patch that changed during the review is not the one the review saw.
+        const isUnchanged = itemId !== undefined && this.items.get(itemId) === item;
 
-        return isAllowed ? { decision: 'accept' } : DECLINED_COMMAND;
+        return isAllowed && isUnchanged ? { decision: 'accept' } : DECLINED_COMMAND;
     }
 
     // An MCP tool call asks through an elicitation. It names the server, not the item, so exactly one undecided call of
