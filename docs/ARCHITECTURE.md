@@ -1247,8 +1247,12 @@ a restart. The runner environment receives its `ANTHROPIC_BASE_URL` and a dummy
 key. Subscription mode receives no API key or proxy URL. Server environment
 API credentials are removed before constructing the runner environment.
 
-The same conversation connects the other providers. The list shows a
-subscription and an API key option for each installed provider that has them.
+The same conversation connects the other providers. The first card has one
+choice per installed provider. A provider with both ways asks Subscription or
+API key next, and one with a single way starts it. A choice that starts a
+sign-in carries `opensLink`, so the web page opens an empty tab inside the tap
+and puts the link in it when the link message arrives. If the CLI prints a
+refused code after the owner pasted one, the sign-in is stopped and fails.
 A CLI sign-in posts the link and the device code that the CLI prints, or a code
 field when the provider's page shows a code to paste back (Gemini). A key goes
 through the secure form, is checked with one request to the provider's model

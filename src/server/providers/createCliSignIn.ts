@@ -30,6 +30,8 @@ const ANSI_PATTERN = /\u001B\[[0-9;?<>]*[A-Za-z]/g;
 const URL_PATTERN = /https:\/\/[^\s"'<>]+/;
 // Device codes look like ABCD-1234. Some CLIs put the code in the link too, which is fine.
 const CODE_PATTERN = /\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/;
+// The Gemini CLI says this when Google refuses a pasted code, then waits for another one with a new link.
+const CODE_REJECTED_PATTERN = /Failed to authenticate|invalid_grant/i;
 
 function findLink(output: string, needsCode = false): DeviceSignInLink | undefined {
     const text = output.replace(ANSI_PATTERN, '');
@@ -66,7 +68,10 @@ function createCliSignIn(options: CliSignInOptions): ProviderSignIn {
                 detached: process.platform !== 'win32',
             });
             let output = '';
+            // What the CLI printed after the owner pasted a code.
+            let afterCode: string | undefined;
             let isCancelled = false;
+            let isCodeRejected = false;
             let resolveLink: (link: DeviceSignInLink | null) => void = () => undefined;
             const link = new Promise<DeviceSignInLink | null>((resolve) => {
                 resolveLink = resolve;
@@ -74,6 +79,18 @@ function createCliSignIn(options: CliSignInOptions): ProviderSignIn {
             const onOutput = (chunk: Buffer): void => {
                 // A long output is cut, since the link comes first.
                 output = `${output}${chunk.toString('utf8')}`.slice(0, 8000);
+
+                if (afterCode !== undefined) {
+                    afterCode = `${afterCode}${chunk.toString('utf8')}`.slice(-8000);
+
+                    if (CODE_REJECTED_PATTERN.test(afterCode)) {
+                        isCodeRejected = true;
+                        options.signalProcess(child, 'KILL');
+                    }
+
+                    return;
+                }
+
                 const found = findLink(output, options.needsCode);
 
                 if (found?.code !== undefined || found?.needsCode === true) {
@@ -115,6 +132,12 @@ function createCliSignIn(options: CliSignInOptions): ProviderSignIn {
                         return;
                     }
 
+                    if (isCodeRejected) {
+                        resolve({ ok: false, reason: `${options.label} did not accept the code. Try again with a new code.` });
+
+                        return;
+                    }
+
                     resolve({ ok: false, reason: isCancelled ? `${options.label} sign-in timed out or was cancelled.` : `${options.label} sign-in failed.` });
                 };
 
@@ -142,6 +165,7 @@ function createCliSignIn(options: CliSignInOptions): ProviderSignIn {
                 link,
                 finished,
                 submitCode: (code) => {
+                    afterCode = '';
                     child.stdin?.write(`${code}\n`);
                 },
                 cancel: () => {
