@@ -67,7 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - run: shellcheck docker/install.sh docker/cloudbot docker/check-container.sh docker/cloudbot-desktop docker/cloudbot-remove-workspace
+      - run: shellcheck docker/install.sh docker/cloudbot docker/check-container.sh docker/cloudbot-desktop docker/cloudbot-remove-workspace docker/cloudbot-end-turn
 
   install:
     name: Run install.sh on a fresh runner

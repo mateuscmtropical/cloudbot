@@ -55,7 +55,8 @@ const INTERRUPT_GRACE_MS = 8000;
 const EXIT_GRACE_MS = 2000;
 const TERM_GRACE_MS = 5000;
 const KILL_WAIT_MS = 5000;
-const CODEX_HOME_MODE = 0o700;
+const PRIVATE_FOLDER_MODE = 0o700;
+const CODEX_USER_HOME_SUFFIX = '-home';
 const CLIENT_NAME = 'cloudbot';
 const CLIENT_VERSION = '0.0.0';
 const IMAGES_NOT_SUPPORTED = 'This bot runs on Codex, which cannot read images in CloudBot yet.';
@@ -141,15 +142,20 @@ function isPastStepLimit(request: TurnRequest, progress: TurnProgress): boolean 
     return request.maxSteps !== undefined && progress.approvalCount > request.maxSteps;
 }
 
-function prepareCodexHome(folder: string): void {
+// HOME is a sibling of the Codex home, not the Codex home itself. Then ~ cannot lead to config.toml or auth.json.
+function codexUserHomeFor(codexHome: string): string {
+    return `${codexHome}${CODEX_USER_HOME_SUFFIX}`;
+}
+
+function preparePrivateFolder(folder: string): void {
     // chmod as well, since the umask or an existing folder could leave other modes.
-    mkdirSync(folder, { recursive: true, mode: CODEX_HOME_MODE });
-    chmodSync(folder, CODEX_HOME_MODE);
+    mkdirSync(folder, { recursive: true, mode: PRIVATE_FOLDER_MODE });
+    chmodSync(folder, PRIVATE_FOLDER_MODE);
 }
 
 // Runs each turn in its own `codex app-server`, the route with an approval channel. Every command and file change asks
 // CloudBot first (approval policy untrusted), and each question goes to the same review as a Claude tool call.
-// Not covered yet, see issue #128: the bot's own tools, outside MCP servers, images, the spending limit and the
+// Not covered yet, see issue #128: outside MCP servers, images, the spending limit and the
 // agent user. The model choices of the owner name Claude models, so Codex keeps its own default model.
 class CodexEngine implements AgentRunner {
     private readonly options: CodexEngineOptions;
@@ -176,8 +182,10 @@ class CodexEngine implements AgentRunner {
         }
 
         const codexHome = this.options.codexHomeFor(request.botId);
+        const userHome = codexUserHomeFor(codexHome);
 
-        prepareCodexHome(codexHome);
+        preparePrivateFolder(codexHome);
+        preparePrivateFolder(userHome);
 
         const tools = request.tools ?? [];
         // The engine decides each call itself, so the prompt route of the loopback server refuses everything.
@@ -186,15 +194,15 @@ class CodexEngine implements AgentRunner {
             : this.options.loopback.grantTurn({ tools, reviewToolCall: refuseOnPromptRoute, disallowedTools: request.disallowedTools, offersPromptTool: false });
 
         try {
-            yield* this.runProcess(request, codexHome, toolTurn);
+            yield* this.runProcess(request, codexHome, userHome, toolTurn);
         } finally {
             toolTurn?.release();
         }
     }
 
-    private async* runProcess(request: TurnRequest, codexHome: string, toolTurn: LoopbackTurn | undefined): AsyncGenerator<AgentEvent> {
+    private async* runProcess(request: TurnRequest, codexHome: string, userHome: string, toolTurn: LoopbackTurn | undefined): AsyncGenerator<AgentEvent> {
         const tokenVariable = toolTurn === undefined ? {} : { [TOOL_TOKEN_VARIABLE]: toolTurn.token };
-        const environment = { PATH: process.env.PATH ?? '', ...this.options.environment, ...request.extraEnvironment, HOME: codexHome, CODEX_HOME: codexHome, ...tokenVariable };
+        const environment = { PATH: process.env.PATH ?? '', ...this.options.environment, ...request.extraEnvironment, ...tokenVariable, HOME: userHome, CODEX_HOME: codexHome };
         const toolConfig = toolTurn === undefined ? [] : toolServerConfig(toolTurn);
         const args = buildCodexArguments([...toolConfig, ...(this.options.extraConfig ?? [])]);
         const child = this.spawnFunction(this.options.codexPath, args, {
@@ -327,6 +335,7 @@ class CodexEngine implements AgentRunner {
                 findItem: (itemId: string) => items.get(itemId),
                 timeoutMs: this.options.reviewTimeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS,
                 workspaceDir: request.workspaceDir,
+                codexHome,
                 hasStepsLeft: () => request.maxSteps === undefined || approvalNumber <= request.maxSteps,
                 toolServer: toolTurn === undefined
                     ? undefined
