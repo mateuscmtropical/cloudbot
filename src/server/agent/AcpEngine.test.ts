@@ -323,6 +323,34 @@ describe('AcpEngine', () => {
             .toBe(true);
         expect(namesProtectedFolder({ kind: 'execute', rawInput: { command: 'echo .geminis' } }, folders))
             .toBe(false);
+        expect(namesProtectedFolder({ kind: 'execute', rawInput: { command: 'echo a.gemini' } }, folders))
+            .toBe(false);
+
+        const touching = ['echo x >.gemini/a', 'cd .gemini; ls', '(cd .gemini)', 'rm -rf .gemini|cat', 'cp a .gemini\nls', 'x&&.gemini'];
+        const found = touching.map(command => namesProtectedFolder({ kind: 'execute', rawInput: { command } }, folders));
+
+        expect(found)
+            .toEqual(touching.map(() => true));
+    });
+
+    it('reviews a question that carries only the call id as the call its update described', async () => {
+        const reviewToolCall = vi.fn((): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: false, reason: 'no' }));
+        const { engine } = makeEngine({
+            onPrompt: (agent, promptId) => {
+                agent.say({ method: 'session/update', params: { sessionId: 'session-1', update: { sessionUpdate: 'tool_call', toolCallId: 't3', kind: 'execute', title: 'Remove', rawInput: { command: 'rm x' } } } });
+                askPermission(agent, 903, { toolCallId: 't3' });
+                askPermission(agent, 904, { toolCallId: 't4', rawInput: { command: 'ls' } });
+                void Promise.all([agent.answerTo(903), agent.answerTo(904)])
+                    .then(() => {
+                        agent.say({ id: promptId, result: { stopReason: 'end_turn' } });
+                    });
+            },
+        });
+
+        await collect(engine.runTurn(makeRequest({ reviewToolCall })));
+
+        expect(reviewToolCall.mock.calls.map(call => (call as unknown[])[0]))
+            .toEqual([{ toolName: 'Bash', input: { command: 'rm x' } }, { toolName: 'Bash', input: { command: 'ls' } }]);
     });
 
     it('maps each ACP tool kind to the CloudBot rule that reviews it', () => {

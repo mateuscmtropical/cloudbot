@@ -1230,9 +1230,18 @@ other provider runs on `AcpEngine`, which speaks the Agent Client Protocol
   reviewed as `acp__other`, or `acp__<name>` when the CLI sends a tool name,
   with its title and input. The answer is the CLI's `allow_once` or
   `reject_once` option, never an "always" option.
+- A question may carry only the call id. The engine keeps what the
+  `tool_call` updates said about each call and merges it in first. A call with
+  no kind but a `command` is reviewed as `execute`.
 - A question whose JSON names a CLI's sign-in or config folder is refused
-  without a review, like the Codex home floor. This is a text match, not a
-  parser.
+  without a review, like the Codex home floor. The name matches unless a word
+  character, a dot or a dash touches it. This is a text match, not a parser.
+- The prompt request has no answer timeout, since a turn can wait on a long
+  review. A dead CLI still ends it when the process exits.
+- A bot tool call that the loopback server reviews itself does not run when
+  the CLI closed the request during the review, so a retry cannot run it twice.
+  A CLI that also asks permission for MCP tools (Gemini does) gets each bot
+  tool reviewed twice.
 - The step limit counts the questions. Past it, the call is refused and the
   turn is cancelled.
 - The bot's tools come from the loopback server as an http MCP server with a

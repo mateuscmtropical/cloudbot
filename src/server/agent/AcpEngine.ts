@@ -115,6 +115,21 @@ function toReviewedCall(toolCall: AcpToolCall): ToolCall {
     }
 }
 
+function dropUndefined(toolCall: AcpToolCall): AcpToolCall {
+    const entries = Object.entries(toolCall)
+        .filter(([, value]) => value !== undefined);
+
+    return Object.fromEntries(entries);
+}
+
+// A call with no kind but a command is reviewed as the command it is, so the command floor sees it.
+function withKind(toolCall: AcpToolCall): AcpToolCall {
+    const input = readRecord(toolCall.rawInput);
+    const command = readString(input, 'command', 'cmd');
+
+    return toolCall.kind === undefined && command !== undefined ? { ...toolCall, kind: 'execute' } : toolCall;
+}
+
 function escapeForPattern(text: string): string {
     return text.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -123,6 +138,8 @@ function escapeForPattern(text: string): string {
 function namesProtectedFolder(toolCall: AcpToolCall, protectedFolders: string[]): boolean {
     const text = JSON.stringify(toolCall)
         .replaceAll('\\\\', '/')
+        // Escaped line breaks and tabs in the JSON text separate words as spaces do.
+        .replaceAll(/\\[nrt]/g, ' ')
         .toLowerCase();
 
     return protectedFolders.some((folder) => {
@@ -132,8 +149,8 @@ function namesProtectedFolder(toolCall: AcpToolCall, protectedFolders: string[])
             return text.includes(name);
         }
 
-        // A bare name matches as a whole path segment, with quotes, spaces or a slash around it.
-        const pattern = new RegExp(`(?:^|[\\s/'"=])${escapeForPattern(name)}(?:[\\s/'"]|$)`);
+        // A bare name matches unless a word character, a dot or a dash touches it, so `>.gemini/a` and `cd .gemini;` match.
+        const pattern = new RegExp(`(?<![\\w.-])${escapeForPattern(name)}(?![\\w-])`);
 
         return pattern.test(text);
     });
@@ -262,6 +279,12 @@ class AcpEngine implements AgentRunner {
         let currentSessionId = '';
         // A loaded session replays its history as updates. Those were shown before, so they are dropped.
         let isLoading = false;
+        const knownCalls = new Map<string, AcpToolCall>();
+        const remember = (toolCall: AcpToolCall): void => {
+            if (toolCall.toolCallId !== undefined) {
+                knownCalls.set(toolCall.toolCallId, { ...knownCalls.get(toolCall.toolCallId), ...dropUndefined(toolCall) });
+            }
+        };
 
         const push = (event: AgentEvent): void => {
             if (!queue.writableEnded) {
@@ -271,7 +294,8 @@ class AcpEngine implements AgentRunner {
         const send = (message: Record<string, unknown>): void => {
             child.stdin?.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
         };
-        const call = (method: string, params: Record<string, unknown>): Promise<AcpMessage> => {
+        // A prompt runs as long as the turn and its reviews, so only the other requests get the answer timeout.
+        const call = (method: string, params: Record<string, unknown>, hasTimeout = true): Promise<AcpMessage> => {
             const id = nextId;
 
             nextId += 1;
@@ -284,11 +308,14 @@ class AcpEngine implements AgentRunner {
             const failed = exited.then(() => ({ error: { message: `${this.options.label} stopped.` } }));
             const first = Promise.race([answered, failed]);
 
-            return withTimeout(first, REQUEST_TIMEOUT_MS, { error: { message: `${this.options.label} did not answer.` } });
+            return hasTimeout ? withTimeout(first, REQUEST_TIMEOUT_MS, { error: { message: `${this.options.label} did not answer.` } }) : first;
         };
 
         const answerPermission = async (id: string | number, params: Record<string, unknown>): Promise<void> => {
-            const toolCall = readRecord(params.toolCall) as AcpToolCall;
+            const asked = readRecord(params.toolCall) as AcpToolCall;
+            // A permission question may carry only part of the call. The tool_call updates before it hold the rest.
+            const known = asked.toolCallId === undefined ? undefined : knownCalls.get(asked.toolCallId);
+            const toolCall = withKind({ ...known, ...dropUndefined(asked) });
             const options = Array.isArray(params.options) ? params.options as AcpPermissionOption[] : [];
 
             permissionCount += 1;
@@ -336,6 +363,8 @@ class AcpEngine implements AgentRunner {
 
             if (kind === 'tool_call') {
                 const toolCall = update as AcpToolCall;
+
+                remember(toolCall);
                 const reviewed = toReviewedCall(toolCall);
 
                 push({ type: 'tool_started', toolUseId: toolCall.toolCallId ?? '', toolName: reviewed.toolName, input: reviewed.input });
@@ -345,6 +374,8 @@ class AcpEngine implements AgentRunner {
 
             if (kind === 'tool_call_update') {
                 const toolCall = update as AcpToolCall;
+
+                remember(toolCall);
 
                 if (toolCall.status === 'completed' || toolCall.status === 'failed') {
                     push({ type: 'tool_finished', toolUseId: toolCall.toolCallId ?? '', isError: toolCall.status === 'failed', output: '' });
@@ -509,7 +540,7 @@ class AcpEngine implements AgentRunner {
                 return;
             }
 
-            const prompted = await call('session/prompt', { sessionId, prompt: [{ type: 'text', text: `${instructions}${request.prompt}` }, ...images] });
+            const prompted = await call('session/prompt', { sessionId, prompt: [{ type: 'text', text: `${instructions}${request.prompt}` }, ...images] }, false);
 
             if (prompted.error !== undefined) {
                 const reason = prompted.error.message ?? '';

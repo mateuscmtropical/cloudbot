@@ -498,6 +498,11 @@ async function answerMcp(serverName: string, turn: TurnState, body: string, resp
             }
         }
 
+        // A client that gave up during a long review already saw a failure and may ask again, so the call does not run.
+        if (response.socket?.destroyed !== false) {
+            return;
+        }
+
         // The turn may have been released while the body was read. The handler never runs then.
         if (isReleasedNow(turn)) {
             writeJson(response, 200, { jsonrpc: '2.0', id, result: failedResult(TURN_ENDED_REASON) });

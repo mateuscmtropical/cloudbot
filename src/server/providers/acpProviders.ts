@@ -218,7 +218,8 @@ function readLocalAcpPaths(environment: NodeJS.ProcessEnv): Partial<Record<AcpPr
 async function checkKeyAt(url: string, keyHeader: KeyHeader, key: string): Promise<number> {
     const response = await fetch(url, { headers: { [keyHeader.name]: `${keyHeader.prefix}${key}` }, redirect: 'manual' });
 
-    return response.status;
+    // Google answers a wrong key with 400 API_KEY_INVALID. The model lists take no other input, so a 400 is the key.
+    return response.status === 400 ? 401 : response.status;
 }
 
 // Runs a turn with the sign-in or the key, whichever way the owner connected the provider last.
