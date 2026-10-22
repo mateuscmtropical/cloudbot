@@ -145,6 +145,58 @@ describe('CodexApprovalBridge commands', () => {
     });
 });
 
+describe('CodexApprovalBridge stops and turns', () => {
+    it('declines at once when the turn stopped before the request, and when a review allows after the stop', async () => {
+        const stoppedBefore = new AbortController();
+        const stoppedDuring = new AbortController();
+        const review = allowing();
+        const ignoringReview = vi.fn<Review>(() => {
+            stoppedDuring.abort();
+
+            return Promise.resolve({ isAllowed: true });
+        });
+        const bridge = new CodexApprovalBridge({ threadId: THREAD_ID, reviewToolCall: review });
+        const ignoringBridge = new CodexApprovalBridge({ threadId: THREAD_ID, reviewToolCall: ignoringReview });
+
+        stoppedBefore.abort();
+        const before = await bridge.answerRequest(commandRequest(), stoppedBefore.signal);
+        const during = await ignoringBridge.answerRequest(commandRequest(), stoppedDuring.signal);
+
+        expect([before, during])
+            .toEqual([{ result: { decision: 'decline' } }, { result: { decision: 'decline' } }]);
+        expect(review)
+            .not.toHaveBeenCalled();
+    });
+
+    it('declines a request without a turn id', async () => {
+        const review = allowing();
+        const bridge = new CodexApprovalBridge({ threadId: THREAD_ID, reviewToolCall: review });
+
+        await expect(bridge.answerRequest(commandRequest({ turnId: undefined }), SIGNAL))
+            .resolves.toEqual({ result: { decision: 'decline' } });
+        expect(review)
+            .not.toHaveBeenCalled();
+    });
+
+    it('forgets the items and decisions of a finished turn, so an item id of a later turn is reviewed again', async () => {
+        const review = allowing();
+        const bridge = new CodexApprovalBridge({ threadId: THREAD_ID, reviewToolCall: review });
+
+        bridge.noteNotification(itemStarted(FILE_ITEM));
+        await bridge.answerRequest(commandRequest(), SIGNAL);
+        bridge.noteNotification({ method: 'turn/completed', params: { threadId: THREAD_ID, turn: { id: TURN_ID, status: 'completed' } } });
+        const fileAfterTurn = await bridge.answerRequest(fileRequest(), SIGNAL);
+        const nextTurnCommand = await bridge.answerRequest(commandRequest({ turnId: 'turn-2' }), SIGNAL);
+
+        expect(fileAfterTurn)
+            .toEqual({ result: { decision: 'decline' } });
+        expect(nextTurnCommand)
+            .toEqual({ result: { decision: 'accept' } });
+        expect(review)
+            .toHaveBeenCalledTimes(2);
+    });
+});
+
 describe('CodexApprovalBridge file changes', () => {
     it('reviews a patch as Edit with the changes from its item/started notification', async () => {
         const review = allowing();

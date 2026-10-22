@@ -40,7 +40,10 @@ const STEPS: ModelStep[] = [
     ...COMMANDS.map(cmd => ({ name: 'exec_command', args: { cmd } })),
     { name: 'exec_command', args: { cmd: `apply_patch <<'PATCH'\n${PATCH}\nPATCH` } },
     { name: 'peek', namespace: 'mcp__cloud', args: { note: 'secret' } },
+    { name: 'read_mcp_resource', args: { server: 'cloud', uri: 'file:///etc/hostname' } },
 ];
+// Every tool the model may be offered. A new Codex that offers anything else fails the canary until it is checked.
+const OFFERED_TOOLS = ['exec_command', 'write_stdin', 'list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource', 'request_user_input', 'mcp__cloud'];
 
 // A stdio MCP server with one tool that claims to be read only. It writes each request it gets to a log file.
 const FAKE_MCP_SOURCE = `
@@ -221,18 +224,12 @@ describe.runIf(CODEX_PATH !== undefined)(`codex ${CODEX_VERSION} canary`, () => 
             .toBe('completed');
     });
 
-    it('offers the model no tool that skips the review', () => {
+    it('offers the model only the known tools, and none of view_image, spawn_agent or web_search', () => {
         const firstTools = modelRequests[0]?.tools ?? [];
         const toolNames = firstTools.map(tool => tool.name ?? tool.type);
 
-        expect(toolNames)
-            .toEqual(expect.arrayContaining(['exec_command', 'mcp__cloud']));
-        expect(toolNames)
-            .not.toEqual(expect.arrayContaining(['view_image']));
-        expect(toolNames)
-            .not.toEqual(expect.arrayContaining(['spawn_agent']));
-        expect(toolNames)
-            .not.toEqual(expect.arrayContaining(['web_search']));
+        expect(toolNames.toSorted())
+            .toEqual(OFFERED_TOOLS.toSorted());
     });
 
     it('sends every command to the review, and a refused command never runs', () => {
@@ -268,5 +265,15 @@ describe.runIf(CODEX_PATH !== undefined)(`codex ${CODEX_VERSION} canary`, () => 
             .toEqual({ note: 'secret' });
         expect(serverMethods)
             .not.toContain('tools/call');
+    });
+
+    // Known gap from the provider spike: the MCP resource tools ask nothing. it.fails keeps it visible. Once Codex gates
+    // them, this test starts to fail, and it should become a normal test.
+    it.fails('keeps read_mcp_resource from reaching the server without a review', () => {
+        const serverMethods = readFileSync(mcpLog, 'utf8')
+            .split('\n');
+
+        expect(serverMethods)
+            .not.toContain('resources/read');
     });
 });

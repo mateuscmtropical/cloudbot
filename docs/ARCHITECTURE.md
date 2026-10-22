@@ -951,7 +951,8 @@ Only an allow becomes `accept`. Everything else is a decline: a refusal, a revie
 65 minutes, a request of another thread, an item that was never reported, input for a running command (`writeStdin`),
 a network grant, a `grantRoot`, two MCP calls of one server at once, and a second request for an item already decided.
 Any other server request (permission grants, user input, dynamic tools, token refresh, attestation, the old v1
-approvals and anything new) gets a JSON-RPC error and is never reviewed. The bridge never answers `acceptForSession` or
+approvals and anything new) gets a JSON-RPC error and is never reviewed. A stop that came before the request, or a
+review that allows after a stop, is a decline too. Decisions are kept per turn and dropped on `turn/completed`. The bridge never answers `acceptForSession` or
 a policy amendment, so no answer covers a later call.
 
 Each bot gets its own `CODEX_HOME` in the data folder (`codex/<bot id>`, mode 700, `codex/codexHome.ts`). Codex exits
@@ -959,8 +960,9 @@ at start when that folder does not exist, so it is made first.
 
 The canary test (`codex/codexCanary.test.ts`) runs the pinned Codex against a fake model server and a fake MCP server
 on 127.0.0.1. It checks that six commands, a patch and a call to an MCP tool that claims to be read only all reach the
-review, that none of them runs when the review refuses, and that the model is not offered `view_image`, `spawn_agent`
-or `web_search`. CI runs it in the "Codex canary" job. Run it again before every Codex upgrade.
+review, that none of them runs when the review refuses, and that the model is offered exactly the known tool list, so
+a new Codex tool fails the canary until it is checked. The resource gap below is kept as an expected failure
+(`it.fails`), so the canary shows when Codex closes it. CI runs it in the "Codex canary" job. Run it again before every Codex upgrade.
 
 Known gaps, both from the provider spike and seen again in the canary probe:
 

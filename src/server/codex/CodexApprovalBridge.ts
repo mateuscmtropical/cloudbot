@@ -55,6 +55,12 @@ function unknownRequest(method: string): CodexAnswer {
 async function reviewWithin(review: ReviewToolCall, call: ToolCall, signal: AbortSignal, timeoutMs: number): Promise<boolean> {
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
     const reviewSignal = AbortSignal.any([signal, timeoutSignal]);
+
+    // A stop that came before this request fired its event already, so the flag is read first.
+    if (reviewSignal.aborted) {
+        return false;
+    }
+
     const stopped = new Promise<boolean>((resolve) => {
         reviewSignal.addEventListener('abort', () => {
             resolve(false);
@@ -65,7 +71,10 @@ async function reviewWithin(review: ReviewToolCall, call: ToolCall, signal: Abor
         const reviewed = review(call, reviewSignal)
             .then(decision => decision.isAllowed);
 
-        return await Promise.race([reviewed, stopped]);
+        const isAllowed = await Promise.race([reviewed, stopped]);
+
+        // A review that ignores the signal may still allow after a stop. The stop wins.
+        return isAllowed && !reviewSignal.aborted;
     } catch {
         return false;
     }
@@ -91,6 +100,12 @@ class CodexApprovalBridge {
     // Called for every notification. item/started carries the file changes and the MCP call that a later request names.
     // item/completed forgets the item, so a finished call never makes a later MCP approval ambiguous.
     noteNotification(message: CodexMessage): void {
+        if (message.method === 'turn/completed') {
+            this.forgetTurn(message.params);
+
+            return;
+        }
+
         if (message.method === 'item/fileChange/patchUpdated') {
             this.notePatchUpdate(message.params);
 
@@ -170,7 +185,7 @@ class CodexApprovalBridge {
             return DECLINED_COMMAND;
         }
 
-        if (!this.claimDecision(`command\n${itemId}\n${approvalId}`)) {
+        if (!this.claimDecision(`${String(params.turnId)}\ncommand\n${itemId}\n${approvalId}`)) {
             return DECLINED_COMMAND;
         }
 
@@ -209,7 +224,7 @@ class CodexApprovalBridge {
             return DECLINED_COMMAND;
         }
 
-        if (!this.claimDecision(`file\n${itemId ?? ''}`)) {
+        if (!this.claimDecision(`${params.turnId}\nfile\n${itemId ?? ''}`)) {
             return DECLINED_COMMAND;
         }
 
@@ -235,7 +250,7 @@ class CodexApprovalBridge {
         const candidates = [...this.items.entries()].filter(([itemId, item]) => item.type === 'mcpToolCall'
             && item.server === serverName
             && item.turnId === params.turnId
-            && !this.decidedKeys.has(`mcp\n${itemId}`));
+            && !this.decidedKeys.has(`${params.turnId}\nmcp\n${itemId}`));
         const match = candidates.length === 1 ? candidates[0] : undefined;
 
         if (match === undefined || match[1].type !== 'mcpToolCall' || !isDeepStrictEqual(match[1].arguments, meta.tool_params)) {
@@ -244,7 +259,7 @@ class CodexApprovalBridge {
 
         const [itemId, item] = match;
 
-        if (!this.claimDecision(`mcp\n${itemId}`)) {
+        if (!this.claimDecision(`${String(params.turnId)}\nmcp\n${itemId}`)) {
             return DECLINED_ELICITATION;
         }
 
@@ -254,8 +269,32 @@ class CodexApprovalBridge {
         return isAllowed ? { action: 'accept', content: {}, _meta: null } : DECLINED_ELICITATION;
     }
 
+    // A finished turn needs none of its items or decisions, so a long thread does not keep them.
+    private forgetTurn(params: unknown): void {
+        const turn = isRecord(params) && isRecord(params.turn) ? params.turn : undefined;
+        const turnId = turn === undefined ? undefined : readString(turn, 'id');
+
+        if (!isRecord(params) || readString(params, 'threadId') !== this.threadId || turnId === undefined) {
+            return;
+        }
+
+        const finishedItemIds = [...this.items.entries()]
+            .filter(([, item]) => item.turnId === turnId)
+            .map(([itemId]) => itemId);
+        const turnPrefix = `${turnId}\n`;
+        const finishedKeys = [...this.decidedKeys].filter(key => key.startsWith(turnPrefix));
+
+        finishedItemIds.forEach((itemId) => {
+            this.items.delete(itemId);
+        });
+        finishedKeys.forEach((key) => {
+            this.decidedKeys.delete(key);
+        });
+    }
+
+    // A request must name this thread and a turn. The turn id is part of every decision key.
     private isOwnThread(params: Record<string, unknown>): boolean {
-        return readString(params, 'threadId') === this.threadId;
+        return readString(params, 'threadId') === this.threadId && readString(params, 'turnId') !== undefined;
     }
 
     // Read and set with no await between, so two requests for one item cannot both pass.
