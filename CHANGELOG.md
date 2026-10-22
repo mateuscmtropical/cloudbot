@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- The mascot hops from its bot row into the latest message when the owner opens a chat. The 780 ms animation leaves the layout in place, keeps text clear and skips reduced motion or layouts where the list and chat are not side by side.
 - Each bot runs on the AI provider the owner picks: Claude, ChatGPT (Codex), Gemini, GitHub Copilot, Cursor, Grok, Mistral, Qwen, Kimi or the free opencode models. The setup chat lists a subscription and an API key option for each installed provider that has them. Ask a bot to switch and its next message starts a new conversation on the new provider. Ask it to connect another provider and the list comes back in the setup chat.
 - A subscription sign-in runs the provider CLI's own login. The chat shows its link and device code, or a code field when the provider's page shows a code to paste back. CloudBot never sees the credentials.
 - An API key for OpenAI, Gemini, xAI, Mistral, Qwen (Alibaba Cloud Model Studio) or Kimi (Moonshot AI) goes through the secure form. CloudBot checks it with one request to the provider, keeps it in the vault and sends it through a local key proxy, so the bot only sees a dummy key. An xAI key runs on opencode, since the Grok CLI takes only a Grok account.
