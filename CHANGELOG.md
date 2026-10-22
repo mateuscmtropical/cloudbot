@@ -6,9 +6,17 @@ All notable changes to this project are listed here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- The Claude CLI and every helper agent now disallow built-in tools for CLI schedules, cloud triggers, notifications, messaging, workflows, worktrees, design sync and other CLI-only services.
+
 ### Added
 
 - The mascot hops from its bot row into the latest message when the owner opens a chat. The 780 ms animation leaves the layout in place, keeps text clear and skips reduced motion or layouts where the list and chat are not side by side.
+- Each bot runs on the AI provider the owner picks: Claude, ChatGPT (Codex), Gemini, GitHub Copilot, Cursor, Grok, Mistral, Qwen, Kimi or the free opencode models. The setup chat lists a subscription and an API key option for each installed provider that has them. Ask a bot to switch and its next message starts a new conversation on the new provider. Ask it to connect another provider and the list comes back in the setup chat.
+- A subscription sign-in runs the provider CLI's own login. The chat shows its link and device code, or a code field when the provider's page shows a code to paste back. CloudBot never sees the credentials.
+- An API key for OpenAI, Gemini, xAI, Mistral, Qwen (Alibaba Cloud Model Studio) or Kimi (Moonshot AI) goes through the secure form. CloudBot checks it with one request to the provider, keeps it in the vault and sends it through a local key proxy, so the bot only sees a dummy key. An xAI key runs on opencode, since the Grok CLI takes only a Grok account.
+- Providers other than Claude and ChatGPT run over the Agent Client Protocol. Every tool the CLI asks to run goes through the same review as a Claude tool, and a call that names a CLI's sign-in or config folder is refused. The Docker image installs every CLI at a pinned version where possible, owned by root, and starts them through a fixed wrapper.
 - A template gallery in a public GitHub repository, mateuscmtropical/cloudbot-templates by default. The bot lists its templates with gallery_list, which reads one index file and shows each name, title, description and blocked tools. Set CLOUDBOT_GALLERY_REPO to read another repository.
 - gallery_install makes a bot from a gallery template. The owner sees the whole template on the approval card first, and the same checks as an import apply. The card works for ten minutes and for one install.
 - gallery_share opens a pull request to the gallery from a fork of it in the bot owner's GitHub account. It needs GitHub connected for the bot, and the owner approves the exact file first. The card says when the file replaces an existing one.
@@ -44,6 +52,8 @@ All notable changes to this project are listed here. The format follows
 - A request with a body must be `application/json`, or `multipart/form-data` on the upload route. Other types get a 415.
 - Every response sends a Content Security Policy that allows only the app's own files, `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer` and same-origin opener and resource policies. Images from other sites, such as in bot replies, no longer load.
 - The setup link and the start log use the address the server really listens on, `127.0.0.1` by default, and not `localhost`.
+- The Codex engine gives each bot a `CODEX_HOME` and a separate `HOME` beside it, both mode 0700, so `~` cannot reach the Codex config or sign-in. A command or file change that names the Codex home or a `.codex/` folder is declined without a review. File-change paths are resolved through symlinks, and a path that cannot be resolved is declined. Shell commands do not get `CODEX_HOME`. The check is a floor, not a parser: a path the command builds at run time, for example from `HOME` beside the Codex home, still reaches the review.
+- The Codex engine also serves the bot's own tools through the loopback server. Codex reads the token from `CLOUDBOT_TOOLS_TOKEN`, never from its command line, and `shell_environment_policy.exclude` keeps the token out of every shell command. Each tool call is reviewed like a Claude tool call, and an allowed call runs once.
 
 ### Fixed
 

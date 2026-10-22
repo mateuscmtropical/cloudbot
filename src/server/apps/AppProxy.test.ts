@@ -250,4 +250,148 @@ describe('AppProxy', () => {
         expect(upstream.received)
             .toHaveLength(0);
     });
+
+    describe('the gated address of a turn', () => {
+        function openGate(appId: string): NonNullable<ReturnType<AppProxy['openCallGate']>> {
+            const gate = proxy.openCallGate(proxy.register(appId, { upstream: upstream.url, readToken: () => undefined }));
+
+            if (gate === undefined) {
+                throw new Error('No gate.');
+            }
+
+            return gate;
+        }
+
+        function toolCall(callId: string | undefined, name: string, args: unknown): string {
+            const meta = callId === undefined ? {} : { _meta: { callId } };
+
+            return JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name, arguments: args, ...meta } });
+        }
+
+        it('refuses a resource request before it reaches the server', async () => {
+            const gate = openGate('app-r1');
+            const response = await fetch(gate.address, { method: 'POST', body: '{"jsonrpc":"2.0","id":7,"method":"resources/read","params":{"uri":"file:///etc/passwd"}}' });
+
+            expect(response.status)
+                .toBe(200);
+            expect(await response.json())
+                .toEqual({ jsonrpc: '2.0', id: 7, error: { code: -32601, message: 'Resources of connected servers are turned off for this bot.' } });
+            expect(upstream.received)
+                .toHaveLength(0);
+        });
+
+        it('refuses the resource list and templates too', async () => {
+            const gate = openGate('app-r2');
+            const methods = ['resources/list', 'resources/templates/list', 'resources/subscribe'];
+            const sends = methods.map(method => fetch(gate.address, { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method }) }));
+
+            await Promise.all(sends);
+            expect(upstream.received)
+                .toHaveLength(0);
+        });
+
+        it('refuses a whole batch that holds a resource request or a tool call', async () => {
+            const gate = openGate('app-r3');
+
+            gate.allowCall('call-1', 'search', {});
+
+            const withResource = JSON.stringify([{ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { jsonrpc: '2.0', id: 2, method: 'resources/read' }]);
+            const withCall = `[${toolCall('call-1', 'search', {})}]`;
+            const responses = await Promise.all([withResource, withCall].map(body => fetch(gate.address, { method: 'POST', body })));
+
+            expect(responses.map(response => response.status))
+                .toEqual([403, 403]);
+            expect(upstream.received)
+                .toHaveLength(0);
+        });
+
+        it('refuses a body that is not JSON', async () => {
+            const gate = openGate('app-r4');
+            const response = await fetch(gate.address, { method: 'POST', body: 'resources/read' });
+
+            expect(response.status)
+                .toBe(400);
+            expect(upstream.received)
+                .toHaveLength(0);
+        });
+
+        it('sends an allowed tool call once and refuses a repeat', async () => {
+            const gate = openGate('app-r5');
+
+            gate.allowCall('call-1', 'search', { query: 'a' });
+
+            const first = await fetch(gate.address, { method: 'POST', body: toolCall('call-1', 'search', { query: 'a' }) });
+            const second = await fetch(gate.address, { method: 'POST', body: toolCall('call-1', 'search', { query: 'a' }) });
+
+            expect(await first.text())
+                .toBe(toolCall('call-1', 'search', { query: 'a' }));
+            expect(await second.json())
+                .toMatchObject({ id: 3, error: { message: 'This call was not approved, so it was not sent.' } });
+            expect(upstream.received)
+                .toHaveLength(1);
+        });
+
+        it('refuses a tool call that was not allowed, or that differs from the allowed one', async () => {
+            const gate = openGate('app-r6');
+
+            gate.allowCall('call-1', 'search', { query: 'a' });
+
+            const bodies = [
+                toolCall(undefined, 'search', { query: 'a' }),
+                toolCall('call-2', 'search', { query: 'a' }),
+                toolCall('call-1', 'delete', { query: 'a' }),
+                toolCall('call-1', 'search', { query: 'b' }),
+            ];
+
+            const sends = bodies.map(body => fetch(gate.address, { method: 'POST', body }));
+
+            await Promise.all(sends);
+
+            expect(upstream.received)
+                .toHaveLength(0);
+        });
+
+        it('forwards other requests', async () => {
+            const gate = openGate('app-r7');
+            const body = '{"jsonrpc":"2.0","id":1,"method":"tools/list"}';
+            const response = await fetch(gate.address, { method: 'POST', body });
+
+            expect(await response.text())
+                .toBe(body);
+            expect(upstream.received)
+                .toHaveLength(1);
+        });
+
+        it('refuses everything on a closed gate or a gate key it never gave out', async () => {
+            const gate = openGate('app-r8');
+
+            gate.allowCall('call-1', 'search', {});
+            gate.close();
+
+            const plain = proxy.addressOf('app-r8') ?? '';
+            const closed = await fetch(gate.address, { method: 'POST', body: toolCall('call-1', 'search', {}) });
+            const madeUp = await fetch(`${plain}/abc`, { method: 'POST', body: '{"jsonrpc":"2.0","id":1,"method":"resources/list"}' });
+
+            expect([closed.status, madeUp.status])
+                .toEqual([404, 404]);
+            expect(upstream.received)
+                .toHaveLength(0);
+        });
+
+        it('opens no gate for an address it did not give out', () => {
+            proxy.register('app-r9', { upstream: upstream.url, readToken: () => undefined });
+
+            expect(proxy.openCallGate('http://127.0.0.1:1/unknown'))
+                .toBeUndefined();
+        });
+
+        it('leaves the plain address unchanged for a resource request and a tool call', async () => {
+            const address = proxy.register('app-r10', { upstream: upstream.url, readToken: () => undefined });
+
+            await fetch(address, { method: 'POST', body: '{"jsonrpc":"2.0","id":1,"method":"resources/list"}' });
+            await fetch(address, { method: 'POST', body: toolCall(undefined, 'search', {}) });
+            expect(upstream.received)
+                .toHaveLength(2);
+        });
+    });
 });
