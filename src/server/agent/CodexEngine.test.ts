@@ -98,7 +98,7 @@ function completeTurn(server: FakeAppServer): void {
     server.say({ method: 'turn/completed', params: { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed', error: null, durationMs: 50 } } });
 }
 
-function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThreadStart?: boolean; loopback?: LoopbackToolServer } = {}): {
+function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThreadStart?: boolean; loopback?: LoopbackToolServer; environment?: Record<string, string> } = {}): {
     engine: CodexEngine;
     servers: FakeAppServer[];
     spawnOptions: SpawnOptions[];
@@ -139,7 +139,7 @@ function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThre
     const engine = new CodexEngine({
         codexPath: '/usr/local/bin/codex',
         codexHomeFor: () => home,
-        environment: { PATH: '/usr/bin' },
+        environment: options.environment ?? { PATH: '/usr/bin' },
         loopback: options.loopback,
         callGates,
         spawnFunction,
@@ -171,9 +171,9 @@ function significant(events: AgentEvent[]): AgentEvent[] {
 }
 
 describe('buildCodexArguments', () => {
-    it('runs the app server with the built-ins that have no approval turned off, and the tool token kept out of commands', () => {
+    it('runs the app server with the built-ins that have no approval turned off, and the tool token and CODEX_HOME kept out of commands', () => {
         expect(buildCodexArguments([]))
-            .toEqual(['app-server', '-c', 'web_search="disabled"', '-c', 'features.view_image=false', '-c', 'features.multi_agent=false', '-c', 'features.goals=false', '-c', 'shell_environment_policy.exclude=["CLOUDBOT_TOOLS_TOKEN"]']);
+            .toEqual(['app-server', '-c', 'web_search="disabled"', '-c', 'features.view_image=false', '-c', 'features.multi_agent=false', '-c', 'features.goals=false', '-c', 'shell_environment_policy.exclude=["CLOUDBOT_TOOLS_TOKEN","CODEX_HOME"]']);
     });
 });
 
@@ -206,9 +206,27 @@ describe('CodexEngine', () => {
         expect(turnStart?.params)
             .toEqual({ threadId: 'thread-1', input: [{ type: 'text', text: 'hello', text_elements: [] }] });
         expect(spawnOptions[0]?.env)
-            .toEqual({ PATH: '/usr/bin', HOME: home, CODEX_HOME: home });
+            .toEqual({ PATH: '/usr/bin', HOME: `${home}-home`, CODEX_HOME: home });
+    });
+
+    it.skipIf(process.platform === 'win32')('makes the Codex home and the user home for the owner only', async () => {
+        const { engine, home } = makeEngine(completeTurn);
+
+        await collect(engine.runTurn(makeRequest()));
+
         expect(statSync(home).mode & 0o777)
             .toBe(0o700);
+        expect(statSync(`${home}-home`).mode & 0o777)
+            .toBe(0o700);
+    });
+
+    it('keeps the Codex home and the user home when the environment and the turn set them too', async () => {
+        const { engine, spawnOptions, home } = makeEngine(completeTurn, { environment: { PATH: '/usr/bin', HOME: '/root', CODEX_HOME: '/root' } });
+
+        await collect(engine.runTurn(makeRequest({ extraEnvironment: { HOME: '/tmp', CODEX_HOME: '/tmp', TOKEN: 'x' } })));
+
+        expect(spawnOptions[0]?.env)
+            .toEqual({ PATH: '/usr/bin', HOME: `${home}-home`, CODEX_HOME: home, TOKEN: 'x' });
     });
 
     it('resumes the thread of an earlier turn', async () => {
@@ -260,6 +278,25 @@ describe('CodexEngine', () => {
             .toHaveBeenCalledWith({ toolName: 'Write', input: { file_path: '/w/a.txt', content: 'full' } }, expect.any(AbortSignal));
         expect(answer)
             .toMatchObject({ result: { decision: 'accept' } });
+    });
+
+    it('declines a patch inside the Codex home without a review', async () => {
+        const review = vi.fn((): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: true }));
+        const { engine, servers, home } = makeEngine((server) => {
+            server.say({ method: 'item/started', params: { item: { type: 'fileChange', id: 'call_2', status: 'inProgress', changes: [{ path: join(home, 'config.toml'), kind: { type: 'add' }, diff: 'x' }] } } });
+            server.say({ id: 'approval-1', method: 'item/fileChange/requestApproval', params: { itemId: 'call_2', reason: null, grantRoot: null } });
+            setTimeout(() => {
+                completeTurn(server);
+            }, 20);
+        });
+
+        await collect(engine.runTurn(makeRequest({ reviewToolCall: review })));
+        const answer = servers[0]?.sent.find(message => (message as { id?: unknown }).id === 'approval-1');
+
+        expect(review)
+            .not.toHaveBeenCalled();
+        expect(answer)
+            .toMatchObject({ result: { decision: 'decline' } });
     });
 
     it('declines every call when the turn has no review', async () => {

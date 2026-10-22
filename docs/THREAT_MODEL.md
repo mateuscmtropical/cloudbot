@@ -1,9 +1,8 @@
 # Threat model
 
 This page says what CloudBot defends, against whom, and where the defense
-stops. It describes `main` with the Agent SDK engine. The engine change in
-[#154](https://github.com/mateuscmtropical/cloudbot/issues/154) is pending.
-See [Pending change](#pending-change-the-cli-engine).
+stops. It describes the CLI engine, which runs the official `claude` CLI in
+headless mode for every turn.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) explains how each part works. This page
 links to it instead of repeating it. To report a problem, read the
@@ -138,19 +137,20 @@ runs as the same user, so in Docker its shell can read those files.
 
 ## What stops the bot from doing harm
 
-Every tool call goes through a `PreToolUse` hook before it runs. See
-[Tool call approval](ARCHITECTURE.md#tool-call-approval). A failure of the hook
-refuses the call. It never lets it through.
+The turn settings mark every built-in and every MCP tool as an ask, so the CLI
+sends each call to the loopback permission tool before it runs. See
+[Tool call approval](ARCHITECTURE.md#tool-call-approval). A failure of that tool
+or of the review refuses the call. It never lets it through.
 
 ### Owner rules
 
 The owner writes rules in plain language. Each sentence goes into the system
 prompt. A block rule can also name tools, such as `Bash(rm:*)`. Those go to the
-SDK as `disallowedTools`, and a hook refuses them for helper agents too. Only
-the owner can change rules through the web app. The bot can propose a change
-with a tool, and the owner approves it. A rule that names no tool is advice to
-the model and not a barrier. A misspelled tool name blocks nothing. See
-[Owner rules](ARCHITECTURE.md#owner-rules).
+CLI as `--disallowedTools`, and each helper agent gets them as
+`disallowedTools`. Only the owner can change rules through the web app. The bot
+can propose a change with a tool, and the owner approves it. A rule that names
+no tool is advice to the model and not a barrier. A misspelled tool name blocks
+nothing. See [Owner rules](ARCHITECTURE.md#owner-rules).
 
 ### Command floor
 
@@ -302,7 +302,7 @@ These are accepted today. A report about one of them is out of scope in the
   blocks the namespaces its sandbox needs. See
   [OWNER_QUESTIONS.md](OWNER_QUESTIONS.md).
 - The bot can use the API key through the key proxy outside the turn limits.
-  The limits count the spending that the SDK reports.
+  The limits count the spending that the CLI reports.
 - The memory of a bot is `CLAUDE.md` in its workspace, and the bot writes it.
   Text from a web page can end up there and come back in later turns.
 
@@ -324,9 +324,9 @@ These are accepted today. A report about one of them is out of scope in the
   end to end on a real host.
 - The spending limit holds the agent and the review agent separately, so a turn
   can spend up to twice the limit. Secure input does not pause the time limit.
-- These rest on the SDK documentation and were not checked against a live CLI:
-  that the SDK enforces `disallowedTools` inside a helper agent, and that
-  helper calls reach the review hook.
+- These rest on the CLI documentation and were not checked against a live CLI:
+  that the CLI enforces `disallowedTools` inside a helper agent, and that
+  helper calls reach the approval route.
 
 ### Access
 
@@ -343,18 +343,11 @@ These are accepted today. A report about one of them is out of scope in the
 
 ### The supply chain
 
-- The image installs the `claude` CLI with Anthropic's installer, and the CLI
-  updates itself. Known limit, fix pending
-  ([#154](https://github.com/mateuscmtropical/cloudbot/issues/154)).
+- The image downloads the `claude` CLI with Anthropic's installer at build
+  time. The CLI then runs from a root-owned copy and does not update itself.
+  Updates come with a new image.
 - `docker/install.sh` runs with `curl | sudo bash`, and `cloudbot update` pulls
   `main` with `git pull --ff-only`. Nothing checks a signature.
-
-## Pending change: the CLI engine
-
-Issue [#154](https://github.com/mateuscmtropical/cloudbot/issues/154) moves
-CloudBot from the Agent SDK to the official `claude` CLI in headless mode.
-Approvals keep working the same way for the owner. This page is checked again
-when it merges.
 
 ## Changing this page
 

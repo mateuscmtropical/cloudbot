@@ -14,14 +14,15 @@ const CODEX_TOOL_TOKEN_VARIABLE = 'CLOUDBOT_TOOLS_TOKEN';
 
 // Built-ins that have no per-call approval are turned off, so the model is never offered them:
 // hosted web search, reading any image file, helper agents and goals.
-// Codex passes its own environment to the commands it runs, a token included (seen with codex-cli 0.163.0). A command
-// holding the loopback token could reach the bot's tools, so that variable is kept out of every command.
+// Codex passes its own environment to the commands it runs, so both of these reach a command unless they are excluded
+// (seen with codex-cli 0.163.0). A command holding the loopback token could reach the bot's tools. A command reading
+// CODEX_HOME could read the config or sign-in folder. Both variables are kept out of every command.
 const CODEX_LOCKED_CONFIG = [
     'web_search="disabled"',
     'features.view_image=false',
     'features.multi_agent=false',
     'features.goals=false',
-    `shell_environment_policy.exclude=["${CODEX_TOOL_TOKEN_VARIABLE}"]`,
+    `shell_environment_policy.exclude=["${CODEX_TOOL_TOKEN_VARIABLE}","CODEX_HOME"]`,
 ];
 
 type CodexRequestId = string | number;

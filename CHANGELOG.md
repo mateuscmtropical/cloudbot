@@ -37,9 +37,12 @@ All notable changes to this project are listed here. The format follows
 - A request with a body must be `application/json`, or `multipart/form-data` on the upload route. Other types get a 415.
 - Every response sends a Content Security Policy that allows only the app's own files, `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer` and same-origin opener and resource policies. Images from other sites, such as in bot replies, no longer load.
 - The setup link and the start log use the address the server really listens on, `127.0.0.1` by default, and not `localhost`.
+- The Codex engine (not wired to any bot yet) gives each bot a `CODEX_HOME` and a separate `HOME` beside it, both mode 0700, so `~` cannot reach the Codex config or sign-in. A command or file change that names the Codex home or a `.codex/` folder is declined without a review; file-change paths are resolved through symlinks, and a path that cannot be resolved is declined. Shell commands do not get `CODEX_HOME`. The check is a floor, not a parser: a path the command builds at run time, for example from `HOME` beside the Codex home, still reaches the review.
+- The Codex engine (not wired to any bot yet) also serves the bot's own tools through the loopback server. Codex reads the token from `CLOUDBOT_TOOLS_TOKEN`, never from its command line, and `shell_environment_policy.exclude` keeps the token out of every shell command. Each tool call is reviewed like a Claude tool call, and an allowed call runs once.
 
 ### Fixed
 
+- A background process that a command started in its own session no longer keeps running after the turn ends. Each turn marks its processes, and the marked ones are ended when it is over.
 - The plus in the new bot and attach buttons sits exactly in the center of the round button.
 - `share_file` works on Windows and macOS. The file must stay inside the workspace, and the opened file must be the one the path leads to, checked by file identity. Linux uses the same check. On Windows the open does not refuse links, so the realpath and identity check are the guard there.
 - The buttons inside the Rules panel had no background and their text could not be read.
