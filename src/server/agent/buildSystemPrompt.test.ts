@@ -187,4 +187,19 @@ describe('buildSystemPrompt', () => {
         expect(buildSystemPrompt(profile))
             .not.toContain('task_board');
     });
+
+    it('names the skills and their descriptions only when the bot can keep skills', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+        const withSkills = buildSystemPrompt(profile, { skills: [{ name: 'weekly-report', description: 'Writes the\nweekly report.' }] });
+        const withNone = buildSystemPrompt(profile, { skills: [] });
+
+        expect(withSkills)
+            .toContain('- weekly-report: Writes the weekly report.');
+        expect(withSkills)
+            .toContain('skill_read');
+        expect(withNone)
+            .toContain('You have no skills yet.');
+        expect(buildSystemPrompt(profile))
+            .not.toContain('skill_read');
+    });
 });

@@ -20,6 +20,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Skills. Ask a bot to learn a skill, or give it a link, and it saves the steps after you approve the whole text on a card. The bot reads a skill before a task it covers, and lists or removes its skills when asked.
 - The message box has a microphone button in browsers with speech recognition, such as Chrome and Edge. The spoken words are added to the text in the box. The browser's speech service turns the audio into text, and the app never receives the audio.
 - The web app installs on a phone or computer as an app, with the cloud mascot as its icon. It has a web app manifest and a small service worker that caches nothing.
 - Push notifications. Ask a bot in the chat to turn them on, and it posts a card with a button. The browser asks for permission only after you tap the button. A notification comes when a turn finishes, when an approval waits and when the bot hands over its screen. It shows the bot's name and a short neutral line, never the text of a message. Tapping it opens that bot and message. A tab that already shows the bot gets a silent one that closes at once. A bot sends at most one "finished" notification a minute, and none for a webhook. Ask the bot to turn them off and it posts a card that removes this browser. Browsers use their own push services (Google, Mozilla, Apple or Windows), and CloudBot sends only to those. The push key is made once in the data folder and never leaves the server.

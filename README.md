@@ -46,6 +46,7 @@ comes back when the job is done or when it needs you.
 - **Connect apps.** The bot adds a remote MCP server by its address when you ask in the chat. A token goes through the secure form and stays in the vault. The Connect apps panel lists the servers and removes one.
 - **Tell you when it is done.** Install the web app on your phone and ask a bot in the chat to turn on notifications. It posts a card with a button, and your browser asks for permission when you tap it. You get a notification when a turn finishes, when an approval waits and when the bot needs your screen. It shows the bot's name and a short line, never the text of a message. On an iPhone, add CloudBot to the home screen first. Notifications need HTTPS or localhost.
 - **Make more bots.** The + button adds a bot, and a bot can make one when you ask. Deleting a bot from its chat removes all of its data.
+- **Teach it skills.** Ask a bot to learn a skill, or give it a link to one. It writes the steps as a skill, and you approve the whole text on a card before it is saved. The bot reads a skill when a task needs it. Ask it to list or remove its skills.
 - **Copy a bot.** Ask a bot to export itself and you get a template file in the chat. Attach that file and ask for a new bot from it. You see the whole template before the bot is made. Secrets, sign-ins, webhook addresses, shared files and learned memory are never in the file. Its routines start turned off.
 - **Work as a team.** Several bots that pass work to each other, group chats
   and a manager bot.

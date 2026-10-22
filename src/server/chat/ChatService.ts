@@ -84,6 +84,8 @@ import { readBotTemplateFile } from '../bots/readBotTemplateFile.ts';
 import type { BotCreateInput } from '../bots/createBotTool.ts';
 import { BOT_DELETE_TOOL_FULL_NAME, createBotDeleteTool } from '../bots/createBotDeleteTool.ts';
 import { RULE_LIST_TOOL_FULL_NAME, RULE_TOOL_FULL_NAMES, createRuleTools } from '../rules/createRuleTools.ts';
+import { SKILL_LIST_TOOL_FULL_NAME, SKILL_READ_TOOL_FULL_NAME, SKILL_TOOL_FULL_NAMES, createSkillTools } from '../skills/createSkillTools.ts';
+import type { SkillStore } from '../store/SkillStore.ts';
 import { BOT_SEND_TOOL_FULL_NAME, createBotSendTool } from '../bots/createBotSendTool.ts';
 import type { BotSendInput, BotSendOutcome } from '../bots/createBotSendTool.ts';
 import { HANDOFF_SENT_PREFIX, MAX_HANDOFFS_PER_TURN, MAX_HANDOFF_DEPTH, buildBotHandoffMessage, describeHandoffReply } from '../bots/botHandoff.ts';
@@ -177,6 +179,7 @@ interface ChatServiceOptions {
     screen?: ScreenHolder | undefined;
     // The owner's rules for each bot. Without it turns run without rules.
     ruleStore?: RuleStore | undefined;
+    skillStore?: SkillStore | undefined;
     routineStore?: RoutineStore | undefined;
     taskStore?: TaskStore | undefined;
     integrationService?: IntegrationService | undefined;
@@ -562,6 +565,7 @@ class ChatService {
     // Bot secret forms with an answer in progress, by message id.
     private readonly answeringForms = new Set<string>();
     private readonly ruleStore: RuleStore | undefined;
+    private readonly skillStore: SkillStore | undefined;
     private readonly routineStore: RoutineStore | undefined;
     private readonly taskStore: TaskStore | undefined;
     private readonly integrationService: IntegrationService | undefined;
@@ -624,6 +628,7 @@ class ChatService {
         this.botSecrets = options.botSecrets;
         this.screen = options.screen;
         this.ruleStore = options.ruleStore;
+        this.skillStore = options.skillStore;
         this.routineStore = options.routineStore;
         this.taskStore = options.taskStore;
         this.integrationService = options.integrationService;
@@ -2774,6 +2779,8 @@ class ChatService {
             const templateTools = [createBotExportTool(() => this.exportBotFromTool(botId)), ...(this.approvals === undefined ? [] : [createBotImportTool(filePath => this.importBotFromTool(botId, filePath))])];
             // The rule list is always offered. A rule change and a bot delete are offered only with the approval gate, since each waits for the owner.
             const ruleTools = this.ruleStore === undefined ? [] : createRuleTools(this.ruleStore, botId, this.approvals !== undefined);
+            // Reading skills is always offered. A change waits for the owner, so it is offered only with the approval gate.
+            const skillTools = this.skillStore === undefined ? [] : createSkillTools(this.skillStore, botId, this.approvals !== undefined);
             const botDeleteTools = this.approvals === undefined ? [] : [createBotDeleteTool(() => this.deleteBotFromTool(botId))];
             const notificationTools = this.notifyOwner === undefined
                 ? []
@@ -2785,7 +2792,7 @@ class ChatService {
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...taskTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...botDeleteTools, ...notificationTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...taskTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -2796,6 +2803,8 @@ class ChatService {
             const additionalDirectories = [this.uploadDirFor(botId)];
             // Rules are read for each turn, so a change in the web app applies to the next message.
             const ownerRules = this.ruleStore === undefined ? [] : await this.ruleStore.list(botId);
+            // Skills are read for each turn, so an approved skill is known from the next message on.
+            const skills = this.skillStore === undefined ? undefined : await this.skillStore.list(botId);
             const blockedToolNames = ownerRules.flatMap(rule => rule.blockedTools);
             const disallowedTools = [...new Set(blockedToolNames)];
             const reviewToolCall = this.createToolCallReview(botId, turn.channel?.channelId);
@@ -2836,6 +2845,7 @@ class ChatService {
                     hasLimits: this.limitStore !== undefined,
                     hasNotifications: this.notifyOwner !== undefined,
                     ownerRules,
+                    skills,
                     helpers: helperKinds,
                 }),
                 disallowedTools,
@@ -2969,6 +2979,14 @@ class ChatService {
         return this.approvals === undefined ? [RULE_LIST_TOOL_FULL_NAME] : RULE_TOOL_FULL_NAMES;
     }
 
+    private skillToolNamesAllowed(): string[] {
+        if (this.skillStore === undefined) {
+            return [];
+        }
+
+        return this.approvals === undefined ? [SKILL_LIST_TOOL_FULL_NAME, SKILL_READ_TOOL_FULL_NAME] : SKILL_TOOL_FULL_NAMES;
+    }
+
     // Headless turns cannot answer a permission prompt, so the cloudbot tools the bot has are allowed up front.
     // Without the approval gate, only the profile tools, the export, the read-only rule list and the notification switch are allowed up front. The rest need the gate.
     private allowedToolNames(): string[] {
@@ -3003,7 +3021,7 @@ class ChatService {
         const botSendToolNames = [BOT_SEND_TOOL_FULL_NAME];
         const notificationToolNames = this.notificationToolNames();
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.
