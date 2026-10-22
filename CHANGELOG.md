@@ -37,6 +37,7 @@ All notable changes to this project are listed here. The format follows
 - A request with a body must be `application/json`, or `multipart/form-data` on the upload route. Other types get a 415.
 - Every response sends a Content Security Policy that allows only the app's own files, `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer` and same-origin opener and resource policies. Images from other sites, such as in bot replies, no longer load.
 - The setup link and the start log use the address the server really listens on, `127.0.0.1` by default, and not `localhost`.
+- The Codex engine (not wired to any bot yet) gives each bot a `CODEX_HOME` and a separate `HOME` beside it, both mode 0700, so `~` cannot reach the Codex config or sign-in. A command or file change that names the Codex home or a `.codex/` folder is declined without a review; file-change paths are resolved through symlinks, and a path that cannot be resolved is declined. Shell commands do not get `CODEX_HOME`. The check is a floor, not a parser: a path the command builds at run time, for example from `HOME` beside the Codex home, still reaches the review.
 
 ### Fixed
 

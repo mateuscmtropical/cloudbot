@@ -1,9 +1,20 @@
+import { mkdirSync, mkdtempSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ToolCall, ToolCallDecision } from './AgentRunner.ts';
 import { answerCodexRequest, unwrapShellCommand } from './answerCodexRequest.ts';
 import type { CodexRequestContext } from './answerCodexRequest.ts';
-import type { CodexThreadItem } from './codexProtocol.ts';
+import type { CodexFileChangeItem, CodexThreadItem } from './codexProtocol.ts';
+
+const TEST_FOLDER = mkdtempSync(join(tmpdir(), 'cloudbot-codex-request-'));
+const WORKSPACE_DIR = join(TEST_FOLDER, 'work');
+const CODEX_HOME = join(TEST_FOLDER, 'codex-home');
+
+mkdirSync(WORKSPACE_DIR);
+mkdirSync(CODEX_HOME);
 
 function makeContext(decide: (call: ToolCall) => ToolCallDecision, items: CodexThreadItem[] = []): CodexRequestContext & { calls: ToolCall[] } {
     const calls: ToolCall[] = [];
@@ -18,7 +29,8 @@ function makeContext(decide: (call: ToolCall) => ToolCallDecision, items: CodexT
         signal: new AbortController().signal,
         findItem: itemId => items.find(item => item.id === itemId),
         timeoutMs: 1000,
-        workspaceDir: '/work',
+        workspaceDir: WORKSPACE_DIR,
+        codexHome: CODEX_HOME,
         hasStepsLeft: () => true,
     };
 }
@@ -27,7 +39,7 @@ const allow = (): ToolCallDecision => ({ isAllowed: true });
 const deny = (): ToolCallDecision => ({ isAllowed: false, reason: 'No.' });
 
 function commandRequest(command: string, kind = 'command', extra: Record<string, unknown> = {}): unknown {
-    return { kind, threadId: 't', turnId: 'u', itemId: 'call_1', startedAtMs: 1, environmentId: 'local', command, cwd: '/work', proposedExecpolicyAmendment: ['ls'], ...extra };
+    return { kind, threadId: 't', turnId: 'u', itemId: 'call_1', startedAtMs: 1, environmentId: 'local', command, cwd: WORKSPACE_DIR, proposedExecpolicyAmendment: ['ls'], ...extra };
 }
 
 describe('unwrapShellCommand', () => {
@@ -106,8 +118,8 @@ describe('answerCodexRequest', () => {
     });
 
     it('declines a patch that Codex replaced while it was reviewed', async () => {
-        const reviewed: CodexThreadItem = { type: 'fileChange', id: 'call_2', status: 'inProgress', changes: [{ path: '/work/a.txt', kind: { type: 'add' }, diff: 'safe\n' }] };
-        const newer: CodexThreadItem = { type: 'fileChange', id: 'call_2', status: 'inProgress', changes: [{ path: '/work/a.txt', kind: { type: 'add' }, diff: 'other\n' }] };
+        const reviewed: CodexThreadItem = { type: 'fileChange', id: 'call_2', status: 'inProgress', changes: [{ path: join(WORKSPACE_DIR, 'a.txt'), kind: { type: 'add' }, diff: 'safe\n' }] };
+        const newer: CodexThreadItem = { type: 'fileChange', id: 'call_2', status: 'inProgress', changes: [{ path: join(WORKSPACE_DIR, 'a.txt'), kind: { type: 'add' }, diff: 'other\n' }] };
         let current = reviewed;
         const context = {
             ...makeContext(allow),
@@ -137,6 +149,91 @@ describe('answerCodexRequest', () => {
 
         expect(answers)
             .toEqual([{ result: { decision: 'decline' } }, { result: { decision: 'decline' } }, { result: { decision: 'decline' } }]);
+        expect(context.calls)
+            .toEqual([]);
+    });
+
+    it('declines a command that names the Codex home or a project .codex folder without a review', async () => {
+        const context = makeContext(allow);
+        const requests = [
+            commandRequest(`/bin/bash -lc 'cat ${join(CODEX_HOME, 'auth.json')}'`),
+            commandRequest(`/bin/bash -lc 'cat ${join(WORKSPACE_DIR, '.codex', 'config.toml')}'`),
+            commandRequest('cat .codex/config.toml'),
+            commandRequest('/bin/bash -lc \'cat config.toml\'', 'command', { cwd: join(WORKSPACE_DIR, '.codex') }),
+        ];
+
+        const answers = await Promise.all(requests.map(params => answerCodexRequest('item/commandExecution/requestApproval', params, context)));
+
+        expect(answers)
+            .toEqual([{ result: { decision: 'decline' } }, { result: { decision: 'decline' } }, { result: { decision: 'decline' } }, { result: { decision: 'decline' } }]);
+        // The floor runs before the review, so a command that names these folders never reaches it.
+        expect(context.calls)
+            .toEqual([]);
+    });
+
+    it('declines a file change inside the Codex home or a project .codex folder without a review', async () => {
+        const items: CodexFileChangeItem[] = [
+            { type: 'fileChange', id: 'home', status: 'inProgress', changes: [{ path: join(CODEX_HOME, 'config.toml'), kind: { type: 'update', move_path: null }, diff: '-a\n+b\n' }] },
+            { type: 'fileChange', id: 'move', status: 'inProgress', changes: [{ path: join(WORKSPACE_DIR, 'safe.txt'), kind: { type: 'update', move_path: join(CODEX_HOME, 'auth.json') }, diff: '-a\n+b\n' }] },
+            { type: 'fileChange', id: 'project', status: 'inProgress', changes: [{ path: join(WORKSPACE_DIR, '.codex', 'config.toml'), kind: { type: 'add' }, diff: 'x\n' }] },
+            { type: 'fileChange', id: 'relative', status: 'inProgress', changes: [{ path: 'src/../.codex/config.toml', kind: { type: 'add' }, diff: 'x\n' }] },
+        ];
+        const context = makeContext(allow, items);
+
+        const answers = await Promise.all(items.map(item => answerCodexRequest('item/fileChange/requestApproval', { itemId: item.id }, context)));
+
+        expect(answers)
+            .toEqual([{ result: { decision: 'decline' } }, { result: { decision: 'decline' } }, { result: { decision: 'decline' } }, { result: { decision: 'decline' } }]);
+        expect(context.calls)
+            .toEqual([]);
+    });
+
+    it.skipIf(process.platform === 'win32')('declines a file change that reaches the Codex home through a symlink', async () => {
+        const folder = mkdtempSync(join(tmpdir(), 'cloudbot-codex-link-'));
+        const workspace = join(folder, 'work');
+        const codexHome = join(folder, 'codex-home');
+
+        mkdirSync(workspace);
+        mkdirSync(codexHome);
+        symlinkSync(codexHome, join(workspace, 'link'), 'dir');
+
+        const item: CodexFileChangeItem = {
+            type: 'fileChange',
+            id: 'link',
+            status: 'inProgress',
+            changes: [{ path: join(workspace, 'link', 'config.toml'), kind: { type: 'add' }, diff: 'x\n' }],
+        };
+        const context = { ...makeContext(allow, [item]), workspaceDir: workspace, codexHome };
+
+        const answer = await answerCodexRequest('item/fileChange/requestApproval', { itemId: 'link' }, context);
+
+        expect(answer)
+            .toEqual({ result: { decision: 'decline' } });
+        expect(context.calls)
+            .toEqual([]);
+    });
+
+    it.skipIf(process.platform === 'win32')('declines a file change whose real path cannot be read', async () => {
+        const folder = mkdtempSync(join(tmpdir(), 'cloudbot-codex-link-'));
+        const workspace = join(folder, 'work');
+        const codexHome = join(folder, 'codex-home');
+
+        mkdirSync(workspace);
+        mkdirSync(codexHome);
+        symlinkSync(join(codexHome, 'missing.toml'), join(workspace, 'broken.toml'), 'file');
+
+        const item: CodexFileChangeItem = {
+            type: 'fileChange',
+            id: 'broken',
+            status: 'inProgress',
+            changes: [{ path: join(workspace, 'broken.toml'), kind: { type: 'add' }, diff: 'x\n' }],
+        };
+        const context = { ...makeContext(allow, [item]), workspaceDir: workspace, codexHome };
+
+        const answer = await answerCodexRequest('item/fileChange/requestApproval', { itemId: 'broken' }, context);
+
+        expect(answer)
+            .toEqual({ result: { decision: 'decline' } });
         expect(context.calls)
             .toEqual([]);
     });
