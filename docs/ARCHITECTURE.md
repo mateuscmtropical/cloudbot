@@ -79,8 +79,7 @@ Compose and the CI container mount separate named volumes at `/home/bot`,
 `/var/lib/cloudbot-workspaces` and `/var/lib/cloudbot-uploads`, alongside the private server data volume.
 They preserve login credentials, sessions and workspace memory in `CLAUDE.md`
 across container replacement. New volumes inherit the image's ownership and
-permissions. The CLI in the bot home volume updates itself and is not replaced
-by a new image, because the mounted volume hides the image's copy of `/home/bot`.
+permissions. The CLI is outside the bot home volume, so a new image replaces it.
 
 The server finds `drizzle/` relative to its install folder, so it starts
 from any working directory. The image health check calls `/api/health`.
