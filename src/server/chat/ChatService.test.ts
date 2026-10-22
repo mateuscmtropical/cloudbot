@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BOT_EXPORT_TOOL_FULL_NAME } from '../bots/createBotTemplateTools.ts';
+import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME } from '../bots/createBotTemplateTools.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildPng } from '../attachments/testImages.ts';
@@ -1060,7 +1060,7 @@ describe('ChatService', () => {
             .toEqual([creator.id]);
     });
 
-    it('allows only the profile tools up front without the approval gate', async () => {
+    it('allows only the profile tools and the export up front without the approval gate', async () => {
         const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
         const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:9' });
         const service = new ChatService({ botStore, messageStore, runner, dataDir, browser });
@@ -1071,7 +1071,7 @@ describe('ChatService', () => {
         await finished;
 
         expect(runner.receivedRequests[0]?.allowedTools)
-            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME]);
+            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME]);
     });
 
     it('adds the browser tools and the browser paragraph when the bot has a browser', async () => {

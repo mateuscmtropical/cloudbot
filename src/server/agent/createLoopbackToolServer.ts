@@ -68,6 +68,8 @@ interface CallState {
 interface TurnState {
     grant: LoopbackTurnGrant;
     calls: Map<string, CallState>;
+    // The calls the owner denied in this turn, by tool and input. The same call again is refused without a second card.
+    refusedCalls: Set<string>;
     folder: string;
     fileMode: number;
     isReleased: boolean;
@@ -78,6 +80,8 @@ interface TurnState {
 const BUILTIN_TOOLS = ['Bash', 'Edit', 'Glob', 'Grep', 'NotebookEdit', 'Read', 'Task', 'WebFetch', 'WebSearch', 'Write'];
 // The CLI calls the Task tool Agent in its prompt call, so the alias is asked as well and matched to Task.
 const TOOL_NAME_ALIASES: Record<string, string> = { Agent: 'Task' };
+// Built-in tools whose description argument is only a label for the person.
+const LABELLED_TOOLS = ['Bash', 'Task'];
 // The permission prompt tool. The CLI calls it for each ask-rule call. The model never sees it (--disallowedTools).
 const APPROVE_TOOL_NAME = 'approve';
 const AGENT_TURN_ROOT = '/var/lib/cloudbot-turns';
@@ -97,6 +101,7 @@ const REVIEW_FAILED_REASON = 'This action could not be reviewed, so it was not r
 const REPEATED_DECISION_REASON = 'This call was already decided, so it was not run again.';
 const APPROVE_AS_TOOL_REASON = 'The permission tool is not a tool for the model.';
 const NOT_APPROVED_TEXT = 'The owner has not approved this call, so it was not run.';
+const REPEATED_REFUSAL_REASON = 'The owner already denied this same action in this turn, so it was not asked again. Do not try it again. Tell the owner what you wanted to do and why.';
 
 const stringSchema = z.string();
 const numberSchema = z.number();
@@ -187,6 +192,22 @@ function inputKeyOf(input: unknown): string {
     return canonicalJson(normalized);
 }
 
+// The description of a Bash or Task call only labels it for the person, so a retry with new words is still the same call.
+// An MCP tool may have a real description argument, such as the bot's profile, so its input is kept whole.
+function refusalKeyOf(toolName: string, input: unknown): string {
+    const isLabelled = LABELLED_TOOLS.includes(toolName) && input !== null && typeof input === 'object' && !Array.isArray(input);
+
+    if (!isLabelled) {
+        return `${toolName}\n${inputKeyOf(input)}`;
+    }
+
+    const entries = Object.entries(input)
+        .filter(([key]) => key !== 'description');
+    const unlabelled = Object.fromEntries(entries);
+
+    return `${toolName}\n${inputKeyOf(unlabelled)}`;
+}
+
 function normalizeToolName(name: string): string {
     return TOOL_NAME_ALIASES[name] ?? name;
 }
@@ -265,10 +286,22 @@ async function decidePrompt(turn: TurnState, args: { tool_name: string; input: u
         return refuse(BLOCKED_REASON);
     }
 
+    const refusalKey = refusalKeyOf(toolName, args.input);
+
+    // A model may repeat a call the owner just denied. A second card for it would only ask the owner again.
+    if (turn.refusedCalls.has(refusalKey)) {
+        return refuse(REPEATED_REFUSAL_REASON);
+    }
+
     const decision = await decideCall(turn.grant.reviewToolCall, { toolName, input: args.input }, turn.controller.signal);
 
     if (isReleasedNow(turn)) {
         return refuse(TURN_ENDED_REASON);
+    }
+
+    // Only the owner's Deny is kept. Other refusals may depend on a state that changes, such as a file the bot fixes next.
+    if (!decision.isAllowed && decision.isOwnerDenial === true) {
+        turn.refusedCalls.add(refusalKey);
     }
 
     call.allowed = decision.isAllowed;
@@ -550,7 +583,7 @@ async function startLoopbackToolServer(serverName: string, options: LoopbackServ
             const folder = mkdtempSync(folderPrefix);
             const mcpConfigPath = join(folder, 'mcp.json');
             const settingsPath = join(folder, 'settings.json');
-            const state: TurnState = { grant, calls: new Map(), folder, fileMode, isReleased: false, controller: new AbortController() };
+            const state: TurnState = { grant, calls: new Map(), refusedCalls: new Set(), folder, fileMode, isReleased: false, controller: new AbortController() };
             const headers = { Authorization: `Bearer ${token}` };
             const loopbackServer = { [serverName]: { type: 'http', url: `${baseUrl}/mcp`, headers } };
             const remoteNames = Object.keys(grant.remoteServers ?? {});

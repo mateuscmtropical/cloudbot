@@ -167,6 +167,81 @@ describe('loopback tool server', () => {
         turn.release();
     });
 
+    it('refuses a repeat of a denied call in the same turn without a second review, even with a new description', async () => {
+        const review = vi.fn((): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: false, reason: 'The owner denied this action.', isOwnerDenial: true }));
+        const turn = server.grantTurn({ tools: [], reviewToolCall: review });
+
+        turn.noteToolUse('toolu_first', 'Bash', { command: 'rm -rf build', description: 'Clean the build' });
+        const first = await postMcp(turn, promptCall({ tool_name: 'Bash', input: { command: 'rm -rf build', description: 'Clean the build' }, tool_use_id: 'toolu_first' }));
+
+        turn.noteToolUse('toolu_second', 'Bash', { command: 'rm -rf build', description: 'Remove the build folder' });
+        const second = await postMcp(turn, promptCall({ tool_name: 'Bash', input: { command: 'rm -rf build', description: 'Remove the build folder' }, tool_use_id: 'toolu_second' }));
+
+        expect(resultText(first.json))
+            .toEqual({ behavior: 'deny', message: 'The owner denied this action.' });
+        expect(resultText(second.json))
+            .toEqual({ behavior: 'deny', message: 'The owner already denied this same action in this turn, so it was not asked again. Do not try it again. Tell the owner what you wanted to do and why.' });
+        expect(review)
+            .toHaveBeenCalledTimes(1);
+        turn.release();
+    });
+
+    it('reviews a different command after a denial, and the same command again in a new turn', async () => {
+        const review = vi.fn((): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: false, reason: 'The owner denied this action.', isOwnerDenial: true }));
+        const firstTurn = server.grantTurn({ tools: [], reviewToolCall: review });
+
+        firstTurn.noteToolUse('toolu_first', 'Bash', { command: 'rm -rf build' });
+        await postMcp(firstTurn, promptCall({ tool_name: 'Bash', input: { command: 'rm -rf build' }, tool_use_id: 'toolu_first' }));
+        firstTurn.noteToolUse('toolu_other', 'Bash', { command: 'ls build' });
+        await postMcp(firstTurn, promptCall({ tool_name: 'Bash', input: { command: 'ls build' }, tool_use_id: 'toolu_other' }));
+        firstTurn.release();
+        const nextTurn = server.grantTurn({ tools: [], reviewToolCall: review });
+
+        nextTurn.noteToolUse('toolu_next', 'Bash', { command: 'rm -rf build' });
+        await postMcp(nextTurn, promptCall({ tool_name: 'Bash', input: { command: 'rm -rf build' }, tool_use_id: 'toolu_next' }));
+
+        expect(review)
+            .toHaveBeenCalledTimes(3);
+        nextTurn.release();
+    });
+
+    it('keeps the description of a tool of the bot as part of the call', async () => {
+        const review = vi.fn((): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: false, reason: 'The owner denied this action.', isOwnerDenial: true }));
+        const turn = server.grantTurn({ tools: [], reviewToolCall: review });
+        const toolName = `mcp__${SERVER_NAME}__update_profile`;
+
+        turn.noteToolUse('toolu_first', toolName, { description: 'Writes reports' });
+        await postMcp(turn, promptCall({ tool_name: toolName, input: { description: 'Writes reports' }, tool_use_id: 'toolu_first' }));
+        turn.noteToolUse('toolu_second', toolName, { description: 'Writes short reports' });
+        await postMcp(turn, promptCall({ tool_name: toolName, input: { description: 'Writes short reports' }, tool_use_id: 'toolu_second' }));
+
+        expect(review)
+            .toHaveBeenCalledTimes(2);
+        turn.release();
+    });
+
+    it('reviews a call again after a refusal that did not come from the owner', async () => {
+        const review = vi.fn()
+            .mockRejectedValueOnce(new Error('reviewer down'))
+            .mockResolvedValueOnce({ isAllowed: false, reason: 'The template file could not be read.' })
+            .mockResolvedValueOnce({ isAllowed: true });
+        const turn = server.grantTurn({ tools: [], reviewToolCall: review });
+        const answers = await ['toolu_first', 'toolu_second', 'toolu_third'].reduce<Promise<unknown[]>>(async (previous, toolUseId) => {
+            const collected = await previous;
+
+            turn.noteToolUse(toolUseId, 'Bash', { command: 'ls' });
+            const response = await postMcp(turn, promptCall({ tool_name: 'Bash', input: { command: 'ls' }, tool_use_id: toolUseId }));
+
+            return [...collected, resultText(response.json)];
+        }, Promise.resolve([]));
+
+        expect(answers)
+            .toMatchObject([{ behavior: 'deny' }, { behavior: 'deny', message: 'The template file could not be read.' }, { behavior: 'allow' }]);
+        expect(review)
+            .toHaveBeenCalledTimes(3);
+        turn.release();
+    });
+
     it('decides a tool use once when two prompts for it arrive together', async () => {
         const review = vi.fn(async (): Promise<ToolCallDecision> => {
             await new Promise(resolve => setTimeout(resolve, 30));

@@ -47,6 +47,7 @@ const APPROVAL_OPTIONS = [
     { id: 'deny', label: 'Deny' },
 ];
 const REVIEW_FAILED_SUMMARY = 'Run a tool call that could not be reviewed.';
+const OWNER_DENIED_REASON = 'The owner denied this action, so it was not run. Do not try it again or another way. Tell the owner it was not done.';
 
 // A function call keeps TypeScript from narrowing the flag, which can change during an await.
 function isStopped(signal: AbortSignal): boolean {
@@ -197,6 +198,11 @@ class ApprovalGate {
         // An Approve that lands while the turn stops must not let the call run.
         if (outcome === 'approve' && !isStopped(signal)) {
             return { isAllowed: true };
+        }
+
+        // The model reads this reason. A plain "not approved" led it to ask again with the same call.
+        if (outcome === 'deny') {
+            return { isAllowed: false, reason: OWNER_DENIED_REASON, isOwnerDenial: true };
         }
 
         return { isAllowed: false, reason: 'The owner did not approve this action.' };

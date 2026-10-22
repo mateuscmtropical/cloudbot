@@ -30,7 +30,8 @@ interface ToolCall {
 }
 
 // isAllowed false refuses the call. The reason goes to the model.
-type ToolCallDecision = { isAllowed: true } | { isAllowed: false; reason: string };
+// isOwnerDenial marks the owner's own Deny. Only that refusal holds for the same call again in the turn.
+type ToolCallDecision = { isAllowed: true } | { isAllowed: false; reason: string; isOwnerDenial?: boolean };
 
 interface TurnRequest {
     botId: string;

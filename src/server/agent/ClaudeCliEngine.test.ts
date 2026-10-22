@@ -1,5 +1,6 @@
+import { spawn as spawnProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -31,6 +32,27 @@ interface FakeScript {
     spawnError?: Error;
     // A hanging child never answers on its own. Only a stop ends it.
     hangs?: boolean;
+}
+
+// Signal 0 checks that the process exists without touching it. A killed process whose parent already exited may wait as a
+// zombie until init reaps it, and some containers never do, so on Linux a zombie counts as gone.
+function isProcessAlive(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+    } catch {
+        return false;
+    }
+
+    const statPath = `/proc/${String(pid)}/stat`;
+
+    if (!existsSync(statPath)) {
+        return true;
+    }
+
+    const stat = readFileSync(statPath, 'utf8');
+    const state = stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3);
+
+    return state !== 'Z';
 }
 
 function fixture(name: string): string {
@@ -393,8 +415,11 @@ describe('ClaudeCliEngine process handling', () => {
 
         const eventsPromise = collect(engine.runTurn(makeRequest({ abortSignal: controller.signal })));
 
-        // The fake child is created on the first tick, so abort after it exists and has listeners.
-        await new Promise(resolve => setImmediate(resolve));
+        // The engine reads the workspace memory before it spawns, so wait until the child exists, then abort.
+        await vi.waitFor(() => {
+            expect(children)
+                .toHaveLength(1);
+        });
         const child = children[0];
 
         // The fake CLI answers the interrupt by ending its output and exiting, as the real one does.
@@ -424,6 +449,61 @@ describe('ClaudeCliEngine process handling', () => {
         expect(released())
             .toBe(1);
     });
+
+    // A real process tree: a stand-in CLI starts a long command as its approved tool, then exits on the interrupt and leaves
+    // the command running, as a CLI may do. The stop must still end that command.
+    it.skipIf(process.platform === 'win32')('ends the turn on a stop during a running approved command, and the command is gone', async () => {
+        const { loopback, released } = makeLoopback();
+        const controller = new AbortController();
+        const folder = mkdtempSync(join(tmpdir(), 'cloudbot-stop-test-'));
+        const pidFile = join(folder, 'tool.pid');
+        const fakeCli = [
+            'const { spawn } = require("node:child_process");',
+            'const { writeFileSync } = require("node:fs");',
+            'const { createInterface } = require("node:readline");',
+            'const say = (message) => process.stdout.write(JSON.stringify(message) + "\\n");',
+            'createInterface({ input: process.stdin }).on("line", (line) => {',
+            '    const message = JSON.parse(line);',
+            '    if (message.type === "user") {',
+            '        const tool = spawn("sleep", ["600"], { stdio: "ignore" });',
+            '        writeFileSync(process.env.FAKE_TOOL_PID_FILE, String(tool.pid));',
+            '        say({ type: "system", subtype: "init", session_id: "s-1", tools: [], mcp_servers: [] });',
+            '        say({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu_run", name: "Bash", input: { command: "sleep 600" } }] }, session_id: "s-1" });',
+            '    }',
+            '    if (message.type === "control_request") {',
+            '        say({ type: "result", subtype: "error_during_execution", is_error: true, session_id: "s-1" });',
+            '        process.exit(0);',
+            '    }',
+            '});',
+        ].join('\n');
+        const realSpawn: SpawnFunction = (_command, args, options) => spawnProcess(process.execPath, ['-e', fakeCli, '--', ...args], options);
+        const engine = new ClaudeCliEngine({ loopback, spawnFunction: realSpawn, environment: { PATH: process.env.PATH ?? '', FAKE_TOOL_PID_FILE: pidFile } });
+        const seen: AgentEvent[] = [];
+
+        // The stop comes once the tool call is on screen and the command runs.
+        // The events are an async iterator, so `for await` is the only loop form that fits.
+        for await (const event of engine.runTurn(makeRequest({ abortSignal: controller.signal }))) {
+            seen.push(event);
+            if (event.type === 'tool_started') {
+                await vi.waitFor(() => {
+                    expect(existsSync(pidFile))
+                        .toBe(true);
+                });
+                controller.abort();
+            }
+        }
+
+        const toolPid = Number(readFileSync(pidFile, 'utf8'));
+
+        await vi.waitFor(() => {
+            expect(isProcessAlive(toolPid))
+                .toBe(false);
+        });
+        expect(seen.filter(event => event.type === 'turn_error'))
+            .toEqual([]);
+        expect(released())
+            .toBe(1);
+    }, 15000);
 
     it('kills the process group after a clean exit on POSIX, and sends nothing on Windows once the CLI exited', async () => {
         const { loopback } = makeLoopback();
