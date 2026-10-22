@@ -1,4 +1,5 @@
 import type { MascotColorName, MascotShape } from './mascot.ts';
+import type { TaskCard } from './taskTypes.ts';
 
 type ChatRole = 'user' | 'assistant' | 'system';
 
@@ -83,7 +84,15 @@ interface ScreenLinkBody {
     text: string;
 }
 
-type MessageBody = TextBody | ChoiceBody | LinkBody | CodeFieldBody | SecureFormBody | FileBody | ToolActivityBody | ScreenLinkBody;
+// The task board as it was when the bot posted it. It does not change after that.
+interface TasksBody {
+    kind: 'tasks';
+    tasks: TaskCard[];
+    // Tasks that did not fit on the card.
+    hiddenCount: number;
+}
+
+type MessageBody = TextBody | ChoiceBody | LinkBody | CodeFieldBody | SecureFormBody | FileBody | ToolActivityBody | ScreenLinkBody | TasksBody;
 
 interface ChatMessage {
     id: string;
@@ -186,6 +195,7 @@ export type {
     MessageBody,
     ChatMessageEvent,
     SecureFormBody,
+    TasksBody,
     TextBody,
     ToolActivityBody,
     ToolStatus,

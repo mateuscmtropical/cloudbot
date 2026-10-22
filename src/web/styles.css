@@ -1044,6 +1044,40 @@ svg {
     .channel-roster-pill {
         max-width: calc(100% - 24px);
     }
+/* The task board card in the chat. Two columns fit a phone. */
+.task-board {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.task-column h3 {
+    margin: 0 0 4px;
+    font-size: 0.85rem;
+}
+
+.task-card {
+    border: 1px solid currentColor;
+    border-radius: 8px;
+    padding: 6px 8px;
+    margin-bottom: 6px;
+    overflow-wrap: anywhere;
+}
+
+.task-card p {
+    margin: 0;
+}
+
+.task-more {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 0.85rem;
+    opacity: 0.8;
+}
+
+.task-reason {
+    font-size: 0.8rem;
+    opacity: 0.8;
 }
 
 /* Voice input (#122). The mic shows only where the browser has speech recognition. Listening is a steady fill, with no animation. */

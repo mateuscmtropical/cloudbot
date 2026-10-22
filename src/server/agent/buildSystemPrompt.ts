@@ -22,6 +22,7 @@ interface OwnerRule {
 interface SystemPromptOptions {
     hasBrowser?: boolean;
     hasRoutines?: boolean;
+    hasTasks?: boolean;
     hasModels?: boolean;
     hasLimits?: boolean;
     hasWebhooks?: boolean;
@@ -51,6 +52,8 @@ const WATCHES_PARAGRAPH = 'You can watch web pages for the owner. watch_create c
 const GITHUB_PARAGRAPH = 'You can work on GitHub repositories with git and gh in your shell. They already go through CloudBot, so never set a token, a credential helper or GH_HOST yourself. If the owner has not given a GitHub token yet, ask for it with request_secret, named GITHUB_TOKEN, for the site https://github.com. Clone with https://github.com/owner/repo addresses. Inside a clone, pass --repo owner/repo to every gh command. A push, opening a pull request, a review, a comment and any other change on GitHub wait for the owner to approve it. If the owner denies it, say so and do not try another way.';
 
 const HANDOFF_PARAGRAPH = 'You can send a message or a task to another bot of the owner with bot_send, by its name. Its reply comes back to this chat as a message. The other bot decides under its own rules. Use it only when the owner asks for that bot, or when the task clearly belongs to it.';
+
+const TASKS_PARAGRAPH = 'You keep a task board for the owner with task_add, task_move and task_board. Add a task only when the owner asks you to track work. Moving a task to Blocked needs a reason, and the owner is told in the chat. When the owner asks to see the tasks, call task_board, which shows them in the chat.';
 
 const ROUTINES_PARAGRAPH = 'You can keep routines: prompts that are sent to you on a schedule. routine_create, routine_list, routine_delete and routine_set_enabled manage them. Create a routine only when the owner asks for something to repeat. All times are UTC, so say so when you confirm a time.';
 
@@ -85,6 +88,7 @@ function buildSystemPrompt(profile: BotProfile, options: SystemPromptOptions = {
     const memoryParagraph = 'Your memory lives in CLAUDE.md in your workspace. Claude Code reads it at the start of each conversation. Write the owner\'s preferences there so you remember them next time.';
     const browserParagraph = options.hasBrowser === true ? BROWSER_PARAGRAPH : NO_BROWSER_PARAGRAPH;
     const routinesParagraph = options.hasRoutines === true ? ROUTINES_PARAGRAPH : '';
+    const tasksParagraph = options.hasTasks === true ? TASKS_PARAGRAPH : '';
     const modelsParagraph = options.hasModels === true ? MODELS_PARAGRAPH : '';
     const limitsParagraph = options.hasLimits === true ? LIMITS_PARAGRAPH : '';
     const webhooksParagraph = options.hasWebhooks === true ? WEBHOOKS_PARAGRAPH : '';
@@ -94,7 +98,7 @@ function buildSystemPrompt(profile: BotProfile, options: SystemPromptOptions = {
     const helperParagraph = (options.helpers ?? []).map(helper => HELPER_LINES[helper])
         .join('\n');
     const rulesParagraph = buildRulesParagraph(options.ownerRules ?? []);
-    const paragraphs = [identityParagraph, descriptionParagraph, cloudBotParagraph, browserParagraph, routinesParagraph, modelsParagraph, limitsParagraph, webhooksParagraph, watchesParagraph, githubParagraph, handoffParagraph, helperParagraph, rulesParagraph, memoryParagraph];
+    const paragraphs = [identityParagraph, descriptionParagraph, cloudBotParagraph, browserParagraph, routinesParagraph, tasksParagraph, modelsParagraph, limitsParagraph, webhooksParagraph, watchesParagraph, githubParagraph, handoffParagraph, helperParagraph, rulesParagraph, memoryParagraph];
 
     return paragraphs
         .filter(paragraph => paragraph.trim() !== '')

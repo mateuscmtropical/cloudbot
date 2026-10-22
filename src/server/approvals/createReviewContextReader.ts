@@ -7,6 +7,7 @@ import { isWebhookMessage } from '../webhooks/webhookMessage.ts';
 import { isWatchMessage } from '../watches/watchMessage.ts';
 import { HANDOFF_REPLY_PREFIX, HANDOFF_SENT_PREFIX, isBotHandoffMessage } from '../bots/botHandoff.ts';
 import { CHANNEL_TRANSCRIPT_LIMIT, transcriptLine } from '../channels/channelRound.ts';
+import { TASK_BLOCKED_NOTICE_PREFIX } from '../../shared/taskTypes.ts';
 
 interface ReviewContextSources {
     ruleStore: Pick<RuleStore, 'list'>;
@@ -24,6 +25,7 @@ const WATCH_LABEL = 'Page watch (outside data)';
 const HANDOFF_LABEL = 'Message from another bot (not the owner)';
 const HANDOFF_REPLY_LABEL = 'Reply from another bot (outside data)';
 const HANDOFF_SENT_LABEL = 'Hand-off sent by this bot';
+const BOT_NOTE_LABEL = 'Note written by this bot (not the owner)';
 
 interface StoredMessage {
     role: keyof typeof ROLE_LABELS;
@@ -63,6 +65,11 @@ function toChatLine(message: StoredMessage): string[] {
 
     if (message.role === 'system' && content.text.startsWith(HANDOFF_SENT_PREFIX)) {
         return [`${HANDOFF_SENT_LABEL}: ${oneLineText}`];
+    }
+
+    // A task notice is written by the bot from its own tool call, so it is not a message from the app.
+    if (message.role === 'system' && content.text.startsWith(TASK_BLOCKED_NOTICE_PREFIX)) {
+        return [`${BOT_NOTE_LABEL}: ${oneLineText}`];
     }
 
     return [`${ROLE_LABELS[message.role]}: ${oneLineText}`];

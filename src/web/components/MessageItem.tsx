@@ -2,6 +2,7 @@ import { memo } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
+import { TASK_LABELS, TASK_STATUSES } from '../../shared/taskTypes.ts';
 import { formatFileSize } from '../formatFileSize.ts';
 import { MESSAGE_MASCOT_SIZE } from '../messageMascot.ts';
 import { renderMarkdown } from '../markdown.ts';
@@ -78,6 +79,27 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
                 <div className="setup-card">
                     <p>{body.text}</p>
                     <LinkCard label={body.label} url={body.url} />
+                </div>
+            );
+        case 'tasks':
+            return (
+                <div className="setup-card task-board">
+                    {TASK_STATUSES.map((status) => {
+                        const columnTasks = body.tasks.filter(task => task.status === status);
+
+                        return (
+                            <section key={status} className="task-column">
+                                <h3>{TASK_LABELS[status]}</h3>
+                                {columnTasks.map(task => (
+                                    <div key={task.id} className="task-card">
+                                        <p>{task.title}</p>
+                                        {task.blockedReason === null ? null : <p className="task-reason">{task.blockedReason}</p>}
+                                    </div>
+                                ))}
+                            </section>
+                        );
+                    })}
+                    {body.hiddenCount > 0 ? <p className="task-more">{'and ' + String(body.hiddenCount) + ' more'}</p> : null}
                 </div>
             );
         case 'screenLink':

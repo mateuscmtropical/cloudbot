@@ -106,6 +106,13 @@
       "when": 1792627117595,
       "tag": "0014_channels",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1792628512046,
+      "tag": "0015_task_board",
+      "breakpoints": true
     }
   ]
 }
