@@ -20,6 +20,8 @@ import type { ChannelStore } from './store/ChannelStore.ts';
 import { createScreenRoutes } from './desktop/createScreenRoutes.ts';
 import type { ScreenViewName } from '../shared/chatTypes.ts';
 import type { ScreenHolder } from './desktop/ScreenHolder.ts';
+import { createPushRoutes } from './push/createPushRoutes.ts';
+import type { PushRoutesOptions } from './push/createPushRoutes.ts';
 import { createRuleRoutes } from './rules/createRuleRoutes.ts';
 import { createAppRoutes } from './apps/createAppRoutes.ts';
 import type { ConnectedApps } from './apps/ConnectedApps.ts';
@@ -71,6 +73,8 @@ interface AppOptions {
     screen?: ScreenHolder;
     // The live view of the screen. Docker uses VNC, and local mode uses the browser's frames.
     screenView?: ScreenViewName;
+    // The browsers that turned notifications on, and the public key they subscribe with. Without it the push routes are not served.
+    push?: PushRoutesOptions;
 }
 
 const DEFAULT_WEB_ROOT = 'dist/web';
@@ -216,6 +220,12 @@ function createApp(options: AppOptions): Hono {
         const limitRoutes = createLimitRoutes({ limitStore: options.limitStore, hasBot: botId => chatService.hasBot(botId) });
 
         app.route('/', limitRoutes);
+    }
+
+    if (options.push !== undefined) {
+        const pushRoutes = createPushRoutes(options.push);
+
+        app.route('/', pushRoutes);
     }
 
     if (options.screen !== undefined) {

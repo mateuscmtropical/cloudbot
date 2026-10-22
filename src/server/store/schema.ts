@@ -399,5 +399,22 @@ const channelMessages = sqliteTable('channel_messages', {
         .on(table.channelId),
 ]);
 
-export { botLimits, botModels, botRules, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, integrationRuns, integrations, messages, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks };
+// One row for each browser that turned notifications on. The endpoint is the push service address of that browser.
+const pushSubscriptions = sqliteTable('push_subscriptions', {
+    id: text('id')
+        .primaryKey(),
+    endpoint: text('endpoint')
+        .notNull(),
+    p256dh: text('p256dh')
+        .notNull(),
+    auth: text('auth')
+        .notNull(),
+    createdAt: integer('created_at')
+        .notNull(),
+}, table => [
+    uniqueIndex('push_subscriptions_endpoint')
+        .on(table.endpoint),
+]);
+
+export { botLimits, botModels, botRules, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, integrationRuns, integrations, messages, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks };
 export type { StoredUploadRecord };

@@ -15,6 +15,9 @@ import { mergeLoadedUploads } from './attachmentChips.ts';
 import { applyTabIcon } from './tabIcon.ts';
 import { MESSAGE_PAGE_SIZE, mergeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
 import { withoutToolRows } from './thinkingBubble.ts';
+import { describePushResult, disablePushNotifications, enablePushNotifications, readNotificationTarget, useNotificationOpen } from './pushClient.ts';
+import type { NotificationTarget } from './pushClient.ts';
+import { DISABLE_NOTIFICATIONS_CHOICE_ID, ENABLE_NOTIFICATIONS_CHOICE_ID } from '../shared/pushTypes.ts';
 
 interface DraftState {
     botId: string;
@@ -117,6 +120,8 @@ function App(): ReactElement {
     const [attachmentsByBot, setAttachmentsByBot] = useState<Record<string, DraftAttachment[]>>({});
     // A reply arrived while the tab was hidden. The tab icon shows a dot until the owner looks at the tab again.
     const [hasUnreadReply, setHasUnreadReply] = useState(false);
+    // The message a tapped notification was about. The conversation scrolls to it once, then clears it.
+    const [focusMessageId, setFocusMessageId] = useState<string | undefined>(undefined);
 
     useEffect(() => {
         if (finishedTurn === undefined) {
@@ -196,10 +201,16 @@ function App(): ReactElement {
     useEffect(() => {
         listBots()
             .then((loadedBots) => {
-                const firstBotId = loadedBots[0]?.id;
+                // A notification that opened a new window names its bot in the address.
+                const target = readNotificationTarget(window.location.search);
+                const targetBot = loadedBots.find(bot => bot.id === target?.botId);
 
                 setBots(loadedBots);
-                setSelectedBotId(firstBotId);
+                setSelectedBotId(targetBot?.id ?? loadedBots[0]?.id);
+
+                if (targetBot !== undefined) {
+                    setFocusMessageId(target?.messageId);
+                }
             })
             .catch(() => {
                 setErrorText('Could not load your bots.');
@@ -261,6 +272,25 @@ function App(): ReactElement {
             window.clearInterval(timer);
         };
     }, [selectedChannelId, isChannelRoundActive]);
+
+    // The address names the open bot. The service worker reads it, so a tab that shows a bot gets no notification about it.
+    // A tab that shows a channel shows no bot chat, so it names none.
+    useEffect(() => {
+        if (selectedBotId === undefined) {
+            return;
+        }
+
+        const address = new URL(window.location.href);
+
+        if (selectedChannelId === undefined) {
+            address.searchParams.set('bot', selectedBotId);
+        } else {
+            address.searchParams.delete('bot');
+        }
+
+        address.searchParams.delete('message');
+        window.history.replaceState(null, '', address);
+    }, [selectedBotId, selectedChannelId]);
 
     useEffect(() => {
         if (selectedBotId === undefined) {
@@ -662,6 +692,18 @@ function App(): ReactElement {
             });
     }
 
+    // A tapped notification brings the app to the front, and the service worker says which bot and message to show.
+    function handleNotificationOpen(target: NotificationTarget): void {
+        if (!bots.some(bot => bot.id === target.botId)) {
+            return;
+        }
+
+        handleSelectBot(target.botId);
+        setFocusMessageId(target.messageId);
+    }
+
+    useNotificationOpen(handleNotificationOpen);
+
     const nextAttachmentNumber = useRef(0);
 
     function updateAttachments(botId: string, update: (chips: DraftAttachment[]) => DraftAttachment[]): void {
@@ -784,6 +826,61 @@ function App(): ReactElement {
         onChoose: (messageId, choiceId) => {
             if (selectedBotId === undefined) {
                 return Promise.resolve();
+            }
+
+            const card = messagesRef.current.find(message => message.id === messageId);
+            const isNotificationTap = card?.body.kind === 'choice' && card.body.isNotificationOptIn === true && choiceId === ENABLE_NOTIFICATIONS_CHOICE_ID;
+
+            const isNotificationOffTap = card?.body.kind === 'choice' && card.body.isNotificationOptOut === true && choiceId === DISABLE_NOTIFICATIONS_CHOICE_ID;
+
+            if (isNotificationOffTap) {
+                // This browser forgets its subscription first. The card closes only when that worked.
+                const botId = selectedBotId;
+                const disablePromise = disablePushNotifications();
+
+                return disablePromise
+                    .then(() => {
+                        setErrorText(undefined);
+                        const choicePromise = submitChoice(botId, messageId, choiceId);
+
+                        showMessageResult(choicePromise);
+
+                        return undefined;
+                    })
+                    .catch((error: unknown) => {
+                        const serverMessage = error instanceof RequestFailedError ? error.serverMessage : undefined;
+
+                        setErrorText(serverMessage ?? 'Could not turn off notifications. Try again.');
+                    });
+            }
+
+            if (isNotificationTap) {
+                // The browser asks for permission only inside the tap, so this starts now. The card closes only when it worked.
+                const botId = selectedBotId;
+                const enablePromise = enablePushNotifications();
+
+                return enablePromise
+                    .then((result) => {
+                        if (result !== 'enabled') {
+                            const problemText = describePushResult(result);
+
+                            setErrorText(problemText);
+
+                            return undefined;
+                        }
+
+                        setErrorText(undefined);
+                        const choicePromise = submitChoice(botId, messageId, choiceId);
+
+                        showMessageResult(choicePromise);
+
+                        return undefined;
+                    })
+                    .catch((error: unknown) => {
+                        const serverMessage = error instanceof RequestFailedError ? error.serverMessage : undefined;
+
+                        setErrorText(serverMessage ?? 'Could not turn on notifications. Try again.');
+                    });
             }
 
             const choicePromise = submitChoice(selectedBotId, messageId, choiceId);
@@ -909,6 +1006,10 @@ function App(): ReactElement {
                                     setIsBotListOpen(true);
                                 }}
                                 screenRequestId={screenRequestId}
+                                focusMessageId={focusMessageId}
+                                onFocusHandled={() => {
+                                    setFocusMessageId(undefined);
+                                }}
                                 webhookUrls={botWebhookUrls}
                                 onHideWebhookUrl={(hidden) => {
                                     setWebhookUrls(current => current.filter(notice => notice !== hidden));

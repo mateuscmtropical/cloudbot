@@ -5,6 +5,7 @@ import type { BotWatch } from '../shared/watchTypes.ts';
 import type { BotWebhook, CreatedBotWebhook } from '../shared/webhookTypes.ts';
 import type { TurnLimits } from '../shared/limitTypes.ts';
 import type { ChannelDetail, ChannelPostView, ChannelSummary } from '../shared/channelTypes.ts';
+import type { PushKeyResponse, PushSubscriptionInput, PushUnsubscribeInput } from '../shared/pushTypes.ts';
 
 const API_ROOT = '/api';
 
@@ -427,6 +428,36 @@ async function removeConnectedApp(appId: string): Promise<void> {
     }
 }
 
+// The public key of the server. The browser passes it to its push service when it subscribes.
+function getPushKey(): Promise<PushKeyResponse> {
+    return requestJson<PushKeyResponse>(`${API_ROOT}/push/key`, {});
+}
+
+// Saves the subscription of this browser. A refusal carries the server's reason, such as an unknown push service.
+async function savePushSubscription(subscription: PushSubscriptionInput): Promise<void> {
+    const path = `${API_ROOT}/push/subscriptions`;
+    const init: RequestInit = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subscription) };
+    const response = await fetch(path, init);
+
+    if (!response.ok) {
+        const serverMessage = await readServerMessage(response);
+
+        throw new RequestFailedError(path, response.status, serverMessage);
+    }
+}
+// Removes the subscription of this browser. The server answers the same for one it does not know.
+async function removePushSubscription(endpoint: string): Promise<void> {
+    const path = `${API_ROOT}/push/subscriptions`;
+    const body: PushUnsubscribeInput = { endpoint };
+    const init: RequestInit = { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+    const response = await fetch(path, init);
+
+    if (!response.ok) {
+        const serverMessage = await readServerMessage(response);
+
+        throw new RequestFailedError(path, response.status, serverMessage);
+    }
+}
 export type { EffortLevel, LimitBound, LimitsResponse, MessagePageRequest, ModelSettings, ModelSettingsResponse, NewRuleRequest };
 export {
     RequestFailedError,
@@ -467,4 +498,7 @@ export {
     saveModelSettings,
     getLimits,
     saveLimits,
+    getPushKey,
+    savePushSubscription,
+    removePushSubscription,
 };

@@ -47,6 +47,10 @@ import type { WebhookCreation } from '../webhooks/createWebhookTools.ts';
 import type { DeliveryMemory, WebhookRefusalLog } from '../webhooks/webhookMemory.ts';
 import { WATCH_TOOL_FULL_NAMES, createWatchTools } from '../watches/createWatchTools.ts';
 import type { WatchStore } from '../store/WatchStore.ts';
+import { NOTIFICATIONS_DISABLE_TOOL_FULL_NAME, NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, createNotificationsDisableTool, createNotificationsEnableTool } from '../push/createNotificationTools.ts';
+import type { OwnerNotice } from '../push/PushNotifier.ts';
+import { DISABLE_NOTIFICATIONS_CHOICE_ID, ENABLE_NOTIFICATIONS_CHOICE_ID, KEEP_NOTIFICATIONS_CHOICE_ID, LATER_NOTIFICATIONS_CHOICE_ID } from '../../shared/pushTypes.ts';
+import type { PushNoticeKind } from '../../shared/pushTypes.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
 import type { ConnectedApps } from '../apps/ConnectedApps.ts';
 import { APP_TOOL_FULL_NAMES, createAppTools } from '../apps/createAppTools.ts';
@@ -199,6 +203,8 @@ interface ChatServiceOptions {
     githubEnvironment?: ((botId: string) => Promise<Record<string, string>>) | undefined;
     // Stops the GitHub listener of a deleted bot. Without it the listener stays until the server stops.
     forgetGithub?: ((botId: string) => Promise<void>) | undefined;
+    // Sends a push notification to the owner's browsers. Without it the bot has no notification tool and nothing is sent.
+    notifyOwner?: ((notice: OwnerNotice) => Promise<void>) | undefined;
 }
 
 interface SharedFileDownload {
@@ -311,6 +317,8 @@ const USAGE_LIMIT_MIN_WAIT_MS = 60 * 1000;
 const USAGE_LIMIT_MAX_WAIT_MS = 8 * 24 * 60 * 60 * 1000;
 const CONTINUE_PROMPT = 'Continue.';
 const PREVIEW_LENGTH = 80;
+const NOTIFICATION_OFF_CARD_TEXT = 'I can stop the notifications on this browser. Tap the button and this browser forgets them. Other browsers keep theirs until you do the same there.';
+const NOTIFICATION_CARD_TEXT = 'I can send a notification to this browser when I finish a task, when something waits for your approval, and when I need you on my screen. It shows my name and a short line, never the text of a message. Tap the button, then allow notifications when your browser asks. You can turn them off later in the site settings of your browser.';
 
 class PendingUploadLimitError extends Error {
     constructor() {
@@ -555,6 +563,7 @@ class ChatService {
     private readonly pendingTemplateCards = new Map<string, PendingTemplateCard>();
     private readonly githubEnvironment: ((botId: string) => Promise<Record<string, string>>) | undefined;
     private readonly forgetGithub: ((botId: string) => Promise<void>) | undefined;
+    private readonly notifyOwner: ((notice: OwnerNotice) => Promise<void>) | undefined;
     // Bots whose delete is running. New messages and uploads for them are refused.
     private readonly deletingBots = new Set<string>();
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
@@ -611,11 +620,19 @@ class ChatService {
         this.webhookDeliveries = options.webhookDeliveries;
         this.githubEnvironment = options.githubEnvironment;
         this.forgetGithub = options.forgetGithub;
+        this.notifyOwner = options.notifyOwner;
         this.approvals = options.toolCallReviewer === undefined
             ? undefined
             : new ApprovalGate({
                     chat: {
-                        post: (botId, body) => this.saveAndPublish(botId, 'assistant', body),
+                        post: async (botId, body) => {
+                            const posted = await this.saveAndPublish(botId, 'assistant', body);
+
+                            // The owner may be away from the web app while the bot waits, so the card also goes out as a notification.
+                            this.sendNotice(botId, 'approval', posted.id);
+
+                            return posted;
+                        },
                         close: (messageId, body) => this.updateSetupMessage(messageId, body),
                     },
                     reviewer: options.toolCallReviewer,
@@ -1379,6 +1396,12 @@ class ChatService {
             if (approvalAnswer !== undefined) {
                 return approvalAnswer;
             }
+
+            const notificationAnswer = await this.answerNotificationCard(botId, messageId, value);
+
+            if (notificationAnswer !== undefined) {
+                return notificationAnswer;
+            }
         }
 
         // Two answers to one form could both read it as open, so a second answer during the first is refused.
@@ -1428,6 +1451,89 @@ class ChatService {
         throw new SetupAnswerError('The bot is no longer waiting for this answer.');
     }
 
+    // Returns undefined when the message is not the notification card, so the setup handles it.
+    // The browser already saved or removed its subscription before it sent this answer, so there is nothing to store here.
+    private async answerNotificationCard(botId: string, messageId: string, choiceId: string): Promise<ChatMessage | undefined> {
+        const stored = await this.messageStore.getById(messageId);
+        const body = stored?.content as MessageBody | undefined;
+
+        if (stored?.botId !== botId || body?.kind !== 'choice' || (body.isNotificationOptIn !== true && body.isNotificationOptOut !== true)) {
+            return undefined;
+        }
+
+        if (body.chosenId !== undefined) {
+            throw new SetupAnswerError('This question was already answered.');
+        }
+
+        if (!body.options.some(option => option.id === choiceId)) {
+            throw new SetupAnswerError('This is not an answer of this card.');
+        }
+
+        return this.updateSetupMessage(messageId, { ...body, chosenId: choiceId });
+    }
+
+    // Posts the card that turns notifications on. The browser permission prompt needs a tap of the owner, so the button does it.
+    async postNotificationCard(botId: string): Promise<void> {
+        const body: ChoiceBody = {
+            kind: 'choice',
+            prompt: NOTIFICATION_CARD_TEXT,
+            options: [
+                { id: ENABLE_NOTIFICATIONS_CHOICE_ID, label: 'Turn on notifications' },
+                { id: LATER_NOTIFICATIONS_CHOICE_ID, label: 'Not now' },
+            ],
+            isNotificationOptIn: true,
+        };
+
+        await this.saveAndPublish(botId, 'assistant', body);
+    }
+
+    // Posts the card that turns notifications off. Only the browser knows its own subscription, so the button removes it.
+    async postNotificationOffCard(botId: string): Promise<void> {
+        const body: ChoiceBody = {
+            kind: 'choice',
+            prompt: NOTIFICATION_OFF_CARD_TEXT,
+            options: [
+                { id: DISABLE_NOTIFICATIONS_CHOICE_ID, label: 'Turn off notifications' },
+                { id: KEEP_NOTIFICATIONS_CHOICE_ID, label: 'Keep them' },
+            ],
+            isNotificationOptOut: true,
+        };
+
+        await this.saveAndPublish(botId, 'assistant', body);
+    }
+
+    // Sends a notification in the background. A failure never reaches the chat, since the chat already shows the event.
+    private sendNotice(botId: string, kind: PushNoticeKind, messageId: string | undefined): void {
+        const notifyOwner = this.notifyOwner;
+
+        if (notifyOwner === undefined) {
+            return;
+        }
+
+        this.botStore.getById(botId)
+            .then((bot) => {
+                if (bot === undefined) {
+                    return undefined;
+                }
+
+                return notifyOwner({ kind, botId, botName: bot.name, messageId });
+            })
+            .catch(() => {
+                console.error('Could not send a notification.');
+            });
+    }
+
+    // The owner opens the newest message of the bot, which is the reply of the turn that ended.
+    private sendTurnDoneNotice(botId: string): void {
+        this.messageStore.listByBot(botId, { limit: 1 })
+            .then((latestMessages) => {
+                this.sendNotice(botId, 'done', latestMessages[0]?.id);
+            })
+            .catch(() => {
+                console.error('Could not send a notification.');
+            });
+    }
+
     // Gives the screen to the owner and posts a note in the chat. The browser tools stop until the owner gives it back.
     async requestScreen(botId: string, reason: string): Promise<void> {
         const body: ScreenLinkBody = { kind: 'screenLink', text: `I need you on my screen. ${reason}\n\nDo what is needed, then give the screen back and send me a message.` };
@@ -1447,7 +1553,9 @@ class ChatService {
         }
 
         try {
-            await this.saveAndPublish(botId, 'assistant', body);
+            const posted = await this.saveAndPublish(botId, 'assistant', body);
+
+            this.sendNotice(botId, 'screen', posted.id);
         } catch (error: unknown) {
             if (!wasHeldByPerson) {
                 this.screen?.giveToBot();
@@ -2643,11 +2751,17 @@ class ChatService {
             // The rule list is always offered. A rule change and a bot delete are offered only with the approval gate, since each waits for the owner.
             const ruleTools = this.ruleStore === undefined ? [] : createRuleTools(this.ruleStore, botId, this.approvals !== undefined);
             const botDeleteTools = this.approvals === undefined ? [] : [createBotDeleteTool(() => this.deleteBotFromTool(botId))];
+            const notificationTools = this.notifyOwner === undefined
+                ? []
+                : [
+                        createNotificationsEnableTool(() => this.postNotificationCard(botId)),
+                        createNotificationsDisableTool(() => this.postNotificationOffCard(botId)),
+                    ];
             const profileServer = createProfileToolServer(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...taskTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...botDeleteTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...taskTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...botDeleteTools, ...notificationTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -2697,6 +2811,7 @@ class ChatService {
                     hasGithub: this.githubEnvironment !== undefined,
                     hasHandoffs: this.approvals !== undefined,
                     hasLimits: this.limitStore !== undefined,
+                    hasNotifications: this.notifyOwner !== undefined,
                     ownerRules,
                     helpers: helperKinds,
                 }),
@@ -2733,6 +2848,12 @@ class ChatService {
                     const handoffOutcome = readHandoffOutcome(abortController.signal.aborted, hasFailed || turnState.hasError);
 
                     await this.reportHandoffReply(turn, handoffOutcome);
+
+                    // A turn that the owner stopped is not news to the owner. A webhook turn starts without the owner, and an outside
+                    // service could fire it often, so it never buzzes the phone.
+                    if (!abortController.signal.aborted && turn.source !== 'webhook') {
+                        this.sendTurnDoneNotice(botId);
+                    }
                 }
             } finally {
                 this.finishTurn(botId);
@@ -2841,8 +2962,9 @@ class ChatService {
         const botDeleteToolNames = this.approvals === undefined ? [] : [BOT_DELETE_TOOL_FULL_NAME];
         // bot_send is offered only with the approval gate too, since the receiving turn is reviewed like any other.
         const botSendToolNames = this.approvals === undefined ? [] : [BOT_SEND_TOOL_FULL_NAME];
+        const notificationToolNames = this.notifyOwner === undefined ? [] : [NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, NOTIFICATIONS_DISABLE_TOOL_FULL_NAME];
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames];
     }
 
     // A task that moves to Blocked is a notice in the chat. The bot wrote it, so the line starts with the bot's prefix.

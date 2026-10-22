@@ -30,6 +30,17 @@ describe('buildSystemPrompt', () => {
             .not.toContain('bot_send');
     });
 
+    it('explains the notification card only when notifications can be sent', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+
+        expect(buildSystemPrompt(profile, { hasNotifications: true }))
+            .toContain('call notifications_enable');
+        expect(buildSystemPrompt(profile, { hasNotifications: true }))
+            .toContain('notifications_disable');
+        expect(buildSystemPrompt(profile))
+            .not.toContain('notifications_enable');
+    });
+
     it('explains the GitHub token and the --repo rule only when GitHub is on', () => {
         const profile = { name: 'Ana', title: 'Assistant', description: '' };
 

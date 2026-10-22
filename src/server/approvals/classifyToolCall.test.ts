@@ -63,6 +63,18 @@ describe('page watch tools', () => {
     });
 });
 
+describe('notifications_enable', () => {
+    it('skips the review, since it only posts a card that the owner taps', () => {
+        expect(classify('mcp__cloudbot__notifications_enable'))
+            .toBe('skip');
+    });
+
+    it('skips the review for notifications_disable too, which only posts a card', () => {
+        expect(classify('mcp__cloudbot__notifications_disable'))
+            .toBe('skip');
+    });
+});
+
 describe('browser allow tools', () => {
     it('always asks the owner before the browser may reach a private host', () => {
         expect(classify('mcp__cloudbot__browser_allow_host'))

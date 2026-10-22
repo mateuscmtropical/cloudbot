@@ -107,6 +107,7 @@ src/
     main.ts        Entry point
     claudeAuth/    CLI subscription login sessions and sign-in status
     models/        Model choices per kind of work: validation and routes
+    push/          Web Push: VAPID keys, payload encryption, sender and notifier, routes and the bot tool
     store/         SQLite storage: bots, messages, settings and migrations
     vault/         Encrypted secrets, secure form route and key proxy
     webhooks/      Webhook URLs: the public hook route, owner routes and bot tools
@@ -308,7 +309,7 @@ to `node:sqlite`, so there is no native binding.
 The database is `cloudbot.db` in the folder given by `CLOUDBOT_DATA_DIR`
 (default `./data`). `schema.ts` declares the tables. `openDatabase` enables WAL
 and foreign keys, then applies the migrations in `drizzle/` that have not run
-yet. `BotStore`, `MessageStore` and `SettingsStore` wrap the tables.
+yet. `BotStore`, `MessageStore`, `SettingsStore` and `PushSubscriptionStore` wrap the tables.
 
 After a schema change, run `pnpm db:generate` to write a new migration into
 `drizzle/`. Generated migrations are append only: never edit one that has
@@ -861,8 +862,8 @@ service. `classifyToolCall` sorts each call first:
 - Reading and looking tools skip the review and run. The list is
   `SKIP_TOOL_NAMES`: `Read`, `Glob`, `Grep`, `LS`, `TodoWrite`, `WebSearch` and
   the bot's own `browser_open`, `browser_read`, `browser_screenshot`,
-  `browser_scroll`, `request_screen`, `request_secret`, `share_file` and
-  `update_profile`.
+  `browser_scroll`, `request_screen`, `request_secret`, `share_file`, `update_profile`,
+  `notifications_enable` and `notifications_disable`.
 - A connector tool (`mcp__` but not the bot's own server) whose tool name (the part after the server name) has the
   word send, reply, purchase, buy, pay, checkout, book, booking, reserve or
   order always answers `ask`. The model is not consulted.
@@ -925,7 +926,7 @@ The floor refuses:
   does a copy out of it. The Write, Edit and NotebookEdit tools are refused for
   any path in the folder.
 - Any read, copy or search of the vault files. The vault file names are
-  `vault.key` and `vault.json`. A word that starts with `vault` followed by a
+  `vault.key` and `vault.json`. The push key file `push-vapid.json` is refused the same way, by name, by a glob and in the data folder. A word that starts with `vault` followed by a
   dot or a glob character is refused, such as `vault*` or `vault.k*`. The data
   folder is refused for any glob inside it, such as `/var/lib/cloudbot/v*`, and
   for the folder itself, except for listing programs: `ls`, `cd`, `stat`, `du`,
@@ -964,6 +965,48 @@ mentions a refused command, such as a commit message, is refused too. A
 
 Known gaps: a shell reading a file through a pipe, such as `cat script.sh | sh`,
 is not read. Commands built at run time, listed above, are not seen.
+
+## Notifications
+
+The web app is installable. `src/web/public/manifest.webmanifest` names it CloudBot and points at the mascot icons `pwa-192.png` and `pwa-512.png`. `src/web/public/sw.js` is the service worker. It caches nothing and makes no request. It only shows push notifications and opens the right bot when one is tapped. The server serves both files from the web folder. `sw.js` is sent with `Cache-Control: no-cache`, so a new version is picked up at once. Service workers and push need HTTPS or localhost. On an iPhone, the app must be added to the home screen first.
+
+There is no settings panel. The owner asks a bot in the chat. The bot calls `notifications_enable` (`push/createNotificationTools.ts`), and `ChatService.postNotificationCard` posts a choice card with `isNotificationOptIn`. The card says what is sent. The browser permission prompt needs a click, so the card button calls `enablePushNotifications` (`src/web/pushClient.ts`) first thing in the tap, before any await. It then subscribes with the server public key, sends the subscription to `POST /api/push/subscriptions` and shows a confirmation. The tool is on the skip list of the reviewer, since it only posts a card. The system prompt tells the bot about the tool only when the server has it.
+
+Turning them off works the same way. `notifications_disable` posts a card with `isNotificationOptOut` and the buttons "Turn off notifications" and "Keep them". The button calls `disablePushNotifications`. It sends `DELETE /api/push/subscriptions` with the endpoint of this browser, and only then unsubscribes the browser. If the server call fails, the browser keeps its subscription and the card stays open. Other browsers keep theirs until the owner does the same there. The tool is on the skip list too.
+
+### Web Push without a dependency
+
+The server speaks Web Push with `node:crypto` and does not use the `web-push` package. The payload encryption is RFC 8291 (`aes128gcm`, ECDH P-256, HKDF, one record) and the sender proof is VAPID, RFC 8292 (an ES256 token in the `Authorization` header). Both are in `push/webPushCrypto.ts`, about 150 lines. A test checks the encryption against a known answer from the independent `http_ece` library, so it is not only checked against itself.
+
+Every record is padded (RFC 8188, zero bytes after the delimiter) to a multiple of 512 bytes, so each push is 614 bytes whatever the notice says. The push service and anyone on the path see the same size every time. The largest payload is 4096 - 86 - 17 bytes, so the whole body stays inside the 4096 bytes that push services accept. The bot name in the title is cut to 40 characters, which keeps every notice in one block.
+
+Why not `web-push`. It adds a dependency tree that runs with the server's rights and makes the network call itself, so CloudBot could not pin the connection to a checked address. The protocol is small and fixed. The cost is that CloudBot owns the crypto code. The tests and the known answer are the guard for that.
+
+### Keys
+
+`push/loadVapidKeys.ts` makes one VAPID key pair on first start and writes it to `push-vapid.json` in the data folder with mode 0600 (the `wx` flag, so an existing file is never overwritten). Only the public key leaves the server, through `GET /api/push/key`. The key file is on the command floor next to the vault files. Keys are never logged and never reach the model. If the file is lost, every browser must turn notifications on again, since a subscription is tied to the key that made it. The client checks this and subscribes again when the key differs.
+
+### Where a push may go (SSRF)
+
+A subscription holds an endpoint URL that the browser chose, and the server would call it. So the endpoint is a request that an attacker with the session could aim at an internal address. Two checks guard it, in `push/pushEndpoint.ts` and `push/createPushSender.ts`:
+
+- The keys of a subscription must be base64url text of the exact size a browser gives: 87 characters for the key and 22 for the secret. Anything else is refused before the encryption is tried.
+- An allowlist of the push services that browsers use: `fcm.googleapis.com`, `push.services.mozilla.com`, `push.apple.com` and `notify.windows.com`, each with its subdomains. The endpoint must be https on the default port with no credentials. It is checked when the subscription is saved and again before each send.
+- The host is resolved and every address must be public (the same `isPublicAddress` rule the other outbound calls use). The request then goes through `pinnedFetch` with that address, so a DNS change between the check and the call cannot redirect it.
+
+The allowlist alone would cover the risk. The address check is a second layer in case a name on the list ever points inward. The cost is that a self-hosted push service, such as UnifiedPush, does not work. Adding one means adding its domain to the list.
+
+### Events and payload
+
+`ChatService` reports an owner notice through the `notifyOwner` option in three cases: a turn finished (not for a Stop, not for a turn that a webhook started, and not when the turn waits on a usage limit), an approval card was posted, and a screen hand-off was requested. A bot gets at most one "finished" push in a minute. An approval or a screen hand-off is never held back, since the bot waits for the owner. `push/PushNotifier.ts` turns the notice into a payload with the bot name as the title and one neutral line, such as "Finished its work." The payload holds the bot id and the message id so a tap can open them. It never holds the text of a message, a secret or a tool input. The notifier sends to every stored subscription. A 404 or 410 from the push service means the browser is gone, and the subscription is removed. Other failures are logged without the endpoint. A send never blocks or fails a turn.
+
+At most 20 subscriptions are stored (one per browser), in the `push_subscriptions` table.
+
+### In the browser
+
+The worker keys a notification by bot and kind (`botId:kind`) and sets `renotify`, so a newer one replaces the older one. When a visible window already shows that bot, the notification is shown without sound and closed at once. WebKit revokes the subscription of a site whose pushes end without a visible notification, so showing nothing is not safe. It finds that from the `?bot=` part of the window address, which the app keeps in step with the open bot. A tap focuses the window of that bot, or any window, and posts `openBot` to it. With no window open, it opens `/?bot=<id>&message=<id>`. The app then selects the bot and scrolls to the message (`useNotificationOpen`, `ConversationView`).
+
+Limits. There is no notification for a usage limit, a stall or an owner Stop. A dead subscription is removed when the push service reports it gone.
 
 ## Bot hand-offs
 
