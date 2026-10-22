@@ -1,12 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
-import { chooseTurnEffort, chooseTurnModel, isModelInputError, parseEffortInput, parseModelInput, toEffortFields } from './modelChoices.ts';
+import { chooseTurnEffort, chooseTurnModel, isClaudeModel, isModelInputError, parseEffortInput, parseModelInput, toEffortFields } from './modelChoices.ts';
 import type { EffortChoices } from './modelChoices.ts';
 
 describe('parseModelInput', () => {
     it('accepts the SDK aliases and full model ids', () => {
         expect(parseModelInput({ chat: 'haiku', routines: 'claude-sonnet-4-5', review: 'fable', browsing: null, documents: null }))
             .toEqual({ chat: 'haiku', routines: 'claude-sonnet-4-5', review: 'fable', browsing: null, documents: null });
+    });
+
+    it('accepts a Gemini model id, which only agy gets', () => {
+        expect(parseModelInput({ chat: 'gemini-3.8-flash-low' }))
+            .toMatchObject({ chat: 'gemini-3.8-flash-low' });
+        expect(isClaudeModel('gemini-3.8-flash-low'))
+            .toBe(false);
+        expect(isClaudeModel('sonnet'))
+            .toBe(true);
+        expect(isClaudeModel('claude-sonnet-4-5'))
+            .toBe(true);
     });
 
     it('treats a missing or null choice as the CLI default', () => {

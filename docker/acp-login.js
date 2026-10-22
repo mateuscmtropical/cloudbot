@@ -22,9 +22,11 @@ child.stdout.on('data', (chunk) => {
     buffer = lines.pop() ?? '';
     lines.forEach((line) => {
         let message;
+        // The Gemini CLI writes terminal codes without a line break, so a reply can follow them on the same line.
+        const start = line.indexOf('{"jsonrpc"');
 
         try {
-            message = JSON.parse(line);
+            message = JSON.parse(start === -1 ? line : line.slice(start));
         } catch {
             process.stderr.write(`${line}\n`);
 
