@@ -36,6 +36,27 @@ jobs:
 
       - run: pnpm build
 
+  codex-canary:
+    name: Codex canary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The version must match CODEX_VERSION in src/server/codex/codexThreadConfig.ts.
+      - run: npm install --global @openai/codex@0.163.0
+
+      # The canary talks only to a fake model server and a fake MCP server on this runner.
+      - run: CODEX_PATH="$(command -v codex)" pnpm vitest run src/server/codex/codexCanary.test.ts
+
   docker:
     name: Build image and check isolation
     runs-on: ubuntu-latest

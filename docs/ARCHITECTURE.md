@@ -110,6 +110,7 @@ src/
     desktop/       Starts the bot's desktop and starts it again when it exits
     main.ts        Entry point
     claudeAuth/    CLI subscription login sessions and sign-in status
+    codex/         The Codex engine in progress: approval bridge, thread config and per-bot CODEX_HOME
     models/        Model choices per kind of work: validation and routes
     push/          Web Push: VAPID keys, payload encryption, sender and notifier, routes and the bot tool
     store/         SQLite storage: bots, messages, settings and migrations
@@ -920,6 +921,53 @@ that sends something in a way the patterns miss relies on the model's category.
 
 Each reviewed call costs one extra model call. The review runs as the server
 user, which is safe only because the call has no tools.
+
+## Codex approvals (in progress)
+
+Issue #128 adds OpenAI Codex as a second engine. This part is built and tested, and nothing uses it yet. The engine,
+the ChatGPT sign-in and the setup choice come later.
+
+The engine will run `codex app-server`, pinned to `CODEX_VERSION` (0.163.0), and talk JSON-RPC over stdio.
+`buildCodexThreadStart` (`codex/codexThreadConfig.ts`) gives `thread/start` these settings:
+
+- `approvalPolicy: "untrusted"`, so every shell command asks first. `on-request` is not a gate.
+- `sandbox: "workspace-write"`.
+- `web_search = "disabled"`, `features.view_image = false`, `features.multi_agent = false` and `features.goals = false`.
+  These tools have no approval request, so they are turned off and the model is never offered them.
+- `default_tools_approval_mode = "prompt"` on every MCP server, set last, so a read-only claim does not skip the ask.
+
+`CodexApprovalBridge` (`codex/CodexApprovalBridge.ts`) answers the server requests of one thread. Each gated request
+becomes one call to `reviewToolCall`, the same review the Claude engine uses:
+
+- `item/commandExecution/requestApproval` is reviewed as `Bash` with the whole command line and its folder.
+- `item/fileChange/requestApproval` names only the item. The changes come from the earlier `item/started`
+  notification of that item, and the call is reviewed as `Edit`.
+- `mcpServer/elicitation/request` with `_meta.codex_approval_kind` `mcp_tool_call` names only the server. It is
+  matched to the one undecided `mcpToolCall` item of that server in the turn with the same arguments, and reviewed as
+  `mcp__<server>__<tool>`.
+
+Only an allow becomes `accept`. Everything else is a decline: a refusal, a review that throws, a stop, a review past
+65 minutes, a request of another thread, an item that was never reported, input for a running command (`writeStdin`),
+a network grant, a `grantRoot`, two MCP calls of one server at once, and a second request for an item already decided.
+Any other server request (permission grants, user input, dynamic tools, token refresh, attestation, the old v1
+approvals and anything new) gets a JSON-RPC error and is never reviewed. The bridge never answers `acceptForSession` or
+a policy amendment, so no answer covers a later call.
+
+Each bot gets its own `CODEX_HOME` in the data folder (`codex/<bot id>`, mode 700, `codex/codexHome.ts`). Codex exits
+at start when that folder does not exist, so it is made first.
+
+The canary test (`codex/codexCanary.test.ts`) runs the pinned Codex against a fake model server and a fake MCP server
+on 127.0.0.1. It checks that six commands, a patch and a call to an MCP tool that claims to be read only all reach the
+review, that none of them runs when the review refuses, and that the model is not offered `view_image`, `spawn_agent`
+or `web_search`. CI runs it in the "Codex canary" job. Run it again before every Codex upgrade.
+
+Known gaps, both from the provider spike and seen again in the canary probe:
+
+- `list_mcp_resources`, `list_mcp_resource_templates` and `read_mcp_resource` are offered whenever an MCP server is
+  configured, and they ask nothing. `resources/read` reached the fake server even though it declared no resources
+  capability. CloudBot's own server answers no resources method, but a remote server would. This must be closed before
+  the engine passes remote servers to Codex.
+- A refused call reaches the Codex model as "rejected by user", not with the review's reason.
 
 ## Command floor
 
