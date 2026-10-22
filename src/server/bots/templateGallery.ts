@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod/v4';
 
 import type { BotTemplate } from './botTemplate.ts';
-import { MAX_BLOCKED_TOOLS, MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH, MAX_RULES, MAX_TITLE_LENGTH, isOneLine, parseBotTemplate } from './botTemplate.ts';
+import { MAX_BLOCKED_TOOLS, MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH, MAX_RULES, MAX_TITLE_LENGTH, isOneLine, isPlainText, parseBotTemplate } from './botTemplate.ts';
 import { isToolRuleName } from '../rules/parseRuleInput.ts';
 import { hasHiddenCode } from '../text/isHiddenCode.ts';
 
@@ -17,6 +17,7 @@ const API_ORIGIN = 'https://api.github.com';
 const JSON_ACCEPT = 'application/vnd.github+json';
 const RAW_ACCEPT = 'application/vnd.github.raw+json';
 const NOT_FOUND_STATUS = 404;
+const CONFLICT_STATUS = 409;
 const LIMIT_STATUSES = [403, 429];
 const SUCCESS_MIN_STATUS = 200;
 const SUCCESS_MAX_STATUS = 299;
@@ -32,8 +33,10 @@ const GITHUB_LIMIT_MESSAGE = 'GitHub limit reached for the template gallery. Try
 const INDEX_INVALID_MESSAGE = 'The template gallery index is not valid, so the gallery cannot be listed right now.';
 const SHARE_INDEX_MESSAGE = 'The gallery index on GitHub could not be read, so the template was not shared.';
 const INDEX_FULL_MESSAGE = 'The gallery index is full, so the template was not shared.';
+const FORK_DIVERGED_MESSAGE = 'Your fork of the gallery has its own changes, so GitHub could not bring it up to date and the template was not shared. Sync or reset the fork on GitHub, then ask again.';
 const FORK_NOT_READY_MESSAGE = 'GitHub is still making your fork of the gallery, so the template was not shared. Ask again in a minute.';
 const ONE_LINE_MESSAGE = 'Use one line of plain text without hidden characters.';
+const PLAIN_TEXT_MESSAGE = 'Use plain text without hidden characters.';
 const TOOL_NAME_MESSAGE = 'Each blocked tool must be a tool name such as Bash or WebFetch.';
 
 // The message is written for the model, so it can tell the owner what went wrong.
@@ -118,9 +121,11 @@ const indexEntrySchema = z.object({
         .min(1)
         .max(MAX_TITLE_LENGTH)
         .refine(isOneLine, ONE_LINE_MESSAGE),
+    // The listing goes to the model unreviewed, so the description gets the same hidden-code check as a template.
     description: z.string()
         .trim()
-        .max(MAX_DESCRIPTION_LENGTH),
+        .max(MAX_DESCRIPTION_LENGTH)
+        .refine(isPlainText, PLAIN_TEXT_MESSAGE),
     blockedTools: z.array(toolNameSchema)
         .max(MAX_INDEX_BLOCKED_TOOLS),
 })
@@ -339,6 +344,11 @@ class TemplateGallery {
             throw new GalleryError(GALLERY_UNREADABLE_MESSAGE);
         }
 
+        await this.readForkBase(forkRepo, defaultBranch, plan.token);
+        // GitHub does not keep a fork in step with the gallery. A branch from an old fork would rewrite the index without
+        // the templates added since, so the pull request would conflict. The sync is documented at
+        // https://docs.github.com/en/rest/branches/branches#sync-a-fork-branch-with-the-upstream-repository
+        await this.syncFork(forkRepo, defaultBranch, plan.token);
         const baseSha = await this.readForkBase(forkRepo, defaultBranch, plan.token);
         const slug = plan.fileName.replace(/\.json$/, '');
         const stamp = this.now()
@@ -510,6 +520,24 @@ class TemplateGallery {
         const existingJson = parseJson(response.text);
 
         return readString(existingJson, 'sha');
+    }
+
+    // GitHub answers 409 when the fork has commits of its own that clash with the gallery. Trying again never helps.
+    private async syncFork(forkRepo: string, branch: string, token: string): Promise<void> {
+        const syncBody = jsonBody({ branch });
+        const response = await this.request('POST', `/repos/${forkRepo}/merge-upstream`, JSON_ACCEPT, token, syncBody);
+
+        if (response.status === CONFLICT_STATUS) {
+            throw new GalleryError(FORK_DIVERGED_MESSAGE);
+        }
+
+        if (isLimit(response.status)) {
+            throw new GalleryError(GITHUB_LIMIT_MESSAGE);
+        }
+
+        if (!isSuccess(response.status)) {
+            throw new GalleryError(`GitHub refused to bring the fork up to date (status ${String(response.status)}), so the template was not shared.`);
+        }
     }
 
     private async expectSuccess(method: string, path: string, body: string | undefined, token: string, step: string): Promise<GalleryResponse> {

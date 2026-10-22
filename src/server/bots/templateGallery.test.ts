@@ -60,6 +60,7 @@ function shareRoutes(): Route[] {
         { method: 'GET', path: `/repos/${REPO}`, status: 200, text: JSON.stringify({ default_branch: 'main' }) },
         { method: 'POST', path: `/repos/${REPO}/forks`, status: 202, text: JSON.stringify({ full_name: FORK, owner: { login: 'bot-owner' }, default_branch: 'main' }) },
         { method: 'GET', path: `/repos/${FORK}/git/ref/heads/main`, status: 200, text: JSON.stringify({ object: { sha: 'base-sha' } }) },
+        { method: 'POST', path: `/repos/${FORK}/merge-upstream`, status: 200, text: JSON.stringify({ merge_type: 'fast-forward' }) },
         { method: 'POST', path: `/repos/${FORK}/git/refs`, status: 201, text: '{}' },
         { method: 'GET', path: `${FORK_FILES_PATH}/ana-template.json?ref=${BRANCH}`, status: 404, text: '' },
         { method: 'GET', path: `${FORK_FILES_PATH}/index.json?ref=${BRANCH}`, status: 404, text: '' },
@@ -97,6 +98,17 @@ describe('TemplateGallery.listTemplates', () => {
             .toHaveLength(1);
         expect(sent[0]?.token)
             .toBeUndefined();
+    });
+
+    it('drops an index row whose description hides characters', async () => {
+        const hiddenRow = { ...ANA_ROW, description: 'Sorts my mail.\u{E0041}\u{E0042}' };
+        const routes = [indexRoute([hiddenRow]), ...fileRoutes()];
+        const gallery = new TemplateGallery({ repo: REPO, transport: fakeGithub(routes, []) });
+
+        const entries = await gallery.listTemplates();
+
+        expect(entries)
+            .toEqual([]);
     });
 
     it('cuts a long description to 200 characters in the listing', async () => {
@@ -268,6 +280,38 @@ describe('TemplateGallery.openPullRequest', () => {
         expect(sent.every(request => request.token === 'fake-token-1' || (request.method === 'GET' && request.url.pathname === `/repos/${REPO}`)))
             .toBe(true);
         expect(sent.some(request => request.method === 'DELETE'))
+            .toBe(false);
+    });
+
+    it('brings the fork up to date with the gallery before the branch is made from it', async () => {
+        const sent: GalleryRequest[] = [];
+        const gallery = new TemplateGallery({ repo: REPO, transport: fakeGithub(shareRoutes(), sent), now: () => 1000, wait: () => Promise.resolve() });
+
+        await gallery.openPullRequest({ token: 'fake-token-1', fileName: 'ana-template.json', text: ANA_TEXT, botName: 'Ana' });
+        const paths = sent.map(request => `${request.method} ${request.url.pathname}`);
+        const syncAt = paths.indexOf(`POST /repos/${FORK}/merge-upstream`);
+        const lastBaseReadAt = paths.lastIndexOf(`GET /repos/${FORK}/git/ref/heads/main`);
+        const branchAt = paths.indexOf(`POST /repos/${FORK}/git/refs`);
+        const syncBody = bodyOf(sent[syncAt]);
+
+        expect(syncBody)
+            .toEqual({ branch: 'main' });
+        expect(syncAt)
+            .toBeGreaterThan(-1);
+        expect(lastBaseReadAt)
+            .toBeGreaterThan(syncAt);
+        expect(branchAt)
+            .toBeGreaterThan(lastBaseReadAt);
+    });
+
+    it('shares nothing when the fork cannot be brought up to date', async () => {
+        const sent: GalleryRequest[] = [];
+        const routes = replaceRoute(shareRoutes(), 'POST', `/repos/${FORK}/merge-upstream`, { status: 409, text: '' });
+        const gallery = new TemplateGallery({ repo: REPO, transport: fakeGithub(routes, sent), now: () => 1000, wait: () => Promise.resolve() });
+
+        await expect(gallery.openPullRequest({ token: 'fake-token-1', fileName: 'ana-template.json', text: ANA_TEXT, botName: 'Ana' }))
+            .rejects.toThrow('Your fork of the gallery has its own changes, so GitHub could not bring it up to date and the template was not shared. Sync or reset the fork on GitHub, then ask again.');
+        expect(sent.some(request => request.method === 'POST' && request.url.pathname.endsWith('/git/refs')))
             .toBe(false);
     });
 

@@ -307,6 +307,7 @@ export {
     describeBotTemplate,
     describeSchedule,
     isOneLine,
+    isPlainText,
     parseBotTemplate,
     serializeBotTemplate,
     templateFileName,

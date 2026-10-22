@@ -44,6 +44,7 @@ function fakeGithub(files: Record<string, string>, sent: GalleryRequest[]): Gall
         [`GET /repos/${REPO}`]: { status: 200, text: JSON.stringify({ default_branch: 'main' }) },
         [`POST /repos/${REPO}/forks`]: { status: 202, text: JSON.stringify({ full_name: FORK, owner: { login: 'bot-owner' } }) },
         [`GET /repos/${FORK}/git/ref/heads/main`]: { status: 200, text: JSON.stringify({ object: { sha: 'base-sha' } }) },
+        [`POST /repos/${FORK}/merge-upstream`]: { status: 200, text: '{}' },
         [`POST /repos/${FORK}/git/refs`]: { status: 201, text: '{}' },
         [`PUT ${FORK_FILES_PATH}/ana-template.json`]: { status: 201, text: '{}' },
         [`PUT ${FORK_FILES_PATH}/index.json`]: { status: 201, text: '{}' },
