@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { z } from 'zod/v4';
+
 import { ApprovalGate } from '../approvals/ApprovalGate.ts';
-import type { ToolCallReviewer } from '../approvals/ApprovalGate.ts';
+import type { ToolCallReviewer, ToolCallVerdict } from '../approvals/ApprovalGate.ts';
 import type { BotDeleteCheck } from '../approvals/createToolCallReviewer.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnImage, TurnRequest } from '../agent/AgentRunner.ts';
@@ -69,6 +71,11 @@ import type { Bot, BotProfile, Message } from '../store/types.ts';
 import { BOT_CREATE_TOOL_FULL_NAME, createBotCreateTool } from '../bots/createBotTool.ts';
 import { findNameClash } from '../channels/channelCommands.ts';
 import { CHANNEL_TOOL_FULL_NAMES, createChannelTools } from '../channels/createChannelTools.ts';
+import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_SHAPE, BOT_IMPORT_TOOL_FULL_NAME, createBotExportTool, createBotImportTool } from '../bots/createBotTemplateTools.ts';
+import type { ExportedTemplate, ImportedBot } from '../bots/createBotTemplateTools.ts';
+import { buildBotTemplate, describeBotTemplate, parseBotTemplate, serializeBotTemplate, templateFileName } from '../bots/botTemplate.ts';
+import type { BotTemplate } from '../bots/botTemplate.ts';
+import { readBotTemplateFile } from '../bots/readBotTemplateFile.ts';
 import type { BotCreateInput } from '../bots/createBotTool.ts';
 import { BOT_DELETE_TOOL_FULL_NAME, createBotDeleteTool } from '../bots/createBotDeleteTool.ts';
 import { RULE_LIST_TOOL_FULL_NAME, RULE_TOOL_FULL_NAMES, createRuleTools } from '../rules/createRuleTools.ts';
@@ -332,6 +339,18 @@ function toChatMessage(storedMessage: Message): ChatMessage {
     };
 }
 
+// How long a template card waits for the owner's answer before its file can no longer be imported.
+const TEMPLATE_CARD_TTL_MS = 10 * 60 * 1000;
+
+interface PendingTemplateCard {
+    digest: string;
+    shownAt: number;
+}
+
+// A template card is for one bot and one path.
+function templateCardKey(botId: string, filePath: string): string {
+    return botId + '\n' + filePath;
+}
 function previewOf(body: MessageBody): string {
     switch (body.kind) {
         case 'tasks':
@@ -532,6 +551,8 @@ class ChatService {
     private readonly webhookDeliveries: DeliveryMemory | undefined;
     private readonly webhookBaseUrl: string | undefined;
     private readonly approvals: ApprovalGate | undefined;
+    // The template card the owner has not answered yet, by bot and path. A newer card for the same path replaces it.
+    private readonly pendingTemplateCards = new Map<string, PendingTemplateCard>();
     private readonly githubEnvironment: ((botId: string) => Promise<Record<string, string>>) | undefined;
     private readonly forgetGithub: ((botId: string) => Promise<void>) | undefined;
     // Bots whose delete is running. New messages and uploads for them are refused.
@@ -697,15 +718,173 @@ class ChatService {
             throw new Error('The screenshot is empty or too large.');
         }
 
+        const screenshotName = buildScreenshotName(new Date());
+
+        await this.storeSharedBytes(botId, screenshotName, 'image/png', image);
+    }
+
+    // Exports the bot as a template file, shared in the chat. Only the template's fields go into it.
+    async exportBotFromTool(botId: string): Promise<ExportedTemplate> {
+        const bot = await this.botStore.getById(botId);
+
+        if (bot === undefined) {
+            throw new Error('This bot no longer exists.');
+        }
+
+        const rules = (await this.ruleStore?.list(botId)) ?? [];
+        const routines = (await this.routineStore?.list(botId)) ?? [];
+        const template = buildBotTemplate({
+            name: bot.name,
+            title: bot.title,
+            description: bot.description,
+            mascot: { color: bot.mascotColor, shape: bot.mascotShape },
+            rules: rules.map(rule => ({ kind: rule.kind, text: rule.text, blockedTools: rule.blockedTools })),
+            routines: routines.map(routine => ({ name: routine.name, prompt: routine.prompt, schedule: routine.schedule })),
+        });
+        const text = serializeBotTemplate(template);
+        const check = parseBotTemplate(text);
+
+        // A bot too big to import is refused here, so every exported file imports.
+        if (!check.ok) {
+            throw new Error(`This bot cannot be exported. ${check.reason}`);
+        }
+
+        const fileName = templateFileName(bot.name);
+        const bytes = Buffer.from(text, 'utf8');
+
+        await this.storeSharedBytes(botId, fileName, 'application/json', bytes);
+
+        return { name: bot.name };
+    }
+
+    // Creates a bot from a template the owner approved. The file must match a card shown for it in the last few minutes.
+    async importBotFromTool(botId: string, filePath: string): Promise<ImportedBot> {
+        const uploadDir = this.uploadDirFor(botId);
+        const read = await readBotTemplateFile(filePath, uploadDir);
+
+        if (!read.ok) {
+            throw new Error(read.reason);
+        }
+
+        const isApproved = this.takePendingTemplateCard(botId, filePath, read.digest);
+
+        if (!isApproved) {
+            throw new Error('The template file changed after the owner was shown it. Attach it again and ask.');
+        }
+
+        const template = read.template;
+        const bot = await this.insertBot({ name: template.name, title: template.title, description: template.description });
+
+        try {
+            await this.applyTemplate(bot.id, template);
+        } catch (error: unknown) {
+            // A half made bot would start without what the owner approved, so it is removed.
+            await this.botStore.delete(bot.id);
+
+            throw error;
+        }
+
+        return { name: bot.name };
+    }
+
+    // The import card. It shows the whole template. A newer card for the same file replaces the older one,
+    // so only the card last shown can import.
+    async describeBotImport(botId: string, input: unknown): Promise<ToolCallVerdict> {
+        const parsed = z.object(BOT_IMPORT_SHAPE)
+            .safeParse(input);
+
+        if (!parsed.success) {
+            return { decision: 'deny', reason: 'The template path is not valid.' };
+        }
+
+        const uploadDir = this.uploadDirFor(botId);
+        const read = await readBotTemplateFile(parsed.data.path, uploadDir);
+
+        if (!read.ok) {
+            return { decision: 'deny', reason: read.reason };
+        }
+
+        this.addPendingTemplateCard(botId, parsed.data.path, read.digest);
+
+        return { decision: 'ask', summary: 'Create a bot from a template.', detail: describeBotTemplate(read.template) };
+    }
+
+    // A card waits for the owner for ten minutes. A newer card for the same path replaces the older one.
+    private addPendingTemplateCard(botId: string, filePath: string, digest: string): void {
+        const key = templateCardKey(botId, filePath);
+
+        this.pendingTemplateCards.set(key, { digest, shownAt: Date.now() });
+    }
+
+    // The card for this path is removed on every answer, so one approval imports at most one bot.
+    private takePendingTemplateCard(botId: string, filePath: string, digest: string): boolean {
+        const key = templateCardKey(botId, filePath);
+        const card = this.pendingTemplateCards.get(key);
+
+        this.pendingTemplateCards.delete(key);
+
+        if (card === undefined) {
+            return false;
+        }
+
+        const isFresh = Date.now() - card.shownAt <= TEMPLATE_CARD_TTL_MS;
+
+        return isFresh && card.digest === digest;
+    }
+
+    // Mascot, rules and routines of the template, in file order. Routines start turned off.
+    private async applyTemplate(botId: string, template: BotTemplate): Promise<void> {
+        if (template.mascot !== undefined) {
+            await this.botStore.updateMascot(botId, template.mascot);
+        }
+
+        const rules = template.rules ?? [];
+        const routines = template.routines ?? [];
+        const ruleStore = this.ruleStore;
+        const routineStore = this.routineStore;
+
+        if (rules.length > 0 && ruleStore === undefined) {
+            throw new Error('This CloudBot cannot save rules, so the template was not imported.');
+        }
+
+        if (routines.length > 0 && routineStore === undefined) {
+            throw new Error('This CloudBot cannot save routines, so the template was not imported.');
+        }
+
+        const resolved = Promise.resolve();
+
+        if (ruleStore !== undefined) {
+            await rules.reduce(async (previous, rule) => {
+                await previous;
+
+                const newRule = { kind: rule.kind, text: rule.text, blockedTools: rule.blockedTools };
+
+                await ruleStore.add(botId, newRule);
+            }, resolved);
+        }
+
+        if (routineStore !== undefined) {
+            await routines.reduce(async (previous, routine) => {
+                await previous;
+
+                const newRoutine = { name: routine.name, prompt: routine.prompt, schedule: routine.schedule };
+                const added = await routineStore.add(botId, newRoutine);
+
+                await routineStore.setEnabled(botId, added.id, false);
+            }, resolved);
+        }
+    }
+
+    // Stores bytes as a shared file and posts it to the chat. The copy is removed if its message cannot be saved.
+    private async storeSharedBytes(botId: string, name: string, mimeType: string, bytes: Buffer): Promise<void> {
         const shareDir = this.shareDirFor(botId);
         const fileId = randomUUID();
         const copyPath = join(shareDir, fileId);
-        const name = buildScreenshotName(new Date());
 
         await mkdir(shareDir, { recursive: true, mode: SHARE_DIR_MODE });
-        await writeFile(copyPath, image, { flag: 'wx', mode: SHARE_FILE_MODE });
+        await writeFile(copyPath, bytes, { flag: 'wx', mode: SHARE_FILE_MODE });
 
-        const body: FileBody = { kind: 'file', name, mimeType: 'image/png', sizeBytes: image.length, fileId };
+        const body: FileBody = { kind: 'file', name, mimeType, sizeBytes: bytes.length, fileId };
         let storedMessage;
 
         try {
@@ -2459,6 +2638,8 @@ class ChatService {
                         createBotSendTool(input => this.handoffFromTool(botId, handoffDepth, input, turn.channel)),
                         ...this.channelTools(botId),
                     ];
+            // Export is always offered. Import makes a bot, so it is offered only with the approval gate, like bot_create.
+            const templateTools = [createBotExportTool(() => this.exportBotFromTool(botId)), ...(this.approvals === undefined ? [] : [createBotImportTool(filePath => this.importBotFromTool(botId, filePath))])];
             // The rule list is always offered. A rule change and a bot delete are offered only with the approval gate, since each waits for the owner.
             const ruleTools = this.ruleStore === undefined ? [] : createRuleTools(this.ruleStore, botId, this.approvals !== undefined);
             const botDeleteTools = this.approvals === undefined ? [] : [createBotDeleteTool(() => this.deleteBotFromTool(botId))];
@@ -2466,7 +2647,7 @@ class ChatService {
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...taskTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...ruleTools, ...botDeleteTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...taskTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...botDeleteTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -2654,13 +2835,14 @@ class ChatService {
         const botCreateToolNames = this.approvals === undefined ? [] : [BOT_CREATE_TOOL_FULL_NAME];
         // Channel tools are offered with the approval gate, like bot_create. Removal and deletion wait for the owner there.
         const channelToolNames = this.channelStore === undefined || this.approvals === undefined ? [] : CHANNEL_TOOL_FULL_NAMES;
+        const templateToolNames = [BOT_EXPORT_TOOL_FULL_NAME, ...(this.approvals === undefined ? [] : [BOT_IMPORT_TOOL_FULL_NAME])];
         // The rule list needs the rule store. A rule change needs the approval gate too, so without it only the list is allowed.
         const ruleToolNames = this.ruleToolNamesAllowed();
         const botDeleteToolNames = this.approvals === undefined ? [] : [BOT_DELETE_TOOL_FULL_NAME];
         // bot_send is offered only with the approval gate too, since the receiving turn is reviewed like any other.
         const botSendToolNames = this.approvals === undefined ? [] : [BOT_SEND_TOOL_FULL_NAME];
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames];
     }
 
     // A task that moves to Blocked is a notice in the chat. The bot wrote it, so the line starts with the bot's prefix.

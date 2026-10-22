@@ -11,6 +11,11 @@ const MAX_BLOCKED_TOOLS = 20;
 // The SDK joins the list with commas, so a pattern cannot hold one.
 const TOOL_RULE_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,99}(\([^(),\n]{1,200}\))?$/;
 
+// The same check the owner's rule tool makes. No registry of tool names exists, so the format is what is checked.
+function isToolRuleName(name: string): boolean {
+    return TOOL_RULE_PATTERN.test(name);
+}
+
 function readField(input: unknown, field: string): unknown {
     return typeof input === 'object' && input !== null ? Reflect.get(input, field) : undefined;
 }
@@ -69,5 +74,5 @@ function isRuleInputError(value: NewBotRule | RuleInputError): value is RuleInpu
     return 'error' in value;
 }
 
-export { MAX_BLOCKED_TOOLS, MAX_RULE_TEXT_LENGTH, isRuleInputError, parseRuleInput };
+export { MAX_BLOCKED_TOOLS, MAX_RULE_TEXT_LENGTH, isRuleInputError, isToolRuleName, parseRuleInput };
 export type { RuleInputError };
