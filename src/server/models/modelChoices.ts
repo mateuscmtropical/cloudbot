@@ -1,3 +1,5 @@
+import { CHECKIN_DEFAULT_MODEL } from '../routines/checkin.ts';
+
 // The aliases the claude CLI takes in its --model option.
 const MODEL_ALIASES: readonly string[] = ['fable', 'opus', 'sonnet', 'haiku'];
 // Full model ids start with "claude-". The pattern keeps any other text away from the CLI.
@@ -148,14 +150,24 @@ function isModelInputError(value: ModelChoices | ModelInputError): value is Mode
 }
 
 // Routine and webhook turns use the routines choice and fall back to the chat choice. Undefined keeps the CLI default.
-function chooseTurnModel(choices: ModelChoices, source: 'chat' | 'routine' | 'webhook' | 'bot'): string | undefined {
+// A check-in never falls back to the chat model. It uses the routines choice or the cheap default.
+function chooseTurnModel(choices: ModelChoices, source: 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot'): string | undefined {
+    if (source === 'checkin') {
+        return choices.routines ?? CHECKIN_DEFAULT_MODEL;
+    }
+
     const routinesChoice = source === 'chat' ? null : choices.routines;
 
     return routinesChoice ?? choices.chat ?? undefined;
 }
 
 // The same rule as the model: routine and webhook turns use the routines effort and fall back to the chat effort.
-function chooseTurnEffort(efforts: EffortChoices, source: 'chat' | 'routine' | 'webhook' | 'bot'): EffortLevel | undefined {
+// A check-in skips the chat effort, because the chat effort was picked for a different model.
+function chooseTurnEffort(efforts: EffortChoices, source: 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot'): EffortLevel | undefined {
+    if (source === 'checkin') {
+        return efforts.routines ?? undefined;
+    }
+
     const routinesEffort = source === 'chat' ? null : efforts.routines;
 
     return routinesEffort ?? efforts.chat ?? undefined;

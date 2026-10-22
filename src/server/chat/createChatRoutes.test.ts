@@ -56,6 +56,10 @@ function describeEvent(event: ChatEvent): string {
         return 'botDeleted';
     }
 
+    if (event.type === 'messagesRemoved') {
+        return 'messagesRemoved';
+    }
+
     return `message:${event.message.role}:${event.message.body.kind}`;
 }
 

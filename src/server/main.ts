@@ -347,7 +347,7 @@ if (localTools.gateProbe !== undefined && browser !== undefined && browserGate !
 
 const routineScheduler = new RoutineScheduler({
     routineStore,
-    sendMessage: (botId, text) => chatService.sendMessage(botId, text, 'routine'),
+    sendMessage: (botId, text, source) => chatService.sendMessage(botId, text, source),
     isReady: () => setup.isDone(),
 });
 

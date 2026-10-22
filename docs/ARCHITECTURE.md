@@ -673,7 +673,7 @@ model only.
 
 A turn sends its choice to the CLI `--model` option. A routine or webhook turn
 uses the `routines` choice and falls back to `chat`. The `source` of a turn
-(`chat`, `routine` or `webhook`) is stored with the queued turn, so a turn that
+(`chat`, `routine`, `checkin`, `webhook` or `bot`) is stored with the queued turn, so a turn that
 waits keeps its choice after a restart. The review model is read with the owner
 rules on each review call.
 
@@ -853,6 +853,30 @@ followed by hand, at most 3, and each hop runs the same check. A response is
 read only when it is a 200 with a `text/html` or `text/plain` type, and
 reading stops past 1 MB. The request has a 15 second limit. Tests inject the
 resolver and the request, so no test reaches the network.
+
+## Morning brief and check-ins
+
+Both are routines, so the bot sets them up with `routine_create` and the
+`RoutineScheduler` runs them. A morning brief is a daily routine whose prompt
+the system prompt describes. It needs no code of its own and runs like any
+routine.
+
+A check-in is a routine with `isQuiet` true (the `is_quiet` column, migration
+`0014_checkins`). The scheduler sends it with the turn source `checkin`, and
+the message ends with the instruction to reply with exactly `NOTHING_TO_REPORT`
+when nothing needs the owner. A check-in turn differs from a routine turn in
+three ways:
+
+- The model is the `routines` choice, or `haiku` when it is unset. It never
+  falls back to the chat model. The effort is the `routines` effort only,
+  because the chat effort was picked for another model.
+- The limits are the routines limits, like any turn that is not chat. The
+  spending and step limits go to the runner, and the time limit runs the clock.
+- When the turn ends with that reply, `ChatService` deletes the messages the
+  turn stored, its own prompt message included, and sends a `messagesRemoved`
+  event so an open web app drops them. The owner's messages are never in the
+  list. A check-in that failed, was stopped or said anything else stays in the
+  chat.
 
 ## Helper agents
 

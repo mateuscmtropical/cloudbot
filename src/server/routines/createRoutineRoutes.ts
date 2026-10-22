@@ -23,6 +23,7 @@ function toBotRoutine(record: RoutineRecord): BotRoutine {
         prompt: record.prompt,
         schedule: record.schedule,
         isEnabled: record.isEnabled,
+        isQuiet: record.isQuiet,
         nextRunAt: record.nextRunAt,
         lastRunAt: record.lastRunAt,
     };

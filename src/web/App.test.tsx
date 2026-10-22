@@ -148,6 +148,52 @@ describe('App bot list', () => {
     });
 });
 
+describe('App quiet check-ins', () => {
+    it('drops the messages the server removed and keeps the others', async () => {
+        const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
+        const makeMessage = (id: string, text: string, sequence: number): ChatMessage => ({
+            id, botId: 'bot-1', role: 'user', createdAt: sequence, sequence, body: { kind: 'text', text },
+        });
+
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(subscribeToEvents)
+            .mockImplementation((_botId, onEvent) => {
+                emitEvent.current = onEvent;
+
+                return () => {};
+            });
+
+        const { container } = render(<App />);
+
+        await waitFor(() => {
+            expect(emitEvent.current)
+                .toBeDefined();
+        });
+
+        act(() => {
+            emitEvent.current?.({ type: 'message', message: makeMessage('m1', 'Hello there', 1) });
+            emitEvent.current?.({ type: 'message', message: makeMessage('m2', 'Check-in look', 2) });
+        });
+
+        await waitFor(() => {
+            expect(container.textContent)
+                .toContain('Check-in look');
+        });
+
+        act(() => {
+            emitEvent.current?.({ type: 'messagesRemoved', botId: 'bot-1', messageIds: ['m2'] });
+        });
+
+        expect(container.textContent)
+            .not.toContain('Check-in look');
+        expect(container.textContent)
+            .toContain('Hello there');
+    });
+});
+
 describe('App pending files', () => {
     it('keeps a restored file when the send response arrives after the turn-end list', async () => {
         const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };

@@ -127,6 +127,13 @@
       "when": 1792631004250,
       "tag": "0017_push_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1792633894058,
+      "tag": "0018_checkins",
+      "breakpoints": true
     }
   ]
 }

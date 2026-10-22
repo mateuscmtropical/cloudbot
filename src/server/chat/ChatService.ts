@@ -30,6 +30,7 @@ import { BROWSER_ALLOW_TOOL_FULL_NAMES, createBrowserAllowTools } from '../deskt
 import type { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
 import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
+import { isQuietReply } from '../routines/checkin.ts';
 import { ROUTINE_TOOL_FULL_NAMES, createRoutineTools } from '../routines/createRoutineTools.ts';
 import { TASK_TOOL_FULL_NAMES, createTaskTools, describeBlockedNotice } from '../tasks/createTaskTools.ts';
 import { INTEGRATION_TOOL_FULL_NAMES, createIntegrationTools } from '../integrations/createIntegrationTools.ts';
@@ -233,6 +234,19 @@ interface TurnState {
     limit: UsageLimitState | undefined;
     // True once an error ended the turn and was shown to the owner. An error held back for a retry does not count.
     hasError: boolean;
+    // The messages this turn stored, so a quiet check-in can remove them. The owner's own messages are never in it.
+    savedMessageIds: string[];
+    // True while the last message the turn stored is the quiet reply of a check-in.
+    endsQuiet: boolean;
+    // The messages of the earlier parts of a check-in that waited for the usage limit. Empty for any other turn.
+    carriedMessageIds: string[];
+}
+
+// Every message a check-in stored so far, the earlier parts and the prompt message included, without repeats.
+function collectCheckinMessageIds(turn: TurnInput, turnState: TurnState): string[] {
+    const promptIds = turn.messageId === undefined ? [] : [turn.messageId];
+
+    return [...new Set([...turnState.carriedMessageIds, ...promptIds, ...turnState.savedMessageIds])];
 }
 
 interface UsageLimitState {
@@ -240,7 +254,8 @@ interface UsageLimitState {
 }
 
 // Who started a turn. A routine turn uses the routines model choice. A bot hand-off uses the routines choice too.
-type TurnSource = 'chat' | 'routine' | 'webhook' | 'bot' | 'channel';
+// A check-in is a routine that stays out of the chat when it finds nothing.
+type TurnSource = 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot' | 'channel';
 
 // A member of a channel, with the name the bot has now.
 interface NamedChannelMember {
@@ -608,6 +623,8 @@ class ChatService {
     private readonly queuedTurns = new Map<string, QueuedTurn[]>();
     // A usage limit wait per bot. Its timer starts the queue again at the reset time.
     private readonly usageWaitTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    // The message ids of a check-in that waits for the usage limit, per bot, for its continuation to remove if it ends quiet.
+    private readonly checkinCarry = new Map<string, string[]>();
 
     constructor(options: ChatServiceOptions) {
         this.botStore = options.botStore;
@@ -1356,6 +1373,7 @@ class ChatService {
         }
 
         this.usageWaitTimers.delete(botId);
+        this.checkinCarry.delete(botId);
         this.pendingUploads.delete(botId);
         this.queuedTurns.delete(botId);
         this.reviewSpend.delete(botId);
@@ -2180,12 +2198,15 @@ class ChatService {
     }
 
     // A channel turn's text is posted in its channel. Its tool cards stay out, and the bot's own chat gets nothing from it.
-    private async saveTurnMessage(botId: string, role: ChatRole, unmaskedBody: MessageBody, channel: ChannelTurnSource | undefined): Promise<void> {
+    // A message saved in the bot's own chat is noted on the turn, so a quiet check-in can remove it.
+    private async saveTurnMessage(botId: string, role: ChatRole, unmaskedBody: MessageBody, channel: ChannelTurnSource | undefined, turnState: TurnState): Promise<void> {
         // The stored and shown text never holds a card, CPF or SSN number in full.
         const body = maskMessageBody(unmaskedBody);
 
         if (channel === undefined) {
-            await this.saveAndPublish(botId, role, body);
+            const saved = await this.saveAndPublish(botId, role, body);
+
+            turnState.savedMessageIds.push(saved.id);
 
             return;
         }
@@ -2613,7 +2634,7 @@ class ChatService {
     }
 
     // After a usage limit, the same message runs again when no session started. Otherwise "Continue." runs in the session.
-    private async waitForUsageLimit(turn: TurnInput, agentStarted: boolean, resetsAt: number | undefined): Promise<void> {
+    private async waitForUsageLimit(turn: TurnInput, turnState: TurnState, resetsAt: number | undefined): Promise<void> {
         // A channel turn does not wait in the queue. Its round ends here, its queued replies are dropped, and the channel is told.
         if (turn.channel !== undefined) {
             this.endChannelRounds(turn.channel.channelId);
@@ -2622,7 +2643,7 @@ class ChatService {
             return;
         }
 
-        const resumeTurn: TurnInput = agentStarted
+        const resumeTurn: TurnInput = turnState.agentStarted
             ? { botId: turn.botId, text: CONTINUE_PROMPT, uploads: [], messageId: undefined, source: turn.source, handoff: carryHandoff(turn) }
             : turn;
 
@@ -2630,10 +2651,15 @@ class ChatService {
         const resumeAt = this.armUsageWaitTimer(turn.botId, resetsAt ?? Date.now() + USAGE_LIMIT_FALLBACK_WAIT_MS);
 
         await this.botStore.setUsageWait(turn.botId, resumeAt);
-        await this.saveAndPublish(turn.botId, 'system', {
+        const waitNotice = await this.saveAndPublish(turn.botId, 'system', {
             kind: 'text',
             text: `The usage limit was reached. CloudBot continues at ${formatResumeTime(resumeAt)}.`,
         });
+
+        // The continuation of a check-in removes these too if it ends quiet. They are kept in memory only, so a restart in the wait keeps them in the chat.
+        if (turn.source === 'checkin') {
+            this.checkinCarry.set(turn.botId, [...collectCheckinMessageIds(turn, turnState), waitNotice.id]);
+        }
     }
 
     // The one place a usage wait is scheduled, for a new limit and for a wait kept across a restart.
@@ -2670,6 +2696,7 @@ class ChatService {
         }
 
         this.usageWaitTimers.delete(botId);
+        this.checkinCarry.delete(botId);
 
         const droppedTurns = this.queuedTurns.get(botId) ?? [];
         const droppedMessageIds = droppedTurns.flatMap(turn => (turn.messageId === undefined ? [] : [turn.messageId]));
@@ -2705,7 +2732,7 @@ class ChatService {
         if (turn.channel !== undefined) {
             this.channelRunning.set(botId, turn.channel.roundId);
         }
-        const turnState: TurnState = { agentStarted: false, isRejectedByLimit: false, rejectedResetsAt: undefined, limit: undefined, hasError: false };
+        const turnState: TurnState = { agentStarted: false, isRejectedByLimit: false, rejectedResetsAt: undefined, limit: undefined, hasError: false, savedMessageIds: [], endsQuiet: false, carriedMessageIds: this.takeCheckinCarry(turn) };
         // Set when the turn ends on an error, so its hand-off reply says so.
         let hasFailed = false;
 
@@ -2871,6 +2898,8 @@ class ChatService {
 
                 // A turn that hit a limit reports from its continuation, so the reply is posted once.
                 if (turnState.limit === undefined) {
+                    await this.dropQuietCheckin(turn, turnState, abortController.signal.aborted || hasFailed);
+
                     const handoffOutcome = readHandoffOutcome(abortController.signal.aborted, hasFailed || turnState.hasError);
 
                     await this.reportHandoffReply(turn, handoffOutcome);
@@ -2887,10 +2916,36 @@ class ChatService {
         }
     }
 
+    // A check-in that ends with the quiet reply found nothing for the owner. Its messages are deleted, so the chat shows nothing.
+    // A stopped or failed run stays, so the owner sees what happened.
+    private async dropQuietCheckin(turn: TurnInput, turnState: TurnState, hasStoppedOrFailed: boolean): Promise<void> {
+        const isQuietRun = turn.source === 'checkin' && turnState.endsQuiet && !turnState.hasError && !hasStoppedOrFailed;
+
+        if (!isQuietRun) {
+            return;
+        }
+
+        const messageIds = collectCheckinMessageIds(turn, turnState);
+
+        await this.messageStore.removeMany(turn.botId, messageIds);
+        this.publish(turn.botId, { type: 'messagesRemoved', botId: turn.botId, messageIds });
+    }
+
+    // The continuation of a check-in takes the messages of the part before the usage wait. Any other turn takes none.
+    private takeCheckinCarry(turn: TurnInput): string[] {
+        const carriedIds = turn.source === 'checkin' ? (this.checkinCarry.get(turn.botId) ?? []) : [];
+
+        if (turn.source === 'checkin') {
+            this.checkinCarry.delete(turn.botId);
+        }
+
+        return carriedIds;
+    }
+
     // A usage limit schedules the resume. Otherwise files a turn never handed to the agent go back.
     private async settleTurnEnd(turn: TurnInput, turnState: TurnState): Promise<void> {
         if (turnState.limit !== undefined) {
-            await this.waitForUsageLimit(turn, turnState.agentStarted, turnState.limit.resetsAt);
+            await this.waitForUsageLimit(turn, turnState, turnState.limit.resetsAt);
 
             return;
         }
@@ -3107,7 +3162,7 @@ class ChatService {
                     turnState.hasError = true;
                 }
 
-                await this.handleAgentEvent(botId, agentEvent, toolNamesById, turnContext.channel);
+                await this.handleAgentEvent(botId, agentEvent, toolNamesById, turnState, turnContext.channel);
             }
         } catch (error: unknown) {
             if (!isResumeAttempt || hasSession) {
@@ -3120,7 +3175,7 @@ class ChatService {
         return { failureText };
     }
 
-    private async handleAgentEvent(botId: string, agentEvent: AgentEvent, toolNamesById: Map<string, string>, channel: ChannelTurnSource | undefined): Promise<void> {
+    private async handleAgentEvent(botId: string, agentEvent: AgentEvent, toolNamesById: Map<string, string>, turnState: TurnState, channel: ChannelTurnSource | undefined): Promise<void> {
         switch (agentEvent.type) {
             case 'session':
                 await this.botStore.setSessionId(botId, agentEvent.sessionId);
@@ -3131,7 +3186,8 @@ class ChatService {
 
                 // The final message replaces the streamed text, so what the masker still holds is dropped.
                 this.streamMaskers.delete(botId);
-                await this.saveTurnMessage(botId, 'assistant', textBody, channel);
+                await this.saveTurnMessage(botId, 'assistant', textBody, channel, turnState);
+                turnState.endsQuiet = isQuietReply(agentEvent.text);
 
                 return;
             }
@@ -3149,14 +3205,16 @@ class ChatService {
                     summary: agentEvent.output,
                 };
 
-                await this.saveTurnMessage(botId, 'assistant', toolBody, channel);
+                await this.saveTurnMessage(botId, 'assistant', toolBody, channel, turnState);
+                turnState.endsQuiet = false;
 
                 return;
             }
             case 'turn_error': {
                 const errorBody: TextBody = { kind: 'text', text: agentEvent.message };
 
-                await this.saveTurnMessage(botId, 'system', errorBody, channel);
+                // A usage limit error comes before the wait. A quiet continuation removes it with the rest.
+                await this.saveTurnMessage(botId, 'system', errorBody, channel, turnState);
 
                 return;
             }

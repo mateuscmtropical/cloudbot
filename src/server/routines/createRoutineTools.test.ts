@@ -55,6 +55,24 @@ describe('createRoutineTools', () => {
             .resolves.toHaveLength(1);
     });
 
+    it('creates a quiet check-in and marks it in the list', async () => {
+        const create = findHandler(botId, 'routine_create');
+        const list = findHandler(botId, 'routine_list');
+
+        await create({ name: 'Inbox', prompt: 'Check my inbox.', isQuiet: true, schedule: { kind: 'interval', everyMinutes: 180 } }, {});
+        await create({ name: 'Brief', prompt: 'Brief me.', schedule: { kind: 'daily', hour: 8, minute: 0 } }, {});
+
+        const routines = await store.list(botId);
+        const result = await list({}, {});
+
+        expect(routines.map(routine => routine.isQuiet))
+            .toEqual([true, false]);
+        expect(result.content[0]?.text)
+            .toContain('"Inbox" (quiet check-in)');
+        expect(result.content[0]?.text)
+            .not.toContain('"Brief" (quiet');
+    });
+
     it('refuses an invalid schedule', async () => {
         const create = findHandler(botId, 'routine_create');
         const result = await create({ name: 'Inbox', prompt: 'x', schedule: { kind: 'interval', everyMinutes: 1 } }, {});

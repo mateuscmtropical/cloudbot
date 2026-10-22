@@ -37,7 +37,14 @@ function upsertLiveMessage(messages: ChatMessage[], message: ChatMessage): ChatM
     return [...updatedMessages].sort((first, second) => first.sequence - second.sequence);
 }
 
+// Drops the messages of a quiet check-in. An id the list does not hold is ignored.
+function removeMessages(messages: ChatMessage[], messageIds: string[]): ChatMessage[] {
+    const removedIds = new Set(messageIds);
+
+    return messages.filter(message => !removedIds.has(message.id));
+}
+
 // The page size the web app asks for. A page with fewer messages than this is the last one.
 const MESSAGE_PAGE_SIZE = 50;
 
-export { MESSAGE_PAGE_SIZE, mergeMessages, upsertLiveMessage, upsertMessage };
+export { MESSAGE_PAGE_SIZE, mergeMessages, removeMessages, upsertLiveMessage, upsertMessage };

@@ -25,6 +25,25 @@ describe('MessageStore', () => {
         opened.close();
     });
 
+    it('removes the given messages of one bot and keeps the others', async () => {
+        const otherBot = await new BotStore(opened.db)
+            .create({ name: 'Bia', title: '', description: '' });
+        const first = await messageStore.add({ botId: bot.id, role: 'user', kind: 'text', content: { text: 'a' } });
+        const second = await messageStore.add({ botId: bot.id, role: 'assistant', kind: 'text', content: { text: 'b' } });
+        const third = await messageStore.add({ botId: bot.id, role: 'user', kind: 'text', content: { text: 'c' } });
+        const foreign = await messageStore.add({ botId: otherBot.id, role: 'user', kind: 'text', content: { text: 'd' } });
+
+        await messageStore.removeMany(bot.id, [first.id, second.id, foreign.id]);
+
+        const kept = await messageStore.listByBot(bot.id, { limit: 10 });
+        const otherKept = await messageStore.listByBot(otherBot.id, { limit: 10 });
+
+        expect(kept.map(message => message.id))
+            .toEqual([third.id]);
+        expect(otherKept)
+            .toHaveLength(1);
+    });
+
     it('adds a message and stores its content as JSON', async () => {
         const message = await messageStore.add({
             botId: bot.id,

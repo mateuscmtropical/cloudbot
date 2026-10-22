@@ -31,7 +31,7 @@ const MAX_ROUTINES_PER_BOT = 20;
 const MAX_NAME_LENGTH = 60;
 const MAX_PROMPT_LENGTH = 2000;
 
-const CREATE_DESCRIPTION = `Create a routine: a prompt that is sent to you on a schedule, as a chat message. Use it only when the owner asks for something to repeat. The schedule is one of: {kind:"interval", everyMinutes} (${String(MIN_INTERVAL_MINUTES)} to ${String(MAX_INTERVAL_MINUTES)}), {kind:"daily", hour, minute} or {kind:"weekly", weekday, hour, minute} with weekday 0 for Sunday to 6 for Saturday. Hours and minutes are UTC. Write the prompt so you can do the task without the current chat.`;
+const CREATE_DESCRIPTION = `Create a routine: a prompt that is sent to you on a schedule, as a chat message. Use it only when the owner asks for something to repeat. The schedule is one of: {kind:"interval", everyMinutes} (${String(MIN_INTERVAL_MINUTES)} to ${String(MAX_INTERVAL_MINUTES)}), {kind:"daily", hour, minute} or {kind:"weekly", weekday, hour, minute} with weekday 0 for Sunday to 6 for Saturday. Hours and minutes are UTC. Write the prompt so you can do the task without the current chat. Set isQuiet true for a check-in that should message the owner only when something needs them. A quiet run that finds nothing leaves no trace in the chat, and it runs on a small model unless the owner picked one for routines. Leave isQuiet off for a brief or anything the owner wants to read every time.`;
 const LIST_DESCRIPTION = 'List your routines with their ids, schedules and next run times (UTC).';
 const DELETE_DESCRIPTION = 'Delete one of your routines by id.';
 const SET_ENABLED_DESCRIPTION = 'Turn one of your routines on or off by id. A routine that is off does not run.';
@@ -45,6 +45,8 @@ const CREATE_SHAPE = {
         .trim()
         .min(1)
         .max(MAX_PROMPT_LENGTH),
+    isQuiet: z.boolean()
+        .optional(),
     schedule: z.object({
         kind: z.enum(['interval', 'daily', 'weekly']),
         everyMinutes: z.number()
@@ -84,7 +86,7 @@ function createRoutineTools(store: RoutineStore, botId: string): CloudbotTool[] 
                 return textResult(`The schedule is not valid. An interval is ${String(MIN_INTERVAL_MINUTES)} to ${String(MAX_INTERVAL_MINUTES)} minutes. Hours are 0 to 23, minutes 0 to 59 and weekdays 0 to 6.`, true);
             }
 
-            const routine = await store.addWithLimit(botId, { name: args.name, prompt: args.prompt, schedule }, MAX_ROUTINES_PER_BOT);
+            const routine = await store.addWithLimit(botId, { name: args.name, prompt: args.prompt, schedule, isQuiet: args.isQuiet === true }, MAX_ROUTINES_PER_BOT);
 
             if (routine === undefined) {
                 return textResult(`You can have at most ${String(MAX_ROUTINES_PER_BOT)} routines. Delete one first.`, true);
@@ -108,7 +110,9 @@ function createRoutineTools(store: RoutineStore, botId: string): CloudbotTool[] 
                 const state = routine.isEnabled ? `next run ${formatTime(routine.nextRunAt)} UTC` : 'off';
                 const scheduleText = JSON.stringify(routine.schedule);
 
-                return `- ${routine.id}: "${routine.name}" ${scheduleText}, ${state}`;
+                const kindText = routine.isQuiet ? ' (quiet check-in)' : '';
+
+                return `- ${routine.id}: "${routine.name}"${kindText} ${scheduleText}, ${state}`;
             });
 
             const listText = lines.join('\n');
