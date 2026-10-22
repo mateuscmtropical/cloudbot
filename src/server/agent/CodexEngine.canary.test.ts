@@ -188,6 +188,7 @@ describe.skipIf(CODEX_PATH === '')(`Codex canary (checked with ${CODEX_PROTOCOL_
         const remoteAddress = proxy.register('remote-app', { upstream: remote.url, readToken: () => undefined });
         const engine = new CodexEngine({
             loopback,
+            callGates: proxy,
             codexPath: CODEX_PATH,
             codexHomeFor: () => join(folder, 'codex-home'),
             environment: { PATH: process.env.PATH ?? '', FAKE_PROVIDER_KEY: FAKE_KEY, NO_PROXY: '127.0.0.1', no_proxy: '127.0.0.1' },

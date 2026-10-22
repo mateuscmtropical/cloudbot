@@ -3,7 +3,7 @@ import type { ChildProcess } from 'node:child_process';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
-import { resourcesBlockedAddress } from '../apps/AppProxy.ts';
+import type { ProxyCallGate } from '../apps/AppProxy.ts';
 import type { AgentEvent } from './AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from './AgentRunner.ts';
 import { answerCodexRequest } from './answerCodexRequest.ts';
@@ -27,6 +27,9 @@ interface CodexEngineOptions {
     extraConfig?: string[] | undefined;
     // Serves the bot's own tools. Unset means a Codex turn has no CloudBot tools.
     loopback?: LoopbackToolServer | undefined;
+    // Opens a gated address of a connected server for one turn, the app proxy in production. Unset means a Codex turn
+    // gets no connected servers, since a call to the plain address would not be checked again at the proxy.
+    callGates?: { openCallGate: (address: string) => ProxyCallGate | undefined } | undefined;
     // How long a review may take before the call is declined. The approval gate waits one hour, so this outlasts it.
     reviewTimeoutMs?: number | undefined;
     // Tests inject fakes here. Production spawns the binary and signals its process group.
@@ -124,23 +127,37 @@ function toolServerConfig(turn: LoopbackTurn): string[] {
     ];
 }
 
-// The owner's connected servers, at their proxy addresses with resource requests refused. Only http servers are
-// added, under a plain name, so a name cannot reach another config key. Every call asks first, like the bot's own server.
-function remoteServerConfig(request: TurnRequest): { names: string[]; settings: string[] } {
-    const entries = Object.entries(request.mcpServers ?? {});
-    const httpEntries = entries.filter((entry): entry is [string, { type: 'http'; url: string }] => entry[1].type === 'http')
-        .filter(([name]) => REMOTE_SERVER_NAME_PATTERN.test(name) && name !== PROFILE_SERVER_NAME);
-    const settings = httpEntries.flatMap(([name, config]) => {
+interface RemoteServer {
+    name: string;
+    gate: ProxyCallGate;
+}
+
+// The owner's connected servers, each at a gated proxy address of this turn. Only http servers are added, under a plain
+// name, so a name cannot reach another config key. Every call asks first, like the bot's own server.
+function openRemoteServers(request: TurnRequest, callGates: CodexEngineOptions['callGates']): RemoteServer[] {
+    if (callGates === undefined) {
+        return [];
+    }
+
+    return Object.entries(request.mcpServers ?? {})
+        .filter((entry): entry is [string, { type: 'http'; url: string }] => entry[1].type === 'http')
+        .filter(([name]) => REMOTE_SERVER_NAME_PATTERN.test(name) && name !== PROFILE_SERVER_NAME)
+        .flatMap(([name, config]) => {
+            const gate = callGates.openCallGate(config.url);
+
+            return gate === undefined ? [] : [{ name, gate }];
+        });
+}
+
+function remoteServerConfig(servers: RemoteServer[]): string[] {
+    return servers.flatMap(({ name, gate }) => {
         const prefix = `mcp_servers.${name}`;
-        const address = resourcesBlockedAddress(config.url);
 
         return [
-            `${prefix}.url=${JSON.stringify(address)}`,
+            `${prefix}.url=${JSON.stringify(gate.address)}`,
             `${prefix}.default_tools_approval_mode="prompt"`,
         ];
     });
-
-    return { names: httpEntries.map(([name]) => name), settings };
 }
 
 function refuseOnPromptRoute(): Promise<{ isAllowed: false; reason: string }> {
@@ -207,19 +224,23 @@ class CodexEngine implements AgentRunner {
             ? undefined
             : this.options.loopback.grantTurn({ tools, reviewToolCall: refuseOnPromptRoute, disallowedTools: request.disallowedTools, offersPromptTool: false });
 
+        const remoteServers = openRemoteServers(request, this.options.callGates);
+
         try {
-            yield* this.runProcess(request, codexHome, toolTurn);
+            yield* this.runProcess(request, codexHome, toolTurn, remoteServers);
         } finally {
             toolTurn?.release();
+            remoteServers.forEach((server) => {
+                server.gate.close();
+            });
         }
     }
 
-    private async* runProcess(request: TurnRequest, codexHome: string, toolTurn: LoopbackTurn | undefined): AsyncGenerator<AgentEvent> {
+    private async* runProcess(request: TurnRequest, codexHome: string, toolTurn: LoopbackTurn | undefined, remoteServers: RemoteServer[]): AsyncGenerator<AgentEvent> {
         const tokenVariable = toolTurn === undefined ? {} : { [TOOL_TOKEN_VARIABLE]: toolTurn.token };
         const environment = { PATH: process.env.PATH ?? '', ...this.options.environment, ...request.extraEnvironment, HOME: codexHome, CODEX_HOME: codexHome, ...tokenVariable };
         const toolConfig = toolTurn === undefined ? [] : toolServerConfig(toolTurn);
-        const remote = remoteServerConfig(request);
-        const args = buildCodexArguments([...toolConfig, ...remote.settings, ...(this.options.extraConfig ?? [])]);
+        const args = buildCodexArguments([...toolConfig, ...remoteServerConfig(remoteServers), ...(this.options.extraConfig ?? [])]);
         const child = this.spawnFunction(this.options.codexPath, args, {
             cwd: request.workspaceDir,
             env: environment,
@@ -362,12 +383,17 @@ class CodexEngine implements AgentRunner {
                                 toolTurn.allowCall(itemId, toolName, input);
                             },
                         },
-                remoteServers: remote.names.map(name => ({
+                remoteServers: remoteServers.map(({ name, gate }) => ({
                     name,
                     toolCalls: () => [...items.values()].filter(isMcpToolCallItem),
                     decidedItemIds,
                     blockedTools: request.disallowedTools ?? [],
-                    allowCall: () => undefined,
+                    // The proxy sends this one call, once. The review names the tool in full, the server knows its own name.
+                    allowCall: (itemId: string, toolName: string, input: unknown) => {
+                        const plainToolName = toolName.slice(`mcp__${name}__`.length);
+
+                        gate.allowCall(itemId, plainToolName, input);
+                    },
                 })),
             };
 
