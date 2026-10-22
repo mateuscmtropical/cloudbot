@@ -10,6 +10,7 @@ import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildPng } from '../attachments/testImages.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
+import { CLI_DISALLOWED_TOOLS } from '../agent/buildCliDisallowedTools.ts';
 import { PROFILE_SERVER_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, UPDATE_PROFILE_TOOL_FULL_NAME } from '../agent/createProfileToolServer.ts';
 import { BrowserControl } from '../desktop/BrowserControl.ts';
 import { REQUEST_SCREEN_TOOL_FULL_NAME } from '../desktop/createScreenTools.ts';
@@ -2033,9 +2034,9 @@ describe('ChatService model choices', () => {
         const agents = runner.receivedRequests[0]?.agents ?? {};
 
         expect(agents.browsing?.disallowedTools)
-            .toEqual([blockedTool]);
+            .toEqual([...CLI_DISALLOWED_TOOLS, blockedTool]);
         expect(agents.documents?.disallowedTools)
-            .toEqual([blockedTool]);
+            .toEqual([...CLI_DISALLOWED_TOOLS, blockedTool]);
     });
 
     it('sends no helper and no Agent tool when no helper is chosen', async () => {

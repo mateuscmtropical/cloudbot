@@ -152,6 +152,16 @@ can propose a change with a tool, and the owner approves it. A rule that names
 no tool is advice to the model and not a barrier. A misspelled tool name blocks
 nothing. See [Owner rules](ARCHITECTURE.md#owner-rules).
 
+CloudBot also always disallows the CLI built-ins that operate separate CLI
+services. The list covers `CronCreate`, `CronDelete`, `CronList`,
+`ScheduleWakeup`, `RemoteTrigger`, `PushNotification`, `SendMessage`,
+`ListAgents`, `Workflow`, `Monitor`, `EnterWorktree`, `ExitWorktree`,
+`DesignSync`, `ReportFindings`, `TaskStop`, `NotebookEdit`, `PowerShell` and
+`Skill`. The same fixed list reaches every main turn and helper agent. Owner
+blocks are added to it. CloudBot's own shell, file, web, helper and MCP tools
+stay available under their existing review rules. CLI skills are not loaded by
+CloudBot.
+
 ### Command floor
 
 Before any rule, approval or model, a fixed floor refuses a short list of

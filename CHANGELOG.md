@@ -6,6 +6,10 @@ All notable changes to this project are listed here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- The Claude CLI and every helper agent now disallow built-in tools for CLI schedules, cloud triggers, notifications, messaging, workflows, worktrees, design sync and other CLI-only services.
+
 ### Added
 
 - A template gallery in a public GitHub repository, mateuscmtropical/cloudbot-templates by default. The bot lists its templates with gallery_list, which reads one index file and shows each name, title, description and blocked tools. Set CLOUDBOT_GALLERY_REPO to read another repository.
