@@ -22,6 +22,9 @@ import type { SignInTab } from './signInTab.ts';
 import { describePushResult, disablePushNotifications, enablePushNotifications, readNotificationTarget, useNotificationOpen } from './pushClient.ts';
 import type { NotificationTarget } from './pushClient.ts';
 import { DISABLE_NOTIFICATIONS_CHOICE_ID, ENABLE_NOTIFICATIONS_CHOICE_ID } from '../shared/pushTypes.ts';
+import { ADD_PASSKEY_CHOICE_ID, REMOVE_PASSKEY_CHOICE_ID } from '../shared/passkeyTypes.ts';
+import { addPasskey, describePasskeyResult, removePasskey } from './passkeyClient.ts';
+import { SignInScreen } from './components/SignInScreen.tsx';
 
 interface DraftState {
     botId: string;
@@ -127,6 +130,7 @@ function App(): ReactElement {
     // The connected remote MCP servers panel, opened from the sidebar.
     const [isConnectAppsOpen, setIsConnectAppsOpen] = useState(false);
     const [errorText, setErrorText] = useState<string | undefined>(undefined);
+    const [needsSignIn, setNeedsSignIn] = useState(false);
     // Chips per bot: files still uploading, and the files the server holds for the next message.
     const [attachmentsByBot, setAttachmentsByBot] = useState<Record<string, DraftAttachment[]>>({});
     // A reply arrived while the tab was hidden. The tab icon shows a dot until the owner looks at the tab again.
@@ -261,7 +265,14 @@ function App(): ReactElement {
                     setFocusMessageId(target?.messageId);
                 }
             })
-            .catch(() => {
+            .catch((error: unknown) => {
+                // Without a session the owner signs in first, with a passkey or the setup link.
+                if (error instanceof RequestFailedError && error.status === 401) {
+                    setNeedsSignIn(true);
+
+                    return;
+                }
+
                 setErrorText('Could not load your bots.');
             });
     }, []);
@@ -963,6 +974,33 @@ function App(): ReactElement {
                     });
             }
 
+            const isPasskeyAddTap = card?.body.kind === 'choice' && card.body.isPasskeyAdd === true && choiceId === ADD_PASSKEY_CHOICE_ID;
+            const removedPasskeyId = card?.body.kind === 'choice' && choiceId === REMOVE_PASSKEY_CHOICE_ID ? card.body.removesPasskeyId : undefined;
+
+            if (isPasskeyAddTap || removedPasskeyId !== undefined) {
+                // The browser makes or removes the passkey inside the tap. The card closes only when that worked.
+                const botId = selectedBotId;
+                const actionPromise = removedPasskeyId === undefined
+                    ? addPasskey()
+                    : removePasskey(removedPasskeyId)
+                            .then(isRemoved => (isRemoved ? 'done' as const : 'failed' as const), () => 'failed' as const);
+
+                return actionPromise.then((result) => {
+                    if (result !== 'done') {
+                        const problemText = describePasskeyResult(result);
+
+                        setErrorText(problemText);
+
+                        return;
+                    }
+
+                    setErrorText(undefined);
+                    const choicePromise = submitChoice(botId, messageId, choiceId);
+
+                    showMessageResult(choicePromise);
+                });
+            }
+
             const option = card?.body.kind === 'choice' ? card.body.options.find(choice => choice.id === choiceId) : undefined;
 
             if (option?.opensLink === true) {
@@ -1025,6 +1063,10 @@ function App(): ReactElement {
     const botAttachments = selectedBotId === undefined ? [] : (attachmentsByBot[selectedBotId] ?? []);
     const isUploading = botAttachments.some(attachment => attachment.status === 'uploading');
     const botWebhookUrls = webhookUrls.filter(notice => notice.botId === selectedBotId);
+
+    if (needsSignIn) {
+        return <SignInScreen />;
+    }
 
     return (
         <div className="app">
