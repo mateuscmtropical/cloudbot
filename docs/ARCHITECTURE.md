@@ -1122,6 +1122,12 @@ while the tab is hidden. A mascot that is off screen, seen through an `Intersect
 pointer and does not blink, so a long chat costs nothing for them. Under `prefers-reduced-motion` the eyes, the lean
 and the blink still run, with no easing, so they jump. The stylesheet stops the bounce, the squish and the hover motion there.
 
+When the owner opens a bot from the side-by-side list, a fixed copy of its row mascot hops to the right edge, then arcs to the
+latest message mascot in one 780 ms CSS animation. The source and destination mascots keep their layout space and show again
+when the copy lands. Message text stays above the copy, which cannot intercept input. A mouse wheel, touch scroll or scroll
+key outside a text field cancels the flight. It runs once per bot chat opening and is skipped with reduced motion, without a
+latest message mascot, or when the list and conversation are not side by side.
+
 While a reply streams, the app joins the text deltas of one animation frame into one draft update, and the stored
 messages are memoized (`MessageItem`), so a delta renders only the draft. Live messages that are not a stored reply
 get the `is-entering` class and rise in. A stored reply takes the place of its draft, which already rose. Panels,
