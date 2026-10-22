@@ -548,5 +548,5 @@ class ClaudeCliEngine implements AgentRunner {
     }
 }
 
-export { ClaudeCliEngine, buildCliArguments, buildInterruptMessage, buildUserMessage, noProxyValues };
-export type { ClaudeCliEngineOptions, CliTurnFiles, SpawnFunction };
+export { ClaudeCliEngine, buildCliArguments, buildInterruptMessage, buildUserMessage, noProxyValues, signalProcessTree };
+export type { ClaudeCliEngineOptions, CliTurnFiles, SignalAction, SpawnFunction };

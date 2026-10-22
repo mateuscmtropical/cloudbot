@@ -107,7 +107,7 @@ the server user.
 
 | Secret | Where it lives | How the bot uses it | What the bot never gets |
 |---|---|---|---|
-| Anthropic API key | The vault | Through the key proxy | The key. It gets the proxy address and a dummy key. |
+| API key of an AI provider | The vault | Through a key proxy per provider | The key. It gets the proxy address and a dummy key. |
 | GitHub token | The vault, per bot | Through `GithubProxy` for `git` and `gh` | The token. A token saved for another site is never sent. |
 | Token of a connected app | The vault, per bot | Through `AppProxy` | The token and the server address |
 | Integration secret | The vault, per bot | Through a script that runs as `cloudbot-integrations` | The value. It is removed from the output. |
@@ -122,8 +122,8 @@ The vault encrypts each value with AES-256-GCM and a new random IV. The key is
 The encryption alone helps only when someone gets `vault.json` without
 `vault.key`. The real protection is the Unix permission on the data folder.
 
-The key proxy sends the bot's requests to Anthropic's API and adds the key. It
-sends nothing to any other address.
+Each key proxy sends the bot's requests to its one provider's API and adds that
+provider's key. It sends nothing to any other address.
 
 A secret that the bot asked for with `request_secret` is saved with an https
 site. `browser_type_secret` types it only when the page origin is that site and
@@ -131,9 +131,11 @@ the focused element is a password, one-time code or card field. A search box or
 a text field is refused. Names that start with `ANTHROPIC_` or `CLAUDE_` are
 refused, so a bot form cannot pass for the setup form.
 
-The subscription login is not in the vault. The `claude` CLI keeps it in the
+The subscription login is not in the vault. Each provider's CLI keeps it in the
 home of the `bot` user. CloudBot never reads, copies or stores it. The bot
-runs as the same user, so in Docker its shell can read those files.
+runs as the same user, so in Docker its shell can read those files. A tool call
+that names a CLI's sign-in or config folder is refused before the review, but
+this is a text match, and a path built at run time is not caught.
 
 ## What stops the bot from doing harm
 
@@ -307,12 +309,17 @@ These are accepted today. A report about one of them is out of scope in the
   the owner.
 - The Chromium profile holds the sessions of sites that were signed in. The bot
   can read it, and it can drive the browser.
-- The subscription login is readable by the bot in Docker.
+- The subscription login of every provider is readable by the bot in Docker.
 - Chromium runs with `--no-sandbox`, because Docker's default seccomp profile
   blocks the namespaces its sandbox needs. See
   [OWNER_QUESTIONS.md](OWNER_QUESTIONS.md).
-- The bot can use the API key through the key proxy outside the turn limits.
-  The limits count the spending that the CLI reports.
+- The bot can use an API key through its key proxy outside the turn limits. A
+  command can reach every key proxy, not only the one of its own provider. The
+  limits count the spending that the Claude CLI reports. Other providers have
+  no spending limit yet.
+- A provider CLI other than Claude decides which of its tools ask first. Its
+  questions are reviewed, but a tool that the CLI runs without asking is not
+  seen. Mistral Vibe and opencode are set to ask for every tool.
 - The memory of a bot is `CLAUDE.md` in its workspace, and the bot writes it.
   Text from a web page can end up there and come back in later turns.
 
@@ -356,6 +363,10 @@ These are accepted today. A report about one of them is out of scope in the
 - The image downloads the `claude` CLI with Anthropic's installer at build
   time. The CLI then runs from a root-owned copy and does not update itself.
   Updates come with a new image.
+- The other provider CLIs come from npm or from each vendor's install script
+  at build time, pinned to a version where the source allows it. They are owned
+  by root, so the bot user cannot replace them, and update checks are off
+  where the CLI has a switch for it.
 - `docker/install.sh` runs with `curl | sudo bash`, and `cloudbot update` pulls
   `main` with `git pull --ff-only`. Nothing checks a signature.
 

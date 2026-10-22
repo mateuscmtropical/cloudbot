@@ -27,7 +27,7 @@ const DELETE_FAILED: ChatErrorResponse = { error: 'Could not delete this bot. Tr
 const DELETE_REFUSED: Record<Exclude<DeleteBotOutcome, 'deleted' | 'missing'>, ChatErrorResponse> = {
     deleting: { error: 'This bot is already being deleted.' },
     last: { error: 'The last bot cannot be deleted.' },
-    setup: { error: 'Finish connecting Claude in this bot\'s chat before you delete it.' },
+    setup: { error: 'Finish connecting an AI provider in this bot\'s chat before you delete it.' },
     stopping: { error: 'The bot is still stopping. Try again in a moment.' },
     manager: { error: 'This bot manages a channel. Make another member the manager of that channel first.' },
 };

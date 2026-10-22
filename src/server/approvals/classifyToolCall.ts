@@ -44,6 +44,9 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__notifications_enable',
     // The same: it posts a card, and the browser removes its own subscription when the owner taps.
     'mcp__cloudbot__notifications_disable',
+    // Listing reads the provider status. Connecting only posts the provider list, and the owner signs in on the provider's page.
+    'mcp__cloudbot__provider_list',
+    'mcp__cloudbot__provider_connect',
 ]);
 
 // Letting the browser reach a private host always needs the owner's approval, whatever the rules say.
@@ -75,6 +78,8 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
     'mcp__cloudbot__channel_delete',
     // Limits decide how much a turn may spend, so the owner approves each change with its old and new values.
     'mcp__cloudbot__limits_set',
+    // A new provider gets the bot's next messages and files, so the owner approves the switch.
+    'mcp__cloudbot__provider_use',
 ]);
 
 // The tools of the bot itself have fixed names. Any other tool is an outside connector.
