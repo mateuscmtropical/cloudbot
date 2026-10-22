@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 
-import type { ChatEvent } from '../../shared/chatTypes.ts';
+import type { ChatEvent, ChatMessage } from '../../shared/chatTypes.ts';
 import type { TelegramApi, TelegramMessage, TelegramUpdate } from './TelegramApi.ts';
 
 // The bot's chat as the bridge sees it. ChatService in production.
@@ -61,6 +61,9 @@ const START_COMMAND_PATTERN = /^\/start\s+(\S+)\s*$/;
 const CONNECTED_TEXT = 'Connected. Messages you send here go to your bot, and its replies come back here.';
 const TEXT_ONLY_TEXT = 'Only text messages work here for now.';
 const NOT_SENT_TEXT = 'Your message could not be sent to the bot. Try again in the web app.';
+// The card text stays in the web app, and nothing can be answered from Telegram.
+const APPROVAL_WAITING_TEXT = 'The bot is waiting for your approval. Open the web app to answer it.';
+const SCREEN_WAITING_TEXT = 'The bot needs you on its screen. Open the web app to take it.';
 
 function readLink(stored: string | undefined): TelegramLink | undefined {
     if (stored === undefined) {
@@ -135,6 +138,8 @@ class TelegramBridge {
     private readonly waitingBots = new Set<string>();
     // Replies of each bot go out one after the other, so they arrive in order.
     private readonly replyQueues = new Map<string, Promise<void>>();
+    // Cards already announced on Telegram in the current Telegram turn. A card is published again when it is answered.
+    private readonly announcedMessages = new Map<string, Set<string>>();
 
     constructor(options: TelegramBridgeOptions) {
         this.chat = options.chat;
@@ -225,6 +230,7 @@ class TelegramBridge {
         this.links.delete(botId);
         this.waitingBots.delete(botId);
         this.replyQueues.delete(botId);
+        this.announcedMessages.delete(botId);
         this.unsubscribers.get(botId)?.();
         this.unsubscribers.delete(botId);
         // The aborted poll leaves the map now, so a pairing started right after this gets a poll of its own.
@@ -433,6 +439,7 @@ class TelegramBridge {
 
         if (event.type === 'turn' && !event.isRunning) {
             this.waitingBots.delete(botId);
+            this.announcedMessages.delete(botId);
 
             return;
         }
@@ -446,12 +453,17 @@ class TelegramBridge {
 
         const { message } = event;
 
-        if (message.role !== 'assistant' || message.body.kind !== 'text' || message.body.text.trim() === '') {
+        if (message.role !== 'assistant') {
+            return;
+        }
+
+        const replyText = this.replyTextFor(botId, message);
+
+        if (replyText === undefined) {
             return;
         }
 
         const api = this.createApi(token);
-        const replyText = message.body.text;
         const previous = this.replyQueues.get(botId) ?? Promise.resolve();
         const next = previous.then(() => api.sendMessage(link.chatId, replyText))
             .catch(() => {
@@ -460,7 +472,33 @@ class TelegramBridge {
 
         this.replyQueues.set(botId, next);
     }
+
+    // The text that goes to Telegram for an assistant message, or undefined when it stays in the web app.
+    private replyTextFor(botId: string, message: ChatMessage): string | undefined {
+        const { body } = message;
+
+        if (body.kind === 'text') {
+            return body.text.trim() === '' ? undefined : body.text;
+        }
+
+        const isOpenApproval = body.kind === 'choice' && body.isApproval === true && body.chosenId === undefined;
+
+        if (!isOpenApproval && body.kind !== 'screenLink') {
+            return undefined;
+        }
+
+        const announced = this.announcedMessages.get(botId) ?? new Set<string>();
+
+        if (announced.has(message.id)) {
+            return undefined;
+        }
+
+        announced.add(message.id);
+        this.announcedMessages.set(botId, announced);
+
+        return isOpenApproval ? APPROVAL_WAITING_TEXT : SCREEN_WAITING_TEXT;
+    }
 }
 
-export { LINK_KEY_PREFIX, MAX_FAILED_TRIES, OFFSET_KEY_PREFIX, PAIRING_LIFETIME_MS, TelegramBridge };
+export { APPROVAL_WAITING_TEXT, LINK_KEY_PREFIX, MAX_FAILED_TRIES, OFFSET_KEY_PREFIX, PAIRING_LIFETIME_MS, SCREEN_WAITING_TEXT, TelegramBridge };
 export type { TelegramBridgeOptions, TelegramChat, TelegramLink, TelegramSettings };
