@@ -6,7 +6,7 @@ import { filterOwnerEnvironment, localClaudeConfigDir, validateAgentIsolation } 
 import { CLEANUP_INTERVAL_MS } from './attachments/cleanUploads.ts';
 import { SdkAgentRunner } from './agent/SdkAgentRunner.ts';
 import { SetupAccess } from './access/SetupAccess.ts';
-import { buildSetupLink, readPublicBaseUrl, readServerPort } from './access/setupLinkUrl.ts';
+import { buildSetupLink, readPublicBaseUrl, readServerHost, readServerPort } from './access/setupLinkUrl.ts';
 import { createClaudeReviewModel } from './approvals/createClaudeReviewModel.ts';
 import { createReviewContextReader } from './approvals/createReviewContextReader.ts';
 import { createToolCallReviewer } from './approvals/createToolCallReviewer.ts';
@@ -68,6 +68,7 @@ interface RuntimeConnection {
 validateAgentIsolation(process.env.CLOUDBOT_AGENT_USER);
 
 const port = readServerPort(process.env);
+const host = readServerHost(process.env);
 const version = process.env.CLOUDBOT_VERSION ?? 'dev';
 const dataDir = resolveDataDir();
 const databaseFilePath = databasePath(dataDir);
@@ -354,7 +355,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ version, access, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.
@@ -367,8 +368,11 @@ if (!hasSession) {
     console.log(`Open this link to make this browser the owner: ${setupLink}`);
 }
 
-const server = serve({ fetch: app.fetch, port }, (address) => {
-    console.log(`CloudBot is listening on http://localhost:${String(address.port)}`);
+const server = serve({ fetch: app.fetch, port, hostname: host }, (address) => {
+    // The address the socket really got, so a HOST that was changed on purpose shows in the log.
+    const listenHost = address.family === 'IPv6' ? `[${address.address}]` : address.address;
+
+    console.log(`CloudBot is listening on http://${listenHost}:${String(address.port)}`);
     void setup.start()
         .catch(() => {
             console.error('Could not start Claude setup.');

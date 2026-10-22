@@ -72,6 +72,7 @@ COPY --from=build /app/package.json ./package.json
 
 ENV NODE_ENV=production \
     PORT=3000 \
+    HOST=0.0.0.0 \
     CLOUDBOT_DATA_DIR=/var/lib/cloudbot \
     CLOUDBOT_AGENT_USER=bot \
     CLOUDBOT_INTEGRATION_USER=cloudbot-integrations \

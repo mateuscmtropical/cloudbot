@@ -78,7 +78,7 @@ describe('createWebhookRoutes', () => {
     function postWebhook(body: unknown): Response | Promise<Response> {
         return app.request(`/api/bots/${botId}/webhooks`, {
             method: 'POST',
-            headers: { cookie, 'content-type': 'application/json' },
+            headers: { 'cookie': cookie, 'origin': 'http://localhost', 'content-type': 'application/json' },
             body: JSON.stringify(body),
         });
     }
@@ -158,8 +158,8 @@ describe('createWebhookRoutes', () => {
         const webhook = await store.add(botId, 'Deploy', hashWebhookToken('owner-list-token'));
         const withoutCookie = await app.request(`/api/bots/${botId}/webhooks`);
         const unknownBot = await app.request('/api/bots/missing/webhooks', { headers: { cookie } });
-        const removed = await app.request(`/api/bots/${botId}/webhooks/${webhook.id}`, { method: 'DELETE', headers: { cookie } });
-        const removedAgain = await app.request(`/api/bots/${botId}/webhooks/${webhook.id}`, { method: 'DELETE', headers: { cookie } });
+        const removed = await app.request(`/api/bots/${botId}/webhooks/${webhook.id}`, { method: 'DELETE', headers: { cookie, origin: 'http://localhost' } });
+        const removedAgain = await app.request(`/api/bots/${botId}/webhooks/${webhook.id}`, { method: 'DELETE', headers: { cookie, origin: 'http://localhost' } });
 
         expect(withoutCookie.status)
             .toBe(401);

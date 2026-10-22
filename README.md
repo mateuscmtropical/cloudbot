@@ -93,8 +93,11 @@ browser you want as the owner. The link works once and sets a session cookie.
 If you lose the cookie, run `pnpm build` and then `pnpm setup-link`. It prints
 a new link and ends every existing session.
 
-The link uses `CLOUDBOT_PUBLIC_URL` when it is set, and `http://localhost:PORT`
+The link uses `CLOUDBOT_PUBLIC_URL` when it is set, and `http://127.0.0.1:PORT`
 otherwise. The cookie is `Secure`, so open the link on localhost or over HTTPS.
+
+A local run listens on `127.0.0.1` only. Set `HOST` to listen on another
+address, and the Docker image sets `HOST=0.0.0.0`.
 
 ## Connect Claude in chat
 

@@ -149,7 +149,7 @@ describe('setup conversation', () => {
 
     async function answer(context: Fixture, messageId: string, action: string, payload: unknown, botId = context.botId): Promise<Response> {
         return context.app.request(`/api/bots/${botId}/messages/${messageId}/${action}`, {
-            method: 'POST', headers: { 'Cookie': context.cookie, 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+            method: 'POST', headers: { 'Cookie': context.cookie, 'Origin': 'http://localhost', 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         });
     }
 
@@ -306,7 +306,7 @@ describe('setup conversation', () => {
 
     it('requires the owner cookie on all answer routes', async () => {
         const context = await fixture();
-        const requests = ['choice', 'code', 'secret'].map(async action => context.app.request(`/api/bots/${context.botId}/messages/missing/${action}`, { method: 'POST' }));
+        const requests = ['choice', 'code', 'secret'].map(async action => context.app.request(`/api/bots/${context.botId}/messages/missing/${action}`, { method: 'POST', headers: { origin: 'http://localhost' } }));
         const responses = await Promise.all(requests);
 
         expect(responses.map(response => response.status))
