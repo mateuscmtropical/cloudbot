@@ -13,6 +13,10 @@ function formatTimeOfDay(hour: number, minute: number): string {
 
 // Times are UTC, so the text says so.
 function describeSchedule(schedule: RoutineSchedule): string {
+    if (schedule.kind === 'once') {
+        return `Once at ${formatRunTime(schedule.at)}`;
+    }
+
     if (schedule.kind === 'interval') {
         return `Every ${String(schedule.everyMinutes)} minutes`;
     }

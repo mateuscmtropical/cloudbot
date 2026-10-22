@@ -56,6 +56,41 @@ describe('createRoutineTools', () => {
             .resolves.toHaveLength(1);
     });
 
+    it('creates a once routine for a future UTC time and shows that time in the list', async () => {
+        const tools = createRoutineTools(store, botId, () => Date.UTC(2026, 9, 21, 11, 0)) as unknown as { name: string; handler: ToolHandler }[];
+        const create = tools.find(candidate => candidate.name === 'routine_create')?.handler;
+        const list = tools.find(candidate => candidate.name === 'routine_list')?.handler;
+
+        const result = await create?.({ name: 'Call mom', prompt: 'Remind me to call mom.', schedule: { kind: 'once', at: '2026-10-21T13:00:00Z' } }, {});
+        const listed = await list?.({}, {});
+        const [routine] = await store.list(botId);
+
+        expect(result?.isError)
+            .toBeUndefined();
+        expect(result?.content[0]?.text)
+            .toContain('2026-10-21T13:00:00.000Z UTC');
+        expect(routine?.schedule)
+            .toEqual({ kind: 'once', at: Date.UTC(2026, 9, 21, 13, 0) });
+        expect(listed?.content[0]?.text)
+            .toContain('{"kind":"once","at":"2026-10-21T13:00:00.000Z"}');
+    });
+
+    it('refuses a once time that has passed or is not a time', async () => {
+        const tools = createRoutineTools(store, botId, () => Date.UTC(2026, 9, 21, 11, 0)) as unknown as { name: string; handler: ToolHandler }[];
+        const create = tools.find(candidate => candidate.name === 'routine_create')?.handler;
+
+        const past = await create?.({ name: 'Old', prompt: 'x', schedule: { kind: 'once', at: '2026-10-21T10:59:00Z' } }, {});
+        const bad = await create?.({ name: 'Bad', prompt: 'x', schedule: { kind: 'once', at: 'tomorrow' } }, {});
+        const missing = await create?.({ name: 'Missing', prompt: 'x', schedule: { kind: 'once' } }, {});
+
+        expect([past?.isError, bad?.isError, missing?.isError])
+            .toEqual([true, true, true]);
+        expect(past?.content[0]?.text)
+            .toContain('has passed');
+        await expect(store.list(botId))
+            .resolves.toHaveLength(0);
+    });
+
     it('creates a quiet check-in and marks it in the list', async () => {
         const create = findHandler(botId, 'routine_create');
         const list = findHandler(botId, 'routine_list');

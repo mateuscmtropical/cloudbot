@@ -1,7 +1,8 @@
 type RoutineSchedule
     = | { kind: 'interval'; everyMinutes: number }
         | { kind: 'daily'; hour: number; minute: number }
-        | { kind: 'weekly'; weekday: number; hour: number; minute: number };
+        | { kind: 'weekly'; weekday: number; hour: number; minute: number }
+        | { kind: 'once'; at: number };
 
 const MIN_INTERVAL_MINUTES = 5;
 const MAX_INTERVAL_MINUTES = 7 * 24 * 60;
@@ -20,6 +21,12 @@ function parseSchedule(input: unknown): RoutineSchedule | undefined {
 
     const candidate = input as Record<string, unknown>;
     const { hour, minute } = candidate;
+
+    if (candidate['kind'] === 'once') {
+        const { at } = candidate;
+
+        return isIntegerInRange(at, 1, Number.MAX_SAFE_INTEGER) ? { kind: 'once', at } : undefined;
+    }
 
     if (candidate['kind'] === 'interval') {
         const { everyMinutes } = candidate;
@@ -47,7 +54,12 @@ function parseSchedule(input: unknown): RoutineSchedule | undefined {
 }
 
 // The first run strictly after `afterMs`. Weekdays count from Sunday as 0, like Date.getUTCDay.
+// A once routine has one run, so its time stays as it is. The store turns it off after that run.
 function computeNextRun(schedule: RoutineSchedule, afterMs: number): number {
+    if (schedule.kind === 'once') {
+        return schedule.at;
+    }
+
     if (schedule.kind === 'interval') {
         return afterMs + schedule.everyMinutes * MINUTE_MS;
     }

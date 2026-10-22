@@ -52,6 +52,26 @@ describe('RoutineScheduler', () => {
             .toEqual([[botId, 'Routine "Inbox": Check my inbox.']]);
     });
 
+    it('runs a once routine one time and then turns it off', async () => {
+        await store.add(botId, { name: 'Call', prompt: 'Call mom.', schedule: { kind: 'once', at: clock + 5 * MINUTE_MS } });
+        clock += 4 * MINUTE_MS;
+        await scheduler.checkDueRoutines();
+
+        expect(sent)
+            .toEqual([]);
+
+        clock += 2 * MINUTE_MS;
+        await scheduler.checkDueRoutines();
+        clock += 60 * MINUTE_MS;
+        await scheduler.checkDueRoutines();
+
+        const [routine] = await store.list(botId);
+
+        expect(sent)
+            .toEqual([[botId, 'Routine "Call": Call mom.']]);
+        expect(routine?.isEnabled)
+            .toBe(false);
+    });
     it('sends a quiet routine as a check-in with its own source', async () => {
         const sources: string[] = [];
         const checkinScheduler = new RoutineScheduler({

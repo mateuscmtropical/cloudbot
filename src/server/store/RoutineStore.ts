@@ -131,12 +131,14 @@ class RoutineStore {
     }
 
     // Moves the next run past `nowMs`, so a missed slot runs once and a routine never repeats on a restart.
+    // A once routine is turned off instead, so it runs one time.
     async markRun(routine: RoutineRecord, nowMs: number): Promise<void> {
         const nextRunAt = computeNextRun(routine.schedule, nowMs);
         const idCondition = eq(routines.id, routine.id);
+        const isEnabled = routine.schedule.kind !== 'once';
 
         await this.database.update(routines)
-            .set({ lastRunAt: nowMs, nextRunAt })
+            .set({ lastRunAt: nowMs, nextRunAt, isEnabled })
             .where(idCondition);
     }
 

@@ -897,7 +897,9 @@ class ChatService {
         }
 
         const rules = (await this.ruleStore?.list(botId)) ?? [];
-        const routines = (await this.routineStore?.list(botId)) ?? [];
+        const allRoutines = (await this.routineStore?.list(botId)) ?? [];
+        // A once routine is a reminder for this owner at one time, so a copy of the bot does not take it.
+        const routines = allRoutines.filter(routine => routine.schedule.kind !== 'once');
         const template = buildBotTemplate({
             name: bot.name,
             title: bot.title,
