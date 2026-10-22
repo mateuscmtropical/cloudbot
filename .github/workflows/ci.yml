@@ -36,6 +36,31 @@ jobs:
 
       - run: pnpm build
 
+  codex-canary:
+    name: Codex canary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The version must match CODEX_PROTOCOL_VERSION in src/server/agent/codexProtocol.ts. A unit test checks it.
+      - run: npm install --global @openai/codex@0.163.0
+
+      # The canary talks only to a fake model server and the loopback tool server on this runner.
+      # An empty path would skip the canary and pass, so the step checks the binary first.
+      - run: |
+          CODEX_CANARY_PATH="$(command -v codex)"
+          test -x "$CODEX_CANARY_PATH"
+          CODEX_CANARY_PATH="$CODEX_CANARY_PATH" pnpm canary:codex
+
   docker:
     name: Build image and check isolation
     runs-on: ubuntu-latest
