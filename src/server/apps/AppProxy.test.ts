@@ -3,7 +3,7 @@ import type { IncomingHttpHeaders, Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { AppProxy } from './AppProxy.ts';
+import { AppProxy, resourcesBlockedAddress } from './AppProxy.ts';
 
 // A stand-in MCP server. It records the headers of each request and echoes the body back.
 interface Upstream {
@@ -249,5 +249,69 @@ describe('AppProxy', () => {
             .toBe(413);
         expect(upstream.received)
             .toHaveLength(0);
+    });
+
+    describe('the address with resources blocked', () => {
+        it('refuses a resource request before it reaches the server', async () => {
+            const address = resourcesBlockedAddress(proxy.register('app-r1', { upstream: upstream.url, readToken: () => 'vault-token' }));
+            const response = await fetch(address, { method: 'POST', body: '{"jsonrpc":"2.0","id":7,"method":"resources/read","params":{"uri":"file:///etc/passwd"}}' });
+
+            expect(response.status)
+                .toBe(200);
+            expect(await response.json())
+                .toEqual({ jsonrpc: '2.0', id: 7, error: { code: -32601, message: 'Resources of connected servers are turned off for this bot.' } });
+            expect(upstream.received)
+                .toHaveLength(0);
+        });
+
+        it('refuses the resource list and templates too', async () => {
+            const address = resourcesBlockedAddress(proxy.register('app-r2', { upstream: upstream.url, readToken: () => undefined }));
+            const methods = ['resources/list', 'resources/templates/list', 'resources/subscribe'];
+            const sends = methods.map(method => fetch(address, { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method }) }));
+
+            await Promise.all(sends);
+            expect(upstream.received)
+                .toHaveLength(0);
+        });
+
+        it('refuses a whole batch that holds a resource request', async () => {
+            const address = resourcesBlockedAddress(proxy.register('app-r3', { upstream: upstream.url, readToken: () => undefined }));
+            const body = JSON.stringify([{ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { jsonrpc: '2.0', id: 2, method: 'resources/read' }]);
+            const response = await fetch(address, { method: 'POST', body });
+
+            expect(response.status)
+                .toBe(403);
+            expect(upstream.received)
+                .toHaveLength(0);
+        });
+
+        it('refuses a body that is not JSON', async () => {
+            const address = resourcesBlockedAddress(proxy.register('app-r4', { upstream: upstream.url, readToken: () => undefined }));
+            const response = await fetch(address, { method: 'POST', body: 'resources/read' });
+
+            expect(response.status)
+                .toBe(400);
+            expect(upstream.received)
+                .toHaveLength(0);
+        });
+
+        it('forwards tool calls and other requests', async () => {
+            const address = resourcesBlockedAddress(proxy.register('app-r5', { upstream: upstream.url, readToken: () => undefined }));
+            const body = '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search"}}';
+            const response = await fetch(address, { method: 'POST', body });
+
+            expect(await response.text())
+                .toBe(body);
+            expect(upstream.received)
+                .toHaveLength(1);
+        });
+
+        it('leaves the plain address unchanged for a resource request', async () => {
+            const address = proxy.register('app-r6', { upstream: upstream.url, readToken: () => undefined });
+
+            await fetch(address, { method: 'POST', body: '{"jsonrpc":"2.0","id":1,"method":"resources/list"}' });
+            expect(upstream.received)
+                .toHaveLength(1);
+        });
     });
 });

@@ -397,6 +397,55 @@ describe('CodexEngine', () => {
             .toBe(1);
     });
 
+    it('gives Codex the connected http servers at the address that refuses resources, and leaves the rest out', async () => {
+        const { engine, spawnArgs } = makeEngine(completeTurn);
+        const mcpServers = {
+            'linear': { type: 'http' as const, url: 'http://127.0.0.1:6000/key1' },
+            'cloudbot': { type: 'http' as const, url: 'http://127.0.0.1:6000/key2' },
+            'bad.name': { type: 'http' as const, url: 'http://127.0.0.1:6000/key3' },
+            'local': { command: '/bin/server' },
+        };
+
+        await collect(engine.runTurn(makeRequest({ mcpServers })));
+
+        const joined = spawnArgs[0]?.join(' ') ?? '';
+
+        expect(spawnArgs[0])
+            .toEqual(expect.arrayContaining([
+                'mcp_servers.linear.url="http://127.0.0.1:6000/key1/no-resources"',
+                'mcp_servers.linear.default_tools_approval_mode="prompt"',
+            ]));
+        expect(joined)
+            .not.toContain('key2');
+        expect(joined)
+            .not.toContain('key3');
+        expect(joined)
+            .not.toContain('/bin/server');
+    });
+
+    it('reviews a connected server\'s tool call and answers with the decision', async () => {
+        const review = vi.fn((): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: true }));
+        const { engine, servers } = makeEngine((server) => {
+            server.say({ method: 'item/started', params: { item: { type: 'mcpToolCall', id: 'call_1', server: 'linear', tool: 'create_issue', status: 'inProgress', arguments: { title: 'Bug' } } } });
+            server.say({
+                id: 'question-1',
+                method: 'mcpServer/elicitation/request',
+                params: { threadId: 'thread-1', turnId: 'turn-1', serverName: 'linear', mode: 'form', message: 'Allow?', requestedSchema: {}, _meta: { codex_approval_kind: 'mcp_tool_call', tool_params: { title: 'Bug' } } },
+            });
+            setTimeout(() => {
+                completeTurn(server);
+            }, 20);
+        });
+
+        await collect(engine.runTurn(makeRequest({ reviewToolCall: review, mcpServers: { linear: { type: 'http', url: 'http://127.0.0.1:6000/key1' } } })));
+        const answer = servers[0]?.sent.find(message => (message as { id?: unknown }).id === 'question-1');
+
+        expect(review)
+            .toHaveBeenCalledWith({ toolName: 'mcp__linear__create_issue', input: { title: 'Bug' } }, expect.any(AbortSignal));
+        expect(answer)
+            .toMatchObject({ result: { action: 'accept' } });
+    });
+
     it('refuses images without starting Codex', async () => {
         const { engine, servers } = makeEngine(completeTurn);
 

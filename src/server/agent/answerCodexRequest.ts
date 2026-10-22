@@ -14,8 +14,10 @@ interface CodexRequestContext {
     workspaceDir: string;
     // False once the turn has used its steps. A further command or file change is declined without a review.
     hasStepsLeft: () => boolean;
-    // The bot's own MCP server, when the turn has tools. Any other server's question is declined.
+    // The bot's own MCP server, when the turn has tools.
     toolServer?: CodexToolServer | undefined;
+    // The owner's connected servers of the turn. A question from any server not named here is declined.
+    remoteServers?: CodexToolServer[] | undefined;
 }
 
 interface CodexToolServer {
@@ -26,7 +28,7 @@ interface CodexToolServer {
     decidedItemIds: Set<string>;
     // Tools the owner blocked, by full name.
     blockedTools: string[];
-    // Lets the loopback server run this one call, once.
+    // Lets the server run this one call, once. A connected server runs the call Codex sends it, so it has nothing to do.
     allowCall: (itemId: string, toolName: string, input: unknown) => void;
 }
 
@@ -191,8 +193,19 @@ function findQuestionedCalls(params: Record<string, unknown>, server: CodexToolS
         .filter(item => inputKeyOf(item.arguments) === argumentsKey);
 }
 
+function findServer(params: Record<string, unknown>, context: CodexRequestContext): CodexToolServer | undefined {
+    const servers = context.toolServer === undefined ? context.remoteServers ?? [] : [context.toolServer, ...(context.remoteServers ?? [])];
+
+    return servers.find(server => server.name === params.serverName);
+}
+
+// A tool is blocked by its full name, or by the server prefix, which covers every tool of that server.
+function isBlocked(server: CodexToolServer, toolName: string): boolean {
+    return server.blockedTools.includes(toolName) || server.blockedTools.includes(`mcp__${server.name}`);
+}
+
 async function answerToolQuestion(params: Record<string, unknown>, context: CodexRequestContext): Promise<CodexAnswer> {
-    const server = context.toolServer;
+    const server = findServer(params, context);
     const candidates = server === undefined ? [] : findQuestionedCalls(params, server);
     const item = candidates.length === 1 ? candidates[0] : undefined;
 
@@ -207,7 +220,7 @@ async function answerToolQuestion(params: Record<string, unknown>, context: Code
 
     const toolName = `mcp__${server.name}__${item.tool}`;
 
-    if (server.blockedTools.includes(toolName) || !context.hasStepsLeft()) {
+    if (isBlocked(server, toolName) || !context.hasStepsLeft()) {
         return DECLINE_ELICITATION;
     }
 
@@ -223,7 +236,7 @@ async function answerToolQuestion(params: Record<string, unknown>, context: Code
 }
 
 // The answer to one request that Codex sends to CloudBot. Anything not known here is declined or refused.
-// Codex has no outside MCP servers in this engine yet. Only a tool call question for the bot's own server is reviewed.
+// Only a tool call question for the bot's own server or a connected server of the turn is reviewed.
 function answerCodexRequest(method: string, params: unknown, context: CodexRequestContext): Promise<CodexAnswer> {
     const record = readRecord(params);
 

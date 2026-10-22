@@ -3,6 +3,7 @@ import type { ChildProcess } from 'node:child_process';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
+import { resourcesBlockedAddress } from '../apps/AppProxy.ts';
 import type { AgentEvent } from './AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from './AgentRunner.ts';
 import { answerCodexRequest } from './answerCodexRequest.ts';
@@ -68,6 +69,8 @@ const APPROVAL_METHODS = ['item/commandExecution/requestApproval', 'item/fileCha
 // Codex reads the loopback token from this variable, so the token is never on the command line. The locked config keeps
 // it out of the commands Codex runs.
 const TOOL_TOKEN_VARIABLE = CODEX_TOOL_TOKEN_VARIABLE;
+// The names ConnectedApps accepts. Anything else is left out, since it would become part of a config key.
+const REMOTE_SERVER_NAME_PATTERN = /^[a-z][a-z0-9-]{1,30}$/;
 // A bot tool may wait for the owner, such as a secret form, so Codex waits as long as an approval may.
 const TOOL_TIMEOUT_SECONDS = 3900;
 
@@ -121,6 +124,25 @@ function toolServerConfig(turn: LoopbackTurn): string[] {
     ];
 }
 
+// The owner's connected servers, at their proxy addresses with resource requests refused. Only http servers are
+// added, under a plain name, so a name cannot reach another config key. Every call asks first, like the bot's own server.
+function remoteServerConfig(request: TurnRequest): { names: string[]; settings: string[] } {
+    const entries = Object.entries(request.mcpServers ?? {});
+    const httpEntries = entries.filter((entry): entry is [string, { type: 'http'; url: string }] => entry[1].type === 'http')
+        .filter(([name]) => REMOTE_SERVER_NAME_PATTERN.test(name) && name !== PROFILE_SERVER_NAME);
+    const settings = httpEntries.flatMap(([name, config]) => {
+        const prefix = `mcp_servers.${name}`;
+        const address = resourcesBlockedAddress(config.url);
+
+        return [
+            `${prefix}.url=${JSON.stringify(address)}`,
+            `${prefix}.default_tools_approval_mode="prompt"`,
+        ];
+    });
+
+    return { names: httpEntries.map(([name]) => name), settings };
+}
+
 function refuseOnPromptRoute(): Promise<{ isAllowed: false; reason: string }> {
     return Promise.resolve({ isAllowed: false, reason: 'Codex calls are decided by the engine.' });
 }
@@ -149,7 +171,7 @@ function prepareCodexHome(folder: string): void {
 
 // Runs each turn in its own `codex app-server`, the route with an approval channel. Every command and file change asks
 // CloudBot first (approval policy untrusted), and each question goes to the same review as a Claude tool call.
-// Not covered yet, see issue #128: the bot's own tools, outside MCP servers, images, the spending limit and the
+// Not covered yet, see issue #128: images, the spending limit and the
 // agent user. The model choices of the owner name Claude models, so Codex keeps its own default model.
 class CodexEngine implements AgentRunner {
     private readonly options: CodexEngineOptions;
@@ -196,7 +218,8 @@ class CodexEngine implements AgentRunner {
         const tokenVariable = toolTurn === undefined ? {} : { [TOOL_TOKEN_VARIABLE]: toolTurn.token };
         const environment = { PATH: process.env.PATH ?? '', ...this.options.environment, ...request.extraEnvironment, HOME: codexHome, CODEX_HOME: codexHome, ...tokenVariable };
         const toolConfig = toolTurn === undefined ? [] : toolServerConfig(toolTurn);
-        const args = buildCodexArguments([...toolConfig, ...(this.options.extraConfig ?? [])]);
+        const remote = remoteServerConfig(request);
+        const args = buildCodexArguments([...toolConfig, ...remote.settings, ...(this.options.extraConfig ?? [])]);
         const child = this.spawnFunction(this.options.codexPath, args, {
             cwd: request.workspaceDir,
             env: environment,
@@ -339,6 +362,13 @@ class CodexEngine implements AgentRunner {
                                 toolTurn.allowCall(itemId, toolName, input);
                             },
                         },
+                remoteServers: remote.names.map(name => ({
+                    name,
+                    toolCalls: () => [...items.values()].filter(isMcpToolCallItem),
+                    decidedItemIds,
+                    blockedTools: request.disallowedTools ?? [],
+                    allowCall: () => undefined,
+                })),
             };
 
             void answerCodexRequest(message.method, message.params, context)

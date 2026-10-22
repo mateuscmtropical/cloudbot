@@ -31,6 +31,16 @@ const DEFAULT_HTTP_METHOD = 'POST';
 const PAYLOAD_TOO_LARGE_STATUS = 413;
 const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 const MIN_REDIRECT_STATUS = 300;
+const OK_STATUS = 200;
+const BAD_REQUEST_STATUS = 400;
+const FORBIDDEN_STATUS = 403;
+// An address with this second path segment refuses every MCP resource request. Codex offers list_mcp_resources and
+// read_mcp_resource with no approval whenever a server is configured (seen with codex-cli 0.163.0), so a Codex turn
+// gets this address. Claude turns keep the plain address, where the CLI asks before reading a resource.
+const RESOURCES_BLOCKED_SEGMENT = 'no-resources';
+const RESOURCE_METHOD_PREFIX = 'resources/';
+const METHOD_NOT_FOUND_CODE = -32601;
+const RESOURCES_BLOCKED_MESSAGE = 'Resources of connected servers are turned off for this bot.';
 const MAX_REDIRECT_STATUS = 399;
 
 // The agent sends no credentials of its own. The proxy adds the token from the vault, and drops any header that could carry one.
@@ -98,6 +108,68 @@ function readRouteKey(requestUrl: string | undefined): string {
     const pathname = new URL(requestUrl ?? '/', `http://${LOOPBACK_HOST}`).pathname;
 
     return pathname.split('/')[1] ?? '';
+}
+
+function hasResourcesBlocked(requestUrl: string | undefined): boolean {
+    const pathname = new URL(requestUrl ?? '/', `http://${LOOPBACK_HOST}`).pathname;
+
+    return pathname.split('/')[2] === RESOURCES_BLOCKED_SEGMENT;
+}
+
+// The same server address, with every resource request refused at the proxy.
+function resourcesBlockedAddress(address: string): string {
+    return `${address}/${RESOURCES_BLOCKED_SEGMENT}`;
+}
+
+function readMethod(message: unknown): unknown {
+    return typeof message === 'object' && message !== null ? Reflect.get(message, 'method') : undefined;
+}
+
+type ResourceCheck = { kind: 'pass' } | { kind: 'unreadable' } | { kind: 'resource'; id: unknown; isBatch: boolean };
+
+// An empty body, such as the GET that opens an event stream, passes. A body that is not JSON cannot be checked, so it is refused.
+function checkForResourceRequest(body: Buffer): ResourceCheck {
+    if (body.length === 0) {
+        return { kind: 'pass' };
+    }
+
+    let parsed: unknown;
+
+    try {
+        const text = body.toString('utf8');
+
+        parsed = JSON.parse(text);
+    } catch {
+        return { kind: 'unreadable' };
+    }
+
+    const messages: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+    const resourceMessage = messages.find((message) => {
+        const method = readMethod(message);
+
+        return typeof method === 'string' && method.startsWith(RESOURCE_METHOD_PREFIX);
+    });
+
+    if (resourceMessage === undefined) {
+        return { kind: 'pass' };
+    }
+
+    return { kind: 'resource', id: Reflect.get(resourceMessage as object, 'id'), isBatch: Array.isArray(parsed) };
+}
+
+// A single request gets a JSON-RPC error, so the client reports it as a failed call. A batch is refused as a whole.
+function refuseResourceRequest(response: ServerResponse, check: { id: unknown; isBatch: boolean }): void {
+    if (check.isBatch) {
+        sendJsonError(response, FORBIDDEN_STATUS, RESOURCES_BLOCKED_MESSAGE);
+
+        return;
+    }
+
+    const isValidId = typeof check.id === 'string' || typeof check.id === 'number';
+    const errorBody = JSON.stringify({ jsonrpc: '2.0', id: isValidId ? check.id : null, error: { code: METHOD_NOT_FOUND_CODE, message: RESOURCES_BLOCKED_MESSAGE } });
+
+    response.writeHead(OK_STATUS, { 'content-type': 'application/json' });
+    response.end(errorBody);
 }
 
 // Only the proxy process holds the token. The agent connects to 127.0.0.1 with a random key per server.
@@ -239,6 +311,22 @@ class AppProxy {
             throw error;
         }
 
+        if (hasResourcesBlocked(incomingRequest.url)) {
+            const check = checkForResourceRequest(requestBody);
+
+            if (check.kind === 'unreadable') {
+                sendJsonError(outgoingResponse, BAD_REQUEST_STATUS, 'The request is not JSON, so it was not sent.');
+
+                return;
+            }
+
+            if (check.kind === 'resource') {
+                refuseResourceRequest(outgoingResponse, check);
+
+                return;
+            }
+        }
+
         let token: string | undefined;
 
         try {
@@ -286,5 +374,5 @@ class AppProxy {
     }
 }
 
-export { AppProxy };
+export { AppProxy, resourcesBlockedAddress };
 export type { AppProxyOptions, AppRoute };
