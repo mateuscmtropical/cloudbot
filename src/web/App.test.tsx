@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotSummary, ChatEvent, ChatMessage, PendingUpload } from '../shared/chatTypes.ts';
 import { App } from './App.tsx';
-import { listBots, listMessages, listUploads, sendMessage, stopTurn, subscribeToEvents, uploadAttachments } from './apiClient.ts';
+import { listBots, listMessages, listUploads, RequestFailedError, sendMessage, stopTurn, subscribeToEvents, uploadAttachments } from './apiClient.ts';
 import { MESSAGE_PAGE_SIZE } from './messageList.ts';
 
 // The waits below end when the state appears. The longer limit only covers slow runs with the whole suite in parallel.
@@ -50,6 +50,22 @@ function renderedBotName(): string | null | undefined {
 
 afterEach(() => {
     cleanup();
+});
+
+describe('App sign-in', () => {
+    it('shows the passkey sign-in when there is no session', async () => {
+        const noSession = Object.assign(new RequestFailedError('/api/bots', 401), { status: 401 });
+
+        vi.mocked(listBots)
+            .mockRejectedValueOnce(noSession);
+
+        render(<App />);
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Sign in with a passkey' }))
+                .toBeDefined();
+        });
+    });
 });
 
 describe('App bot list', () => {

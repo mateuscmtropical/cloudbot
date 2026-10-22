@@ -63,6 +63,15 @@ describe('buildSystemPrompt', () => {
             .not.toContain('notifications_enable');
     });
 
+    it('explains the passkey cards only when passkeys are on', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+
+        expect(buildSystemPrompt(profile, { hasPasskeys: true }))
+            .toContain('call passkey_add');
+        expect(buildSystemPrompt(profile))
+            .not.toContain('passkey_add');
+    });
+
     it('explains mailbox setup, approvals and untrusted email only when email is available', () => {
         const profile = { name: 'Ana', title: 'Assistant', description: '' };
         const prompt = buildSystemPrompt(profile, { hasEmail: true });

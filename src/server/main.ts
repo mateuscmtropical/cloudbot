@@ -442,6 +442,7 @@ const whatsappSetup = new WhatsAppSetup({
 });
 const chatService: ChatService = new ChatService({
     notifyOwner: notice => pushNotifier.notify(notice),
+    passkeys,
     telegram: telegramBridge,
     botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, skillStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,

@@ -392,7 +392,13 @@ on HTTPS or localhost.
 
 Limits: there is one session at a time, as with the setup link, so a sign-in on one device ends the session on
 another. The origin must match the address exactly, so a container published on another port than
-`CLOUDBOT_PUBLIC_URL` names refuses every passkey. The web sign-in page and the device list in the chat come next.
+`CLOUDBOT_PUBLIC_URL` names refuses every passkey.
+
+The web app shows a sign-in screen when `/api/bots` answers 401. Its button runs the passkey sign-in with the
+browser's own `PublicKeyCredential.parseRequestOptionsFromJSON` and `toJSON`, so the web app needs no WebAuthn
+library (`web/passkeyClient.ts`). In the chat, `passkey_add`, `passkey_list` and `passkey_remove` manage them. Adding
+and removing post a card. The browser makes or removes the passkey only inside the owner's tap, through the `/api`
+routes above, so the bot cannot add or remove one itself. The removal card shows the name as a JSON string.
 
 ## Chat
 

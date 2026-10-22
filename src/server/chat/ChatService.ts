@@ -59,6 +59,9 @@ import { TELEGRAM_TOOL_FULL_NAMES, createTelegramTools } from '../telegram/creat
 import type { TelegramConnector } from '../telegram/createTelegramTools.ts';
 import type { OwnerNotice } from '../push/PushNotifier.ts';
 import { DISABLE_NOTIFICATIONS_CHOICE_ID, ENABLE_NOTIFICATIONS_CHOICE_ID, KEEP_NOTIFICATIONS_CHOICE_ID, LATER_NOTIFICATIONS_CHOICE_ID } from '../../shared/pushTypes.ts';
+import { ADD_PASSKEY_CHOICE_ID, KEEP_PASSKEY_CHOICE_ID, LATER_PASSKEY_CHOICE_ID, REMOVE_PASSKEY_CHOICE_ID } from '../../shared/passkeyTypes.ts';
+import { PASSKEY_TOOL_FULL_NAMES, createPasskeyTools } from '../access/createPasskeyTools.ts';
+import type { PasskeyService, PasskeySummary } from '../access/PasskeyService.ts';
 import type { PushNoticeKind } from '../../shared/pushTypes.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
 import type { ConnectedApps } from '../apps/ConnectedApps.ts';
@@ -244,6 +247,8 @@ interface ChatServiceOptions {
     forgetGithub?: ((botId: string) => Promise<void>) | undefined;
     // Sends a push notification to the owner's browsers. Without it the bot has no notification tool and nothing is sent.
     notifyOwner?: ((notice: OwnerNotice) => Promise<void>) | undefined;
+    // The owner's passkeys. Unset means passkeys are off, and the passkey tools are not offered.
+    passkeys?: PasskeyService | undefined;
     // Connects a bot to the owner's Telegram account. Unset means the Telegram tools are not offered.
     telegram?: TelegramConnector | undefined;
     // Receives messages from the owner's WhatsApp number. Unset means the WhatsApp tools are not offered.
@@ -389,6 +394,7 @@ function maskMessageBody(body: MessageBody): MessageBody {
     return body;
 }
 const PREVIEW_LENGTH = 80;
+const PASSKEY_ADD_CARD_TEXT = 'A passkey lets this phone or computer sign in to CloudBot with its lock screen, face or fingerprint. Tap the button, then follow what your browser asks. The setup link from the server still works if you lose it.';
 const NOTIFICATION_OFF_CARD_TEXT = 'I can stop the notifications on this browser. Tap the button and this browser forgets them. Other browsers keep theirs until you do the same there.';
 const NOTIFICATION_CARD_TEXT = 'I can send a notification to this browser when I finish a task, when something waits for your approval, and when I need you on my screen. It shows my name and a short line, never the text of a message. Tap the button, then allow notifications when your browser asks. You can turn them off later in the site settings of your browser.';
 
@@ -672,6 +678,7 @@ class ChatService {
     private readonly githubEnvironment: ((botId: string) => Promise<Record<string, string>>) | undefined;
     private readonly forgetGithub: ((botId: string) => Promise<void>) | undefined;
     private readonly notifyOwner: ((notice: OwnerNotice) => Promise<void>) | undefined;
+    private readonly passkeys: PasskeyService | undefined;
     private readonly telegram: TelegramConnector | undefined;
     private readonly whatsapp: WhatsAppConnector | undefined;
     // Bots whose delete is running. New messages and uploads for them are refused.
@@ -747,6 +754,7 @@ class ChatService {
         this.githubEnvironment = options.githubEnvironment;
         this.forgetGithub = options.forgetGithub;
         this.notifyOwner = options.notifyOwner;
+        this.passkeys = options.passkeys;
         this.telegram = options.telegram;
         this.whatsapp = options.whatsapp;
         this.approvals = options.toolCallReviewer === undefined
@@ -1829,7 +1837,10 @@ class ChatService {
         const stored = await this.messageStore.getById(messageId);
         const body = stored?.content as MessageBody | undefined;
 
-        if (stored?.botId !== botId || body?.kind !== 'choice' || (body.isNotificationOptIn !== true && body.isNotificationOptOut !== true)) {
+        // The passkey cards work the same way: the browser adds or removes the passkey before it sends the answer.
+        const isBrowserCard = body?.kind === 'choice' && (body.isNotificationOptIn === true || body.isNotificationOptOut === true || body.isPasskeyAdd === true || body.removesPasskeyId !== undefined);
+
+        if (stored?.botId !== botId || body?.kind !== 'choice' || !isBrowserCard) {
             return undefined;
         }
 
@@ -1869,6 +1880,36 @@ class ChatService {
                 { id: KEEP_NOTIFICATIONS_CHOICE_ID, label: 'Keep them' },
             ],
             isNotificationOptOut: true,
+        };
+
+        await this.saveAndPublish(botId, 'assistant', body);
+    }
+
+    // Posts the card that adds a passkey. The browser makes one only inside a tap of the owner, so the button does it.
+    private async postPasskeyAddCard(botId: string): Promise<void> {
+        const body: ChoiceBody = {
+            kind: 'choice',
+            prompt: PASSKEY_ADD_CARD_TEXT,
+            options: [
+                { id: ADD_PASSKEY_CHOICE_ID, label: 'Add a passkey' },
+                { id: LATER_PASSKEY_CHOICE_ID, label: 'Not now' },
+            ],
+            isPasskeyAdd: true,
+        };
+
+        await this.saveAndPublish(botId, 'assistant', body);
+    }
+
+    // Posts the card that removes one passkey. The name is shown as a JSON string, so a hidden character cannot hide in it.
+    private async postPasskeyRemoveCard(botId: string, passkey: PasskeySummary): Promise<void> {
+        const body: ChoiceBody = {
+            kind: 'choice',
+            prompt: `Remove the passkey ${JSON.stringify(passkey.name)}? It can no longer sign in to CloudBot.`,
+            options: [
+                { id: REMOVE_PASSKEY_CHOICE_ID, label: 'Remove it' },
+                { id: KEEP_PASSKEY_CHOICE_ID, label: 'Keep it' },
+            ],
+            removesPasskeyId: passkey.id,
         };
 
         await this.saveAndPublish(botId, 'assistant', body);
@@ -3358,13 +3399,21 @@ class ChatService {
                         createNotificationsEnableTool(() => this.postNotificationCard(botId)),
                         createNotificationsDisableTool(() => this.postNotificationOffCard(botId)),
                     ];
+            const passkeyService = this.passkeys;
+            const passkeyTools = passkeyService === undefined
+                ? []
+                : createPasskeyTools({
+                        list: () => passkeyService.list(),
+                        postAddCard: () => this.postPasskeyAddCard(botId),
+                        postRemoveCard: passkey => this.postPasskeyRemoveCard(botId, passkey),
+                    });
             const telegramTools = this.telegram === undefined ? [] : createTelegramTools(this.telegram, botId);
             const whatsappTools = this.whatsapp === undefined ? [] : createWhatsAppTools(this.whatsapp, botId);
             const profileTools = createProfileTools(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...telegramTools, ...whatsappTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...telegramTools, ...whatsappTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -3420,6 +3469,7 @@ class ChatService {
                     otherBotNames,
                     hasLimits: this.limitStore !== undefined,
                     hasNotifications: this.notifyOwner !== undefined,
+                    hasPasskeys: this.passkeys !== undefined,
                     hasEmail: this.emailAccountService !== undefined && this.emailSender !== undefined,
                     hasWhatsApp: this.whatsapp !== undefined,
                     ownerRules,
@@ -3643,10 +3693,11 @@ class ChatService {
         const notificationToolNames = this.notificationToolNames();
         const emailToolNames = this.emailAccountService === undefined || this.emailSender === undefined ? [] : EMAIL_TOOL_FULL_NAMES;
 
+        const passkeyToolNames = this.passkeys === undefined ? [] : PASSKEY_TOOL_FULL_NAMES;
         const telegramToolNames = this.telegram === undefined ? [] : TELEGRAM_TOOL_FULL_NAMES;
         const whatsappToolNames = this.whatsapp === undefined ? [] : WHATSAPP_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...telegramToolNames, ...whatsappToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...telegramToolNames, ...whatsappToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.

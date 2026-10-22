@@ -43,6 +43,10 @@ interface ChoiceBody {
     isNotificationOptIn?: boolean;
     // Set on the card that turns them off. Its first button removes the subscription of this browser.
     isNotificationOptOut?: boolean;
+    // Set on the card that adds a passkey. Its first button asks the browser to make one.
+    isPasskeyAdd?: boolean;
+    // Set on the card that removes this passkey. Its first button removes it.
+    removesPasskeyId?: string;
 }
 
 interface LinkBody {

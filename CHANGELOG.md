@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Sign in with a passkey. Ask a bot in the chat to add one, tap the card, and this phone or computer can sign in from the new sign-in screen. The bot lists them and posts a card to remove one. The setup link from the server still works.
 - Import pasted instructions or attached plain text, Markdown and common JSON assistant exports. The owner approves the full profile and memory draft in chat. Platform tools, skills, files, credentials, approval settings and routines are not imported.
 - The mascot hops from its bot row into the latest message when the owner opens a chat. The 780 ms animation leaves the layout in place, keeps text clear and skips reduced motion or layouts where the list and chat are not side by side.
 - Each bot runs on the AI provider the owner picks: Claude, ChatGPT (Codex), Gemini, GitHub Copilot, Cursor, Grok, Mistral, Qwen, Kimi or the free opencode models. The setup chat asks which provider to use, then whether to use a subscription or an API key. A provider with only one way skips that question. Ask a bot to switch and its next message starts a new conversation on the new provider. Ask it to connect another provider and the list comes back in the setup chat.
