@@ -57,6 +57,7 @@ COPY --chmod=0440 docker/cloudbot-agent.sudoers /etc/sudoers.d/cloudbot-agent
 COPY --chmod=0755 docker/cloudbot-desktop /usr/local/bin/cloudbot-desktop
 COPY --chmod=0755 docker/cloudbot-remove-workspace /usr/local/bin/cloudbot-remove-workspace
 COPY --chmod=0755 docker/cloudbot-signal-group /usr/local/bin/cloudbot-signal-group
+COPY --chmod=0755 docker/cloudbot-end-turn /usr/local/bin/cloudbot-end-turn
 RUN visudo -cf /etc/sudoers.d/cloudbot-agent
 
 # pipefail makes a failed download fail the build instead of piping nothing into bash.

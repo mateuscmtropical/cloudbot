@@ -1,11 +1,13 @@
 Defaults:cloudbot env_reset
 Defaults:cloudbot secure_path="/usr/local/bin:/usr/bin:/bin"
 # The GitHub names point git and gh at the proxy. Each name the server sets must be listed here, or sudo drops it.
-Defaults:cloudbot env_keep="ANTHROPIC_BASE_URL ANTHROPIC_API_KEY NO_PROXY no_proxy GH_HOST GH_ENTERPRISE_TOKEN GH_PROMPT_DISABLED GH_NO_UPDATE_NOTIFIER SSL_CERT_FILE GIT_TERMINAL_PROMPT GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_KEY_1 GIT_CONFIG_VALUE_1 GIT_CONFIG_KEY_2 GIT_CONFIG_VALUE_2 DISABLE_AUTOUPDATER"
+Defaults:cloudbot env_keep="ANTHROPIC_BASE_URL ANTHROPIC_API_KEY NO_PROXY no_proxy GH_HOST GH_ENTERPRISE_TOKEN GH_PROMPT_DISABLED GH_NO_UPDATE_NOTIFIER SSL_CERT_FILE GIT_TERMINAL_PROMPT GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_KEY_1 GIT_CONFIG_VALUE_1 GIT_CONFIG_KEY_2 GIT_CONFIG_VALUE_2 DISABLE_AUTOUPDATER CLOUDBOT_TURN_MARKER"
 # The CLI is a root-owned copy in /usr/local/bin. The bot user cannot replace it, so the server never runs bot-written code.
 cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/claude
 # Signals the agent's process group only, with TERM or KILL. The wrapper checks its two arguments, so no other kill is allowed.
 cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-signal-group *
+# Ends the bot user's processes that still carry the marker of a finished turn. The wrapper takes only the marker.
+cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-end-turn *
 # The empty string allows the desktop script only without arguments.
 cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-desktop ""
 # Deletes the workspace of one bot, since the bot user owns the files the agent made. The script takes only a bot id
