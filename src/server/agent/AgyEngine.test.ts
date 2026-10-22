@@ -217,4 +217,35 @@ describe.skipIf(process.platform === 'win32')('AgyEngine', () => {
         expect(events)
             .toEqual([{ type: 'turn_error', message: 'Gemini is not signed in. Ask me to connect Gemini.', isUsageLimit: false }]);
     });
+
+    it('finishes a turn that answered when agy repeats an old error of the conversation', async () => {
+        const { engine, agy } = makeEngine();
+        const turn = engine.runTurn({ botId: 'bot', workspaceDir, prompt: 'Hi', abortSignal: new AbortController().signal });
+        const events: AgentEvent[] = [];
+        const reading = (async () => {
+            // The events are an async iterator, so `for await` is the only loop form that fits.
+            for await (const event of turn) {
+                events.push(event);
+            }
+        })();
+
+        await vi.waitFor(() => {
+            expect(agy.listenerCount('error'))
+                .toBeGreaterThan(0);
+        });
+        const lines = [
+            { event: 'result', result: { status: 'ERROR', response: 'Hello', error: 'API error (attempt 1): request failed: stream idle timeout (5m0s)' } },
+            { event: 'result', result: { status: 'ERROR', response: '', error: 'quota exhausted' } },
+        ];
+
+        agy.stdout.end(lines.map(line => `${JSON.stringify(line)}\n`)
+            .join(''));
+        await reading;
+
+        expect(events)
+            .toEqual([
+                { type: 'turn_finished' },
+                { type: 'turn_error', message: 'Gemini: quota exhausted', isUsageLimit: true },
+            ]);
+    });
 });

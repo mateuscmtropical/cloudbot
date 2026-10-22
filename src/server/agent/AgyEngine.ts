@@ -32,6 +32,7 @@ interface AgyStep {
 
 interface AgyResult {
     status?: string;
+    response?: string;
     error?: string;
 }
 
@@ -305,7 +306,8 @@ class AgyEngine implements AgentRunner {
         if (parsed.event === 'result') {
             const result = parsed.result ?? {};
 
-            if (result.status === 'SUCCESS') {
+            // agy keeps the last API error on the conversation and repeats it on later turns, so a turn that answered counts as finished.
+            if (result.status === 'SUCCESS' || (result.response ?? '').trim() !== '') {
                 return [{ type: 'turn_finished' }];
             }
 
