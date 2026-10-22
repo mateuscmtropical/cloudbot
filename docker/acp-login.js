@@ -2,9 +2,8 @@
 // It sends initialize and authenticate, prints what the agent prints so the server can read the link, and passes its
 // own input to the agent, so a code the owner pastes reaches a CLI that asks for one, such as the Gemini CLI.
 // It ends with 0 when the agent accepted the sign-in.
-'use strict';
+import { spawn } from 'node:child_process';
 
-const { spawn } = require('node:child_process');
 const [methodId, command, ...args] = process.argv.slice(2);
 const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'] });
 let buffer = '';

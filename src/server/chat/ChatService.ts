@@ -133,7 +133,7 @@ type RefusedDeleteOutcome = Exclude<DeleteBotOutcome, 'deleted'>;
 const DELETE_REFUSAL_TEXT: Record<RefusedDeleteOutcome, string> = {
     missing: 'This bot no longer exists.',
     last: 'This is the last bot, so it cannot be deleted.',
-    setup: 'The Claude setup runs in this bot\'s chat, so this bot cannot be deleted until the setup is done.',
+    setup: 'The setup runs in this bot\'s chat, so this bot cannot be deleted until the setup is done.',
     stopping: 'This bot did not stop in time, so it was not deleted. Try again in a moment.',
     deleting: 'This bot is already being deleted.',
     manager: 'This bot manages a channel. Make another member the manager of that channel first, then delete this bot.',
@@ -1559,7 +1559,7 @@ class ChatService {
             return 'manager';
         }
 
-        // The Claude setup runs in the first bot's chat, so that bot stays until the setup is done.
+        // The setup runs in the first bot's chat, so that bot stays until the setup is done.
         if (this.setup !== undefined && this.setup.isSetupBot(botId) && !this.setup.isDone()) {
             return 'setup';
         }
@@ -1923,8 +1923,8 @@ class ChatService {
             const reminder = this.setup.isStarting()
                 ? 'CloudBot is starting. Try again in a moment.'
                 : this.setup.isSetupBot(botId)
-                    ? 'Finish connecting Claude above to start chatting.'
-                    : 'Finish connecting Claude in the CloudBot conversation to start chatting.';
+                    ? 'Finish connecting an AI provider above to start chatting.'
+                    : 'Finish connecting an AI provider in the CloudBot conversation to start chatting.';
 
             this.publishTurnState(botId);
 

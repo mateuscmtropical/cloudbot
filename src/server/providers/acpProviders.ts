@@ -167,6 +167,20 @@ const ACP_PROVIDERS: AcpProviderSpec[] = [
         label: 'Kimi',
         protectedFolders: ['.kimi', '.kimi-code'],
         signIn: { site: 'Kimi' },
+        apiKey: {
+            site: 'the Moonshot AI platform',
+            secretName: 'MOONSHOT_API_KEY',
+            upstreamUrl: 'https://api.moonshot.ai',
+            keyHeader: BEARER,
+            checkUrl: 'https://api.moonshot.ai/v1/models',
+            // Kimi Code adds a model from these variables and picks it over a signed-in account.
+            environment: proxyUrl => ({
+                KIMI_MODEL_NAME: 'kimi-k3',
+                KIMI_MODEL_PROVIDER_TYPE: 'kimi',
+                KIMI_MODEL_API_KEY: PLACEHOLDER_KEY,
+                KIMI_MODEL_BASE_URL: `${proxyUrl}/v1`,
+            }),
+        },
     },
     {
         id: 'opencode',

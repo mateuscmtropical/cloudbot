@@ -580,7 +580,7 @@ class SetupConversation {
             }
         } catch {
             // Dependency errors can include secrets. Only fixed text reaches chat or logs.
-            await this.fail('Could not connect Claude.');
+            await this.fail('Could not connect the provider.');
         }
 
         return answered;

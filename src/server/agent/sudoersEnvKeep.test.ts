@@ -33,6 +33,10 @@ const NAMES_THE_SERVER_SETS = [
     'CODEX_API_KEY',
     'CLOUDBOT_KEY_PROXY_URL',
     'CLOUDBOT_CODEX_KEY_MODE',
+    'KIMI_MODEL_NAME',
+    'KIMI_MODEL_PROVIDER_TYPE',
+    'KIMI_MODEL_API_KEY',
+    'KIMI_MODEL_BASE_URL',
 ];
 
 const SUDOERS_PATH = new URL('../../../docker/cloudbot-agent.sudoers', import.meta.url);

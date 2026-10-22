@@ -762,9 +762,9 @@ Limits:
 - Windows (local mode only, no job object): a stop skips TERM, because it would end the CLI alone and `taskkill /T` could no longer find its tools. It runs `taskkill /T /F` while the CLI is still alive. Checked live: the CLI, the tool process and its child were all gone when the turn ended. After a clean exit, nothing is sent, since the exited pid may be reused. The background child was already gone in the live check.
 - Agent-user mode: the group signal goes through `/usr/local/bin/cloudbot-signal-group`, a root-owned wrapper that accepts only a positive group id and TERM or KILL. The sudoers line allows only that wrapper. The wrapper was checked as a non-root user. The sudo path itself is not verified: WSL asks for a password, so no passwordless sudo test was run.
 
-### Codex engine (not wired yet)
+### Codex engine
 
-`CodexEngine` runs a turn in its own `codex app-server`, the Codex route with an approval channel (`codex exec` has none). It is built and tested but no bot uses it yet. The rest is tracked in #128.
+`CodexEngine` runs a turn in its own `codex app-server`, the Codex route with an approval channel (`codex exec` has none). A bot on ChatGPT or on an OpenAI key runs on it, see [AI providers](#ai-providers).
 
 - Every thread starts with the approval policy `untrusted` and the `workspace-write` sandbox. With `on-request`, most commands run without a question.
 - The built-ins that have no per-call approval are turned off with `-c`: `web_search="disabled"`, `features.view_image=false`, `features.multi_agent=false` and `features.goals=false`. `shell_environment_policy.exclude=["CLOUDBOT_TOOLS_TOKEN","CODEX_HOME"]` keeps both variables out of every shell command. The model is then offered only `exec_command`, `write_stdin` and `request_user_input`.
@@ -784,16 +784,17 @@ Limits:
 
 With any MCP server, Codex also offers `list_mcp_resources`, `list_mcp_resource_templates` and `read_mcp_resource`, with no approval. The loopback server has no resources, so they read nothing. On a gated address the app proxy refuses every `resources/*` request before it leaves CloudBot. A body that is not JSON and a batch with a tool call are refused too. Claude turns keep the plain address. The canary checks that a refused connected tool never runs, an allowed one runs once, and no resource request reaches the server.
 
-Not covered yet: commands that Codex starts in their own session may outlive a stop, as with the Claude engine (#165). Also the spending limit (Codex reports tokens, not dollars), the owner's model choices, the agent user and the setup choice.
+Not covered yet: commands that Codex starts in their own session may outlive a stop, as with the Claude engine (#165). Also the spending limit (Codex reports tokens, not dollars) and the owner's model choices, which name Claude models.
 
-### Codex sign-in (not wired yet)
+### Codex sign-in
 
 `src/server/codexAuth` signs a bot in to ChatGPT by device code, in the bot's own `codex app-server` and `CODEX_HOME`.
 
 - `startCodexLogin` sends `account/login/start` with type `chatgptDeviceCode` and returns the `verificationUrl` and `userCode` for the chat. The owner signs in on OpenAI's page. Only an https page is accepted. The sign-in ends on `account/login/completed`. A cancel, an exit or CloudBot's own 15 minute limit sends `account/login/cancel` and closes the app server.
 - `getCodexAuthStatus` reads `account/read` without a token refresh and keeps only the account type, never the email or plan.
 - `signOutCodex` runs `account/logout` and then checks that the bot is signed out.
-- Codex keeps the tokens in the bot's `CODEX_HOME`. CloudBot never reads them, never logs or stores the user code, and never uses the token or key sign-in types.
+- Codex keeps the tokens in the bot's `CODEX_HOME`. CloudBot never reads them and never logs or stores the user code.
+- An OpenAI API key runs Codex in a second folder (`codex/key-home` locally, `~/.cloudbot-codex-key` in Docker), so it never replaces the ChatGPT sign-in. The engine signs in there with `account/login/start` of type `apiKey` and the placeholder key, and `openai_base_url` points at the key proxy. The app server ignores `CODEX_API_KEY`, which was checked against 0.163.0: it sent no key at all.
 - Shapes come from `codex app-server generate-ts` of codex-cli 0.163.0. `account/read` and `account/logout` were checked against the real binary on a signed-out home. The device code start was not run for real, since that would reach OpenAI.
 
 ## Webhooks
@@ -1195,6 +1196,88 @@ enter message bodies, settings, responses or logs.
 a restart. The runner environment receives its `ANTHROPIC_BASE_URL` and a dummy
 key. Subscription mode receives no API key or proxy URL. Server environment
 API credentials are removed before constructing the runner environment.
+
+The same conversation connects the other providers. The list shows a
+subscription and an API key option for each installed provider that has them.
+A CLI sign-in posts the link and the device code that the CLI prints, or a code
+field when the provider's page shows a code to paste back (Gemini). A key goes
+through the secure form, is checked with one request to the provider's model
+list, and is saved in the vault under its own name. A 401 or 403 asks again.
+`provider.method.<id>` remembers whether the owner connected that provider by
+sign-in or by key, and a turn uses that method.
+
+## AI providers
+
+`ProviderRunner` runs each turn on the engine of the provider the bot uses.
+`ProviderChoices` keeps that choice per bot. A bot with no choice uses the
+provider connected last. A session id is tagged with its provider, so a bot that
+switches starts a new session. A provider that is not connected ends the turn
+with a notice and never falls back to another one. The bot changes its own
+provider with `provider_use`, lists them with `provider_list` and posts the
+setup list again with `provider_connect`.
+
+Claude runs on the Claude Code engine and ChatGPT on the Codex engine. Every
+other provider runs on `AcpEngine`, which speaks the Agent Client Protocol
+(JSON-RPC over stdio) with the provider's own CLI:
+
+- `initialize` offers no file system and no terminal, so the CLI runs its own
+  tools and asks before each one with `session/request_permission`. Any other
+  request from the CLI is refused.
+- Each question goes to the same review as a Claude call. The ACP kind maps to
+  the Claude tool name the floor and the rules know: `execute` to `Bash`,
+  `edit` to `Write`, `delete` to `Bash rm`, `move` to `Bash mv`, `read` to
+  `Read`, `search` to `Grep` and `fetch` to `WebFetch`. Any other kind is
+  reviewed as `acp__other`, or `acp__<name>` when the CLI sends a tool name,
+  with its title and input. The answer is the CLI's `allow_once` or
+  `reject_once` option, never an "always" option.
+- A question whose JSON names a CLI's sign-in or config folder is refused
+  without a review, like the Codex home floor. This is a text match, not a
+  parser.
+- The step limit counts the questions. Past it, the call is refused and the
+  turn is cancelled.
+- The bot's tools come from the loopback server as an http MCP server with a
+  Bearer token. The CLI sends no call id, so the loopback server reviews each
+  call itself before it runs (`reviewsEachCall`).
+- A CLI that starts in a mode that does not ask is set to its asking mode with
+  `session/set_mode` (Mistral Vibe starts in `accept-edits`, so it gets `ask`).
+  opencode gets `{"permission":{"*":"ask"}}` in `OPENCODE_CONFIG_CONTENT`.
+- A turn resumes the session with `session/load` when the CLI supports it. The
+  replayed history is dropped.
+- A stop sends `session/cancel`, then TERM and KILL to the process group.
+
+Each CLI was run in a throwaway container, up to its sign-in link and, for a
+key, a call through the key proxy to a fake upstream that logged the header:
+
+| Provider | Command | Sign-in | Key route |
+| --- | --- | --- | --- |
+| Gemini | `gemini --acp` | `acp-login.js` runs `authenticate oauth-personal` with `NO_BROWSER`, the owner pastes Google's code | `GEMINI_API_KEY` and `GOOGLE_GEMINI_BASE_URL`, header `x-goog-api-key` |
+| GitHub Copilot | `copilot --acp --stdio` | `copilot login --device-code` | none, the token cannot go through a proxy |
+| Cursor | `cursor-agent acp` | `agent login` with `NO_OPEN_BROWSER`, link only | none, same reason |
+| Grok | `grok agent stdio` | `grok login --device-auth` | the ACP agent takes only a Grok account, so an xAI key runs `opencode acp` with the `xai` provider at the proxy |
+| Mistral | `vibe-acp` | `acp-login.js` runs `authenticate browser-auth`, the link goes through `BROWSER` | `MISTRAL_API_KEY` and `VIBE_PROVIDERS` with the proxy as `api_base` |
+| Qwen | `qwen --acp --auth-type openai` | none, the free account sign-in was removed | `OPENAI_API_KEY` and `OPENAI_BASE_URL` at DashScope's compatible mode |
+| Kimi | `kimi acp` | `kimi login` | `KIMI_MODEL_NAME`, `KIMI_MODEL_API_KEY` and `KIMI_MODEL_BASE_URL` |
+| opencode | `opencode acp` | none, free models only | none |
+
+Gemini, Cursor and Grok need `authenticate` before a session. The engine
+sends the cached method, and an error means the provider is not signed in. The
+sign-in check runs `session/new` and caches a yes for five minutes.
+
+In Docker, the server starts every CLI through `sudo -u bot` and the root-owned
+`/usr/local/bin/cloudbot-provider <provider> <acp|acp-key|login>`. The wrapper
+takes only those actions, sets `umask 077`, turns off update checks and browser
+opening, and checks that a key proxy address is `http://127.0.0.1:<port>`.
+`cloudbot-print-url` prints the link a CLI would open in a browser. The sudoers
+`env_keep` lists every variable the key routes need. The CLIs are installed as
+root under `/opt/cloudbot-agents` and `/usr/local`, pinned to the versions in
+the Dockerfile. A local run offers a provider only when
+`CLOUDBOT_<PROVIDER>_PATH` holds the absolute path of its CLI, and keeps its
+home under `<data dir>/providers/<id>/home`.
+
+Not covered yet: real turns on a signed-in account for each CLI, so the
+permission coverage of each one (whether it reads files without asking) is
+known only from its own docs. The spending limit and the model choices apply to
+Claude only.
 
 ## Claude
 

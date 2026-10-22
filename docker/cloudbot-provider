@@ -14,7 +14,7 @@ fi
 
 umask 077
 # The CLIs are root-owned copies, so an update check could only fail. These turn it off where the CLI offers it.
-export NO_UPDATE_NOTIFIER=1 OPENCODE_DISABLE_AUTOUPDATE=1 COPILOT_AUTO_UPDATE=false
+export NO_UPDATE_NOTIFIER=1 OPENCODE_DISABLE_AUTOUPDATE=1 COPILOT_AUTO_UPDATE=false KIMI_CODE_NO_AUTO_UPDATE=1
 # A CLI that wants to open a browser prints the link instead, which the server reads from the sign-in output.
 export BROWSER=/usr/local/bin/cloudbot-print-url NO_BROWSER=true NO_OPEN_BROWSER=1
 LOGIN=/usr/local/lib/cloudbot/acp-login.js
@@ -32,7 +32,7 @@ case "$provider:$action" in
     mistral:login) exec /usr/local/bin/node "$LOGIN" browser-auth /usr/local/bin/vibe-acp ;;
     kimi:acp) exec /usr/local/bin/kimi acp ;;
     kimi:login) exec /usr/local/bin/kimi login ;;
-    qwen:acp) exec /usr/local/bin/qwen --acp ;;
+    qwen:acp) exec /usr/local/bin/qwen --acp --auth-type openai ;;
     # opencode asks before every tool, so each call goes to the CloudBot review.
     opencode:acp)
         export OPENCODE_CONFIG_CONTENT='{"permission":{"*":"ask"},"autoupdate":false}'
