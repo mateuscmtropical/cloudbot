@@ -696,6 +696,10 @@ Known gaps: a model review does not count as owner wait. It has a 60 second
 timeout, so it stays well under the stall period. A runner that ignores its abort
 signal still holds the queue, because the watch only aborts the turn.
 
+## Task board
+
+Each bot has a board of tasks in the tasks table: id, bot_id, channel_id (empty until group channels exist), title, status (todo, doing, blocked, done), blocked_reason and timestamps. Three tools in the profile server manage it: task_add (never Blocked), task_move (Blocked needs a reason) and task_board. They are skipped by the approval gate, since they only change the bot's own notes and the owner asks for them in the chat. A move into Blocked from another column saves a notice in the bot's chat. The notice starts with "Task blocked by this bot:", is labeled as the bot's own note for the review, and quotes the title and reason with markdown escaped, so no link renders. A bot can have at most 100 open tasks, and finished tasks do not count. task_board shows open tasks first, newest first, up to 50. task_board posts a tasks message, a snapshot that does not change after it is posted. The owner moves tasks only through the chat. There are no panels or header buttons for the board, and no unread dot for other bots: the bot list only marks the bot that is open.
+
 ## Webhooks
 
 The owner creates a webhook in the Routines panel, with `POST

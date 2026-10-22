@@ -30,6 +30,7 @@ import type { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
 import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import { ROUTINE_TOOL_FULL_NAMES, createRoutineTools } from '../routines/createRoutineTools.ts';
+import { TASK_TOOL_FULL_NAMES, createTaskTools, describeBlockedNotice } from '../tasks/createTaskTools.ts';
 import { INTEGRATION_TOOL_FULL_NAMES, createIntegrationTools } from '../integrations/createIntegrationTools.ts';
 import type { IntegrationService } from '../integrations/IntegrationService.ts';
 import { MODELS_SET_TOOL_FULL_NAME, createModelTools } from '../models/createModelTools.ts';
@@ -55,6 +56,7 @@ import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
 import type { ChannelStore } from '../store/ChannelStore.ts';
 import type { RuleStore } from '../store/RuleStore.ts';
 import type { RoutineStore } from '../store/RoutineStore.ts';
+import type { TaskStore } from '../store/TaskStore.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
 import type { WebhookStore } from '../store/WebhookStore.ts';
 import { chooseTurnEffort, chooseTurnModel } from '../models/modelChoices.ts';
@@ -95,6 +97,7 @@ import type {
     SecureFormBody,
     TextBody,
 } from '../../shared/chatTypes.ts';
+import type { TaskCard } from '../../shared/taskTypes.ts';
 
 // The profile of a bot made with the "+" button. The owner gives its real name and job in the chat.
 const NEW_BOT_PROFILE: BotProfile = { name: 'New bot', title: 'Your coworker', description: '' };
@@ -163,6 +166,7 @@ interface ChatServiceOptions {
     // The owner's rules for each bot. Without it turns run without rules.
     ruleStore?: RuleStore | undefined;
     routineStore?: RoutineStore | undefined;
+    taskStore?: TaskStore | undefined;
     integrationService?: IntegrationService | undefined;
     // The model the owner chose for chat and routine turns. Without it turns use the CLI default.
     modelStore?: ModelStore | undefined;
@@ -330,6 +334,8 @@ function toChatMessage(storedMessage: Message): ChatMessage {
 
 function previewOf(body: MessageBody): string {
     switch (body.kind) {
+        case 'tasks':
+            return 'Task board';
         case 'text':
         case 'link':
         case 'screenLink':
@@ -514,6 +520,7 @@ class ChatService {
     private readonly answeringForms = new Set<string>();
     private readonly ruleStore: RuleStore | undefined;
     private readonly routineStore: RoutineStore | undefined;
+    private readonly taskStore: TaskStore | undefined;
     private readonly integrationService: IntegrationService | undefined;
     private readonly modelStore: ModelStore | undefined;
     private readonly limitStore: LimitStore | undefined;
@@ -570,6 +577,7 @@ class ChatService {
         this.screen = options.screen;
         this.ruleStore = options.ruleStore;
         this.routineStore = options.routineStore;
+        this.taskStore = options.taskStore;
         this.integrationService = options.integrationService;
         this.modelStore = options.modelStore;
         this.limitStore = options.limitStore;
@@ -2433,6 +2441,7 @@ class ChatService {
             const screenTools = this.createScreenTools(botId);
             const secretTools = this.createSecretTools(botId);
             const routineTools = this.routineStore === undefined ? [] : createRoutineTools(this.routineStore, botId);
+            const taskTools = this.taskStore === undefined ? [] : createTaskTools(this.taskStore, botId, { onBlocked: task => this.noticeBlockedTask(botId, task), onBoard: (cards, hiddenCount) => this.postTaskBoard(botId, cards, hiddenCount) });
             const integrationTools = this.integrationService === undefined ? [] : createIntegrationTools(this.integrationService, botId);
             const modelTools = this.modelStore === undefined ? [] : createModelTools(this.modelStore, botId);
             const limitTools = this.limitStore === undefined ? [] : createLimitTools(this.limitStore, botId);
@@ -2457,7 +2466,7 @@ class ChatService {
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...ruleTools, ...botDeleteTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...routineTools, ...taskTools, ...modelTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...ruleTools, ...botDeleteTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -2500,6 +2509,7 @@ class ChatService {
                 systemPrompt: buildSystemPrompt(bot, {
                     hasBrowser: this.browser !== undefined,
                     hasRoutines: this.routineStore !== undefined,
+                    hasTasks: this.taskStore !== undefined,
                     hasModels: this.modelStore !== undefined,
                     hasWebhooks: this.webhookStore !== undefined,
                     hasWatches: this.watchStore !== undefined,
@@ -2633,6 +2643,7 @@ class ChatService {
         const screenToolNames = this.browser === undefined || this.screen === undefined ? [] : [REQUEST_SCREEN_TOOL_FULL_NAME, SCREEN_SHOW_TOOL_FULL_NAME];
 
         const routineToolNames = this.routineStore === undefined ? [] : ROUTINE_TOOL_FULL_NAMES;
+        const taskToolNames = this.taskStore === undefined ? [] : TASK_TOOL_FULL_NAMES;
         const integrationToolNames = this.integrationService === undefined ? [] : INTEGRATION_TOOL_FULL_NAMES;
         const modelToolNames = this.modelStore === undefined ? [] : [MODELS_SET_TOOL_FULL_NAME];
         const limitToolNames = this.limitStore === undefined ? [] : [LIMITS_SET_TOOL_FULL_NAME];
@@ -2649,7 +2660,18 @@ class ChatService {
         // bot_send is offered only with the approval gate too, since the receiving turn is reviewed like any other.
         const botSendToolNames = this.approvals === undefined ? [] : [BOT_SEND_TOOL_FULL_NAME];
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...ruleToolNames, ...botDeleteToolNames, ...botSendToolNames];
+    }
+
+    // A task that moves to Blocked is a notice in the chat. The bot wrote it, so the line starts with the bot's prefix.
+    private async noticeBlockedTask(botId: string, task: TaskCard): Promise<void> {
+        const text = describeBlockedNotice(task);
+
+        await this.saveAndPublish(botId, 'system', { kind: 'text', text });
+    }
+
+    private async postTaskBoard(botId: string, cards: TaskCard[], hiddenCount: number): Promise<void> {
+        await this.saveAndPublish(botId, 'assistant', { kind: 'tasks', tasks: cards, hiddenCount });
     }
 
     private webhookTools(botId: string): CloudbotTool[] {

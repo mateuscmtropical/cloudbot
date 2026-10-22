@@ -31,6 +31,10 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__integration_list',
     'mcp__cloudbot__rule_list',
     'mcp__cloudbot__channel_list',
+    // The board is the bot's own notes. Moving a task to Blocked tells the owner in the chat, so the move needs no review.
+    'mcp__cloudbot__task_add',
+    'mcp__cloudbot__task_move',
+    'mcp__cloudbot__task_board',
     'mcp__cloudbot__screen_show',
 ]);
 

@@ -26,6 +26,7 @@ import { BrowserAllowStore } from './store/BrowserAllowStore.ts';
 import { MessageStore } from './store/MessageStore.ts';
 import { RoutineScheduler } from './routines/RoutineScheduler.ts';
 import { RoutineStore } from './store/RoutineStore.ts';
+import { TaskStore } from './store/TaskStore.ts';
 import { IntegrationStore } from './store/IntegrationStore.ts';
 import { IntegrationService } from './integrations/IntegrationService.ts';
 import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from './agent/prepareAgentWorkspace.ts';
@@ -132,6 +133,7 @@ const vault = new Vault(dataDir);
 const botSecrets = new BotSecrets(vault);
 const ruleStore = new RuleStore(opened.db);
 const routineStore = new RoutineStore(opened.db);
+const taskStore = new TaskStore(opened.db);
 const modelStore = new ModelStore(opened.db);
 const limitStore = new LimitStore(opened.db);
 const webhookStore = new WebhookStore(opened.db);
@@ -251,7 +253,7 @@ const githubProxy: GithubProxy | undefined = githubCertificate === undefined
             bundleFile: githubCertificate.bundleFile,
         });
 const chatService: ChatService = new ChatService({
-    botStore, channelStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, ruleStore, routineStore, modelStore, limitStore, screen,
+    botStore, channelStore, messageStore, runner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, ruleStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     watchStore,
     connectedApps,

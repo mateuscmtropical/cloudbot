@@ -155,4 +155,12 @@ describe('buildSystemPrompt', () => {
         expect(buildSystemPrompt(profile))
             .not.toContain('routine_create');
     });
+    it('explains the task board only when the bot has one', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+
+        expect(buildSystemPrompt(profile, { hasTasks: true }))
+            .toContain('task_board');
+        expect(buildSystemPrompt(profile))
+            .not.toContain('task_board');
+    });
 });

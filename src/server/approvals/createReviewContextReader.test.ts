@@ -194,4 +194,19 @@ describe('createReviewContextReader', () => {
         expect(listByBot)
             .not.toHaveBeenCalled();
     });
+
+    it('labels a task notice as written by the bot, not as a system message', async () => {
+        const listByBot = vi.fn()
+            .mockResolvedValue([
+                { role: 'system', content: { kind: 'text', text: 'Task blocked by this bot: "Ship it". Reason: "No key"' } },
+            ]);
+        const list = vi.fn()
+            .mockResolvedValue([]);
+        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: createModelStore() });
+
+        const context = await readContext('bot-1');
+
+        expect(context.recentMessages)
+            .toEqual(['Note written by this bot (not the owner): Task blocked by this bot: "Ship it". Reason: "No key"']);
+    });
 });

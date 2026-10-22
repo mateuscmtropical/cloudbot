@@ -5,6 +5,7 @@ import type { MessageBody } from '../../shared/chatTypes.ts';
 import { MASCOT_COLOR_NAMES, MASCOT_SHAPES } from '../../shared/mascot.ts';
 import { CONNECTED_APP_STATUSES } from '../../shared/connectedApps.ts';
 import { INTEGRATION_COMMANDS } from '../../shared/integrations.ts';
+import { TASK_STATUSES } from '../../shared/taskTypes.ts';
 import type { RoutineSchedule } from '../routines/schedule.ts';
 
 import { MESSAGE_ROLES } from './messageRoles.ts';
@@ -148,6 +149,28 @@ const routines = sqliteTable('routines', {
         .notNull(),
 }, table => [
     index('routines_bot_id')
+        .on(table.botId),
+]);
+
+// The task board. channelId stays empty until group channels exist.
+const tasks = sqliteTable('tasks', {
+    id: text('id')
+        .primaryKey(),
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    channelId: text('channel_id'),
+    title: text('title')
+        .notNull(),
+    status: text('status', { enum: TASK_STATUSES })
+        .notNull(),
+    blockedReason: text('blocked_reason'),
+    createdAt: integer('created_at')
+        .notNull(),
+    updatedAt: integer('updated_at')
+        .notNull(),
+}, table => [
+    index('tasks_bot_id')
         .on(table.botId),
 ]);
 
@@ -376,5 +399,5 @@ const channelMessages = sqliteTable('channel_messages', {
         .on(table.channelId),
 ]);
 
-export { botLimits, botModels, botRules, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, integrationRuns, integrations, messages, routines, settings, turnQueue, turnWaits, watches, webhooks };
+export { botLimits, botModels, botRules, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, integrationRuns, integrations, messages, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks };
 export type { StoredUploadRecord };
