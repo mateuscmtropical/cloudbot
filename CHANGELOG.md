@@ -38,6 +38,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- A bot now knows the names of the owner's other bots, so a request to message the bot called CloudBot reaches it with bot_send instead of being read as the app.
 - A Gemini bot on the Antigravity CLI no longer shows an old API error after each reply. agy repeats the last error of the conversation on later turns, so a turn that answered now counts as finished.
 - A bot tool call with wrong arguments is refused before any approval card, and the refusal says which arguments are wrong, so the bot can fix the call.
 - The bubble that shows the bot is working scrolls into view when it appears, instead of showing up cut off below the chat.
