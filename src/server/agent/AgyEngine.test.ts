@@ -189,6 +189,11 @@ describe.skipIf(process.platform === 'win32')('AgyEngine', () => {
             .toEqual({ command: 'ls -la' });
         expect(reviewed[1]?.input)
             .toHaveProperty('file_path', '/w/notes.txt');
+        // A call to the bot's own tools is read out of call_mcp_tool, so the hook review covers it.
+        expect(grants[0]!.readOwnToolCall?.('call_mcp_tool', { ServerName: 'cloudbot', ToolName: 'bot_send', Arguments: { bot: 'CloudBot', text: 'oi' } }))
+            .toEqual({ name: 'bot_send', input: { bot: 'CloudBot', text: 'oi' } });
+        expect(grants[0]!.readOwnToolCall?.('call_mcp_tool', { ServerName: 'other', ToolName: 'x', Arguments: {} }))
+            .toBeUndefined();
 
         agy.stdout.end();
         await reading;

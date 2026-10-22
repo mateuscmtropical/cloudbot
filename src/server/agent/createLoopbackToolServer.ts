@@ -34,6 +34,14 @@ interface LoopbackTurnGrant {
     // True for an engine whose agent sends no call id with tools/call, such as an ACP agent. Each call then goes to
     // reviewToolCall here before it runs.
     reviewsEachCall?: boolean | undefined;
+    // For an engine whose hook sees a call to the bot's own tools under a wrapper, such as agy's call_mcp_tool. Returns
+    // the tool name and its arguments, so the hook review covers the call and the tools/call that follows runs at once.
+    readOwnToolCall?: ((toolName: string, input: unknown) => OwnToolCall | undefined) | undefined;
+}
+
+interface OwnToolCall {
+    name: string;
+    input: unknown;
 }
 
 // The files the CLI reads for one turn. They live in a folder of their own, removed on release.
@@ -80,6 +88,8 @@ interface TurnState {
     calls: Map<string, CallState>;
     // The calls the owner denied in this turn, by tool and input. The same call again is refused without a second card.
     refusedCalls: Set<string>;
+    // Own tool calls the hook review allowed, by tool and input. Each one lets one matching tools/call run.
+    preApprovedCalls: string[];
     folder: string;
     fileMode: number;
     isReleased: boolean;
@@ -413,11 +423,61 @@ async function answerPrompt(turn: TurnState, args: unknown): Promise<LoopbackToo
     return decisionResult({ behavior: 'allow', updatedInput: input });
 }
 
-async function answerOwnPrompt(turn: TurnState, args: unknown): Promise<LoopbackToolResult> {
+// The tools/call of a call the hook review allowed runs without a second review. The input must match exactly.
+function consumePreApprovedCall(turn: TurnState, fullToolName: string, args: unknown): boolean {
+    const key = `${fullToolName}\n${inputKeyOf(args)}`;
+    const index = turn.preApprovedCalls.indexOf(key);
+
+    if (index === -1) {
+        return false;
+    }
+
+    turn.preApprovedCalls.splice(index, 1);
+
+    return true;
+}
+
+// agy ends an MCP call after 3 minutes, but its hook may wait an hour. So a call to the bot's own tools is checked and
+// reviewed in the hook, and the tools/call that follows only has to match it.
+async function answerOwnToolPrompt(serverName: string, turn: TurnState, ownCall: OwnToolCall): Promise<LoopbackToolResult> {
+    const tool = turn.grant.tools.find(candidate => candidate.name === ownCall.name);
+
+    if (tool === undefined) {
+        return decisionResult({ behavior: 'deny', message: 'There is no such tool.' });
+    }
+
+    const objectSchema = z.object(tool.inputSchema);
+    const parsedArguments = objectSchema.safeParse(ownCall.input ?? {});
+
+    if (!parsedArguments.success) {
+        const problems = z.prettifyError(parsedArguments.error);
+
+        return decisionResult({ behavior: 'deny', message: `The arguments do not match the tool.\n${problems}` });
+    }
+
+    const fullToolName = `mcp__${serverName}__${tool.name}`;
+    const refusal = await reviewOwnCall(turn, fullToolName, ownCall.input ?? {});
+
+    if (refusal !== undefined) {
+        return decisionResult({ behavior: 'deny', message: refusal });
+    }
+
+    turn.preApprovedCalls.push(`${fullToolName}\n${inputKeyOf(ownCall.input)}`);
+
+    return decisionResult({ behavior: 'allow' });
+}
+
+async function answerOwnPrompt(serverName: string, turn: TurnState, args: unknown): Promise<LoopbackToolResult> {
     const parsed = approveArgumentsSchema.safeParse(args);
 
     if (!parsed.success || isApproveTool(parsed.data.tool_name)) {
         return decisionResult({ behavior: 'deny', message: REVIEW_FAILED_REASON });
+    }
+
+    const ownCall = turn.grant.readOwnToolCall?.(parsed.data.tool_name, parsed.data.input ?? {});
+
+    if (ownCall !== undefined) {
+        return answerOwnToolPrompt(serverName, turn, ownCall);
     }
 
     const refusal = await reviewOwnCall(turn, parsed.data.tool_name, parsed.data.input ?? {});
@@ -482,7 +542,7 @@ async function answerMcp(serverName: string, turn: TurnState, body: string, resp
     if (request.method === 'tools/call') {
         if (params.name === APPROVE_TOOL_NAME) {
             // An engine whose CLI sends no call id asks through a hook of its own, such as agy, so the call is reviewed as it is.
-            const result = turn.grant.reviewsEachCall === true ? await answerOwnPrompt(turn, params.arguments) : await answerPrompt(turn, params.arguments);
+            const result = turn.grant.reviewsEachCall === true ? await answerOwnPrompt(serverName, turn, params.arguments) : await answerPrompt(turn, params.arguments);
 
             writeJson(response, 200, { jsonrpc: '2.0', id, result });
 
@@ -512,7 +572,9 @@ async function answerMcp(serverName: string, turn: TurnState, body: string, resp
             return;
         }
 
-        if (!consumeAllowedCall(turn, fullToolName, params.arguments, metaToolUseId)) {
+        const isPreApproved = turn.grant.reviewsEachCall === true && consumePreApprovedCall(turn, fullToolName, params.arguments);
+
+        if (!isPreApproved && !consumeAllowedCall(turn, fullToolName, params.arguments, metaToolUseId)) {
             const refusal = turn.grant.reviewsEachCall === true ? await reviewOwnCall(turn, fullToolName, params.arguments) : NOT_APPROVED_TEXT;
 
             if (refusal !== undefined) {
@@ -643,7 +705,7 @@ async function startLoopbackToolServer(serverName: string, options: LoopbackServ
             const folder = mkdtempSync(folderPrefix);
             const mcpConfigPath = join(folder, 'mcp.json');
             const settingsPath = join(folder, 'settings.json');
-            const state: TurnState = { grant, calls: new Map(), refusedCalls: new Set(), folder, fileMode, isReleased: false, controller: new AbortController() };
+            const state: TurnState = { grant, calls: new Map(), refusedCalls: new Set(), preApprovedCalls: [], folder, fileMode, isReleased: false, controller: new AbortController() };
             const headers = { Authorization: `Bearer ${token}` };
             const loopbackServer = { [serverName]: { type: 'http', url: `${baseUrl}/mcp`, headers } };
             const remoteNames = Object.keys(grant.remoteServers ?? {});
@@ -715,4 +777,4 @@ async function startLoopbackToolServer(serverName: string, options: LoopbackServ
 }
 
 export { AGENT_TURN_ROOT, APPROVE_TOOL_NAME, BUILTIN_TOOLS, inputKeyOf, startLoopbackToolServer };
-export type { LoopbackServerOptions, LoopbackTool, LoopbackToolResult, LoopbackToolServer, LoopbackTurn, LoopbackTurnGrant };
+export type { LoopbackServerOptions, LoopbackTool, LoopbackToolResult, LoopbackToolServer, LoopbackTurn, LoopbackTurnGrant, OwnToolCall };
