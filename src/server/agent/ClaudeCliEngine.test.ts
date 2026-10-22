@@ -679,7 +679,7 @@ describe('ClaudeCliEngine process handling', () => {
         }
     });
 
-    it('appends the workspace CLAUDE.md to the system prompt file, after the bot profile', async () => {
+    it('writes the system prompt to its file and adds no workspace file of its own', async () => {
         const workspace = mkdtempSync(join(tmpdir(), 'cloudbot-memory-'));
         const written = new Map<string, string>();
         const loopback: LoopbackToolServer = {
@@ -701,7 +701,7 @@ describe('ClaudeCliEngine process handling', () => {
             close: () => Promise.resolve(),
         };
 
-        writeFileSync(join(workspace, 'CLAUDE.md'), 'Owner likes short answers.');
+        writeFileSync(join(workspace, 'MEMORY.md'), 'Owner likes short answers.');
 
         const { spawn } = scriptedSpawn({ stdout: fixture('text'), exitCode: 0 });
         const engine = new ClaudeCliEngine({ loopback, spawnFunction: spawn, environment: {} });
@@ -711,11 +711,7 @@ describe('ClaudeCliEngine process handling', () => {
         const prompt = written.get('system-prompt.txt') ?? '';
 
         expect(prompt)
-            .toContain('You are Ana.');
-        expect(prompt)
-            .toContain('Owner likes short answers.');
-        expect(prompt.indexOf('You are Ana.'))
-            .toBeLessThan(prompt.indexOf('Owner likes short answers.'));
+            .toBe('You are Ana.');
     });
 
     it('keeps stdin open for the interrupt and ends it once the result arrives', async () => {

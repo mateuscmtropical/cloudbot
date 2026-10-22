@@ -364,7 +364,7 @@ These are accepted today. A report about one of them is out of scope in the
 - A provider CLI other than Claude decides which of its tools ask first. Its
   questions are reviewed, but a tool that the CLI runs without asking is not
   seen. Mistral Vibe and opencode are set to ask for every tool.
-- The memory of a bot is `CLAUDE.md` in its workspace, and the bot writes it.
+- The memory of a bot is `MEMORY.md` in its workspace, and the bot writes it.
   Text from a web page can end up there and come back in later turns.
 
 ### The checks

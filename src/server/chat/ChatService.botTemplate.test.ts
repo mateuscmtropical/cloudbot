@@ -141,7 +141,7 @@ describe('ChatService bot templates', () => {
         const workspace = service.workspaceFor(anaId);
 
         await mkdir(workspace, { recursive: true });
-        await writeFile(join(workspace, 'CLAUDE.md'), 'LEARNED-MEMORY-XYZ owner prefers short replies.');
+        await writeFile(join(workspace, 'MEMORY.md'), 'LEARNED-MEMORY-XYZ owner prefers short replies.');
 
         await service.exportBotFromTool(anaId);
         const exportedText = await readSharedFile(anaId);
@@ -289,7 +289,7 @@ describe('ChatService bot templates', () => {
             .toEqual([]);
         expect(await routineStore.list(importedBot?.id ?? ''))
             .toEqual([]);
-        const memory = await readFile(join(service.workspaceFor(importedBot?.id ?? ''), 'CLAUDE.md'), 'utf8');
+        const memory = await readFile(join(service.workspaceFor(importedBot?.id ?? ''), 'MEMORY.md'), 'utf8');
 
         expect(memory)
             .toContain('Summarize new mail. API key: [redacted]');
@@ -312,7 +312,7 @@ describe('ChatService bot templates', () => {
             .toEqual([]);
         expect(await routineStore.list(importedBot?.id ?? ''))
             .toEqual([]);
-        const memory = await readFile(join(service.workspaceFor(importedBot?.id ?? ''), 'CLAUDE.md'), 'utf8');
+        const memory = await readFile(join(service.workspaceFor(importedBot?.id ?? ''), 'MEMORY.md'), 'utf8');
 
         expect(memory)
             .toContain('Summarize mail. Never send it.');

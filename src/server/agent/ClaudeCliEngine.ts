@@ -12,7 +12,6 @@ import { APPROVE_TOOL_NAME, BUILTIN_TOOLS } from './createLoopbackToolServer.ts'
 import type { LoopbackToolServer, LoopbackTurn, LoopbackTurnGrant } from './createLoopbackToolServer.ts';
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
 import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
-import { readWorkspaceMemoryBlock } from './readWorkspaceMemory.ts';
 import { TURN_MARKER_VARIABLE, createTurnMarker, endTurnLeftovers } from './endTurnLeftovers.ts';
 import { mapCliMessage, rememberResetsAt, withResetsAt } from './mapCliMessage.ts';
 import type { CliMessage } from './mapCliMessage.ts';
@@ -316,11 +315,8 @@ class ClaudeCliEngine implements AgentRunner {
     }
 
     private async* runProcess(request: TurnRequest, turn: LoopbackTurn): AsyncGenerator<AgentEvent> {
-        // The workspace CLAUDE.md is the bot's memory. --setting-sources '' keeps the CLI from loading it, so the server reads it here.
-        const memoryBlock = await readWorkspaceMemoryBlock(request.workspaceDir);
-        const systemPromptText = [request.systemPrompt, memoryBlock]
-            .filter((part): part is string => part !== undefined && part !== '')
-            .join('\n\n');
+        // The system prompt already holds the framed memory. --setting-sources '' keeps the CLI from loading any file of its own.
+        const systemPromptText = request.systemPrompt ?? '';
         const systemPromptPath = systemPromptText === '' ? undefined : turn.writeFile('system-prompt.txt', systemPromptText);
         const agentsText = request.agents === undefined ? undefined : JSON.stringify(request.agents);
         const agentsPath = agentsText === undefined ? undefined : turn.writeFile('agents.json', agentsText);

@@ -100,6 +100,13 @@ class AbortOnlyRunner implements AgentRunner {
 
 async function* waitForAbort(abortSignal: AbortSignal): AsyncGenerator<AgentEvent> {
     await new Promise<void>((resolve) => {
+        // A stop can arrive before the turn reaches the runner, and the real engines check for it the same way.
+        if (abortSignal.aborted) {
+            resolve();
+
+            return;
+        }
+
         abortSignal.addEventListener('abort', () => {
             resolve();
         }, { once: true });
@@ -1006,6 +1013,25 @@ describe('ChatService', () => {
             .toBe(buildSystemPrompt(bot, { hasBrowser: false }));
     });
 
+    it('adds the framed MEMORY.md to the prompt of each turn, for every engine', async () => {
+        const { service, runner } = buildSetup([{ event: { type: 'text', text: 'Hello' } }]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: 'Helps with mail' });
+        const workspace = join(dataDir, 'workspaces', bot.id);
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await mkdir(workspace, { recursive: true });
+        await writeFile(join(workspace, 'MEMORY.md'), 'Favorite color: teal');
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const profilePrompt = buildSystemPrompt(bot, { hasBrowser: false });
+
+        expect(runner.receivedRequests[0]?.systemPrompt)
+            .toContain(`${profilePrompt}\n\nMemory notes written by you`);
+        expect(runner.receivedRequests[0]?.systemPrompt)
+            .toContain('BEGIN MEMORY NOTES\nFavorite color: teal\nEND MEMORY NOTES');
+    });
+
     it('offers the WhatsApp tools and paragraph only when the connector is set', async () => {
         const connector: WhatsAppConnector = {
             connect: () => Promise.resolve({ status: 'invalid-phone-number-id' }),
@@ -1115,12 +1141,12 @@ describe('ChatService', () => {
             .not.toContain(SKILL_ADD_TOOL_FULL_NAME);
     });
 
-    it('writes the instructions of a new bot to its CLAUDE.md and adds no rule', async () => {
+    it('writes the instructions of a new bot to its MEMORY.md and adds no rule', async () => {
         const ruleStore = new RuleStore(opened.db);
         const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, ruleStore });
         const creator = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
         const created = await service.createBotFromTool(creator.id, { name: 'Ben', title: 'Grant tracker', instructions: 'Track grants.' });
-        const memory = await readFile(join(dataDir, 'workspaces', created.id, 'CLAUDE.md'), 'utf8');
+        const memory = await readFile(join(dataDir, 'workspaces', created.id, 'MEMORY.md'), 'utf8');
 
         expect(memory)
             .toBe('Instructions from Ana when this bot was made:\n\nTrack grants.\n');
@@ -1135,7 +1161,7 @@ describe('ChatService', () => {
 
         try {
             const created = await service.createBotFromTool(creator.id, { name: 'Ben', title: 'Grant tracker', instructions: 'Track grants.' });
-            const memoryStat = await stat(join(dataDir, 'workspaces', created.id, 'CLAUDE.md'));
+            const memoryStat = await stat(join(dataDir, 'workspaces', created.id, 'MEMORY.md'));
 
             expect(memoryStat.mode & 0o777)
                 .toBe(0o660);
