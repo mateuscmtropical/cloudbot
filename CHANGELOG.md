@@ -36,6 +36,10 @@ All notable changes to this project are listed here. The format follows
 - New messages, the streamed reply and panels move in with short transform and opacity animations, and the bot list slides over more softly on a phone. Buttons give a little when pressed. Reduced motion turns these off.
 - The server lets the browser keep the built web app files, whose names change with each build, for a year. The page itself is checked on every visit, so a new version still shows at once. A repeat visit no longer downloads the app again.
 
+### Fixed
+
+- A Gemini bot on the Antigravity CLI no longer shows an old API error after each reply. agy repeats the last error of the conversation on later turns, so a turn that answered now counts as finished.
+
 ### Added
 
 - Teach a task by recording the screen. Ask a bot to learn a task from you, do it once on its screen, and give the screen back. The bot turns the recorded steps into a skill for you to approve. Password and other secret fields are recorded only as a secret step, never with their value.
