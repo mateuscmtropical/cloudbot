@@ -36,6 +36,7 @@ import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
 import type { ChatEvent } from '../../shared/chatTypes.ts';
 import { ChatService, PendingUploadLimitError, UploadDuringTurnError, buildScreenshotName } from './ChatService.ts';
+import { CLEANUP_RETRIES } from './testCleanup.ts';
 
 interface TestSetup {
     service: ChatService;
@@ -202,7 +203,7 @@ describe('ChatService usage limit and queue', () => {
     afterEach(async () => {
         vi.useRealTimers();
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     it('runs the same message again after the reset when the agent never started', async () => {
@@ -706,7 +707,7 @@ describe('ChatService', () => {
 
     afterEach(async () => {
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     function buildSetup(script: ScriptedAgentStep[]): TestSetup {
@@ -1975,7 +1976,7 @@ describe('ChatService model choices', () => {
 
     afterEach(async () => {
         opened.close();
-        await rm(dataDir, { recursive: true, force: true });
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
     // Sends one message from the given source, waits for its turn and returns the model the runner got.
