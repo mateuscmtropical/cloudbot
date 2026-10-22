@@ -1,6 +1,5 @@
-import { tool } from '@anthropic-ai/claude-agent-sdk';
-import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
-
+import { tool } from '../agent/cloudbotTool.ts';
+import type { CloudbotTool } from '../agent/cloudbotTool.ts';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
 import { TELEGRAM_API_ORIGIN } from './TelegramApi.ts';
 
@@ -30,7 +29,7 @@ function textResult(text: string, isError = false): TelegramToolResult {
     return isError ? { content: [content], isError: true } : { content: [content] };
 }
 
-function createTelegramTools(connector: TelegramConnector, botId: string): SdkMcpToolDefinition<Record<string, never>>[] {
+function createTelegramTools(connector: TelegramConnector, botId: string): CloudbotTool[] {
     const connectTool = tool(
         TELEGRAM_CONNECT_TOOL_NAME,
         TELEGRAM_CONNECT_DESCRIPTION,
