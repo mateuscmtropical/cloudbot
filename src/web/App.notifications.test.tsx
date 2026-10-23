@@ -37,6 +37,9 @@ vi.mock('./apiClient.ts', () => ({
     switchBotProvider: vi.fn(),
     renameBot: vi.fn(),
     removeUpload: vi.fn(),
+    listConnectedApps: vi.fn(() => Promise.resolve([])),
+    removeConnectedApp: vi.fn(() => Promise.resolve()),
+    startAppConnection: vi.fn(),
 }));
 
 vi.mock('./peopleClient.ts', () => ({

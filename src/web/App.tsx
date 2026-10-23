@@ -1144,6 +1144,7 @@ function App(): ReactElement {
             {isConnectAppsOpen
                 ? (
                         <ConnectAppsPanel
+                            selectedBotId={selectedBotId}
                             onClose={() => {
                                 setIsConnectAppsOpen(false);
                             }}

@@ -244,7 +244,10 @@ function createApp(options: AppOptions): Hono {
     }
 
     if (options.connectedApps !== undefined) {
-        const connectedAppRoutes = createAppRoutes({ connectedApps: options.connectedApps });
+        const connectedAppRoutes = createAppRoutes({
+            connectedApps: options.connectedApps,
+            ...(options.chatService === undefined ? {} : { chatService: options.chatService }),
+        });
 
         app.route('/', connectedAppRoutes);
     }

@@ -450,6 +450,12 @@ function listConnectedApps(): Promise<ConnectedAppSummary[]> {
     return requestJson<ConnectedAppSummary[]>('/api/apps', {});
 }
 
+function startAppConnection(botId: string, name: string, url: string): Promise<ChatMessage> {
+    const path = `${API_ROOT}/apps/connect`;
+
+    return postJson<ChatMessage>(path, { botId, name, url });
+}
+
 async function removeConnectedApp(appId: string): Promise<void> {
     const path = `/api/apps/${encodeURIComponent(appId)}`;
     const response = await fetch(path, { method: 'DELETE' });
@@ -495,6 +501,7 @@ export type { EffortLevel, LimitBound, LimitsResponse, MessagePageRequest, Model
 export {
     RequestFailedError,
     listConnectedApps,
+    startAppConnection,
     removeConnectedApp,
     createBot,
     deleteBot,

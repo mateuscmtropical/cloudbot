@@ -532,8 +532,11 @@ changes cannot reach a private host. The address of a connected server is kept i
 `ConnectedApps.start` registers the stored servers again after a restart. `AppProxy.openCallGate` gives one turn a gated address, the plain address with a random gate key after it. It refuses every `resources/*` request and sends a `tools/call` only when the engine allowed that exact call first. The Codex engine uses it, see the Codex engine section.
 
 The tools of a connected server are named `mcp__<name>__<tool>`, so they go through the approval
-path like other outside connectors. `app_connect` always asks the owner. The owner removes a server
-in the Connect apps panel through `GET /api/apps` and `DELETE /api/apps/:id`.
+path like other outside connectors. `app_connect` always asks the owner. The Connect apps panel
+offers the known Linear and Notion addresses plus a custom address. `POST /api/apps/connect` sends
+the request to the selected bot as a normal chat message, so it uses the same `app_connect` approval,
+address check and secure token form as a request typed in chat. Both paths save into the same list.
+The panel lists and removes connections through `GET /api/apps` and `DELETE /api/apps/:id`.
 
 ## API integrations
 

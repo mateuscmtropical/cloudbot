@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createWebhook, getLimits, getModelSettings, listBots, listMessages, listRoutines, listWebhooks, removeRoutine, removeWebhook, RequestFailedError, saveLimits, saveModelSettings, stopTurn, uploadAttachments } from './apiClient.ts';
+import { createWebhook, getLimits, getModelSettings, listBots, listMessages, listRoutines, listWebhooks, removeRoutine, removeWebhook, RequestFailedError, saveLimits, saveModelSettings, startAppConnection, stopTurn, uploadAttachments } from './apiClient.ts';
+import type { ChatMessage } from '../shared/chatTypes.ts';
 
 const NO_SETTINGS = {
     chat: null,
@@ -118,6 +119,29 @@ describe('apiClient', () => {
 
         expect(fetchMock)
             .toHaveBeenCalledWith('/api/bots/bot%2F1/stop', { method: 'POST' });
+    });
+
+    it('starts an app connection in the selected bot chat', async () => {
+        const message: ChatMessage = {
+            id: 'message-1',
+            botId: 'bot-1',
+            role: 'user',
+            createdAt: 1,
+            sequence: 1,
+            body: { kind: 'text', text: 'Connect Linear.' },
+        };
+        const fetchMock = stubFetch(Response.json(message, { status: 201 }));
+
+        const startedMessage = await startAppConnection('bot-1', 'linear', 'https://mcp.linear.app/mcp');
+
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/apps/connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ botId: 'bot-1', name: 'linear', url: 'https://mcp.linear.app/mcp' }),
+            });
+        expect(startedMessage)
+            .toEqual(message);
     });
 
     it('asks for the page before a sequence with a limit', async () => {

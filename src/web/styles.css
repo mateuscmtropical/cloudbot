@@ -111,7 +111,7 @@ svg {
     margin-bottom: 4px;
     padding: 10px;
     border: 0;
-    border-radius: 12px;
+    border-radius: var(--radius-bubble);
     background: transparent;
     text-align: left;
     touch-action: manipulation;
@@ -329,6 +329,81 @@ svg {
     border-radius: 999px;
     background: var(--color-surface);
     color: var(--color-text);
+}
+
+.connect-app-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.connect-app-card,
+.connect-app-custom {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--color-surface-raised);
+}
+
+.connect-app-icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 12px;
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.connect-app-icon-linear {
+    background: #5e6ad2;
+    color: #fff;
+}
+
+.connect-app-icon-notion {
+    border: 1px solid var(--color-surface-raised);
+    background: #111;
+    color: #fff;
+}
+
+.connect-app-icon-custom {
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+}
+
+.connect-app-copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    gap: var(--space-1);
+    overflow-wrap: anywhere;
+}
+
+.connect-app-copy > span,
+.connect-app-copy > label {
+    color: var(--color-text-muted);
+    font-size: 0.85em;
+}
+
+.connect-app-custom {
+    align-items: flex-start;
+    border-bottom: 0;
+}
+
+.connect-app-custom input {
+    width: 100%;
+    margin-top: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--color-surface-raised);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+}
+
+.connect-app-custom button {
+    margin-top: var(--space-2);
 }
 
 /* Buttons */
