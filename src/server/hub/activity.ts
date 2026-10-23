@@ -8,6 +8,7 @@ interface ActivitySources {
     hasWhatsAppConnection: boolean;
     hasTelegramConnection: boolean;
     hasEmailAccount: boolean;
+    hasAgentProgram: boolean;
     isLoginOrSetupInProgress: boolean;
 }
 
@@ -40,6 +41,10 @@ function computeActivity(sources: ActivitySources): InstanceActivity {
 
     if (sources.hasEmailAccount) {
         reasons.push('email account configured');
+    }
+
+    if (sources.hasAgentProgram) {
+        reasons.push('program listening on a port');
     }
 
     if (sources.isLoginOrSetupInProgress) {

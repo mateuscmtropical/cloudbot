@@ -73,6 +73,7 @@ describe('createHubActivityRoutes', () => {
             hasWhatsAppConnection: false,
             hasTelegramConnection: false,
             hasEmailAccount: false,
+            hasAgentProgram: false,
             isLoginOrSetupInProgress: false,
         };
         const readSources = vi.fn(() => Promise.resolve(sources));

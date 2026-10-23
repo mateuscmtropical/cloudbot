@@ -39,8 +39,18 @@ describe('readHubActivitySources', () => {
                 hasWhatsAppConnection: true,
                 hasTelegramConnection: true,
                 hasEmailAccount: true,
+                hasAgentProgram: false,
                 isLoginOrSetupInProgress: false,
             });
+    });
+
+    it('counts a program the bot started as activity', async () => {
+        const options: HubActivitySourceOptions = { hasAgentProgram: () => Promise.resolve(true), isReady: () => true };
+
+        const sources = await readHubActivitySources(options);
+
+        expect(sources.hasAgentProgram)
+            .toBe(true);
     });
 
     it('counts setup as activity and handles absent optional stores', async () => {
@@ -56,6 +66,7 @@ describe('readHubActivitySources', () => {
                 hasWhatsAppConnection: false,
                 hasTelegramConnection: false,
                 hasEmailAccount: false,
+                hasAgentProgram: false,
                 isLoginOrSetupInProgress: true,
             });
     });
