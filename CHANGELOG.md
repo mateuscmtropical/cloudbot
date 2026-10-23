@@ -16,6 +16,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- The chat header shows only the model name for a provider that lists its models, such as GPT-6 Luna, and the bot no longer asks you to approve a model change.
 - On a provider such as OpenCode, the bot no longer asks you to approve its own CloudBot tools twice, such as connecting a provider. The tool server already decides each call.
 - When an AI provider renames its mode that asks before each tool, CloudBot uses the mode the agent lists instead of failing every turn with "could not switch to asking before each tool".
 - OpenCode setup offers free models or an account API key for OpenCode Zen or Go. CloudBot checks the key, stores it in the vault and sends it through the local key proxy.
@@ -71,6 +72,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- The chat header shows only the model name for a provider that lists its models, such as GPT-6 Luna, and the bot no longer asks you to approve a model change.
 - When the review of a tool call fails, the approval card shows the tool and its whole input, or says the input is too long to show.
 - Yellow is no longer a bot color. Its dark shade read as brown, so bots and channel posts that had it are now orange. New bots and the mascot tool never pick yellow. A stored color the app does not know shows as blue instead of breaking the mascot.
 - Buttons light up when the pointer is over them, including the choice buttons on the setup card. A disabled button does not. The change shows with reduced motion on, and the keyboard focus ring is unchanged.
