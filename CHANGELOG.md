@@ -14,7 +14,6 @@ All notable changes to this project are listed here. The format follows
 
 - The provider list calls the provider OpenCode, not "opencode free models".
 - The bot knows how to change its provider and that a subscription, plan or account means the sign-in at a provider. CloudBot has no paid plan of its own.
-=======
 - When you connect a provider in the chat, the bot of that chat runs on it from the next message, and the provider name in the header updates. Before, the bot kept the old provider.
 - Picking a provider that needs no sign-in, such as OpenCode, no longer opens a blank browser tab.
 - A routine can repeat every minute. The shortest interval was 5 minutes.
