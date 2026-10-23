@@ -152,10 +152,15 @@ describe('classifyToolCall', () => {
         'Read',
         'Glob',
         'Grep',
+        'WebSearch',
+        'mcp__cloudbot__browser_open',
         'mcp__cloudbot__browser_read',
         'mcp__cloudbot__browser_screenshot',
         'mcp__cloudbot__browser_scroll',
         'mcp__cloudbot__share_file',
+        'mcp__cloudbot__task_add',
+        'mcp__cloudbot__task_move',
+        'mcp__cloudbot__task_board',
     ])('skips the review for %s', (toolName) => {
         expect(classify(toolName))
             .toBe('skip');
@@ -185,7 +190,6 @@ describe('classifyToolCall', () => {
     it.each([
         'Bash',
         'Write',
-        'WebFetch',
         'mcp__cloudbot__browser_click',
         'mcp__cloudbot__browser_type',
         'mcp__cloudbot__browser_key',
@@ -195,6 +199,15 @@ describe('classifyToolCall', () => {
         'mcp__x__get_payload',
         'mcp__docs__reorder_pages',
     ])('sends %s to the reviewer', (toolName) => {
+        expect(classify(toolName))
+            .toBe('review');
+    });
+
+    it.each([
+        'mcp__linear__create_issue',
+        'mcp__github__update_file',
+        'mcp__gitlab__delete_branch',
+    ])('reviews a remote write from %s so owner rules can still deny it', (toolName) => {
         expect(classify(toolName))
             .toBe('review');
     });
@@ -223,6 +236,20 @@ describe('connected app tools', () => {
     it('reviews the tools of a connected server like any other outside connector', () => {
         expect(classify('mcp__linear__list_issues'))
             .toBe('review');
+    });
+});
+
+describe('provider tools', () => {
+    it('asks before switching the bot to another provider', () => {
+        expect(classify('mcp__cloudbot__provider_use'))
+            .toBe('always-ask');
+    });
+
+    it('skips the provider list and the setup-chat prompt', () => {
+        expect(classify('mcp__cloudbot__provider_list'))
+            .toBe('skip');
+        expect(classify('mcp__cloudbot__provider_connect'))
+            .toBe('skip');
     });
 });
 

@@ -310,7 +310,13 @@ const askReviewModel: ReviewModel = async (prompt, signal, model, effort, onCost
 };
 const toolCallReviewer = createToolCallReviewer({
     askModel: askReviewModel,
-    readContext: createReviewContextReader({ ruleStore, messageStore, modelStore, channelStore }),
+    readContext: createReviewContextReader({
+        ruleStore,
+        messageStore,
+        modelStore,
+        channelStore,
+        workspaceFor: botId => agentUser === undefined ? join(dataDir, 'workspaces', botId) : agentWorkspacePath(botId, AGENT_WORKSPACE_ROOT),
+    }),
     // The card of an integration change shows its script, so the owner approves what runs. Set only with integrations.
     describeChange: integrationService === undefined ? undefined : (botId, mode, input) => integrationService.describeChange(botId, mode, input),
     // The rule card and the bot delete check read the stores and the chat service, which is defined below. The calls happen later, in a turn.

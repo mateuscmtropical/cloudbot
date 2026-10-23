@@ -22,6 +22,22 @@ function createModelStore(choices: ModelChoices = NO_CHOICES, efforts: EffortCho
 }
 
 describe('createReviewContextReader', () => {
+    it('includes the workspace path of the bot being reviewed', async () => {
+        const listByBot = vi.fn()
+            .mockResolvedValue([]);
+        const list = vi.fn()
+            .mockResolvedValue([]);
+        const workspaceFor = vi.fn((botId: string) => `/workspaces/${botId}`);
+        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: createModelStore(), workspaceFor });
+
+        const context = await readContext('bot-7');
+
+        expect(context.workspaceDir)
+            .toBe('/workspaces/bot-7');
+        expect(workspaceFor)
+            .toHaveBeenCalledWith('bot-7');
+    });
+
     it('lists the rules and the text of the latest messages', async () => {
         const listByBot = vi.fn()
             .mockResolvedValue([

@@ -13,6 +13,7 @@ All notable changes to this project are listed here. The format follows
 ### Changed
 
 - The People button shows on every instance. On one that is not the owner's instance inside the hub, the panel says that inviting people needs the hub and points to the install steps.
+- Tool reviews now allow reads and harmless workspace work without an approval card, and ask before remote writes, system changes, outside-workspace deletion or overwrite, new app connections and changes to rules, limits or the active provider. A review denial stays a denial.
 - A bot that hands a task or a reply to another bot of the owner no longer asks for approval each time. The review still asks when the hand-off carries something the owner did not ask for, and an owner rule can still deny it.
 - An instance of a server for many people stays awake while a program that a person started listens on a port, such as a Node dev server in the workspace. It used to hibernate after five idle minutes, which stopped the server. It hibernates again after the program stops.
 - Closing the browser window on the Screen panel no longer leaves a black screen. The browser comes back a second later on Google, and the empty desktop has the dark color of the app.

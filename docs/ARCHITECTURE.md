@@ -1158,10 +1158,9 @@ and no call waits.
 service. `classifyToolCall` sorts each call first:
 
 - Reading and looking tools skip the review and run. The list is
-  `SKIP_TOOL_NAMES`: `Read`, `Glob`, `Grep`, `LS`, `TodoWrite`, `WebSearch` and
-  the bot's own `browser_open`, `browser_read`, `browser_screenshot`,
-  `browser_scroll`, `request_screen`, `request_secret`, `share_file`, `update_profile`,
-  `notifications_enable` and `notifications_disable`.
+  `SKIP_TOOL_NAMES`: `Read`, `Glob`, `Grep`, `LS`, `TodoWrite`, `WebSearch`
+  and the bot's own read, browse, screen, secret, file sharing,
+  profile, task, provider list and other card-only tools.
 - A connector tool (`mcp__` but not the bot's own server) whose tool name (the part after the server name) has the
   word send, reply, purchase, buy, pay, checkout, book, booking, reserve or
   order always answers `ask`. The model is not consulted.
@@ -1173,11 +1172,33 @@ service. `classifyToolCall` sorts each call first:
 
 The model is one `claude` CLI call with no tools, no settings files, no
 saved session and one turn (`createClaudeReviewModel`). It gets the tool call,
-the owner rules of the bot and the last six chat lines, and answers with a
-JSON object: `category`, `decision`, `summary` and `reason`. A category of
-`send_message`, `purchase` or `booking` always becomes `ask`, whatever the
-decision says. An answer that is not valid JSON, a failed call and a timeout of
-60 seconds all throw, and the approval gate then asks the owner.
+the bot's workspace path, the owner rules of the bot and the last six chat
+lines, and answers with a JSON object: `category`, `decision`, `summary` and
+`reason`. A category of
+`send_message`, `purchase`, `booking`, `remote_write`,
+`outside_workspace_change`, `system_change`, `connector_change` or
+`owner_setting_change` becomes `ask` unless the decision is `deny`. A deny stays
+a deny. A hand-off to another bot of the owner keeps the #295 exception. An
+answer that is not valid JSON, a failed call and a timeout of 60 seconds all
+throw, and the approval gate then asks the owner.
+
+### What asks and what does not
+
+No approval card is needed to read files or web pages, browse without sending
+or submitting anything, run local workspace commands that only read, build or
+test, or edit files inside the workspace. The bot's own notes and tasks also
+run without a card. An ordinary hand-off to another bot of the owner runs
+without a card when the reviewer allows it. The review prompt includes the
+workspace path, and relative file paths count as inside it.
+
+The owner is asked before sending a message or post to another person or
+service, spending money, booking something, deleting or overwriting something
+outside the workspace, pushing to git or writing to a remote service, or
+installing system packages or running with `sudo`. Connecting a new service
+through `app_connect` and changing rules, limits or the bot's active provider
+also require approval. `provider_connect` only posts the setup choices. The
+owner then picks and connects a provider in the setup chat.
+Existing owner rules still apply, and a review denial remains a denial.
 
 The always-ask rule is a name and pattern check, not a proof. A built in tool
 that sends something in a way the patterns miss relies on the model's category.
