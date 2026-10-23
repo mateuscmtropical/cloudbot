@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse } from '../../shared/providerTypes.ts';
 import { isClaudeModel } from '../models/modelChoices.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
+import type { ProviderModelCatalogs } from './ProviderModelCatalogs.ts';
 import type { ProviderToolDependencies } from './createProviderTools.ts';
 import { PROVIDER_LABELS, isProviderId } from './providerIds.ts';
 import type { ProviderId } from './providerIds.ts';
@@ -14,7 +15,8 @@ interface ProviderErrorResponse {
 // The provider routes are owner settings behind the session check. The bot changes its own provider with provider_use.
 interface ProviderRoutesOptions {
     providers: ProviderToolDependencies;
-    modelStore: Pick<ModelStore, 'get'>;
+    modelStore: Pick<ModelStore, 'get' | 'getProviderChoice' | 'setProviderChoice'>;
+    modelCatalogs?: ProviderModelCatalogs | undefined;
     hasBot: (botId: string) => Promise<boolean>;
     // The bot whose chat holds the sign-in of a provider.
     setupBotId: string;
@@ -24,6 +26,9 @@ const BOT_NOT_FOUND: ProviderErrorResponse = { error: 'No bot has this id.' };
 const INVALID_BODY: ProviderErrorResponse = { error: 'Send a JSON body with a provider.' };
 const UNKNOWN_PROVIDER: ProviderErrorResponse = { error: 'This server does not run that provider.' };
 const NOT_CONNECTED: ProviderErrorResponse = { error: 'That provider is not connected. Connect it first.' };
+const NO_MODEL_OPTIONS: ProviderErrorResponse = { error: 'This provider does not advertise selectable models.' };
+const INVALID_MODEL_CHOICE: ProviderErrorResponse = { error: 'Choose a model from the current provider list.' };
+const INVALID_EFFORT_CHOICE: ProviderErrorResponse = { error: 'Choose an effort offered for the selected model.' };
 
 // Only the models a provider takes are shown. The claude models belong to Claude, and gemini- models to Gemini.
 function modelFor(provider: ProviderId, chatModel: string | null): string | null {
@@ -41,8 +46,30 @@ function modelFor(provider: ProviderId, chatModel: string | null): string | null
 async function summarize(options: ProviderRoutesOptions, botId: string): Promise<BotProviderSummary> {
     const provider = await options.providers.providerFor(botId);
     const choices = await options.modelStore.get(botId);
+    const providerChoice = await options.modelStore.getProviderChoice(botId, provider);
+    const catalog = options.modelCatalogs?.get(provider);
+    const legacyGemini = provider === 'gemini' && choices.chat?.startsWith('gemini-') === true ? choices.chat : null;
+    const selectedModel = providerChoice?.model ?? null;
+    const savedDefaultIsOffered = catalog !== undefined && providerChoice?.defaultModel !== null && providerChoice?.defaultModel !== undefined
+        && catalog.models.some(option => option.id === providerChoice.defaultModel);
+    const providerDefaultModel = savedDefaultIsOffered ? providerChoice.defaultModel : catalog?.defaultModel ?? providerChoice?.defaultModel ?? null;
+    const hasSelectableModels = (catalog?.models.length ?? 0) > 0;
+    const model = provider === 'claude'
+        ? modelFor(provider, choices.chat)
+        : providerChoice !== undefined && !hasSelectableModels
+            ? null
+            : providerChoice === undefined ? legacyGemini ?? providerDefaultModel : selectedModel ?? providerDefaultModel;
+    const selectedOption = catalog?.models.find(option => option.id === (selectedModel ?? providerDefaultModel));
 
-    return { provider, label: PROVIDER_LABELS[provider], model: modelFor(provider, choices.chat) };
+    return {
+        provider,
+        label: PROVIDER_LABELS[provider],
+        model,
+        modelOptions: catalog?.models ?? [],
+        selectedModel,
+        selectedEffort: providerChoice?.effort ?? null,
+        effortOptions: selectedOption?.efforts ?? [],
+    };
 }
 
 // A check of the sign-ins can take a minute, since each provider is asked through its own CLI. The answer is kept this long.
@@ -144,6 +171,69 @@ function createProviderRoutes(options: ProviderRoutesOptions): Hono {
         }
 
         await options.providers.setProvider(botId, requested);
+        const summary = await summarize(options, botId);
+
+        return context.json(summary);
+    });
+
+    routes.put('/api/bots/:id/provider/model', async (context) => {
+        const botId = context.req.param('id');
+        const isKnownBot = await options.hasBot(botId);
+
+        if (!isKnownBot) {
+            return context.json(BOT_NOT_FOUND, 404);
+        }
+
+        const provider = await options.providers.providerFor(botId);
+        const catalog = options.modelCatalogs?.get(provider);
+
+        if (catalog === undefined || catalog.models.length === 0) {
+            return context.json(NO_MODEL_OPTIONS, 400);
+        }
+
+        const payload: unknown = await context.req.json()
+            .catch(() => undefined);
+        const fields = typeof payload === 'object' && payload !== null && !Array.isArray(payload) ? payload as Record<string, unknown> : undefined;
+
+        if (fields === undefined || (fields.model === undefined && fields.effort === undefined)) {
+            return context.json({ error: 'Send a model or effort choice.' }, 400);
+        }
+
+        if (fields.model !== undefined && fields.model !== null && typeof fields.model !== 'string') {
+            return context.json(INVALID_MODEL_CHOICE, 400);
+        }
+
+        if (fields.effort !== undefined && fields.effort !== null && typeof fields.effort !== 'string') {
+            return context.json(INVALID_EFFORT_CHOICE, 400);
+        }
+
+        const stored = await options.modelStore.getProviderChoice(botId, provider);
+        const model = fields.model === undefined ? stored?.model ?? null : fields.model;
+        const storedDefaultIsOffered = stored?.defaultModel !== null && stored?.defaultModel !== undefined
+            && catalog.models.some(option => option.id === stored.defaultModel);
+        const defaultModel = storedDefaultIsOffered ? stored.defaultModel : catalog.defaultModel;
+        const selectedModel = model ?? defaultModel;
+        const selectedOption = catalog.models.find(option => option.id === selectedModel);
+
+        if (model !== null && selectedOption === undefined) {
+            return context.json(INVALID_MODEL_CHOICE, 400);
+        }
+
+        const effort = fields.effort === undefined ? stored?.effort ?? null : fields.effort;
+
+        if (effort !== null && selectedOption?.efforts.includes(effort) !== true) {
+            return context.json(INVALID_EFFORT_CHOICE, 400);
+        }
+
+        const defaultEffort = [selectedOption?.defaultEffort, stored?.defaultEffort, catalog.defaultEffort]
+            .find(candidate => candidate !== null && candidate !== undefined && selectedOption?.efforts.includes(candidate)) ?? null;
+
+        await options.modelStore.setProviderChoice(botId, provider, {
+            model,
+            effort,
+            defaultModel,
+            defaultEffort,
+        });
         const summary = await summarize(options, botId);
 
         return context.json(summary);

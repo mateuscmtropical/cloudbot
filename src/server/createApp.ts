@@ -37,6 +37,7 @@ import { createLimitRoutes } from './limits/createLimitRoutes.ts';
 import { createModelRoutes } from './models/createModelRoutes.ts';
 import { createProviderRoutes } from './providers/createProviderRoutes.ts';
 import type { ProviderToolDependencies } from './providers/createProviderTools.ts';
+import type { ProviderModelCatalogs } from './providers/ProviderModelCatalogs.ts';
 import { createRoutineRoutes } from './routines/createRoutineRoutes.ts';
 import type { LimitStore } from './store/LimitStore.ts';
 import type { ModelStore } from './store/ModelStore.ts';
@@ -73,6 +74,7 @@ interface AppOptions {
     ruleStore?: RuleStore;
     routineStore?: RoutineStore;
     modelStore?: ModelStore;
+    providerModelCatalogs?: ProviderModelCatalogs;
     // The AI providers the owner can pick for a bot, and the bot whose chat holds the sign-in. Without both the provider routes are not served.
     providers?: ProviderToolDependencies;
     setupBotId?: string;
@@ -283,7 +285,7 @@ function createApp(options: AppOptions): Hono {
 
     if (options.chatService !== undefined && options.modelStore !== undefined && options.providers !== undefined && options.setupBotId !== undefined) {
         const chatService = options.chatService;
-        const providerRoutes = createProviderRoutes({ providers: options.providers, modelStore: options.modelStore, hasBot: botId => chatService.hasBot(botId), setupBotId: options.setupBotId });
+        const providerRoutes = createProviderRoutes({ providers: options.providers, modelStore: options.modelStore, modelCatalogs: options.providerModelCatalogs, hasBot: botId => chatService.hasBot(botId), setupBotId: options.setupBotId });
 
         app.route('/', providerRoutes);
     }

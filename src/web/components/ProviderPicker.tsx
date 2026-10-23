@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotProviderSummary, ProviderChoiceSummary } from '../../shared/providerTypes.ts';
-import { getBotProvider, listProviders, startProviderConnect, switchBotProvider } from '../apiClient.ts';
+import { getBotProvider, listProviders, saveProviderModel, startProviderConnect, switchBotProvider } from '../apiClient.ts';
 
 interface ProviderPickerProps {
     botId: string;
     // Goes up when the bot's provider may have changed outside the picker, such as by a card in the chat.
     changeCount?: number;
+    // A newly completed message can teach the server the provider's model list.
+    refreshCount?: number;
     // The sign-in of a provider runs in the chat of this bot. The app shows that chat.
     onOpenSetupChat: (setupBotId: string) => void;
 }
@@ -16,12 +18,15 @@ type ListState = 'loading' | 'ready' | 'failed';
 
 // Shows the provider and the model of the bot in the header. A tap opens the providers of the server.
 // A connected one switches the bot at once. One that is not connected starts its sign-in in the setup chat.
-function ProviderPicker({ botId, changeCount = 0, onOpenSetupChat }: ProviderPickerProps): ReactElement | null {
+function ProviderPicker({ botId, changeCount = 0, refreshCount = 0, onOpenSetupChat }: ProviderPickerProps): ReactElement | null {
     const [summary, setSummary] = useState<BotProviderSummary | undefined>(undefined);
     const [providers, setProviders] = useState<ProviderChoiceSummary[]>([]);
     const [listState, setListState] = useState<ListState>('loading');
     const [isOpen, setIsOpen] = useState(false);
     const [problem, setProblem] = useState<string | undefined>(undefined);
+    const [modelDraft, setModelDraft] = useState<string | null>(null);
+    const [effortDraft, setEffortDraft] = useState<string | null>(null);
+    const [isSavingModel, setIsSavingModel] = useState(false);
     const [shownBotId, setShownBotId] = useState(botId);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -40,6 +45,8 @@ function ProviderPicker({ botId, changeCount = 0, onOpenSetupChat }: ProviderPic
             .then((loaded) => {
                 if (isCurrent) {
                     setSummary(loaded);
+                    setModelDraft(loaded.selectedModel);
+                    setEffortDraft(loaded.selectedEffort);
                 }
             })
             .catch(() => {
@@ -51,7 +58,7 @@ function ProviderPicker({ botId, changeCount = 0, onOpenSetupChat }: ProviderPic
         return () => {
             isCurrent = false;
         };
-    }, [botId, changeCount]);
+    }, [botId, changeCount, refreshCount]);
 
     // The list is read when the header shows and each time the menu opens, since a sign-in may have finished since the last time.
     // The server needs a while for the first check of the sign-ins, so reading early lets the menu open with the list ready.
@@ -109,6 +116,8 @@ function ProviderPicker({ botId, changeCount = 0, onOpenSetupChat }: ProviderPic
         switchBotProvider(botId, providerId)
             .then((switched) => {
                 setSummary(switched);
+                setModelDraft(switched.selectedModel);
+                setEffortDraft(switched.selectedEffort);
                 setIsOpen(false);
             })
             .catch(() => {
@@ -126,6 +135,24 @@ function ProviderPicker({ botId, changeCount = 0, onOpenSetupChat }: ProviderPic
             })
             .catch(() => {
                 setProblem('The sign-in could not be started.');
+            });
+    }
+
+    function handleSaveModel(): void {
+        setProblem(undefined);
+        setIsSavingModel(true);
+
+        saveProviderModel(botId, modelDraft, effortDraft)
+            .then((saved) => {
+                setSummary(saved);
+                setModelDraft(saved.selectedModel);
+                setEffortDraft(saved.selectedEffort);
+            })
+            .catch(() => {
+                setProblem('The model could not be changed.');
+            })
+            .finally(() => {
+                setIsSavingModel(false);
             });
     }
 
@@ -149,7 +176,7 @@ function ProviderPicker({ botId, changeCount = 0, onOpenSetupChat }: ProviderPic
             </button>
             {isOpen
                 ? (
-                        <div className="provider-menu" role="menu" aria-label="AI providers">
+                        <div className="provider-menu" role="dialog" aria-label="AI provider settings">
                             {listState === 'loading' && providers.length === 0 ? <p className="provider-menu-note">Loading...</p> : null}
                             {listState === 'failed' && providers.length === 0 ? <p className="provider-menu-note">The providers could not be loaded.</p> : null}
                             {providers.map(provider => (
@@ -158,8 +185,7 @@ function ProviderPicker({ botId, changeCount = 0, onOpenSetupChat }: ProviderPic
                                         ? (
                                                 <button
                                                     type="button"
-                                                    role="menuitemradio"
-                                                    aria-checked={provider.id === summary.provider}
+                                                    aria-pressed={provider.id === summary.provider}
                                                     className="provider-menu-item"
                                                     onClick={() => {
                                                         handleSwitch(provider.id);
@@ -171,13 +197,52 @@ function ProviderPicker({ botId, changeCount = 0, onOpenSetupChat }: ProviderPic
                                         : (
                                                 <>
                                                     <span className="provider-menu-item is-off">{provider.label}</span>
-                                                    <button type="button" role="menuitem" className="provider-menu-connect" aria-label={`Connect ${provider.label}`} onClick={handleConnect}>
+                                                    <button type="button" className="provider-menu-connect" aria-label={`Connect ${provider.label}`} onClick={handleConnect}>
                                                         Connect
                                                     </button>
                                                 </>
                                             )}
                                 </div>
                             ))}
+                            {summary.modelOptions.length === 0
+                                ? null
+                                : (
+                                        <div className="provider-model-settings" role="group" aria-label="Model settings">
+                                            <label className="provider-model-field">
+                                                <span>Model</span>
+                                                <select
+                                                    aria-label="Model"
+                                                    value={modelDraft ?? ''}
+                                                    onChange={(event) => {
+                                                        const model = event.currentTarget.value || null;
+                                                        const options = summary.modelOptions.find(option => option.id === model)?.efforts ?? summary.effortOptions;
+
+                                                        setModelDraft(model);
+                                                        setEffortDraft(current => current !== null && options.includes(current) ? current : null);
+                                                    }}
+                                                >
+                                                    <option value="">Provider default</option>
+                                                    {summary.modelOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+                                                </select>
+                                            </label>
+                                            <label className="provider-model-field">
+                                                <span>Effort</span>
+                                                <select
+                                                    aria-label="Effort"
+                                                    value={effortDraft ?? ''}
+                                                    onChange={(event) => {
+                                                        setEffortDraft(event.currentTarget.value || null);
+                                                    }}
+                                                >
+                                                    <option value="">Provider default</option>
+                                                    {(summary.modelOptions.find(option => option.id === modelDraft)?.efforts ?? summary.effortOptions).map(effort => <option key={effort} value={effort}>{effort}</option>)}
+                                                </select>
+                                            </label>
+                                            <button type="button" className="provider-model-save" disabled={isSavingModel} onClick={handleSaveModel}>
+                                                {isSavingModel ? 'Saving...' : 'Save model'}
+                                            </button>
+                                        </div>
+                                    )}
                             {problem === undefined ? null : <p className="provider-menu-note">{problem}</p>}
                         </div>
                     )

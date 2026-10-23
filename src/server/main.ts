@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { ProviderChoices } from './providers/ProviderChoices.ts';
 import type { ProviderToolDependencies } from './providers/createProviderTools.ts';
 import { ProviderRunner } from './providers/ProviderRunner.ts';
+import { ProviderModelCatalogs } from './providers/ProviderModelCatalogs.ts';
 import type { ProviderEngine } from './providers/ProviderRunner.ts';
 import { createChatgptSignIn } from './providers/chatgptSignIn.ts';
 import { BEARER, PLACEHOLDER_KEY, checkKeyAt, createAcpProviders, methodRunner, readLocalAcpPaths } from './providers/acpProviders.ts';
@@ -208,6 +209,7 @@ const skillStore = new SkillStore(opened.db);
 const routineStore = new RoutineStore(opened.db);
 const taskStore = new TaskStore(opened.db);
 const modelStore = new ModelStore(opened.db);
+const providerModelCatalogs = new ProviderModelCatalogs();
 const limitStore = new LimitStore(opened.db);
 const webhookStore = new WebhookStore(opened.db);
 // One log for the whole process, so the bot and the owner see the same refused calls. It is kept in memory only.
@@ -368,10 +370,13 @@ let chatgptCheckedAt = 0;
 // The way each provider was connected last, a sign-in or an API key. A turn uses that way.
 const methodFor = async (provider: ProviderId): Promise<ProviderMethod | undefined> => {
     const saved = await settings.get(`provider.method.${provider}`);
+    const method = saved === 'apiKey' || saved === 'signIn' ? saved : undefined;
 
-    return saved === 'apiKey' || saved === 'signIn' ? saved : undefined;
+    providerModelCatalogs.useMethod(provider, method);
+
+    return method;
 };
-const acpProviders = await createAcpProviders({ agentUser, vault, loopback, methodFor, dataDir, localPaths: readLocalAcpPaths(process.env) });
+const acpProviders = await createAcpProviders({ agentUser, vault, loopback, methodFor, dataDir, localPaths: readLocalAcpPaths(process.env), modelCatalogs: providerModelCatalogs });
 const engines: Partial<Record<ProviderId, ProviderEngine>> = {
     ...acpProviders.engines,
     claude: {
@@ -391,9 +396,9 @@ const openaiKeyProxy = codexPath === undefined ? undefined : await startKeyProxy
 if (codexPath !== undefined && chatgptSignIn !== undefined && openaiKeyProxy !== undefined) {
     const signIn = chatgptSignIn;
     const agentOptions = agentUser ? { agentUser, imageRoot: AGENT_TURN_ROOT } : {};
-    const subscriptionEngine = new CodexEngine({ codexPath, codexHomeFor: () => codexHome, loopback, callGates: appProxy, ...agentOptions });
+    const subscriptionEngine = new CodexEngine({ codexPath, codexHomeFor: () => codexHome, loopback, callGates: appProxy, modelCatalogs: providerModelCatalogs, ...agentOptions });
     const keyEngine = new CodexEngine({
-        codexPath, codexHomeFor: () => join(dataDir, 'codex', 'key-home'), loopback, callGates: appProxy, ...agentOptions,
+        codexPath, codexHomeFor: () => join(dataDir, 'codex', 'key-home'), loopback, callGates: appProxy, modelCatalogs: providerModelCatalogs, ...agentOptions,
         apiKeyLogin: PLACEHOLDER_KEY,
         extraConfig: [`openai_base_url="${openaiKeyProxy.url}/v1"`],
         // docker/cloudbot-codex keeps the key sign-in in its own folder, beside the ChatGPT one.
@@ -420,7 +425,7 @@ if (codexPath !== undefined && chatgptSignIn !== undefined && openaiKeyProxy !==
     };
 }
 
-const providerRunner = new ProviderRunner({ engines, providerFor: botId => providerChoices.forBot(botId) });
+const providerRunner = new ProviderRunner({ engines, providerFor: botId => providerChoices.forBot(botId), providerChoiceFor: (botId, provider) => modelStore.getProviderChoice(botId, provider), modelCatalogs: providerModelCatalogs });
 
 // The token is used only for the Telegram API site the owner saved it for.
 function readTelegramToken(botId: string): string | undefined {
@@ -469,6 +474,7 @@ const chatService: ChatService = new ChatService({
     webhookStore,
     templateGallery,
     providerTools,
+    providerModelCatalogs,
     watchStore,
     connectedApps,
     integrationService,
@@ -520,6 +526,7 @@ const setup = new SetupConversation({
         if (provider !== 'claude') {
             if (method !== undefined) {
                 await settings.set(`provider.method.${provider}`, method);
+                providerModelCatalogs.useMethod(provider, method);
             }
 
             return;
@@ -607,7 +614,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

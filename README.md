@@ -149,6 +149,9 @@ with Claude.
   Docker image installs all of them. A local run uses Claude and, with
   `CODEX_PATH`, ChatGPT. The others need `CLOUDBOT_<PROVIDER>_PATH`, such as
   `CLOUDBOT_GEMINI_PATH`, set to the absolute path of the CLI.
+- The chat header shows a provider's reported model and offers its model and
+  effort choices per bot. A provider that reports no selectable models keeps
+  its own default.
 
 Read [provider terms](docs/PROVIDER_TERMS.md) before you use a subscription
 with CloudBot.

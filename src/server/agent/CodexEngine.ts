@@ -19,6 +19,8 @@ import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
 import { codexAgentLaunch } from './codexAgentLaunch.ts';
 import { writeCodexTurnImages } from './writeCodexTurnImages.ts';
 import type { CodexTurnImages } from './writeCodexTurnImages.ts';
+import type { ProviderModelCatalog, ProviderModelCatalogs } from '../providers/ProviderModelCatalogs.ts';
+import { readCodexModelCatalog } from './readCodexModelCatalog.ts';
 
 interface CodexEngineOptions {
     // The absolute path of the codex binary.
@@ -43,6 +45,7 @@ interface CodexEngineOptions {
     // An API key Codex signs in with before each turn. CloudBot passes a placeholder here, and openai_base_url in
     // extraConfig points Codex at the key proxy, which adds the real key. The app server ignores CODEX_API_KEY.
     apiKeyLogin?: string | undefined;
+    modelCatalogs?: ProviderModelCatalogs | undefined;
     // Tests inject fakes here. Production spawns the binary and signals its process group.
     spawnFunction?: SpawnFunction | undefined;
     signalProcess?: ((child: ChildProcess, action: SignalAction) => void) | undefined;
@@ -102,6 +105,34 @@ function parseLine(line: string): CodexMessage | undefined {
     } catch {
         return undefined;
     }
+}
+
+async function readAllModelCatalog(call: (method: string, params: Record<string, unknown>) => Promise<CodexMessage>, cursor?: string, models: unknown[] = [], seenCursors: Set<string> = new Set()): Promise<ProviderModelCatalog | undefined> {
+    if (cursor !== undefined && (seenCursors.has(cursor) || seenCursors.size >= 100)) {
+        return readCodexModelCatalog(models);
+    }
+
+    if (cursor !== undefined) {
+        seenCursors.add(cursor);
+    }
+
+    const params = { includeHidden: false, limit: 100, ...(cursor === undefined ? {} : { cursor }) };
+    const response = await call('model/list', params);
+
+    if (response.error !== undefined) {
+        return undefined;
+    }
+
+    const result = readRecord(response.result);
+    const page: unknown[] = Array.isArray(result.data) ? result.data as unknown[] : [];
+    const allModels = [...models, ...page];
+    const nextCursor = typeof result.nextCursor === 'string' ? result.nextCursor : undefined;
+
+    if (nextCursor !== undefined) {
+        return readAllModelCatalog(call, nextCursor, allModels, seenCursors);
+    }
+
+    return readCodexModelCatalog(allModels);
 }
 
 function readRecord(value: unknown): Record<string, unknown> {
@@ -207,7 +238,7 @@ function preparePrivateFolder(folder: string): void {
 
 // Runs each turn in its own `codex app-server`, the route with an approval channel. Every command and file change asks
 // CloudBot first (approval policy untrusted), and each question goes to the same review as a Claude tool call.
-// Not covered yet, see issue #128: the spending limit and the agent user. The model choices of the owner name Claude models, so Codex keeps its own default model.
+// Not covered yet, see issue #128: the spending limit and the agent user.
 class CodexEngine implements AgentRunner {
     private readonly options: CodexEngineOptions;
     private readonly spawnFunction: SpawnFunction;
@@ -462,11 +493,60 @@ class CodexEngine implements AgentRunner {
                 }
             }
 
+            const modelRevision = request.providerModelRevision ?? this.options.modelCatalogs?.revision('chatgpt');
+            let modelCatalog = modelRevision === undefined
+                ? this.options.modelCatalogs?.get('chatgpt')
+                : this.options.modelCatalogs?.getIfRevision('chatgpt', modelRevision);
+
+            if (modelCatalog === undefined) {
+                modelCatalog = await readAllModelCatalog(call);
+
+                if (modelCatalog !== undefined) {
+                    if (modelRevision === undefined) {
+                        this.options.modelCatalogs?.set('chatgpt', modelCatalog);
+                    } else {
+                        this.options.modelCatalogs?.setIfRevision('chatgpt', modelCatalog, modelRevision);
+                    }
+                }
+            }
+
+            const requestedModel = request.model;
+            const selectedModel = modelCatalog === undefined || requestedModel === undefined
+                ? undefined
+                : requestedModel === null
+                    ? modelCatalog.models.some(model => model.id === request.providerDefaultModel)
+                        ? request.providerDefaultModel ?? modelCatalog.defaultModel ?? undefined
+                        : modelCatalog.defaultModel ?? undefined
+                    : modelCatalog.models.some(model => model.id === requestedModel)
+                        ? requestedModel
+                        : undefined;
+
+            if (requestedModel !== undefined && requestedModel !== null && modelCatalog !== undefined && selectedModel === undefined) {
+                throw new Error('The selected Codex model is no longer available.');
+            }
+
+            const modelForEffort = selectedModel ?? modelCatalog?.defaultModel;
+            const selectedOption = modelCatalog?.models.find(model => model.id === modelForEffort);
+            const selectedEffort = modelCatalog === undefined || request.effort === undefined
+                ? undefined
+                : request.effort === null
+                    ? selectedOption === undefined
+                        ? request.providerDefaultEffort ?? undefined
+                        : [selectedOption.defaultEffort, request.providerDefaultEffort, modelCatalog.defaultEffort].find(effort => effort !== null && effort !== undefined && selectedOption.efforts.includes(effort))
+                    : selectedOption?.efforts.includes(request.effort) === true
+                        ? request.effort
+                        : undefined;
+
+            if (request.effort !== undefined && request.effort !== null && modelCatalog !== undefined && selectedEffort === undefined) {
+                throw new Error('The selected Codex effort is no longer available.');
+            }
+
             const threadSettings = {
                 cwd: request.workspaceDir,
                 approvalPolicy: CODEX_APPROVAL_POLICY,
                 sandbox: CODEX_SANDBOX_MODE,
                 ...(request.systemPrompt === undefined ? {} : { developerInstructions: request.systemPrompt }),
+                ...(selectedModel === undefined ? {} : { model: selectedModel }),
             };
             const threadAnswer = request.sessionId
                 ? await call('thread/resume', { threadId: request.sessionId, ...threadSettings })
@@ -481,7 +561,12 @@ class CodexEngine implements AgentRunner {
 
             const imageInputs = imagePaths.map(path => ({ type: 'localImage', path }));
             const input = [{ type: 'text', text: request.prompt, text_elements: [] }, ...imageInputs];
-            const turnAnswer = await call('turn/start', { threadId, input });
+            const turnAnswer = await call('turn/start', {
+                threadId,
+                input,
+                ...(selectedModel === undefined ? {} : { model: selectedModel }),
+                ...(selectedEffort === undefined ? {} : { effort: selectedEffort }),
+            });
             const turnId = readId(turnAnswer.result, 'turn');
 
             if (turnAnswer.error !== undefined || turnId === undefined) {

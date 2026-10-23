@@ -83,8 +83,8 @@ function buildInterruptMessage(requestId: string): string {
 // The variadic --disallowedTools and --add-dir come last, so the next flag ends their values.
 function buildCliArguments(request: TurnRequest, files: CliTurnFiles): string[] {
     const resumeArgs = request.sessionId ? ['--resume', request.sessionId] : [];
-    const modelArgs = request.model === undefined || !isClaudeModel(request.model) ? [] : ['--model', request.model];
-    const effortArgs = request.effort === undefined ? [] : ['--effort', request.effort];
+    const modelArgs = request.model === undefined || request.model === null || !isClaudeModel(request.model) ? [] : ['--model', request.model];
+    const effortArgs = request.effort === undefined || request.effort === null ? [] : ['--effort', request.effort];
     const systemPromptArgs = files.systemPromptPath === undefined ? [] : ['--append-system-prompt-file', files.systemPromptPath];
     const agentArgs = files.agentsPath === undefined ? [] : ['--agents', files.agentsPath];
     const maxStepsArgs = request.maxSteps === undefined ? [] : ['--max-turns', String(request.maxSteps)];

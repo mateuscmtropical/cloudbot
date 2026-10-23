@@ -11,6 +11,9 @@ import type { SignalAction, SpawnFunction } from './ClaudeCliEngine.ts';
 import type { LoopbackToolServer, LoopbackTurn } from './createLoopbackToolServer.ts';
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
 import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
+import { readAcpModelCatalog } from './readAcpModelCatalog.ts';
+import type { ProviderModelCatalog, ProviderModelCatalogs } from '../providers/ProviderModelCatalogs.ts';
+import type { ProviderId } from '../providers/providerIds.ts';
 
 interface AcpEngineOptions {
     // The name the chat shows, such as Gemini.
@@ -25,6 +28,9 @@ interface AcpEngineOptions {
     protectedFolders?: string[] | undefined;
     // The session mode that asks before each tool, for an agent whose default mode accepts some calls by itself.
     askModeId?: string | undefined;
+    // The provider whose catalog this agent reports after creating or loading a session.
+    provider?: ProviderId | undefined;
+    modelCatalogs?: ProviderModelCatalogs | undefined;
     // Some agents need an authenticate call with their cached sign-in before a session, such as cursor_login.
     authMethodId?: string | undefined;
     // xAI requires this metadata for non-interactive ACP authentication.
@@ -329,8 +335,8 @@ class AcpEngine implements AgentRunner {
     }
 
     // Opens a session and stops before any prompt, so the setup chat can tell whether the sign-in still works.
-    async isSignedIn(botId: string, workspaceDir: string): Promise<boolean | undefined> {
-        const request = { botId, workspaceDir, prompt: '', abortSignal: new AbortController().signal };
+    async isSignedIn(botId: string, workspaceDir: string, providerModelRevision?: number): Promise<boolean | undefined> {
+        const request = { botId, workspaceDir, prompt: '', abortSignal: new AbortController().signal, ...(providerModelRevision === undefined ? {} : { providerModelRevision }) };
         const deny = (): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: false, reason: REVIEW_FAILED_REASON });
         const events: AgentEvent[] = [];
 
@@ -349,6 +355,16 @@ class AcpEngine implements AgentRunner {
     }
 
     private async* runProcess(request: TurnRequest, toolTurn: LoopbackTurn | undefined, reviewToolCall: NonNullable<TurnRequest['reviewToolCall']>, isCheck: boolean): AsyncGenerator<AgentEvent> {
+        const modelRevision = this.options.provider === undefined || this.options.modelCatalogs === undefined
+            ? undefined
+            : request.providerModelRevision ?? this.options.modelCatalogs.revision(this.options.provider);
+        const rememberCatalog = (catalog: ProviderModelCatalog): ProviderModelCatalog => {
+            if (this.options.provider === undefined || this.options.modelCatalogs === undefined || modelRevision === undefined) {
+                return catalog;
+            }
+
+            return this.options.modelCatalogs.setIfRevision(this.options.provider, catalog, modelRevision) ?? catalog;
+        };
         const launch = this.options.launch;
         const home = launch === undefined ? this.options.homeFor(request.botId) : undefined;
 
@@ -641,6 +657,9 @@ class AcpEngine implements AgentRunner {
             let sessionId = canLoad ? request.sessionId : undefined;
             let startMode: string | undefined;
             let listedModeIds: string[] = [];
+            let modelCatalog = this.options.provider === undefined || this.options.modelCatalogs === undefined || modelRevision === undefined
+                ? undefined
+                : this.options.modelCatalogs.getIfRevision(this.options.provider, modelRevision);
 
             if (sessionId !== undefined) {
                 isLoading = true;
@@ -650,6 +669,14 @@ class AcpEngine implements AgentRunner {
                 sessionId = loaded.error === undefined ? sessionId : undefined;
                 startMode = readModeId(loaded.result);
                 listedModeIds = readAvailableModeIds(loaded.result);
+
+                const loadedCatalog = readAcpModelCatalog(loaded.result);
+
+                if (loadedCatalog !== undefined) {
+                    modelCatalog = rememberCatalog(loadedCatalog);
+                } else if (modelCatalog !== undefined) {
+                    modelCatalog = { ...modelCatalog, currentModel: undefined, currentEffort: undefined };
+                }
             }
 
             if (sessionId === undefined) {
@@ -669,6 +696,14 @@ class AcpEngine implements AgentRunner {
                 sessionId = createdId;
                 startMode = readModeId(created.result);
                 listedModeIds = readAvailableModeIds(created.result);
+
+                const createdCatalog = readAcpModelCatalog(created.result);
+
+                if (createdCatalog !== undefined) {
+                    modelCatalog = rememberCatalog(createdCatalog);
+                } else if (modelCatalog !== undefined) {
+                    modelCatalog = { ...modelCatalog, currentModel: undefined, currentEffort: undefined };
+                }
             }
 
             currentSessionId = sessionId;
@@ -689,6 +724,75 @@ class AcpEngine implements AgentRunner {
                     push({ type: 'turn_error', message: `${this.options.label} could not switch to asking before each tool.`, isUsageLimit: false });
 
                     return;
+                }
+            }
+
+            const requestedModel = request.model;
+
+            if (requestedModel !== undefined && modelCatalog !== undefined) {
+                const savedDefaultIsOffered = request.providerDefaultModel !== null && request.providerDefaultModel !== undefined
+                    && modelCatalog.models.some(model => model.id === request.providerDefaultModel);
+                const selectedModel = requestedModel === null
+                    ? savedDefaultIsOffered ? request.providerDefaultModel ?? modelCatalog.defaultModel : modelCatalog.defaultModel
+                    : requestedModel;
+                const isOffered = selectedModel === null || modelCatalog.models.some(model => model.id === selectedModel);
+
+                if (!isOffered) {
+                    push({ type: 'turn_error', message: `${this.options.label} no longer offers the model this bot selected. Choose another model in the header.`, isUsageLimit: false });
+
+                    return;
+                }
+
+                if (selectedModel !== null && modelCatalog.currentModel !== selectedModel) {
+                    const modelSet = modelCatalog.modelConfigId === undefined
+                        ? await call('session/set_model', { sessionId, modelId: selectedModel })
+                        : await call('session/set_config_option', { sessionId, configId: modelCatalog.modelConfigId, value: selectedModel });
+
+                    if (modelSet.error !== undefined) {
+                        push({ type: 'turn_error', message: `${this.options.label} could not select the model this bot chose.`, isUsageLimit: false });
+
+                        return;
+                    }
+
+                    const updatedCatalog = readAcpModelCatalog(modelSet.result);
+
+                    if (updatedCatalog !== undefined) {
+                        modelCatalog = rememberCatalog(updatedCatalog);
+                    }
+                }
+            }
+
+            if (request.effort !== undefined && modelCatalog?.effortConfigId !== undefined) {
+                const savedDefaultIsOffered = request.providerDefaultModel !== null && request.providerDefaultModel !== undefined
+                    && modelCatalog.models.some(model => model.id === request.providerDefaultModel);
+                const selectedModel = request.model === null
+                    ? savedDefaultIsOffered ? request.providerDefaultModel ?? modelCatalog.defaultModel : modelCatalog.defaultModel
+                    : request.model ?? modelCatalog.defaultModel;
+                const selectedOption = modelCatalog.models.find(model => model.id === selectedModel);
+                const defaultEffort = [request.providerDefaultEffort, modelCatalog.defaultEffort]
+                    .find(effort => effort !== null && effort !== undefined && selectedOption?.efforts.includes(effort) === true);
+                const requestedEffort = request.effort === null ? defaultEffort : request.effort;
+
+                if (request.effort !== null && (typeof requestedEffort !== 'string' || selectedOption?.efforts.includes(requestedEffort) !== true)) {
+                    push({ type: 'turn_error', message: `${this.options.label} no longer offers the effort this bot selected for its model. Choose another effort in the header.`, isUsageLimit: false });
+
+                    return;
+                }
+
+                if (requestedEffort !== undefined && modelCatalog.currentEffort !== requestedEffort) {
+                    const effortSet = await call('session/set_config_option', { sessionId, configId: modelCatalog.effortConfigId, value: requestedEffort });
+
+                    if (effortSet.error !== undefined) {
+                        push({ type: 'turn_error', message: `${this.options.label} could not select the effort this bot chose.`, isUsageLimit: false });
+
+                        return;
+                    }
+
+                    const updatedCatalog = readAcpModelCatalog(effortSet.result);
+
+                    if (updatedCatalog !== undefined && this.options.provider !== undefined) {
+                        rememberCatalog(updatedCatalog);
+                    }
                 }
             }
 

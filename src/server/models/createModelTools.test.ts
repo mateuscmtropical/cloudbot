@@ -5,6 +5,8 @@ import type { EffortChoices, ModelChoices } from './modelChoices.ts';
 import { createModelTools } from './createModelTools.ts';
 import type { ModelToolResult } from './createModelTools.ts';
 import type { CloudbotTool } from '../agent/createProfileToolServer.ts';
+import { ProviderModelCatalogs } from '../providers/ProviderModelCatalogs.ts';
+import type { ProviderModelChoice } from '../store/ModelStore.ts';
 
 type ToolHandler = (args: Record<string, unknown>, extra: unknown) => Promise<ModelToolResult>;
 
@@ -105,6 +107,71 @@ describe('createModelTools', () => {
             .toEqual(STORED);
         expect(result.content[0]?.text)
             .toContain('chat haiku (max)');
+    });
+
+    it('saves an advertised non-Claude model and effort per provider', async () => {
+        const catalogs = new ProviderModelCatalogs();
+
+        catalogs.set('chatgpt', {
+            models: [{ id: 'gpt-6-luna', label: 'GPT-6 Luna', efforts: ['low', 'medium'] }],
+            defaultModel: 'gpt-6-luna',
+            defaultEffort: 'medium',
+        });
+        const baseStore = createFakeStore(STORED);
+        let savedChoice: ProviderModelChoice | undefined;
+        const store = {
+            ...baseStore,
+            getProviderChoice: () => Promise.resolve(savedChoice),
+            setProviderChoice: (_botId: string, _provider: 'chatgpt', choice: ProviderModelChoice) => {
+                savedChoice = choice;
+
+                return Promise.resolve();
+            },
+        };
+        const setModels = findHandler(createModelTools(store, 'bot-1', {
+            providerFor: () => Promise.resolve('chatgpt'),
+            modelCatalogs: catalogs,
+        }));
+
+        const result = await setModels({ chat: 'gpt-6-luna', chatEffort: 'low' }, {});
+
+        expect(result.isError)
+            .toBeUndefined();
+        expect(savedChoice)
+            .toEqual({ model: 'gpt-6-luna', effort: 'low', defaultModel: 'gpt-6-luna', defaultEffort: 'medium' });
+        expect(result.content[0]?.text)
+            .toContain('GPT-6 Luna (low)');
+        expect(baseStore.saved())
+            .toBeUndefined();
+    });
+
+    it('refuses a model that the current provider does not advertise', async () => {
+        const catalogs = new ProviderModelCatalogs();
+
+        catalogs.set('chatgpt', {
+            models: [{ id: 'gpt-6-luna', label: 'GPT-6 Luna', efforts: ['low'] }],
+            defaultModel: 'gpt-6-luna',
+            defaultEffort: null,
+        });
+        const baseStore = createFakeStore(STORED);
+        const store = {
+            ...baseStore,
+            getProviderChoice: () => Promise.resolve(undefined),
+            setProviderChoice: () => Promise.resolve(),
+        };
+        const setModels = findHandler(createModelTools(store, 'bot-1', {
+            providerFor: () => Promise.resolve('chatgpt'),
+            modelCatalogs: catalogs,
+        }));
+
+        const result = await setModels({ chat: 'sonnet' }, {});
+
+        expect(result.isError)
+            .toBe(true);
+        expect(result.content[0]?.text)
+            .toContain('advertised model list');
+        expect(baseStore.saved())
+            .toBeUndefined();
     });
 
     it('clears an effort when null is passed, and says the default', async () => {

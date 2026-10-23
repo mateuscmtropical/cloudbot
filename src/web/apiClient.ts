@@ -390,6 +390,13 @@ function switchBotProvider(botId: string, provider: string): Promise<BotProvider
     return requestJson<BotProviderSummary>(path, init);
 }
 
+function saveProviderModel(botId: string, model: string | null, effort: string | null): Promise<BotProviderSummary> {
+    const path = botPath(botId, '/provider/model');
+    const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, effort }) };
+
+    return requestJson<BotProviderSummary>(path, init);
+}
+
 // The providers of the server and which ones the owner connected. The server checks each sign-in, so this call can take a moment.
 function listProviders(): Promise<ProviderChoiceSummary[]> {
     return requestJson<ProviderChoiceSummary[]>(`${API_ROOT}/providers`, {});
@@ -559,6 +566,7 @@ export {
     listProviders,
     startProviderConnect,
     switchBotProvider,
+    saveProviderModel,
     renameBot,
     saveModelSettings,
     getLimits,

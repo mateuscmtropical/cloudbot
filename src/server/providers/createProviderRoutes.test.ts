@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ModelChoices } from '../models/modelChoices.ts';
 import { createProviderRoutes, modelFor } from './createProviderRoutes.ts';
+import { ProviderModelCatalogs } from './ProviderModelCatalogs.ts';
+import type { ProviderModelChoice } from '../store/ModelStore.ts';
 import type { ProviderToolDependencies } from './createProviderTools.ts';
 import type { ProviderId } from './providerIds.ts';
 
@@ -12,17 +14,27 @@ interface TestApp {
     dependencies: ProviderToolDependencies;
 }
 
-function createTestApp(connected: ProviderId[], chat: string | null = null): TestApp {
+function createTestApp(connected: ProviderId[], chat: string | null = null, provider: ProviderId = 'claude', modelCatalogs?: ProviderModelCatalogs): TestApp {
+    const providerChoices = new Map<string, ProviderModelChoice>();
     const dependencies: ProviderToolDependencies = {
         available: ['claude', 'chatgpt', 'gemini'],
         connected: () => Promise.resolve(connected),
-        providerFor: () => Promise.resolve('claude'),
+        providerFor: () => Promise.resolve(provider),
         setProvider: vi.fn(() => Promise.resolve()),
         offerProviders: vi.fn(() => Promise.resolve()),
     };
     const app = createProviderRoutes({
         providers: dependencies,
-        modelStore: { get: () => Promise.resolve({ ...NO_CHOICES, chat }) },
+        modelStore: {
+            get: () => Promise.resolve({ ...NO_CHOICES, chat }),
+            getProviderChoice: (botId, providerId) => Promise.resolve(providerChoices.get(`${botId}:${providerId}`)),
+            setProviderChoice: vi.fn((botId: string, providerId: ProviderId, choice: ProviderModelChoice) => {
+                providerChoices.set(`${botId}:${providerId}`, choice);
+
+                return Promise.resolve();
+            }),
+        },
+        modelCatalogs,
         hasBot: botId => Promise.resolve(botId === 'bot-1'),
         setupBotId: 'setup-bot',
     });
@@ -43,7 +55,7 @@ describe('provider routes', () => {
         expect(response.status)
             .toBe(200);
         expect(await response.json())
-            .toEqual({ provider: 'claude', label: 'Claude', model: 'sonnet' });
+            .toEqual({ provider: 'claude', label: 'Claude', model: 'sonnet', modelOptions: [], selectedModel: null, selectedEffort: null, effortOptions: [] });
     });
 
     it('lists the providers of the server with the state of each', async () => {
@@ -103,6 +115,38 @@ describe('provider routes', () => {
             .toBe(200);
         expect(dependencies.setProvider)
             .toHaveBeenCalledWith('bot-1', 'gemini');
+    });
+
+    it('lists and saves only the model and effort advertised for the current provider', async () => {
+        const modelCatalogs = new ProviderModelCatalogs();
+
+        modelCatalogs.set('chatgpt', {
+            models: [
+                { id: 'gpt-6-luna', label: 'GPT-6 Luna', efforts: ['low', 'medium'] },
+                { id: 'gpt-6-astra', label: 'GPT-6 Astra', efforts: ['high'] },
+            ],
+            defaultModel: 'gpt-6-astra',
+            defaultEffort: 'high',
+        });
+        const { request } = createTestApp(['chatgpt'], null, 'chatgpt', modelCatalogs);
+
+        const summary = await request('/api/bots/bot-1/provider');
+        const saved = await request('/api/bots/bot-1/provider/model', putJson({ model: 'gpt-6-luna', effort: 'low' }));
+        const invalidModel = await request('/api/bots/bot-1/provider/model', putJson({ model: 'sonnet', effort: null }));
+        const invalidEffort = await request('/api/bots/bot-1/provider/model', putJson({ model: 'gpt-6-luna', effort: 'high' }));
+
+        expect((await summary.json() as { modelOptions: unknown[] }).modelOptions)
+            .toHaveLength(2);
+        expect(await saved.json())
+            .toMatchObject({ model: 'gpt-6-luna', selectedModel: 'gpt-6-luna', selectedEffort: 'low' });
+        expect([invalidModel.status, invalidEffort.status])
+            .toEqual([400, 400]);
+
+        modelCatalogs.clear('chatgpt');
+        const afterAuthChange = await request('/api/bots/bot-1/provider');
+
+        expect(await afterAuthChange.json())
+            .toMatchObject({ model: null, modelOptions: [] });
     });
 
     it('refuses a provider that is not connected, not on this server or not a provider', async () => {

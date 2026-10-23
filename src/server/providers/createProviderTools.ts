@@ -56,7 +56,7 @@ function createProviderTools(dependencies: ProviderToolDependencies, botId: stri
     );
     const useTool = tool(
         PROVIDER_USE_TOOL_NAME,
-        'Switch the AI provider you run on, when the owner asks for it. The provider must be connected. The next message runs on it and starts a new conversation there. Your model choices name Claude models, so other providers use their own default model.',
+        'Switch the AI provider you run on, when the owner asks for it. The provider must be connected. The next message runs on it and starts a new conversation there. The model and effort choices for each provider stay with that provider.',
         { provider: z.enum(PROVIDER_IDS) },
         async ({ provider }): Promise<ProviderToolResult> => {
             if (!dependencies.available.includes(provider)) {

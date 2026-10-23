@@ -65,6 +65,52 @@ describe('ProviderRunner', () => {
             .toEqual({ type: 'session', sessionId: 'chatgpt:thread-1' });
     });
 
+    it('applies the saved model and effort for the current non-Claude provider', async () => {
+        const chatgpt = recordingRunner('thread-1');
+        const runner = new ProviderRunner({
+            engines: { chatgpt: { runner: chatgpt, isConnected: () => Promise.resolve(true) } },
+            providerFor: () => Promise.resolve('chatgpt'),
+            providerChoiceFor: () => Promise.resolve({ model: 'gpt-6-luna', effort: 'low', defaultModel: 'gpt-6-sol', defaultEffort: 'medium' }),
+        });
+
+        await collect(runner.runTurn(makeRequest()));
+
+        expect(chatgpt.requests[0])
+            .toMatchObject({ model: 'gpt-6-luna', effort: 'low' });
+    });
+
+    it('passes saved null choices so the engine can restore its provider defaults', async () => {
+        const chatgpt = recordingRunner('thread-1');
+        const runner = new ProviderRunner({
+            engines: { chatgpt: { runner: chatgpt, isConnected: () => Promise.resolve(true) } },
+            providerFor: () => Promise.resolve('chatgpt'),
+            providerChoiceFor: () => Promise.resolve({ model: null, effort: null, defaultModel: 'gpt-6-sol', defaultEffort: 'medium' }),
+        });
+
+        await collect(runner.runTurn(makeRequest()));
+
+        expect(chatgpt.requests[0])
+            .toMatchObject({ model: null, effort: null, providerDefaultModel: 'gpt-6-sol', providerDefaultEffort: 'medium' });
+    });
+
+    it('does not pass Claude model settings to a non-Claude provider without its own choice', async () => {
+        const chatgpt = recordingRunner('thread-1');
+        const runner = new ProviderRunner({
+            engines: { chatgpt: { runner: chatgpt, isConnected: () => Promise.resolve(true) } },
+            providerFor: () => Promise.resolve('chatgpt'),
+            providerChoiceFor: () => Promise.resolve(undefined),
+        });
+        const request = makeRequest();
+        const requestWithOldSettings = { ...request, model: 'sonnet', effort: 'high' };
+
+        await collect(runner.runTurn(requestWithOldSettings));
+
+        expect(chatgpt.requests[0]?.model)
+            .toBeUndefined();
+        expect(chatgpt.requests[0]?.effort)
+            .toBeUndefined();
+    });
+
     it('resumes only a session of the same provider', async () => {
         const { runner, chatgpt } = makeRunner('chatgpt');
 

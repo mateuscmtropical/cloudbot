@@ -308,7 +308,7 @@ function ConversationView({
                                     {botName}
                                 </span>
                             )}
-                    {bot === undefined || onOpenSetupChat === undefined ? null : <ProviderPicker botId={bot.id} changeCount={providerChangeCount} onOpenSetupChat={onOpenSetupChat} />}
+                    {bot === undefined || onOpenSetupChat === undefined ? null : <ProviderPicker botId={bot.id} changeCount={providerChangeCount} refreshCount={messages.length} onOpenSetupChat={onOpenSetupChat} />}
                 </div>
             </header>
             {/* Notices and the Screen panel sit below the pill, so their title and Close stay clear of it. Empty when none show. */}
