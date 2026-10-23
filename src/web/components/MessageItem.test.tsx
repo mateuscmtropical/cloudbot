@@ -50,6 +50,20 @@ describe('answered setup messages', () => {
         expect(screen.getByText('Queued'))
             .toBeTruthy();
     });
+
+    it('draws a stored routine prompt as a quiet system line', () => {
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
+        const body: MessageBody = { kind: 'text', text: 'Routine "Reminder": Send the message hi to the user.' };
+        const message = { id: 'routine', botId: 'bot', role: 'user' as const, sequence: 3, createdAt: 3, body };
+        const { container } = render(<MessageItem message={message} actions={actions} />);
+
+        expect(container.querySelector('.message-system')?.textContent)
+            .toBe('Routine: Reminder');
+        expect(container.querySelector('.message-user'))
+            .toBeNull();
+        expect(container.querySelector('.bubble'))
+            .toBeNull();
+    });
 });
 
 describe('bot messages with a mascot', () => {

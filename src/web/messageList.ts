@@ -44,7 +44,24 @@ function removeMessages(messages: ChatMessage[], messageIds: string[]): ChatMess
     return messages.filter(message => !removedIds.has(message.id));
 }
 
+function getRoutineSystemText(message: ChatMessage): string | undefined {
+    if (message.role !== 'user' || message.body.kind !== 'text' || !message.body.text.startsWith('Routine "')) {
+        return undefined;
+    }
+
+    const routineNameStart = 'Routine "'.length;
+    const routineNameEnd = message.body.text.indexOf('": ', routineNameStart);
+
+    if (routineNameEnd < 0) {
+        return undefined;
+    }
+
+    const routineName = message.body.text.slice(routineNameStart, routineNameEnd);
+
+    return `Routine: ${routineName}`;
+}
+
 // The page size the web app asks for. A page with fewer messages than this is the last one.
 const MESSAGE_PAGE_SIZE = 50;
 
-export { MESSAGE_PAGE_SIZE, mergeMessages, removeMessages, upsertLiveMessage, upsertMessage };
+export { MESSAGE_PAGE_SIZE, getRoutineSystemText, mergeMessages, removeMessages, upsertLiveMessage, upsertMessage };

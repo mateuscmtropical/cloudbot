@@ -5,6 +5,7 @@ import type { BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
 import { TASK_LABELS, TASK_STATUSES } from '../../shared/taskTypes.ts';
 import { formatFileSize } from '../formatFileSize.ts';
 import { MESSAGE_MASCOT_SIZE } from '../messageMascot.ts';
+import { getRoutineSystemText } from '../messageList.ts';
 import { renderMarkdown } from '../markdown.ts';
 import type { MascotState } from '../mascotState.ts';
 import { ChoiceButtons } from './ChoiceButtons.tsx';
@@ -168,6 +169,11 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
 
 function MessageItemView({ message, actions, mascot, isMascotShown = false, mascotState = 'idle' }: MessageItemProps): ReactElement {
     const className = `message message-${message.role}`;
+    const routineSystemText = getRoutineSystemText(message);
+
+    if (routineSystemText !== undefined) {
+        return <div className="message message-system">{routineSystemText}</div>;
+    }
 
     if (mascot === undefined) {
         return <div className={className}>{renderBody(message, actions)}</div>;

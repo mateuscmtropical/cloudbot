@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChatMessage } from '../shared/chatTypes.ts';
-import { mergeMessages, removeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
+import { getRoutineSystemText, mergeMessages, removeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
 
 function createMessage(id: string, text: string, sequence = 1): ChatMessage {
     return {
@@ -13,6 +13,20 @@ function createMessage(id: string, text: string, sequence = 1): ChatMessage {
         body: { kind: 'text', text },
     };
 }
+
+describe('getRoutineSystemText', () => {
+    it('labels a stored routine prompt by its routine name', () => {
+        const routineMessage = createMessage('routine', 'Routine "Reminder": Send the message hi to the user.');
+        const ownerMessage = { ...routineMessage, id: 'owner', body: { kind: 'text' as const, text: 'Routine "Reminder" is ready.' } };
+
+        expect(getRoutineSystemText({ ...routineMessage, role: 'user' }))
+            .toBe('Routine: Reminder');
+        expect(getRoutineSystemText({ ...ownerMessage, role: 'user' }))
+            .toBeUndefined();
+        expect(getRoutineSystemText(routineMessage))
+            .toBeUndefined();
+    });
+});
 
 describe('removeMessages', () => {
     it('drops the listed messages and ignores ids it does not hold', () => {

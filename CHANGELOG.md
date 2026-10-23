@@ -42,6 +42,7 @@ All notable changes to this project are listed here. The format follows
 
 - The buttons of the screen panel (Close, Done take over, I will keep it, Take the screen) have the same style as the other buttons. The close button of the Connect apps window is drawn as a cross that sits in the center of its circle.
 - The owner can control the bot's screen again in Docker. The screen filter read the extended clipboard message of the viewer as a message of almost 4 GB and held back every click, key and screen update that came after it. The screen looked like a still picture.
+- A routine run shows as a quiet system note, such as `Routine: Reminder`, and not as a message from the owner. The bot still gets the full prompt.
 - The sign-in screen, the task board and the voice button lost their styles on a screen wider than a phone, because a media query in the stylesheet was never closed. The sign-in screen is now a centered card with the cloud mascot.
 - A bot remembers what it saved on every provider, not only on Claude. The memory file is now `MEMORY.md`, and CloudBot adds it to each turn for every engine. A workspace with the old `CLAUDE.md` gets it renamed on the next turn. In Docker the file is read as the agent user, so memory that the agent saved with private file permissions still loads.
 - An approval card for a Gemini bot's own tool, such as a message to another bot, no longer expires after 3 minutes. The card is now asked in agy's hook, which waits for the owner.

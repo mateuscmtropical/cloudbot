@@ -118,6 +118,28 @@ describe('ChatService check-ins', () => {
         return { service, botId: bot.id, published, runner };
     }
 
+    it('stores and sends the full routine prompt unchanged', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const routinePrompt = 'Routine "Reminder": Send the message hi to the user.';
+        const runner = new FakeAgentRunner(scriptOf([{ type: 'text', text: 'Done.' }, { type: 'turn_finished' }]));
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore, limitStore });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, routinePrompt, 'routine');
+        await finished;
+
+        const storedMessages = await messageStore.listByBot(bot.id, { limit: 10 });
+        const storedRoutine = storedMessages[0];
+        const agentRequest = runner.receivedRequests[0];
+
+        expect(storedRoutine?.role)
+            .toBe('user');
+        expect(storedRoutine?.content)
+            .toEqual({ kind: 'text', text: routinePrompt });
+        expect(agentRequest?.prompt)
+            .toBe(routinePrompt);
+    });
+
     it('removes every message of a check-in that found nothing and tells the web app', async () => {
         const { service, botId, published } = await runCheckin([
             { type: 'tool_started', toolUseId: 't1', toolName: 'WebFetch', input: {} },
