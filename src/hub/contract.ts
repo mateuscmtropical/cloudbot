@@ -40,4 +40,13 @@ interface InstanceManager {
     remove: (name: string) => Promise<void>;
 }
 
-export type { InstanceManager, PeopleStore, PersonRecord, PersonUpdate, StartResult };
+// The front door tells this when a person is using their instance. The idle watcher decides from it when to stop one.
+// touch: a request went through. opened and closed: a long lived connection, such as an event stream or a socket,
+// started and ended. An open connection counts as use.
+interface ActivityTracker {
+    touch: (name: string) => void;
+    opened: (name: string) => void;
+    closed: (name: string) => void;
+}
+
+export type { ActivityTracker, InstanceManager, PeopleStore, PersonRecord, PersonUpdate, StartResult };
