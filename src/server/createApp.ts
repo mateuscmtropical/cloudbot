@@ -15,6 +15,7 @@ import type { PasskeyService } from './access/PasskeyService.ts';
 import { readPublicBaseUrl } from './access/setupLinkUrl.ts';
 import type { PeopleAdmin } from './people/PeopleAdmin.ts';
 import { createPeopleRoutes } from './people/createPeopleRoutes.ts';
+import type { PersonRole } from '../shared/peopleTypes.ts';
 import { readHubConfig } from './people/hubConfig.ts';
 
 import { createChannelRoutes } from './channels/createChannelRoutes.ts';
@@ -62,6 +63,8 @@ interface AppOptions {
     version: string;
     access: SetupAccess;
     hubSecret?: string | undefined;
+    // The role of this instance inside a hub. Without it, the instance runs on its own.
+    hubRole?: PersonRole | undefined;
     // Passkey sign-in. Without it only the setup link signs the owner in.
     passkeys?: PasskeyService | undefined;
     // Only on the owner's instance inside the hub. It adds and removes people through the hub.
@@ -201,6 +204,8 @@ function createApp(options: AppOptions): Hono {
     // The origin check runs first, so a request from another page is refused before the cookie is read.
     app.use('/api/*', sameOriginCheck);
     app.use('/api/*', sessionCheck);
+
+    app.get('/api/hub-role', context => context.json({ role: options.hubRole ?? 'standalone' }));
 
     if (options.peopleAdmin !== undefined) {
         const peopleRoutes = createPeopleRoutes({ peopleAdmin: options.peopleAdmin });
