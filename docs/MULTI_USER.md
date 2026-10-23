@@ -183,7 +183,7 @@ The hub reads `CLOUDBOT_DOMAIN`, `CLOUDBOT_LOGIN_ALLOWED_IPS`, `HUB_PORT`, `HUB_
 
 Each person gets a container, a bridge network and four named volumes. The network is not internal, so the instance reaches AI providers and the web. Another network cannot reach it. The hub joins the network as `hub`, and it leaves the network before the network is removed. The instance has no published ports and fixed memory and CPU caps. The hub checks the total memory cap before it starts an instance and waits up to two minutes for its health check.
 
-On its first start the hub creates the owner and the instance of the owner, and prints one generated password. `node dist/hub/main.js reset-password <name>` prints a replacement password.
+A new hub has no owner. The first person who opens the address of the owner chooses a password, and the hub creates the owner and the instance of the owner. Until then every other address answers not available. The page closes as soon as the owner exists. `node dist/hub/main.js reset-password <name>` prints a replacement password.
 
 ## Front door
 

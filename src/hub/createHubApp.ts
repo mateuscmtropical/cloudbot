@@ -4,6 +4,7 @@ import type { BlockList } from 'node:net';
 import type { ActivityTracker, InstanceManager, PeopleStore } from './contract.ts';
 import { createAdminRoutes } from './admin/createAdminRoutes.ts';
 import { createFrontDoorRoutes } from './auth/createFrontDoorRoutes.ts';
+import type { OwnerSetupOptions } from './auth/createFrontDoorRoutes.ts';
 import type { LoginSessions } from './auth/LoginSessions.ts';
 import { readHostRoute } from './auth/hostRouting.ts';
 import { readContextCookie, readHubSession, readRequestHost, renderUnavailable, requestHasSameOrigin, startHubSession } from './auth/routeHelpers.ts';
@@ -22,6 +23,7 @@ interface CreateHubAppOptions {
     domain: string;
     secure: boolean;
     loginAllowedIps?: BlockList;
+    ownerSetup?: OwnerSetupOptions;
     activity: ActivityTracker;
     hubPort?: number;
     now?: () => number;
@@ -135,6 +137,7 @@ function createHubApp(options: CreateHubAppOptions): Hono {
         secure: options.secure,
         activity: options.activity,
         ...(options.loginAllowedIps === undefined ? {} : { loginAllowedIps: options.loginAllowedIps }),
+        ...(options.ownerSetup === undefined ? {} : { ownerSetup: options.ownerSetup }),
         loginExtras: passkeyLoginExtras(),
         afterLogin: createAfterLogin({
             store: options.passkeyStore,

@@ -202,24 +202,14 @@ start_hub() {
 
 print_owner_access() {
     local scheme="https"
-    local started_at
-    local owner_password
 
     if [ "$DOMAIN" = localhost ]; then
         scheme="http"
     fi
 
-    started_at="$(docker inspect -f '{{.State.StartedAt}}' "$HUB_CONTAINER_ID")"
-    owner_password="$(compose logs --no-color --since "$started_at" hub | sed -n "s/^.*Owner ${OWNER_NAME} password: //p" | tail -n 1 || true)"
-
     echo ""
     echo "Owner address: ${scheme}://${OWNER_NAME}.${DOMAIN}"
-    if [ -n "$owner_password" ]; then
-        echo "Owner ${OWNER_NAME} password: $owner_password"
-        echo "Change this password at the first sign-in."
-    else
-        echo "No first owner password was printed. If this is an existing install, reset it with: sudo cloudbot reset-password ${OWNER_NAME}"
-    fi
+    echo "On a new install, open it now to choose the owner password. The first person to open it becomes the owner."
 }
 
 main() {

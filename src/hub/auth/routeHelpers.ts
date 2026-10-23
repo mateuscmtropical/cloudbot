@@ -147,7 +147,7 @@ function clearHubSessionCookie(context: Context, secure: boolean): void {
     setCookie(context, HUB_SESSION_COOKIE, '', cookieOptions);
 }
 
-function renderResponse(context: Context, page: RenderedPage, status: 200 | 401 | 404 | 502 = 200): Response {
+function renderResponse(context: Context, page: RenderedPage, status: 200 | 401 | 404 | 500 | 502 = 200): Response {
     context.header('Content-Security-Policy', page.csp);
     context.header('X-Frame-Options', 'DENY');
     context.header('Referrer-Policy', 'no-referrer');

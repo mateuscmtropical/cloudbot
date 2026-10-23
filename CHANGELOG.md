@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A new hub no longer prints a generated owner password. The first person who opens the owner address chooses a password and becomes the owner. After that the page closes and only the owner adds people.
 - A CloudBot inside a hub has an Account button in the sidebar. It opens a panel to change the password, manage passkeys and sign out. A person can change the password at any time with the current one.
 - The name form of the hub address accepts a capitalized name and shows a wrong name on the same screen. It also works in Chrome and Opera, where the page policy blocked the redirect to the person.
 - The hub can limit password and passkey sign-in to configured IP addresses and CIDR ranges.
@@ -42,6 +43,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A new hub no longer prints a generated owner password. The first person who opens the owner address chooses a password and becomes the owner. After that the page closes and only the owner adds people.
 - A CloudBot inside a hub has an Account button in the sidebar. It opens a panel to change the password, manage passkeys and sign out. A person can change the password at any time with the current one.
 - The name form of the hub address accepts a capitalized name and shows a wrong name on the same screen. It also works in Chrome and Opera, where the page policy blocked the redirect to the person.
 - Choose a model and effort per bot for providers that report their model list. The header shows the model in use when known. Providers without a model list keep their default.
@@ -108,6 +110,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A new hub no longer prints a generated owner password. The first person who opens the owner address chooses a password and becomes the owner. After that the page closes and only the owner adds people.
 - A CloudBot inside a hub has an Account button in the sidebar. It opens a panel to change the password, manage passkeys and sign out. A person can change the password at any time with the current one.
 - The name form of the hub address accepts a capitalized name and shows a wrong name on the same screen. It also works in Chrome and Opera, where the page policy blocked the redirect to the person.
 - Teach a task by recording the screen. Ask a bot to learn a task from you, do it once on its screen, and give the screen back. The bot turns the recorded steps into a skill for you to approve. Password and other secret fields are recorded only as a secret step, never with their value.
@@ -151,6 +154,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A new hub no longer prints a generated owner password. The first person who opens the owner address chooses a password and becomes the owner. After that the page closes and only the owner adds people.
 - A CloudBot inside a hub has an Account button in the sidebar. It opens a panel to change the password, manage passkeys and sign out. A person can change the password at any time with the current one.
 - The name form of the hub address accepts a capitalized name and shows a wrong name on the same screen. It also works in Chrome and Opera, where the page policy blocked the redirect to the person.
 - A bot exports itself as a template file, shared in the chat, when you ask. The file holds the name, title, description, look, rules (with their blocked tools) and routines (with their schedules). It never holds secrets, sign-ins, webhook addresses, shared files or learned memory. Version 1 of the format is read, and a file of another version is refused.

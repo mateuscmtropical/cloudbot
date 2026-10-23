@@ -165,12 +165,16 @@ jobs:
       - name: Run install.sh against the checkout
         run: sudo CLOUDBOT_SKIP_CLONE=1 bash /opt/cloudbot/docker/install.sh localhost owner > install.log
 
-      - name: Check the owner address and first password
+      - name: Check the owner address and the first-run message
         run: |
           grep -Fx 'Owner address: http://owner.localhost' install.log
-          grep -Eq '^Owner owner password: [A-Za-z0-9_-]+$' install.log
-          grep -F 'Change this password at the first sign-in.' install.log
+          grep -F 'open it now to choose the owner password.' install.log
 
+      - name: Check the setup page and create the owner
+        run: |
+          curl -fsS --retry 10 --retry-delay 3 --retry-all-errors http://owner.localhost/ | grep -F 'Set up CloudBot'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://other.localhost/)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Origin: http://owner.localhost' --data-urlencode 'password=ci owner password' --data-urlencode 'confirmation=ci owner password' http://owner.localhost/__hub/setup)" = 303
       - name: Check status and reset-password command
         run: |
           sudo cloudbot status
