@@ -14,6 +14,7 @@ All notable changes to this project are listed here. The format follows
 
 - A CloudBot inside a hub has an Account button in the sidebar. It opens a panel to change the password, manage passkeys and sign out. A person can change the password at any time with the current one.
 - The name form of the hub address accepts a capitalized name and shows a wrong name on the same screen. It also works in Chrome and Opera, where the page policy blocked the redirect to the person.
+- The hub can limit password and passkey sign-in to configured IP addresses and CIDR ranges.
 - `sudo cloudbot uninstall` removes CloudBot from the server, and the README lists how to update and remove it.
 
 ### Changed

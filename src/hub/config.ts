@@ -1,3 +1,5 @@
+import { BlockList, isIP } from 'node:net';
+
 import { checkPersonName } from '../shared/peopleTypes.ts';
 
 interface HubSettings {
@@ -12,6 +14,7 @@ interface HubSettings {
     instanceCpus: number;
     ownerName: string;
     containerId: string;
+    loginAllowedIps?: BlockList;
 }
 
 function readRequiredText(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
@@ -51,6 +54,42 @@ function readDomain(env: NodeJS.ProcessEnv): string {
     return domain.toLowerCase();
 }
 
+function readLoginAllowedIps(env: NodeJS.ProcessEnv): BlockList | undefined {
+    const rawValue = env.CLOUDBOT_LOGIN_ALLOWED_IPS;
+
+    if (rawValue === undefined || rawValue.trim() === '') {
+        return undefined;
+    }
+
+    const blockList = new BlockList();
+    const entries = rawValue.split(',')
+        .map(entry => entry.trim());
+
+    entries.forEach((entry) => {
+        const [address, prefix, extraPrefixPart] = entry.split('/');
+        const addressVersion = isIP(address ?? '');
+        const addressType = addressVersion === 4 ? 'ipv4' : 'ipv6';
+        const maximumPrefix = addressVersion === 4 ? 32 : 128;
+        const prefixValue = prefix === undefined ? undefined : Number(prefix);
+        const hasValidPrefix = prefix === undefined
+            || (extraPrefixPart === undefined && /^\d+$/.test(prefix) && prefixValue !== undefined && prefixValue <= maximumPrefix);
+
+        if (addressVersion === 0 || !hasValidPrefix) {
+            throw new Error(`CLOUDBOT_LOGIN_ALLOWED_IPS has invalid entry "${entry}".`);
+        }
+
+        if (prefixValue === undefined) {
+            blockList.addAddress(address ?? '', addressType);
+
+            return;
+        }
+
+        blockList.addSubnet(address ?? '', prefixValue, addressType);
+    });
+
+    return blockList;
+}
+
 function readHubSettings(env: NodeJS.ProcessEnv): HubSettings {
     const domain = readDomain(env);
     const ownerName = readRequiredText(env, 'CLOUDBOT_OWNER_NAME', 'owner');
@@ -61,6 +100,7 @@ function readHubSettings(env: NodeJS.ProcessEnv): HubSettings {
     }
 
     const containerId = readRequiredText(env, 'HUB_CONTAINER_ID', env.HOSTNAME);
+    const loginAllowedIps = readLoginAllowedIps(env);
     const settings: HubSettings = {
         domain,
         port: readPositiveNumber(env, 'HUB_PORT', 3001, true),
@@ -73,6 +113,7 @@ function readHubSettings(env: NodeJS.ProcessEnv): HubSettings {
         instanceCpus: readPositiveNumber(env, 'CLOUDBOT_INSTANCE_CPUS', 1.5),
         ownerName,
         containerId,
+        ...(loginAllowedIps === undefined ? {} : { loginAllowedIps }),
     };
 
     if (settings.port > 65535) {

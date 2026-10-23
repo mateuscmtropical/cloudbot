@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
+import { BlockList } from 'node:net';
 
 import { requireSameOrigin } from '../../server/access/requireSameOrigin.ts';
 import { openHubDatabase } from '../store/openHubDatabase.ts';
@@ -8,7 +9,7 @@ import { createHubPasskeyTables, SqliteHubPasskeyStore } from './HubPasskeyStore
 import { HubPasskeyService } from './HubPasskeyService.ts';
 import type { HubWebAuthnLibrary } from './HubPasskeyService.ts';
 import { createHubPasskeyRoutes } from './createHubPasskeyRoutes.ts';
-import type { HubPasskeyPageInput } from './createHubPasskeyRoutes.ts';
+import type { HubPasskeyPageInput, HubPasskeyRoutesOptions } from './createHubPasskeyRoutes.ts';
 
 interface FakeChallengeIssueOptions {
     challenge: Uint8Array;
@@ -71,6 +72,7 @@ describe('createHubPasskeyRoutes', () => {
     let store: SqliteHubPasskeyStore;
     let library: HubWebAuthnLibrary;
     let app: Hono;
+    let createAppWithAllowedIps: (loginAllowedIps?: BlockList) => Hono;
 
     beforeEach(() => {
         database = openHubDatabase(':memory:');
@@ -96,39 +98,48 @@ describe('createHubPasskeyRoutes', () => {
             csp: 'default-src \'self\'',
         });
         const passkeys = new HubPasskeyService({ store, domain: 'example.test', library });
-        const routes = createHubPasskeyRoutes({
-            passkeys,
-            requireSession,
-            sameOriginCheck,
-            requestPersonName: (context) => {
-                const host = new URL(context.req.url).hostname;
+        const createTestApp = (loginAllowedIps?: BlockList): Hono => {
+            const routeOptions: HubPasskeyRoutesOptions = {
+                passkeys,
+                ...(loginAllowedIps === undefined ? {} : { loginAllowedIps }),
+                requireSession,
+                sameOriginCheck,
+                requestPersonName: (context) => {
+                    const host = new URL(context.req.url).hostname;
 
-                return host.endsWith('.example.test') ? host.slice(0, -'.example.test'.length) : undefined;
-            },
-            sessionPersonName: context => context.req.header('x-test-session'),
-            isPersonActive: (name) => {
-                const person = database.prepare('SELECT state FROM people WHERE name = ?')
-                    .get(name);
+                    return host.endsWith('.example.test') ? host.slice(0, -'.example.test'.length) : undefined;
+                },
+                sessionPersonName: context => context.req.header('x-test-session'),
+                isPersonActive: (name) => {
+                    const person = database.prepare('SELECT state FROM people WHERE name = ?')
+                        .get(name);
 
-                return person?.state === 'active';
-            },
-            startSession: (name, response) => {
-                const person = database.prepare('SELECT state FROM people WHERE name = ?')
-                    .get(name);
+                    return person?.state === 'active';
+                },
+                startSession: (name, response) => {
+                    const person = database.prepare('SELECT state FROM people WHERE name = ?')
+                        .get(name);
 
-                if (person?.state !== 'active') {
-                    return false;
-                }
+                    if (person?.state !== 'active') {
+                        return false;
+                    }
 
-                response.header('set-cookie', 'cloudbot_session=hub-' + name + '; Path=/; HttpOnly; SameSite=Lax');
+                    response.header('set-cookie', 'cloudbot_session=hub-' + name + '; Path=/; HttpOnly; SameSite=Lax');
 
-                return true;
-            },
-            renderPage,
-        });
+                    return true;
+                },
+                renderPage,
+            };
+            const routes = createHubPasskeyRoutes(routeOptions);
+            const testApp = new Hono();
 
-        app = new Hono();
-        app.route('/', routes);
+            testApp.route('/', routes);
+
+            return testApp;
+        };
+
+        createAppWithAllowedIps = createTestApp;
+        app = createAppWithAllowedIps();
     });
 
     afterEach(() => {
@@ -181,6 +192,41 @@ describe('createHubPasskeyRoutes', () => {
             .toBe(204);
         expect(verified.headers.get('set-cookie'))
             .toContain('cloudbot_session=hub-maria');
+    });
+
+    it('blocks passkey sign-in options and verification from disallowed addresses', async () => {
+        const loginAllowedIps = new BlockList();
+
+        loginAllowedIps.addSubnet('198.51.100.0', 24, 'ipv4');
+        const blockedApp = createAppWithAllowedIps(loginAllowedIps);
+        const headers = {
+            'origin': 'https://maria.example.test',
+            'content-type': 'application/json',
+            'x-forwarded-for': '203.0.113.8',
+        };
+        const options = await blockedApp.request('https://maria.example.test/__hub/passkey/login/options', {
+            method: 'POST',
+            headers,
+            body: '{}',
+        });
+        const verified = await blockedApp.request('https://maria.example.test/__hub/passkey/login/verify', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ id: 'credential-maria' }),
+        });
+
+        expect(options.status)
+            .toBe(403);
+        await expect(options.json())
+            .resolves.toEqual({ error: 'Sign-in is not allowed from this address.' });
+        expect(verified.status)
+            .toBe(403);
+        await expect(verified.json())
+            .resolves.toEqual({ error: 'Sign-in is not allowed from this address.' });
+        expect(library.generateAuthenticationOptions)
+            .not.toHaveBeenCalled();
+        expect(library.verifyAuthenticationResponse)
+            .not.toHaveBeenCalled();
     });
 
     it('returns the front door not available page when a passkey person was deactivated before verification', async () => {

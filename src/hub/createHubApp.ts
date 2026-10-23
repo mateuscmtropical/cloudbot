@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { BlockList } from 'node:net';
 
 import type { ActivityTracker, InstanceManager, PeopleStore } from './contract.ts';
 import { createAdminRoutes } from './admin/createAdminRoutes.ts';
@@ -20,6 +21,7 @@ interface CreateHubAppOptions {
     passkeyStore: HubPasskeyStore;
     domain: string;
     secure: boolean;
+    loginAllowedIps?: BlockList;
     activity: ActivityTracker;
     hubPort?: number;
     now?: () => number;
@@ -66,6 +68,7 @@ function createHubApp(options: CreateHubAppOptions): Hono {
     const adminRoutes = createAdminRoutes(options);
     const passkeyRoutes = createHubPasskeyRoutes({
         passkeys: options.passkeys,
+        ...(options.loginAllowedIps === undefined ? {} : { loginAllowedIps: options.loginAllowedIps }),
         requireSession: async (context, next) => {
             const requestHost = readRequestHost(context);
             const requestName = readHostRoute(requestHost, options.domain)?.name;
@@ -131,6 +134,7 @@ function createHubApp(options: CreateHubAppOptions): Hono {
         domain: options.domain,
         secure: options.secure,
         activity: options.activity,
+        ...(options.loginAllowedIps === undefined ? {} : { loginAllowedIps: options.loginAllowedIps }),
         loginExtras: passkeyLoginExtras(),
         afterLogin: createAfterLogin({
             store: options.passkeyStore,

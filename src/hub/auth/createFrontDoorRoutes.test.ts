@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import { BlockList } from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Hono } from 'hono';
@@ -14,6 +15,7 @@ import { createLoginSessionTables, SqliteLoginSessions } from './LoginSessions.t
 interface RouteOverrides {
     domain?: string;
     secure?: boolean;
+    loginAllowedIps?: BlockList;
     afterLogin?: (name: string) => string | undefined;
     upstreamFor?: (name: string) => UpstreamTarget;
 }
@@ -165,6 +167,7 @@ async function createHarness(overrides: RouteOverrides = {}, mustChangePassword 
         secure: overrides.secure ?? true,
         activity,
         now,
+        ...(overrides.loginAllowedIps === undefined ? {} : { loginAllowedIps: overrides.loginAllowedIps }),
         ...(overrides.afterLogin === undefined ? {} : { afterLogin: overrides.afterLogin }),
         ...(overrides.upstreamFor === undefined ? {} : { upstreamFor: overrides.upstreamFor }),
     };
@@ -335,6 +338,85 @@ describe('createFrontDoorRoutes', () => {
             .not.toContain('Domain=');
         expect(setCookie)
             .toContain('Max-Age=2592000');
+    });
+
+    it('allows the sign-in page and password login from an allowed address', async () => {
+        const loginAllowedIps = new BlockList();
+
+        loginAllowedIps.addSubnet('198.51.100.0', 24, 'ipv4');
+        const harness = await createHarness({ loginAllowedIps });
+
+        harnesses.push(harness);
+        const loginPage = await harness.app.request(`https://${PERSON_NAME}.example.test/__hub/login`, {
+            headers: { 'x-forwarded-for': '198.51.100.8' },
+        });
+        const mappedAddressLoginPage = await harness.app.request(`https://${PERSON_NAME}.example.test/__hub/login`, {
+            headers: { 'x-forwarded-for': '::ffff:198.51.100.8' },
+        });
+        const loginResponse = await login(harness.app, INITIAL_PASSWORD, PERSON_NAME, '198.51.100.8');
+
+        expect(loginPage.status)
+            .toBe(200);
+        expect(mappedAddressLoginPage.status)
+            .toBe(200);
+        expect(loginResponse.status)
+            .toBe(303);
+    });
+
+    it('blocks the sign-in page and password login from a disallowed address', async () => {
+        const loginAllowedIps = new BlockList();
+
+        loginAllowedIps.addSubnet('198.51.100.0', 24, 'ipv4');
+        const harness = await createHarness({ loginAllowedIps });
+
+        harnesses.push(harness);
+        const headers = { 'x-forwarded-for': '203.0.113.8' };
+        const loginPage = await harness.app.request(`https://${PERSON_NAME}.example.test/__hub/login`, { headers });
+        const loginResponse = await login(harness.app, INITIAL_PASSWORD, PERSON_NAME, '203.0.113.8');
+
+        expect(loginPage.status)
+            .toBe(403);
+        await expect(loginPage.json())
+            .resolves.toEqual({ error: 'Sign-in is not allowed from this address.' });
+        expect(loginResponse.status)
+            .toBe(403);
+        await expect(loginResponse.json())
+            .resolves.toEqual({ error: 'Sign-in is not allowed from this address.' });
+        expect(loginResponse.headers.get('set-cookie'))
+            .toBeNull();
+    });
+
+    it('keeps an existing session when a password change is blocked by the address list', async () => {
+        const loginAllowedIps = new BlockList();
+
+        loginAllowedIps.addSubnet('198.51.100.0', 24, 'ipv4');
+        const harness = await createHarness({ loginAllowedIps });
+
+        harnesses.push(harness);
+        const loginResponse = await login(harness.app, INITIAL_PASSWORD, PERSON_NAME, '198.51.100.8');
+        const cookie = cookieFrom(loginResponse);
+        const blockedPasswordChange = await harness.app.request(`https://${PERSON_NAME}.example.test/__hub/password`, {
+            method: 'POST',
+            headers: {
+                'cookie': cookie,
+                'origin': `https://${PERSON_NAME}.example.test`,
+                'content-type': 'application/x-www-form-urlencoded',
+                'x-forwarded-for': '203.0.113.8',
+            },
+            body: new URLSearchParams({ password: 'new password value', confirmation: 'new password value' }),
+        });
+        const status = await harness.app.request(`https://${PERSON_NAME}.example.test/__hub/status`, {
+            headers: { 'cookie': cookie, 'x-forwarded-for': '203.0.113.8' },
+        });
+
+        expect(blockedPasswordChange.status)
+            .toBe(403);
+        await expect(blockedPasswordChange.json())
+            .resolves.toEqual({ error: 'Sign-in is not allowed from this address.' });
+        expect(status.status)
+            .toBe(200);
+        await expect(status.json())
+            .resolves.toEqual({ status: 'running' });
     });
 
     it('omits the Secure cookie flag on localhost', async () => {

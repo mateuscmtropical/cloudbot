@@ -1,5 +1,8 @@
+import { isIP } from 'node:net';
 import type { Context } from 'hono';
 import { getCookie, setCookie } from 'hono/cookie';
+import { getConnInfo } from '@hono/node-server/conninfo';
+import type { BlockList } from 'node:net';
 
 import type { RenderedPage } from '../pages/renderPage.ts';
 import { renderNotAvailablePage } from '../pages/renderPages.ts';
@@ -20,6 +23,49 @@ interface SessionCookieOptions {
 }
 
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+const UNKNOWN_CLIENT_ADDRESS = 'unknown';
+const SIGN_IN_DENIED_MESSAGE = 'Sign-in is not allowed from this address.';
+
+function readClientAddress(context: Context): string {
+    const forwardedFor = context.req.header('x-forwarded-for');
+    const firstForwardedAddress = forwardedFor?.split(',')[0]?.trim();
+
+    if (firstForwardedAddress !== undefined && firstForwardedAddress !== '') {
+        return firstForwardedAddress;
+    }
+
+    const realIp = context.req.header('x-real-ip')
+        ?.trim();
+
+    if (realIp !== undefined && realIp !== '') {
+        return realIp;
+    }
+
+    try {
+        const connectionInfo = getConnInfo(context);
+        const remoteAddress = connectionInfo.remote.address;
+
+        return remoteAddress ?? UNKNOWN_CLIENT_ADDRESS;
+    } catch {
+        return UNKNOWN_CLIENT_ADDRESS;
+    }
+}
+
+function isClientAddressAllowed(clientAddress: string, loginAllowedIps?: BlockList): boolean {
+    if (loginAllowedIps === undefined) {
+        return true;
+    }
+
+    const addressVersion = isIP(clientAddress);
+
+    if (addressVersion === 0) {
+        return false;
+    }
+
+    const addressType = addressVersion === 4 ? 'ipv4' : 'ipv6';
+
+    return loginAllowedIps.check(clientAddress, addressType);
+}
 
 function readRequestHost(context: Context): string | undefined {
     const hostHeader = context.req.header('host');
@@ -119,6 +165,8 @@ function renderUnavailable(context: Context): Response {
 
 export {
     clearHubSessionCookie,
+    isClientAddressAllowed,
+    readClientAddress,
     readHubSession,
     readContextCookie,
     readRequestHost,
@@ -126,6 +174,7 @@ export {
     renderUnavailable,
     requestHasSameOrigin,
     sessionCookieOptions,
+    SIGN_IN_DENIED_MESSAGE,
     startHubSession,
 };
 export type { SessionState };

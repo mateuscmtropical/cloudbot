@@ -228,6 +228,15 @@ sessions and memory. The install above starts a hub, a Docker socket proxy and
 Caddy, and the hub starts one container for each person. See the
 [install guide](docs/INSTALL.md) for volumes, updates and CLI update behavior,
 and [multi-user design](docs/MULTI_USER.md) for how the pieces fit.
+
+### Limit hub sign-in by address
+
+Set this variable in `/opt/cloudbot/.env`, then run `sudo cloudbot update`:
+
+| Variable | Default | Description |
+|---|---|---|
+| `CLOUDBOT_LOGIN_ALLOWED_IPS` | Empty | Comma-separated IPv4 or IPv6 addresses and CIDR ranges. Keep the hub behind Caddy so the client address can be trusted. This limits sign-in only, not the rest of the site. |
+
 ## Security
 
 The [threat model](docs/THREAT_MODEL.md) says what the bot can reach, what stops

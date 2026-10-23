@@ -179,7 +179,7 @@ A failed call returns a short generic result to the model. The details of the hu
 
 ## Hub settings
 
-The hub reads `CLOUDBOT_DOMAIN`, `HUB_PORT`, `HUB_HOST`, `HUB_DATA_DIR`, `DOCKER_API_URL`, `CLOUDBOT_INSTANCE_IMAGE`, `CLOUDBOT_INSTANCE_MEMORY_MB`, `CLOUDBOT_INSTANCE_BUDGET_MB`, `CLOUDBOT_INSTANCE_CPUS`, `CLOUDBOT_OWNER_NAME` and `HUB_CONTAINER_ID`. Only `CLOUDBOT_DOMAIN` is required. The hub container id defaults to `HOSTNAME`.
+The hub reads `CLOUDBOT_DOMAIN`, `CLOUDBOT_LOGIN_ALLOWED_IPS`, `HUB_PORT`, `HUB_HOST`, `HUB_DATA_DIR`, `DOCKER_API_URL`, `CLOUDBOT_INSTANCE_IMAGE`, `CLOUDBOT_INSTANCE_MEMORY_MB`, `CLOUDBOT_INSTANCE_BUDGET_MB`, `CLOUDBOT_INSTANCE_CPUS`, `CLOUDBOT_OWNER_NAME` and `HUB_CONTAINER_ID`. Only `CLOUDBOT_DOMAIN` is required. The hub container id defaults to `HOSTNAME`.
 
 Each person gets a container, a bridge network and four named volumes. The network is not internal, so the instance reaches AI providers and the web. Another network cannot reach it. The hub joins the network as `hub`, and it leaves the network before the network is removed. The instance has no published ports and fixed memory and CPU caps. The hub checks the total memory cap before it starts an instance and waits up to two minutes for its health check.
 
@@ -192,6 +192,8 @@ On its first start the hub creates the owner and the instance of the owner, and 
 The routes under `/__hub/` on a person's address are the hub's own: `login`, `password`, `logout` and `status`. Everything else goes to the instance through `cloudbot-i-<name>:3000`. The hub removes the session cookie and the trust header from the browser request, then sets the trust header with the secret of the instance. `attachUpgradeProxy` does the same for WebSockets and checks the session and the origin before it connects.
 
 Sessions live in the hub database as hashes of random tokens. The cookie is host only, `HttpOnly`, `SameSite=Strict`, and `Secure` when the domain is not `localhost`. A person with a new password can only reach the change password page. A change signs out the other sessions of that person.
+
+When `CLOUDBOT_LOGIN_ALLOWED_IPS` is set, the hub checks the client address from Caddy before serving the sign-in page or accepting password and passkey sign-ins. It also checks password changes. Existing sessions can still use the site. Keep the hub behind Caddy so the forwarded client address is trusted.
 
 Five failed sign-ins lock the name and the address for 15 minutes. The sign-in page never says whether the name or the password was wrong.
 
