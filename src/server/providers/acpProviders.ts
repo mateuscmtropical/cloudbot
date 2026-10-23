@@ -22,6 +22,7 @@ interface AcpSignInSpec {
     site: string;
     // The ACP auth method that loads the cached sign-in, for an agent that needs one before a session.
     authMethodId?: string | undefined;
+    headlessAuth?: boolean | undefined;
     needsCode?: boolean | undefined;
     optionLabel?: string | undefined;
     // True for a provider that needs no sign-in, like the free opencode models.
@@ -37,13 +38,12 @@ interface AcpApiKeySpec {
     keyHeader: KeyHeader;
     // A cheap call that answers 401 or 403 for a wrong key.
     checkUrl: string;
+    authMethodId?: string | undefined;
+    headlessAuth?: boolean | undefined;
     // Google answers a wrong key with 400 API_KEY_INVALID instead of 401.
     badKeyStatus?: number | undefined;
     // The variables that point the CLI at the key proxy. The key the CLI sees is a placeholder.
     environment: (proxyUrl: string) => Record<string, string>;
-    // A key that runs on another CLI, like an xAI key on opencode, since Grok Build takes only a Grok account over ACP.
-    // The wrapper action and, in local mode, the provider whose CLI runs it.
-    runsOn?: { action: string; localProvider: AcpProviderId; protectedFolders: string[] } | undefined;
 }
 
 interface AcpProviderSpec {
@@ -119,24 +119,16 @@ const ACP_PROVIDERS: AcpProviderSpec[] = [
         id: 'grok',
         label: 'Grok',
         protectedFolders: ['.grok'],
-        signIn: { site: 'xAI', authMethodId: 'grok.com' },
+        signIn: { site: 'xAI', authMethodId: 'cached_token', headlessAuth: true },
         apiKey: {
             site: 'the xAI console',
             secretName: 'XAI_API_KEY',
             upstreamUrl: 'https://api.x.ai',
             keyHeader: BEARER,
             checkUrl: 'https://api.x.ai/v1/models',
-            // The Docker wrapper builds the same opencode config from CLOUDBOT_KEY_PROXY_URL, since sudo drops other names.
-            environment: proxyUrl => ({
-                CLOUDBOT_KEY_PROXY_URL: proxyUrl,
-                OPENCODE_CONFIG_CONTENT: JSON.stringify({
-                    permission: { '*': 'ask' },
-                    autoupdate: false,
-                    model: 'xai/grok-4.7',
-                    provider: { xai: { options: { baseURL: `${proxyUrl}/v1`, apiKey: PLACEHOLDER_KEY } } },
-                }),
-            }),
-            runsOn: { action: 'acp-key', localProvider: 'opencode', protectedFolders: OPENCODE_FOLDERS },
+            authMethodId: 'xai.api_key',
+            headlessAuth: true,
+            environment: proxyUrl => ({ XAI_API_KEY: PLACEHOLDER_KEY, GROK_XAI_API_BASE_URL: `${proxyUrl}/v1` }),
         },
     },
     {
@@ -206,7 +198,7 @@ const LOCAL_ACP_ARGS: Record<AcpProviderId, string[]> = {
     gemini: ['--acp'],
     copilot: ['--acp', '--stdio'],
     cursor: ['acp'],
-    grok: ['--no-auto-update', 'agent', 'stdio'],
+    grok: ['--permission-mode', 'default', '--no-auto-update', 'agent', 'stdio'],
     mistral: [],
     qwen: ['--acp', '--auth-type', 'openai'],
     kimi: ['acp'],
@@ -287,21 +279,19 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
             ? undefined
             : new AcpEngine({
                     label: spec.label, command, args, homeFor: () => home, loopback: options.loopback, launch,
-                    authMethodId: spec.signIn.authMethodId, askModeId: spec.askModeId, protectedFolders: spec.protectedFolders,
+                    authMethodId: spec.signIn.authMethodId, headlessAuth: spec.signIn.headlessAuth,
+                    askModeId: spec.askModeId, protectedFolders: spec.protectedFolders,
                 });
         const keySpec = spec.apiKey;
-        const runsOn = keySpec?.runsOn;
-        // A key that runs on another CLI needs that CLI. In local mode its path must be set too.
-        const keyCommand = launch === undefined && runsOn !== undefined ? options.localPaths[runsOn.localProvider] : command;
-        const keyArgs = runsOn === undefined ? args : launch === undefined ? LOCAL_ACP_ARGS[runsOn.localProvider] : [spec.id, runsOn.action];
-        const canUseKey = keySpec !== undefined && keyCommand !== undefined;
+        const canUseKey = keySpec !== undefined;
         const proxy = canUseKey ? await startKeyProxy({ vault: options.vault, secretName: keySpec.secretName, upstreamUrl: keySpec.upstreamUrl, keyHeader: keySpec.keyHeader }) : undefined;
-        const keyEngine = proxy === undefined || keySpec === undefined || keyCommand === undefined
+        const keyEngine = proxy === undefined || keySpec === undefined
             ? undefined
             : new AcpEngine({
-                    label: spec.label, command: keyCommand, args: keyArgs, homeFor: () => home, loopback: options.loopback, launch,
-                    environment: keySpec.environment(proxy.url), askModeId: runsOn === undefined ? spec.askModeId : undefined,
-                    protectedFolders: [...spec.protectedFolders, ...(runsOn?.protectedFolders ?? [])],
+                    label: spec.label, command, args, homeFor: () => home, loopback: options.loopback, launch,
+                    authMethodId: keySpec.authMethodId, headlessAuth: keySpec.headlessAuth,
+                    environment: keySpec.environment(proxy.url), askModeId: spec.askModeId,
+                    protectedFolders: spec.protectedFolders,
                 });
 
         if (proxy !== undefined) {
@@ -390,5 +380,5 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
     };
 }
 
-export { ACP_PROVIDERS, BEARER, PLACEHOLDER_KEY, checkKeyAt, createAcpProviders, methodRunner, readLocalAcpPaths };
+export { ACP_PROVIDERS, BEARER, LOCAL_ACP_ARGS, PLACEHOLDER_KEY, checkKeyAt, createAcpProviders, methodRunner, readLocalAcpPaths };
 export type { AcpProviderSpec, AcpProviders };

@@ -77,6 +77,21 @@ describe('ProviderRunner', () => {
             .toBeUndefined();
     });
 
+    it('starts Grok with a new session after a switch from Claude', async () => {
+        const grok = recordingRunner('grok-session');
+        const runner = new ProviderRunner({
+            engines: { grok: { runner: grok, isConnected: () => Promise.resolve(true) } },
+            providerFor: () => Promise.resolve('grok'),
+        });
+
+        await collect(runner.runTurn(makeRequest('claude:old-session')));
+
+        expect(grok.requests[0]?.sessionId)
+            .toBeUndefined();
+        expect(grok.requests[0]?.workspaceDir)
+            .toBe('/tmp');
+    });
+
     it('treats an untagged session as an older Claude session', () => {
         expect(untagSession('claude', 'abc'))
             .toBe('abc');

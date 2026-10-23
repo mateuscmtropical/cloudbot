@@ -27,6 +27,8 @@ interface AcpEngineOptions {
     askModeId?: string | undefined;
     // Some agents need an authenticate call with their cached sign-in before a session, such as cursor_login.
     authMethodId?: string | undefined;
+    // xAI requires this metadata for non-interactive ACP authentication.
+    headlessAuth?: boolean | undefined;
     // More variables for the agent, such as one that turns off its update check.
     environment?: Record<string, string> | undefined;
     // Serves the bot's own tools over MCP. Each call is reviewed there, since ACP agents send no call id.
@@ -578,7 +580,11 @@ class AcpEngine implements AgentRunner {
 
             if (this.options.authMethodId !== undefined) {
                 // Without a cached sign-in, Gemini and Grok wait for an interactive login here, so a short wait means not signed in.
-                const authenticated = await call('authenticate', { methodId: this.options.authMethodId }, AUTHENTICATE_TIMEOUT_MS);
+                const authParams = {
+                    methodId: this.options.authMethodId,
+                    ...(this.options.headlessAuth === true ? { _meta: { headless: true } } : {}),
+                };
+                const authenticated = await call('authenticate', authParams, AUTHENTICATE_TIMEOUT_MS);
 
                 if (authenticated.error !== undefined) {
                     push({ type: 'turn_error', message: notSignedIn, isUsageLimit: false });
