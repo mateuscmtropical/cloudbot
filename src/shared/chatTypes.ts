@@ -159,6 +159,15 @@ interface ChatWebhookUrlEvent {
     url: string;
 }
 
+// One time sign-in details for a person. The event is sent live and is never stored as a chat message.
+interface ChatPersonCredentialsEvent {
+    type: 'personCredentials';
+    botId: string;
+    name: string;
+    address: string;
+    password: string;
+}
+
 // The bot asked for the screen. The open web app shows the Screen panel for this bot, so the owner sees it at once.
 interface ChatScreenEvent {
     type: 'screen';
@@ -178,7 +187,7 @@ interface ChatMessagesRemovedEvent {
     messageIds: string[];
 }
 
-type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent | ChatToolStartedEvent | ChatWebhookUrlEvent | ChatScreenEvent | ChatBotDeletedEvent | ChatMessagesRemovedEvent;
+type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent | ChatToolStartedEvent | ChatWebhookUrlEvent | ChatPersonCredentialsEvent | ChatScreenEvent | ChatBotDeletedEvent | ChatMessagesRemovedEvent;
 
 // A rule the owner set for a bot. Block rules may name tools the bot cannot use.
 interface BotRule {
@@ -219,6 +228,7 @@ export type {
     ChatTextDeltaEvent,
     ChatTurnEvent,
     ChatWebhookUrlEvent,
+    ChatPersonCredentialsEvent,
     ChatScreenEvent,
     ChatBotDeletedEvent,
     ChatMessagesRemovedEvent,

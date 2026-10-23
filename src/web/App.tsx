@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
-import type { BotSummary, ChatEvent, ChatMessage, ChatWebhookUrlEvent } from '../shared/chatTypes.ts';
+import type { BotSummary, ChatEvent, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../shared/chatTypes.ts';
 import type { ChannelDetail, ChannelSummary } from '../shared/channelTypes.ts';
 import { BotList } from './components/BotList.tsx';
 import { ChannelView } from './components/ChannelView.tsx';
@@ -124,6 +124,8 @@ function App(): ReactElement {
     const [isOwnerTyping, setIsOwnerTyping] = useState(false);
     // Webhook URLs the bot made, kept in memory only, each until the owner hides it.
     const [webhookUrls, setWebhookUrls] = useState<ChatWebhookUrlEvent[]>([]);
+    // One-time person sign-in details stay in this page's memory until the owner hides them.
+    const [personCredentials, setPersonCredentials] = useState<ChatPersonCredentialsEvent[]>([]);
     // Counts the screen requests of the bot on screen. Each new count opens the Screen panel.
     const [screenRequestId, setScreenRequestId] = useState(0);
     // The screen holder seen on the last check. The Screen panel opens only when it changes to the owner.
@@ -503,6 +505,12 @@ function App(): ReactElement {
             if (event.type === 'webhookUrl') {
                 // A list, so a second webhook made in the same turn does not hide the first URL.
                 setWebhookUrls(current => [...current, event]);
+
+                return;
+            }
+
+            if (event.type === 'personCredentials') {
+                setPersonCredentials(current => [...current.filter(notice => notice.name !== event.name), event]);
 
                 return;
             }
@@ -1089,6 +1097,7 @@ function App(): ReactElement {
     const botAttachments = selectedBotId === undefined ? [] : (attachmentsByBot[selectedBotId] ?? []);
     const isUploading = botAttachments.some(attachment => attachment.status === 'uploading');
     const botWebhookUrls = webhookUrls.filter(notice => notice.botId === selectedBotId);
+    const botPersonCredentials = personCredentials.filter(notice => notice.botId === selectedBotId);
 
     if (needsSignIn) {
         return <SignInScreen />;
@@ -1192,6 +1201,10 @@ function App(): ReactElement {
                                 webhookUrls={botWebhookUrls}
                                 onHideWebhookUrl={(hidden) => {
                                     setWebhookUrls(current => current.filter(notice => notice !== hidden));
+                                }}
+                                personCredentials={botPersonCredentials}
+                                onHidePersonCredentials={(hidden) => {
+                                    setPersonCredentials(current => current.filter(notice => notice !== hidden));
                                 }}
                                 onSend={handleSend}
                                 onStop={handleStop}

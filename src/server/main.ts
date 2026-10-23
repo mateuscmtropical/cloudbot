@@ -442,9 +442,13 @@ const whatsappSetup = new WhatsAppSetup({
     requestSecret: (botId, name, purpose, site) => chatService.requestSecret(botId, name, purpose, site),
     publicBaseUrl: readPublicBaseUrl(process.env),
 });
+// Only the owner's instance inside the hub manages people through the hub.
+const hubConfig = readHubConfig(process.env);
+const peopleAdmin = hubConfig?.role === 'owner' ? new HubClient(hubConfig) : undefined;
 const chatService: ChatService = new ChatService({
     notifyOwner: notice => pushNotifier.notify(notice),
     passkeys,
+    peopleAdmin,
     telegram: telegramBridge,
     botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, skillStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
@@ -592,10 +596,6 @@ cleanUploads();
 const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
-
-// Inside the hub the owner's instance manages people through the hub. A member's instance and a server on its own do not.
-const hubConfig = readHubConfig(process.env);
-const peopleAdmin = hubConfig?.role === 'owner' ? new HubClient(hubConfig) : undefined;
 
 const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
