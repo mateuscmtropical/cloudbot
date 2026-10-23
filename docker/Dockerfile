@@ -47,6 +47,7 @@ RUN groupadd --system cloudbot \
     && useradd --system --home-dir /var/lib/cloudbot-integrations --shell /usr/sbin/nologin cloudbot-integrations \
     && usermod -a -G bot cloudbot \
     && install -d -o cloudbot -g cloudbot -m 0700 /var/lib/cloudbot \
+    && install -d -o cloudbot -g cloudbot -m 0700 /var/lib/cloudbot-hub \
     && install -d -o bot -g bot -m 2770 /var/lib/cloudbot-workspaces \
     && install -d -o cloudbot -g bot -m 2750 /var/lib/cloudbot-uploads \
     && install -d -o cloudbot -g bot -m 2710 /var/lib/cloudbot-turns \

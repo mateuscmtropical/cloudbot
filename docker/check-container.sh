@@ -2,12 +2,13 @@
 # Checks a running CloudBot container: the health route answers, the container
 # reports healthy, and the bot user cannot read the data folder.
 #
-# Usage: docker/check-container.sh <container-name> <host-port>
+# Usage: docker/check-container.sh <container-name> <host-port> [hub-container-name]
 
 set -euo pipefail
 
-CONTAINER_NAME="${1:?usage: check-container.sh <container-name> <host-port>}"
-HOST_PORT="${2:?usage: check-container.sh <container-name> <host-port>}"
+CONTAINER_NAME="${1:?usage: check-container.sh <container-name> <host-port> [hub-container-name]}"
+HOST_PORT="${2:?usage: check-container.sh <container-name> <host-port> [hub-container-name]}"
+HUB_CONTAINER_NAME="${3:-}"
 DATA_DIR="/var/lib/cloudbot"
 PROBE_FILE="$DATA_DIR/probe.txt"
 ATTEMPTS=60
@@ -179,4 +180,27 @@ fi
 echo "ok: the end-turn helper ends a marked process that left the group, and refuses a bad marker"
 
 docker exec --user cloudbot "$CONTAINER_NAME" rm -f "$PROBE_FILE"
+if [ -n "$HUB_CONTAINER_NAME" ]; then
+    HUB_HEALTH="$(docker inspect --format '{{.State.Health.Status}}' "$HUB_CONTAINER_NAME")"
+    [ "$HUB_HEALTH" = "healthy" ] || fail "hub reports '$HUB_HEALTH', expected healthy"
+    echo "ok: hub reports healthy"
+
+    HUB_DATA_OWNER_AND_MODE="$(docker exec "$HUB_CONTAINER_NAME" stat -c '%U %a' /var/lib/cloudbot-hub)"
+    [ "$HUB_DATA_OWNER_AND_MODE" = "cloudbot 700" ] || fail "/var/lib/cloudbot-hub is '$HUB_DATA_OWNER_AND_MODE', expected 'cloudbot 700'"
+    echo "ok: cloudbot owns the private hub data folder"
+
+    PROXY_URL="http://docker-proxy:2375"
+    CONTAINER_LIST_STATUS="$(docker exec "$HUB_CONTAINER_NAME" curl -sS -o /dev/null -w '%{http_code}' "$PROXY_URL/containers/json")"
+    [ "$CONTAINER_LIST_STATUS" = "200" ] || fail "container list returned HTTP $CONTAINER_LIST_STATUS through the socket proxy"
+    echo "ok: the socket proxy allows a container list"
+
+    for PROXY_PATH in /images/json /info; do
+        PROXY_STATUS="$(docker exec "$HUB_CONTAINER_NAME" curl -sS -o /dev/null -w '%{http_code}' "$PROXY_URL$PROXY_PATH")"
+        [ "$PROXY_STATUS" = "403" ] || fail "$PROXY_PATH returned HTTP $PROXY_STATUS through the socket proxy, expected 403"
+    done
+
+    EXEC_STATUS="$(docker exec "$HUB_CONTAINER_NAME" curl -sS -o /dev/null -w '%{http_code}' -X POST "$PROXY_URL/exec/x/start")"
+    [ "$EXEC_STATUS" = "403" ] || fail "starting an exec returned HTTP $EXEC_STATUS through the socket proxy, expected 403"
+    echo "ok: the socket proxy refuses image, info and exec start requests"
+fi
 echo "All container checks passed."

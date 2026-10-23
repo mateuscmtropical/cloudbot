@@ -1,42 +1,101 @@
 name: cloudbot
 
 services:
-  cloudbot:
+  hub:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     image: cloudbot:local
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["export HUB_CONTAINER_ID=\"$$(hostname)\"; exec node dist/hub/main.js"]
     environment:
-      CLOUDBOT_PUBLIC_URL: https://${CLOUDBOT_DOMAIN:-localhost}
+      NODE_ENV: production
+      CLOUDBOT_DOMAIN: ${CLOUDBOT_DOMAIN:-localhost}
+      HUB_DATA_DIR: /var/lib/cloudbot-hub
+      DOCKER_API_URL: http://docker-proxy:2375
+      CLOUDBOT_INSTANCE_IMAGE: cloudbot:local
+      CLOUDBOT_INSTANCE_MEMORY_MB: ${CLOUDBOT_INSTANCE_MEMORY_MB:-2560}
+      CLOUDBOT_INSTANCE_BUDGET_MB: ${CLOUDBOT_INSTANCE_BUDGET_MB:-10240}
+      CLOUDBOT_INSTANCE_CPUS: ${CLOUDBOT_INSTANCE_CPUS:-2}
+      CLOUDBOT_OWNER_NAME: ${CLOUDBOT_OWNER_NAME:-owner}
+      CLOUDBOT_IDLE_MINUTES: ${CLOUDBOT_IDLE_MINUTES:-5}
     restart: unless-stopped
     volumes:
-      - cloudbot-data:/var/lib/cloudbot
-      - cloudbot-home:/home/bot
-      - cloudbot-workspaces:/var/lib/cloudbot-workspaces
-      - cloudbot-uploads:/var/lib/cloudbot-uploads
+      - hub-data:/var/lib/cloudbot-hub
+    networks:
+      - default
+      - hubctl
+    depends_on:
+      docker-proxy:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/internal/health').then((response) => process.exit(response.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    environment:
+      AUTH: "0"
+      SECRETS: "0"
+      POST: "1"
+      BUILD: "0"
+      COMMIT: "0"
+      CONFIGS: "0"
+      CONTAINERS: "1"
+      DISTRIBUTION: "0"
+      EXEC: "0"
+      IMAGES: "0"
+      INFO: "0"
+      NETWORKS: "1"
+      NODES: "0"
+      PLUGINS: "0"
+      SERVICES: "0"
+      SESSION: "0"
+      SWARM: "0"
+      SYSTEM: "0"
+      TASKS: "0"
+      VOLUMES: "1"
+      VERSION: "0"
+      DELETE: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     expose:
-      - "3000"
+      - "2375"
+    networks:
+      - hubctl
 
   caddy:
     image: caddy:2
+    entrypoint: ["/bin/sh", "-c"]
     restart: unless-stopped
     depends_on:
-      cloudbot:
+      hub:
         condition: service_healthy
     environment:
       CLOUDBOT_DOMAIN: ${CLOUDBOT_DOMAIN:-localhost}
+    command: ["if [ \"$$CLOUDBOT_DOMAIN\" = localhost ]; then exec caddy run --config /etc/caddy/Caddyfile.local; else exec caddy run --config /etc/caddy/Caddyfile; fi"]
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile.local:/etc/caddy/Caddyfile.local:ro
       - caddy-data:/data
       - caddy-config:/config
+    networks:
+      - default
 
 volumes:
-  cloudbot-data:
-  cloudbot-home:
-  cloudbot-workspaces:
-  cloudbot-uploads:
+  hub-data:
+    name: hub-data
   caddy-data:
   caddy-config:
+
+networks:
+  default:
+  hubctl:
+    internal: true

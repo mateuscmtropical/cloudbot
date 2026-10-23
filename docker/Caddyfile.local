@@ -1,0 +1,5 @@
+# localhost uses plain HTTP on port 80 because it cannot receive a public certificate.
+http://localhost, http://*.localhost {
+    encode gzip
+    reverse_proxy hub:3001
+}

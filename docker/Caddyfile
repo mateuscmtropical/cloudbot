@@ -1,4 +1,13 @@
-{$CLOUDBOT_DOMAIN} {
+{
+    on_demand_tls {
+        ask http://hub:3001/internal/tls-ask
+    }
+}
+
+{$CLOUDBOT_DOMAIN}, *.{$CLOUDBOT_DOMAIN} {
+    tls {
+        on_demand
+    }
     encode gzip
-    reverse_proxy cloudbot:3000
+    reverse_proxy hub:3001
 }
