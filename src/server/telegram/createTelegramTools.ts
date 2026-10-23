@@ -13,6 +13,7 @@ interface TelegramToolResult {
 interface TelegramConnector {
     startPairing: (botId: string) => Promise<boolean>;
     disconnect: (botId: string) => Promise<boolean>;
+    isConnected?: (botId: string) => boolean;
 }
 
 // The owner saves the Telegram bot token under this name with request_secret, for the Telegram API site.
