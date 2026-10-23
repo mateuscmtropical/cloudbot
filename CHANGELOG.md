@@ -10,6 +10,10 @@ All notable changes to this project are listed here. The format follows
 
 - The Claude CLI and every helper agent now disallow built-in tools for CLI schedules, cloud triggers, notifications, messaging, workflows, worktrees, design sync and other CLI-only services.
 
+### Added
+
+- `sudo cloudbot uninstall` removes CloudBot from the server, and the README lists how to update and remove it.
+
 ### Changed
 
 - On a provider such as OpenCode, the bot no longer asks you to approve its own CloudBot tools twice, such as connecting a provider. The tool server already decides each call.
