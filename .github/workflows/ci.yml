@@ -168,7 +168,7 @@ jobs:
       - name: Check the owner address and the first-run message
         run: |
           grep -Fx 'Owner address: http://owner.localhost' install.log
-          grep -F 'Open it now to choose the owner password.' install.log
+          grep -F 'open it now to choose the owner password.' install.log
 
       - name: Check the setup page and create the owner
         run: |
