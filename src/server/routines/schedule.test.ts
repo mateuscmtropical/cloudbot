@@ -54,8 +54,8 @@ describe('computeNextRun', () => {
 
 describe('parseSchedule', () => {
     it('accepts the three kinds', () => {
-        expect(parseSchedule({ kind: 'interval', everyMinutes: 5 }))
-            .toEqual({ kind: 'interval', everyMinutes: 5 });
+        expect(parseSchedule({ kind: 'interval', everyMinutes: 1 }))
+            .toEqual({ kind: 'interval', everyMinutes: 1 });
         expect(parseSchedule({ kind: 'daily', hour: 23, minute: 59 }))
             .toEqual({ kind: 'daily', hour: 23, minute: 59 });
         expect(parseSchedule({ kind: 'weekly', weekday: 0, hour: 0, minute: 0, extra: 1 }))
@@ -73,7 +73,7 @@ describe('parseSchedule', () => {
         null,
         'daily',
         {},
-        { kind: 'interval', everyMinutes: 4 },
+        { kind: 'interval', everyMinutes: 0 },
         { kind: 'interval', everyMinutes: 10081 },
         { kind: 'interval', everyMinutes: 7.5 },
         { kind: 'interval', everyMinutes: '10' },

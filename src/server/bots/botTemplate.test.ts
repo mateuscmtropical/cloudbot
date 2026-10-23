@@ -207,7 +207,7 @@ describe('botTemplate', () => {
     });
 
     it('refuses a routine with a schedule it cannot run', () => {
-        const badRoutine = { name: 'Sort', prompt: 'Sort it.', schedule: { kind: 'interval', everyMinutes: 1 } };
+        const badRoutine = { name: 'Sort', prompt: 'Sort it.', schedule: { kind: 'interval', everyMinutes: 0 } };
 
         expect(parseBotTemplate(fileWith({ routines: [badRoutine] })))
             .toEqual({ ok: false, reason: 'The schedule of routine 1 is not valid.' });

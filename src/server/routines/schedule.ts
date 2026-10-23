@@ -4,7 +4,7 @@ type RoutineSchedule
         | { kind: 'weekly'; weekday: number; hour: number; minute: number }
         | { kind: 'once'; at: number };
 
-const MIN_INTERVAL_MINUTES = 5;
+const MIN_INTERVAL_MINUTES = 1;
 const MAX_INTERVAL_MINUTES = 7 * 24 * 60;
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * MINUTE_MS;

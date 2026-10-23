@@ -111,7 +111,7 @@ describe('createRoutineTools', () => {
 
     it('refuses an invalid schedule', async () => {
         const create = findHandler(botId, 'routine_create');
-        const result = await create({ name: 'Inbox', prompt: 'x', schedule: { kind: 'interval', everyMinutes: 1 } }, {});
+        const result = await create({ name: 'Inbox', prompt: 'x', schedule: { kind: 'interval', everyMinutes: 0 } }, {});
 
         expect(result.isError)
             .toBe(true);
