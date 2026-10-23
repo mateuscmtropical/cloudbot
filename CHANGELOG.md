@@ -27,7 +27,7 @@ All notable changes to this project are listed here. The format follows
 - Grok signs in and takes an xAI key the way the xAI docs describe, and always runs with the Ask permission mode, so a saved always-approve setting no longer skips the review.
 - A routine can repeat every minute. The shortest interval was 5 minutes.
 - The buttons at the top of the bot list are in the order People, Search, New bot.
-- The People button shows on every instance. On one that is not the owner's instance inside the hub, the panel says that inviting people needs the hub and points to the install steps.
+- The People button shows on every instance. On one that is not the owner's instance inside the hub, the panel is made of cards that say only the owner of a hub adds people and give the install command with a copy button.
 - Tool reviews now allow reads and harmless workspace work without an approval card, and ask before remote writes, system changes, outside-workspace deletion or overwrite, new app connections and changes to rules, limits or the active provider. A review denial stays a denial.
 - A bot that hands a task or a reply to another bot of the owner no longer asks for approval each time. The review still asks when the hand-off carries something the owner did not ask for, and an owner rule can still deny it.
 - An instance of a server for many people stays awake while a program that a person started listens on a port, such as a Node dev server in the workspace. It used to hibernate after five idle minutes, which stopped the server. It hibernates again after the program stops.

@@ -109,7 +109,7 @@ describe('App bot list', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'People' }));
 
-        expect(await screen.findByText(/install CloudBot as a hub/))
+        expect(await screen.findByText('Only the owner of a hub adds people'))
             .toBeTruthy();
         expect(screen.queryByRole('textbox'))
             .toBeNull();
