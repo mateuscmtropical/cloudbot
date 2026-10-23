@@ -197,3 +197,7 @@ Five failed sign-ins lock the name and the address for 15 minutes. The sign-in p
 When the instance is not running, the hub starts it and shows the loading page, which asks `/__hub/status` until the instance is ready. A start that does not fit the memory budget shows a busy page.
 
 In hub mode an instance accepts a request with the trust header and the right secret as the owner session. It has no setup link, no passkeys of its own and no `/setup` route.
+
+## Wiring
+
+`main.ts` opens the people, login-session and passkey tables on the hub database. It shares one idle watcher between the front door and WebSocket proxy, starts it after the hub listens, and stops it during shutdown. `createHubApp` mounts health and TLS checks, then the internal admin API, passkey routes and the front door. Internal routes accept only `hub:3001` or loopback Hosts on the configured hub port, so a public person address gets the same generic 404 as an unknown hub route.

@@ -1,5 +1,6 @@
-﻿import type { HubPasskeyStore } from './HubPasskeyStore.ts';
+import type { HubPasskeyStore } from './HubPasskeyStore.ts';
 import type { HubPasskeySummary } from './HubPasskeyService.ts';
+import type { Context } from 'hono';
 
 interface PasskeyLoginExtras {
     html: string;
@@ -18,7 +19,7 @@ interface PasskeyManagementPage {
 
 interface AfterLoginOptions {
     store: Pick<HubPasskeyStore, 'list'>;
-    cookiesOf: (name: string) => string | undefined;
+    cookiesOf: (name: string, context: Context) => string | undefined;
 }
 
 const PASSKEY_OFFER_COOKIE = 'cloudbot_passkey_offer';
@@ -224,9 +225,9 @@ function shouldOfferPasskey(personName: string, store: Pick<HubPasskeyStore, 'li
     return cookieValue !== 'skip' && store.list(personName).length === 0;
 }
 
-function createAfterLogin(options: AfterLoginOptions): (name: string) => string | undefined {
-    return (name) => {
-        const cookieValue = options.cookiesOf(name);
+function createAfterLogin(options: AfterLoginOptions): (name: string, context: Context) => string | undefined {
+    return (name, context) => {
+        const cookieValue = options.cookiesOf(name, context);
 
         return shouldOfferPasskey(name, options.store, cookieValue) ? PASSKEY_OFFER_PATH : undefined;
     };

@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { HubPasskeyStore } from './HubPasskeyStore.ts';
 import { createAfterLogin, passkeyLoginExtras, PASSKEY_OFFER_PATH, renderOfferPage, renderPasskeysPage, shouldOfferPasskey } from './passkeyPage.ts';
@@ -58,11 +58,12 @@ describe('passkeyPage', () => {
 
     it('returns the offer path through the front door after-login hook', () => {
         const store: Pick<HubPasskeyStore, 'list'> = { list: () => [] };
-        const afterLogin = createAfterLogin({ store, cookiesOf: () => undefined });
+        const context = null as unknown as Parameters<ReturnType<typeof createAfterLogin>>[1];
+        const afterLogin = createAfterLogin({ store, cookiesOf: (_name, currentContext) => currentContext === context ? undefined : 'skip' });
 
-        expect(afterLogin('maria'))
+        expect(afterLogin('maria', context))
             .toBe(PASSKEY_OFFER_PATH);
-        expect(createAfterLogin({ store, cookiesOf: () => 'skip' })('maria'))
+        expect(createAfterLogin({ store, cookiesOf: () => 'skip' })('maria', context))
             .toBeUndefined();
     });
 

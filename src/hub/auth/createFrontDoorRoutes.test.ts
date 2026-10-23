@@ -590,7 +590,7 @@ describe('createFrontDoorRoutes', () => {
             .toEqual([PERSON_NAME]);
     });
 
-    it('returns a 502 page when the instance cannot be reached', async () => {
+    it('shows the loading page when an instance refuses a connection while it is starting', async () => {
         const unavailable = await startLocalServer((_request, response) => {
             response.end();
         });
@@ -604,9 +604,9 @@ describe('createFrontDoorRoutes', () => {
         const response = await harness.app.request(`https://${PERSON_NAME}.example.test/`, { headers: { cookie } });
 
         expect(response.status)
-            .toBe(502);
+            .toBe(200);
         expect(await response.text())
-            .toContain('CloudBot is unavailable');
+            .toContain('This takes about a minute.');
     });
 });
 
