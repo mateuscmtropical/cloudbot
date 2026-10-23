@@ -146,6 +146,15 @@ function toReviewedCall(toolCall: AcpToolCall): ToolCall {
             return { toolName: `acp__${toolCall.name ?? 'other'}`, input: { title, input, ...(shown === undefined ? {} : { shown }) } };
     }
 }
+// Agents name an MCP tool after its server, in a form that differs by agent, such as cloudbot_name, mcp_cloudbot_name or cloudbot-name.
+// The CloudBot tool server reviews each of these calls with its real name, so the permission question for one needs no second review.
+function isOwnToolCall(toolCall: AcpToolCall, ownToolNames: string[]): boolean {
+    const shownNames = [toolCall.name, toolCall.title].map(text => (text ?? '').toLowerCase()
+        .replaceAll(/[^a-z0-9]+/g, '_'));
+
+    return ownToolNames.some(ownName => shownNames.some(shown => shown.includes(`cloudbot_${ownName}`)));
+}
+
 // Some agents send an unset field as null, which must not replace what an earlier update said.
 function dropMissing(record: Record<string, unknown>): Record<string, unknown> {
     const entries = Object.entries(record)
@@ -426,7 +435,9 @@ class AcpEngine implements AgentRunner {
                 return withTimeout(reviewing, this.options.reviewTimeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS, { isAllowed: false, reason: REVIEW_FAILED_REASON });
             };
             const refusal = isOverLimit ? 'The step limit was reached.' : 'This call names a folder that holds the sign-in or config of the agent.';
-            const decision: ToolCallDecision = isOverLimit || isProtected ? { isAllowed: false, reason: refusal } : await review();
+            const ownToolNames = (request.tools ?? []).map(tool => tool.name);
+            const isOwnTool = reviewed.toolName.startsWith('acp__') && isOwnToolCall(toolCall, ownToolNames);
+            const decision: ToolCallDecision = isOverLimit || isProtected ? { isAllowed: false, reason: refusal } : isOwnTool ? { isAllowed: true } : await review();
             const optionId = pickOption(options, decision.isAllowed && !request.abortSignal.aborted);
 
             // Without a matching option the question is cancelled, which the agent treats as a refusal.

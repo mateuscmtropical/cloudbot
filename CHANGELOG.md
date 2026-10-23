@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- On a provider such as OpenCode, the bot no longer asks you to approve its own CloudBot tools twice, such as connecting a provider. The tool server already decides each call.
 - The provider list calls the provider OpenCode, not "opencode free models".
 - The bot knows how to change its provider and that a subscription, plan or account means the sign-in at a provider. CloudBot has no paid plan of its own.
 - When you connect a provider in the chat, the bot of that chat runs on it from the next message, and the provider name in the header updates. Before, the bot kept the old provider.
