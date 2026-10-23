@@ -11,6 +11,7 @@ import { ScreencastSession } from './screencast.ts';
 interface ScreencastProxyOptions {
     server: Server;
     access: SetupAccess;
+    hubSecret?: string | undefined;
     browser: BrowserControl;
     // Mouse and keyboard reach the page only while a person holds the screen.
     screen: ScreenHolder;
@@ -81,6 +82,7 @@ function attachScreencast(options: ScreencastProxyOptions): void {
     attachSessionSocket({
         server: options.server,
         access: options.access,
+        hubSecret: options.hubSecret,
         path: SCREENCAST_PATH,
         publicUrl: options.publicUrl,
         accept: (webSocket) => {

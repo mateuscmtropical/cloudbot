@@ -110,6 +110,7 @@ const host = readServerHost(process.env);
 const version = process.env.CLOUDBOT_VERSION ?? 'dev';
 const dataDir = resolveDataDir();
 const databaseFilePath = databasePath(dataDir);
+const hubConfig = readHubConfig(process.env);
 // One database handle serves the setup access and the chat stores.
 const opened = await openDatabase(databaseFilePath);
 
@@ -127,7 +128,7 @@ const settings = new SettingsStore(opened.db);
 const access = new SetupAccess(settings);
 // Passkeys are bound to the host name the owner opens, the same address the setup link uses. A public address that is
 // not a URL leaves passkeys off, and the setup link still works.
-const passkeys = createPasskeyService();
+const passkeys = hubConfig === undefined ? createPasskeyService() : undefined;
 const botStore = new BotStore(opened.db);
 const channelStore = new ChannelStore(opened.db);
 const messageStore = new MessageStore(opened.db);
@@ -443,7 +444,6 @@ const whatsappSetup = new WhatsAppSetup({
     publicBaseUrl: readPublicBaseUrl(process.env),
 });
 // Only the owner's instance inside the hub manages people through the hub.
-const hubConfig = readHubConfig(process.env);
 const peopleAdmin = hubConfig?.role === 'owner' ? new HubClient(hubConfig) : undefined;
 const chatService: ChatService = new ChatService({
     notifyOwner: notice => pushNotifier.notify(notice),
@@ -597,17 +597,19 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.
-const hasSession = await access.hasSession();
+if (hubConfig === undefined) {
+    const hasSession = await access.hasSession();
 
-if (!hasSession) {
-    const setupCode = await access.issueSetupCode();
-    const setupLink = buildSetupLink(setupCode, process.env);
+    if (!hasSession) {
+        const setupCode = await access.issueSetupCode();
+        const setupLink = buildSetupLink(setupCode, process.env);
 
-    console.log(`Open this link to make this browser the owner: ${setupLink}`);
+        console.log(`Open this link to make this browser the owner: ${setupLink}`);
+    }
 }
 
 const server = serve({ fetch: app.fetch, port, hostname: host }, (address) => {
@@ -626,9 +628,9 @@ const server = serve({ fetch: app.fetch, port, hostname: host }, (address) => {
 const publicUrl = process.env.CLOUDBOT_PUBLIC_URL;
 
 if (desktop !== undefined) {
-    attachVncProxy({ server: server as Server, access, screen, publicUrl });
+    attachVncProxy({ server: server as Server, access, hubSecret: hubConfig?.secret, screen, publicUrl });
 } else if (browser !== undefined) {
-    attachScreencast({ server: server as Server, access, browser, screen, publicUrl });
+    attachScreencast({ server: server as Server, access, hubSecret: hubConfig?.secret, browser, screen, publicUrl });
 }
 
 function shutdown(): void {

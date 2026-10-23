@@ -57,6 +57,7 @@ interface HealthResponse {
 interface AppOptions {
     version: string;
     access: SetupAccess;
+    hubSecret?: string | undefined;
     // Passkey sign-in. Without it only the setup link signs the owner in.
     passkeys?: PasskeyService | undefined;
     // Only on the owner's instance inside the hub. It adds and removes people through the hub.
@@ -186,7 +187,7 @@ function createApp(options: AppOptions): Hono {
         app.route('/', whatsappRoutes);
     }
 
-    const sessionCheck = requireSession(options.access);
+    const sessionCheck = requireSession(options.access, options.hubSecret);
     const sameOriginCheck = requireSameOrigin({ publicHost });
 
     // The origin check runs first, so a request from another page is refused before the cookie is read.
@@ -296,6 +297,10 @@ function createApp(options: AppOptions): Hono {
     }
 
     app.get('/setup', async (context) => {
+        if (hubMode) {
+            return context.notFound();
+        }
+
         const setupCode = context.req.query('code') ?? '';
         const sessionToken = await options.access.redeemSetupCode(setupCode);
 
