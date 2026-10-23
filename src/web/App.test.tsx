@@ -6,7 +6,7 @@ import type { BotSummary, ChatEvent, ChatMessage, PendingUpload } from '../share
 import { App } from './App.tsx';
 import { listBots, listMessages, listUploads, RequestFailedError, sendMessage, stopTurn, subscribeToEvents, uploadAttachments } from './apiClient.ts';
 import { MESSAGE_PAGE_SIZE } from './messageList.ts';
-import { listPeople } from './peopleClient.ts';
+import { getHubRole } from './peopleClient.ts';
 
 // The waits below end when the state appears. The longer limit only covers slow runs with the whole suite in parallel.
 configure({ asyncUtilTimeout: 5000 });
@@ -45,7 +45,8 @@ vi.mock('./apiClient.ts', () => ({
 }));
 
 vi.mock('./peopleClient.ts', () => ({
-    listPeople: vi.fn(() => Promise.reject(new Error('People route is not available.'))),
+    getHubRole: vi.fn(() => Promise.resolve('standalone')),
+    listPeople: vi.fn(() => Promise.resolve([])),
 }));
 
 function createBot(name: string, id = 'bot-1'): BotSummary {
@@ -89,12 +90,7 @@ describe('App sign-in', () => {
 });
 
 describe('App bot list', () => {
-    it('shows the hub hint in the people panel when the people route answers 404', async () => {
-        const notFoundError = new RequestFailedError('/api/people', 404);
-
-        Object.defineProperty(notFoundError, 'status', { value: 404 });
-        vi.mocked(listPeople)
-            .mockRejectedValueOnce(notFoundError);
+    it('tells the owner of a CloudBot that runs on its own to install a hub', async () => {
         vi.mocked(listBots)
             .mockResolvedValue([]);
         vi.mocked(listMessages)
@@ -103,21 +99,41 @@ describe('App bot list', () => {
         render(<App />);
 
         await waitFor(() => {
-            expect(listPeople)
+            expect(getHubRole)
                 .toHaveBeenCalledTimes(1);
         });
 
         fireEvent.click(screen.getByRole('button', { name: 'People' }));
 
-        expect(await screen.findByText(/install CloudBot as a hub/))
+        expect(await screen.findByText('This CloudBot runs on its own'))
             .toBeTruthy();
         expect(screen.queryByRole('textbox'))
             .toBeNull();
     });
 
-    it('opens the people panel when the people route answers successfully', async () => {
-        vi.mocked(listPeople)
+    it('tells a person of a hub to ask the owner', async () => {
+        vi.mocked(getHubRole)
+            .mockResolvedValueOnce('member');
+        vi.mocked(listBots)
             .mockResolvedValue([]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+
+        render(<App />);
+
+        await waitFor(() => {
+            expect(getHubRole)
+                .toHaveBeenCalled();
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'People' }));
+
+        expect(await screen.findByText('Only the owner of the hub adds people'))
+            .toBeTruthy();
+    });
+
+    it('opens the people panel for the owner of a hub', async () => {
+        vi.mocked(getHubRole)
+            .mockResolvedValue('owner');
         vi.mocked(listBots)
             .mockResolvedValue([]);
         vi.mocked(listMessages)

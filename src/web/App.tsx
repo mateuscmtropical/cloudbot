@@ -28,7 +28,8 @@ import { addPasskey, describePasskeyResult, removePasskey } from './passkeyClien
 import { SignInScreen } from './components/SignInScreen.tsx';
 import { PeopleHubHint } from './components/PeopleHubHint.tsx';
 import { PeoplePanel } from './components/PeoplePanel.tsx';
-import { listPeople } from './peopleClient.ts';
+import { getHubRole } from './peopleClient.ts';
+import type { HubRole } from './peopleClient.ts';
 
 interface DraftState {
     botId: string;
@@ -145,7 +146,7 @@ function App(): ReactElement {
     // The screen holder seen on the last check. The Screen panel opens only when it changes to the owner.
     const lastScreenHolderRef = useRef<string | undefined>(undefined);
     const [isBotListOpen, setIsBotListOpen] = useState(false);
-    const [isPeopleAvailable, setIsPeopleAvailable] = useState(false);
+    const [hubRole, setHubRole] = useState<HubRole>('standalone');
     const [isPeopleOpen, setIsPeopleOpen] = useState(false);
     // The connected remote MCP servers panel, opened from the sidebar.
     const [isConnectAppsOpen, setIsConnectAppsOpen] = useState(false);
@@ -690,15 +691,15 @@ function App(): ReactElement {
     useEffect(() => {
         let isCurrent = true;
 
-        listPeople()
-            .then(() => {
+        getHubRole()
+            .then((role) => {
                 if (isCurrent) {
-                    setIsPeopleAvailable(true);
+                    setHubRole(role);
                 }
             })
             .catch(() => {
                 if (isCurrent) {
-                    setIsPeopleAvailable(false);
+                    setHubRole('standalone');
                 }
             });
 
@@ -1215,7 +1216,7 @@ function App(): ReactElement {
                     : (
                             <p className="error-banner" role="alert">{errorText}</p>
                         )}
-                {isPeopleOpen && isPeopleAvailable
+                {isPeopleOpen && hubRole === 'owner'
                     ? (
                             <PeoplePanel
                                 onClose={() => {
@@ -1224,9 +1225,10 @@ function App(): ReactElement {
                             />
                         )
                     : null}
-                {isPeopleOpen && !isPeopleAvailable
+                {isPeopleOpen && hubRole !== 'owner'
                     ? (
                             <PeopleHubHint
+                                role={hubRole}
                                 onClose={() => {
                                     setIsPeopleOpen(false);
                                 }}

@@ -1419,6 +1419,29 @@ svg {
     margin-top: var(--space-2);
 }
 
+.people-hint-card h2 {
+    margin: 0;
+}
+
+.people-hint-card p {
+    margin: var(--space-2) 0 0;
+    color: var(--color-text-muted);
+}
+
+.people-hint-card .people-credential-row code {
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
+    background: var(--color-background);
+    font-size: 0.8125rem;
+}
+
+.people-hint-card .people-credential-row button {
+    margin-top: 0;
+}
+
+.people-hint-card a {
+    color: var(--color-accent);
+}
 .people-problem {
     width: min(48rem, 100%);
     margin: 0 auto var(--space-3);

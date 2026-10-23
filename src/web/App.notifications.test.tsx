@@ -44,7 +44,7 @@ vi.mock('./apiClient.ts', () => ({
 }));
 
 vi.mock('./peopleClient.ts', () => ({
-    listPeople: vi.fn(() => Promise.reject(new Error('People route is not available.'))),
+    getHubRole: vi.fn(() => Promise.resolve('standalone')),
 }));
 
 // Only the permission and subscription step is replaced. The helpers of the module stay real.

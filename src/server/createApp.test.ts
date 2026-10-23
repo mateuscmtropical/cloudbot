@@ -134,6 +134,19 @@ describe('createApp', () => {
             .toEqual([]);
     });
 
+    it('tells a CloudBot that runs on its own from one inside a hub', async () => {
+        const standaloneApp = createApp({ version: '1.2.3', access });
+        const memberApp = createApp({ version: '1.2.3', access, hubRole: 'member' });
+        const standaloneToken = await signIn(standaloneApp, access);
+        const standaloneResponse = await requestWithSession(standaloneApp, '/api/hub-role', standaloneToken);
+        const memberResponse = await requestWithSession(memberApp, '/api/hub-role', standaloneToken);
+
+        expect(await standaloneResponse.json())
+            .toEqual({ role: 'standalone' });
+        expect(await memberResponse.json())
+            .toEqual({ role: 'member' });
+    });
+
     it('rejects an api request without the cookie', async () => {
         const app = createApp({ version: '1.2.3', access });
         const response = await app.request('/api/missing');
