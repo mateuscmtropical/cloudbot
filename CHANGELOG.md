@@ -12,6 +12,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- The sign-in, password, loading and passkey pages of a server with many people look like the app now. They have the cloud mascot, a centered card and the same colors. The fingerprint or face option sits below the password form.
+- A person can sign in at the front door from a browser. The sign-in form was refused because the browser sent Origin null.
 - The hub of a server with many people now runs as one piece. The sign-in page, the passkeys, the proxy for pages and WebSockets, and the idle shutdown all work together. The internal routes of the hub answer only to the other containers, never to a public address. A person that was deactivated cannot sign in with a passkey.
 - A people panel for the owner of a server with many people. A button next to the search and the new bot button opens it in the chat area. The owner adds a person by name, deactivates or reactivates them, resets a password, or deletes them after typing the name. A new password is shown once and is not kept.
 - An idle shutdown for the people of a server. After five minutes without a request or an open connection, the hub asks the instance if it is busy. A running turn, routine, page watch, webhook, messaging connection, email account or setup conversation keeps it awake. An idle instance stops and starts again when its person comes back. Set `CLOUDBOT_IDLE_MINUTES` on the hub to change the five minutes.

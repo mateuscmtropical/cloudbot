@@ -398,6 +398,35 @@ describe('createFrontDoorRoutes', () => {
             .toBeNull();
     });
 
+    it('accepts a form post with Origin null when the browser says it is same-origin', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        const body = new URLSearchParams({ password: INITIAL_PASSWORD });
+        const response = await harness.app.request(`https://${PERSON_NAME}.example.test/__hub/login`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded', 'origin': 'null', 'sec-fetch-site': 'same-origin' },
+            body,
+        });
+
+        expect(response.status)
+            .toBe(303);
+    });
+
+    it('refuses a form post with Origin null that is not marked same-origin', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        const body = new URLSearchParams({ password: INITIAL_PASSWORD });
+        const response = await harness.app.request(`https://${PERSON_NAME}.example.test/__hub/login`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded', 'origin': 'null' },
+            body,
+        });
+
+        expect(response.status)
+            .toBe(403);
+    });
     it('ends the session on logout', async () => {
         const harness = await createHarness();
 

@@ -8,7 +8,7 @@ describe('passkeyPage', () => {
         const extras = passkeyLoginExtras();
 
         expect(extras.html)
-            .toContain('hidden>Sign in with fingerprint or face');
+            .toContain('id="hub-passkey-login-block" class="stack" hidden>');
         expect(extras.script)
             .toContain('isUserVerifyingPlatformAuthenticatorAvailable');
         expect(extras.script)
