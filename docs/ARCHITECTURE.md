@@ -1569,7 +1569,7 @@ key, a call through the key proxy to a fake upstream that logged the header:
 | Gemini | `agy` headless for a subscription, `gemini --acp` for a key | `agy-login.js`, see below | `GEMINI_API_KEY` and `GOOGLE_GEMINI_BASE_URL`, header `x-goog-api-key` |
 | GitHub Copilot | `copilot --acp --stdio` | `copilot login --device-code` | none, the token cannot go through a proxy |
 | Cursor | `cursor-agent acp` | `agent login` with `NO_OPEN_BROWSER`, link only | none, same reason |
-| Grok | `grok agent stdio` | `grok login --device-auth` | the ACP agent takes only a Grok account, so an xAI key runs `opencode acp` with the `xai` provider at the proxy |
+| Grok | `grok --permission-mode default --no-auto-update agent stdio` | `grok login --device-auth`, then ACP `cached_token` | `XAI_API_KEY` and `GROK_XAI_API_BASE_URL` point to the local proxy, ACP `xai.api_key` |
 | Mistral | `vibe-acp` | `acp-login.js` runs `authenticate browser-auth`, the link goes through `BROWSER` | `MISTRAL_API_KEY` and `VIBE_PROVIDERS` with the proxy as `api_base` |
 | Qwen | `qwen --acp --auth-type openai` | none, the free account sign-in was removed | `OPENAI_API_KEY` and `OPENAI_BASE_URL` at DashScope's compatible mode |
 | Kimi | `kimi acp` | `kimi login` | `KIMI_MODEL_NAME`, `KIMI_MODEL_API_KEY` and `KIMI_MODEL_BASE_URL` |
@@ -1613,10 +1613,23 @@ Gemini, Cursor and Grok need `authenticate` before a session. The engine
 sends the cached method, and an error means the provider is not signed in. The
 sign-in check runs `session/new` and caches a yes for five minutes.
 
+Grok Build is installed from xAI's official installer. Its browser or device
+login stores a token under `~/.grok/auth.json`. CloudBot checks that token with
+ACP `cached_token` and `_meta.headless`. In API key mode, Grok receives a dummy
+`XAI_API_KEY`, `GROK_XAI_API_BASE_URL` points to the local key proxy, and the
+engine authenticates with `xai.api_key`. The current Grok Build default is
+Grok 4.7 (`grok-4.7`). Grok supports model and effort options, but CloudBot has
+no Grok model picker and does not pass the old provider's model or effort to
+Grok. The chat header shows the Grok provider label and no model for Grok.
+Grok's default model can be changed in its own configuration. CloudBot starts
+it with `--permission-mode default`, which forces Ask and overrides a stored
+permission mode. Its ACP permission prompts are handled by the common review
+flow. Bot tools are passed to Grok as the loopback HTTP MCP server.
+
 In Docker, the server starts every CLI through `sudo -u bot` and the root-owned
-`/usr/local/bin/cloudbot-provider <provider> <acp|acp-key|login>`. The wrapper
-takes only those actions, sets `umask 077`, turns off update checks and browser
-opening, and checks that a key proxy address is `http://127.0.0.1:<port>`.
+`/usr/local/bin/cloudbot-provider <provider> <action>`. The wrapper takes only
+fixed actions, sets `umask 077`, turns off update checks and browser opening,
+and checks that a key proxy address is `http://127.0.0.1:<port>`.
 `cloudbot-print-url` prints the link a CLI would open in a browser. The sudoers
 `env_keep` lists every variable the key routes need. The CLIs are installed as
 root under `/opt/cloudbot-agents` and `/usr/local`, pinned to the versions in

@@ -104,7 +104,7 @@ with Claude.
 | Gemini | Antigravity CLI for a subscription, Gemini CLI for a key | Google account, code pasted back | Google AI Studio |
 | GitHub Copilot | Copilot CLI | GitHub account, device code | none |
 | Cursor | Cursor CLI | Cursor account, link | none |
-| Grok | Grok Build | xAI account, device code | xAI, run on opencode |
+| Grok | Grok Build | xAI account, device code | xAI |
 | Mistral | Mistral Vibe | Mistral AI Studio account, link | Mistral AI Studio |
 | Qwen | Qwen Code | none | Alibaba Cloud Model Studio |
 | Kimi | Kimi Code | Kimi account, device code | Moonshot AI |

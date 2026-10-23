@@ -7,8 +7,8 @@ set -eu
 provider="${1:-}"
 action="${2:-}"
 
-if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "acp-key" ] && [ "$action" != "login" ] && [ "$action" != "status" ] && [ "$action" != "agy" ] && [ "$action" != "agy-review" ]; }; then
-    echo "cloudbot-provider takes a provider and acp, acp-key, agy, agy-review, login or status." >&2
+if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "login" ] && [ "$action" != "status" ] && [ "$action" != "agy" ] && [ "$action" != "agy-review" ]; }; then
+    echo "cloudbot-provider takes a provider and acp, agy, agy-review, login or status." >&2
     exit 2
 fi
 
@@ -88,7 +88,7 @@ case "$provider:$action" in
     copilot:login) exec /usr/local/bin/copilot login --device-code ;;
     cursor:acp) exec /usr/local/bin/cursor-agent acp ;;
     cursor:login) exec /usr/local/bin/cursor-agent login ;;
-    grok:acp) exec /usr/local/bin/grok --no-auto-update agent stdio ;;
+    grok:acp) exec /usr/local/bin/grok --permission-mode default --no-auto-update agent stdio ;;
     grok:login) exec /usr/local/bin/grok login --device-auth ;;
     mistral:acp) exec /usr/local/bin/vibe-acp ;;
     mistral:login) exec /usr/local/bin/node "$LOGIN" browser-auth /usr/local/bin/vibe-acp ;;
@@ -98,26 +98,6 @@ case "$provider:$action" in
     # opencode asks before every tool, so each call goes to the CloudBot review.
     opencode:acp)
         export OPENCODE_CONFIG_CONTENT='{"permission":{"*":"ask"},"autoupdate":false}'
-        exec /usr/local/bin/opencode acp
-        ;;
-    # Grok Build signs in only with a Grok account over ACP, so an xAI API key runs through opencode's xAI provider.
-    # The key proxy adds the real key. The server sets only the proxy address, which must be a loopback port.
-    grok:acp-key)
-        case "${CLOUDBOT_KEY_PROXY_URL:-}" in
-            http://127.0.0.1:[0-9]*) ;;
-            *)
-                echo "cloudbot-provider needs the key proxy address." >&2
-                exit 2
-                ;;
-        esac
-        port="${CLOUDBOT_KEY_PROXY_URL#http://127.0.0.1:}"
-        case "$port" in
-            *[!0-9]*)
-                echo "cloudbot-provider needs the key proxy address." >&2
-                exit 2
-                ;;
-        esac
-        export OPENCODE_CONFIG_CONTENT="{\"permission\":{\"*\":\"ask\"},\"autoupdate\":false,\"model\":\"xai/grok-4.7\",\"provider\":{\"xai\":{\"options\":{\"baseURL\":\"http://127.0.0.1:$port/v1\",\"apiKey\":\"cloudbot-key-proxy\"}}}}"
         exec /usr/local/bin/opencode acp
         ;;
     *)

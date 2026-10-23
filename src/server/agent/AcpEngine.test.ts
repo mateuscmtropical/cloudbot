@@ -129,7 +129,7 @@ class FakeAcpAgent extends EventEmitter {
     }
 }
 
-function makeEngine(options: FakeOptions = {}, authMethodId?: string, askModeId?: string): { engine: AcpEngine; agents: FakeAcpAgent[] } {
+function makeEngine(options: FakeOptions = {}, authMethodId?: string, askModeId?: string, headlessAuth = false): { engine: AcpEngine; agents: FakeAcpAgent[] } {
     const agents: FakeAcpAgent[] = [];
     const home = join(mkdtempSync(join(tmpdir(), 'cloudbot-acp-test-')), 'home');
     const engine = new AcpEngine({
@@ -138,6 +138,7 @@ function makeEngine(options: FakeOptions = {}, authMethodId?: string, askModeId?
         args: ['--experimental-acp'],
         homeFor: () => home,
         authMethodId,
+        headlessAuth,
         askModeId,
         spawnFunction: () => {
             const agent = new FakeAcpAgent(options);
@@ -283,12 +284,14 @@ describe('AcpEngine', () => {
     });
 
     it('authenticates with the cached sign-in before the session when the agent needs it', async () => {
-        const { engine, agents } = makeEngine({}, 'cursor_login');
+        const { engine, agents } = makeEngine({}, 'cached_token', undefined, true);
 
         await collect(engine.runTurn(makeRequest()));
 
         expect(agents[0]?.sent.map(message => message.method))
             .toEqual(['initialize', 'authenticate', 'session/new', 'session/prompt']);
+        expect(agents[0]?.sent.find(message => message.method === 'authenticate')?.params)
+            .toEqual({ methodId: 'cached_token', _meta: { headless: true } });
     });
 
     it('switches the session to the mode that asks before each tool, before the prompt', async () => {

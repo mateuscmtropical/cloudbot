@@ -144,6 +144,8 @@ describe('modelFor', () => {
             .toBeNull();
         expect(modelFor('chatgpt', 'sonnet'))
             .toBeNull();
+        expect(modelFor('grok', 'sonnet'))
+            .toBeNull();
         expect(modelFor('claude', null))
             .toBeNull();
     });
