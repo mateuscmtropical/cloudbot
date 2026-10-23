@@ -72,7 +72,7 @@ starts.
   official CLI runs the turns: Claude Code, Codex, and over the Agent Client
   Protocol Gemini CLI, Copilot CLI, Cursor CLI, Grok Build, Mistral Vibe, Qwen
   Code and Kimi Code. opencode runs the free models and an xAI key.
-- Spending limits and model choices for providers other than Claude.
+- Spending limits for providers other than Claude.
 
 ## v0.8: reach the owner anywhere
 

@@ -8,6 +8,8 @@ import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AcpEngine, namesProtectedFolder, toReviewedCall } from './AcpEngine.ts';
+import { ProviderModelCatalogs } from '../providers/ProviderModelCatalogs.ts';
+import type { ProviderId } from '../providers/providerIds.ts';
 import type { AgentEvent } from './AgentEvent.ts';
 import type { ToolCallDecision, TurnRequest } from './AgentRunner.ts';
 
@@ -24,6 +26,8 @@ interface FakeOptions {
     failAuthenticate?: boolean;
     failNewSession?: string;
     sessionResult?: Record<string, unknown>;
+    modelCatalogs?: ProviderModelCatalogs;
+    provider?: ProviderId;
     onPrompt?: (agent: FakeAcpAgent, promptId: number) => void;
 }
 
@@ -109,6 +113,10 @@ class FakeAcpAgent extends EventEmitter {
             this.say({ id: message.id, result: {} });
         }
 
+        if (message.method === 'session/set_config_option' || message.method === 'session/set_model') {
+            this.say({ id: message.id, result: {} });
+        }
+
         if (message.method === 'session/load') {
             this.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'old reply' } });
             this.say({ id: message.id, result: {} });
@@ -137,6 +145,8 @@ function makeEngine(options: FakeOptions = {}, authMethodId?: string, askModeId?
         command: '/usr/local/bin/gemini',
         args: ['--experimental-acp'],
         homeFor: () => home,
+        modelCatalogs: options.modelCatalogs,
+        provider: options.provider,
         authMethodId,
         headlessAuth,
         askModeId,
@@ -184,6 +194,147 @@ function askPermission(agent: FakeAcpAgent, id: number, toolCall: Record<string,
 }
 
 describe('AcpEngine', () => {
+    it('sets an advertised model and effort before the first prompt and caches the catalog', async () => {
+        const modelCatalogs = new ProviderModelCatalogs();
+        const sessionResult = {
+            sessionId: 'session-1',
+            configOptions: [
+                { id: 'model', category: 'model', name: 'Model', type: 'select', currentValue: 'opencode/big-pickle', options: [
+                    { id: 'opencode/big-pickle', name: 'Big Pickle' },
+                    { id: 'opencode/deepseek-v4.1-flash-free', name: 'DeepSeek V4.1 Flash Free' },
+                ] },
+                { id: 'thinking', category: 'effort', name: 'Thinking', type: 'select', currentValue: 'medium', options: [
+                    { id: 'low', name: 'Low' },
+                    { id: 'medium', name: 'Medium' },
+                ] },
+            ],
+        };
+        const { engine, agents } = makeEngine({ sessionResult, modelCatalogs, provider: 'opencode' });
+
+        await collect(engine.runTurn(makeRequest({ model: 'opencode/deepseek-v4.1-flash-free', effort: 'low' })));
+
+        const methods = agents[0]?.sent.filter(message => message.method !== undefined && message.id !== undefined)
+            .map(message => message.method);
+
+        expect(methods)
+            .toEqual(['initialize', 'session/new', 'session/set_config_option', 'session/set_config_option', 'session/prompt']);
+        expect(agents[0]?.sent.filter(message => message.method === 'session/set_config_option')
+            .map(message => message.params))
+            .toEqual([
+                { sessionId: 'session-1', configId: 'model', value: 'opencode/deepseek-v4.1-flash-free' },
+                { sessionId: 'session-1', configId: 'thinking', value: 'low' },
+            ]);
+        expect(modelCatalogs.get('opencode'))
+            .toMatchObject({ defaultModel: 'opencode/big-pickle' });
+    });
+
+    it('restores the cached provider default when a saved choice is cleared', async () => {
+        const modelCatalogs = new ProviderModelCatalogs();
+
+        modelCatalogs.set('opencode', {
+            models: [
+                { id: 'opencode/big-pickle', label: 'Big Pickle', efforts: ['low', 'medium'] },
+                { id: 'opencode/deepseek-v4.1-flash-free', label: 'DeepSeek', efforts: ['low', 'medium'] },
+            ],
+            defaultModel: 'opencode/big-pickle',
+            defaultEffort: 'medium',
+            currentModel: 'opencode/deepseek-v4.1-flash-free',
+            currentEffort: 'low',
+            modelConfigId: 'model',
+            effortConfigId: 'thinking',
+        });
+        const { engine, agents } = makeEngine({
+            sessionResult: {
+                sessionId: 'session-1',
+                configOptions: [
+                    { id: 'model', category: 'model', name: 'Model', type: 'select', currentValue: 'opencode/deepseek-v4.1-flash-free', options: [
+                        { id: 'opencode/big-pickle', name: 'Big Pickle' },
+                        { id: 'opencode/deepseek-v4.1-flash-free', name: 'DeepSeek' },
+                    ] },
+                    { id: 'thinking', category: 'effort', name: 'Thinking', type: 'select', currentValue: 'low', options: [
+                        { id: 'low', name: 'Low' },
+                        { id: 'medium', name: 'Medium' },
+                    ] },
+                ],
+            },
+            modelCatalogs,
+            provider: 'opencode',
+        });
+
+        await collect(engine.runTurn(makeRequest({
+            model: null,
+            effort: null,
+            providerDefaultModel: 'opencode/big-pickle',
+            providerDefaultEffort: 'medium',
+        })));
+
+        expect(agents[0]?.sent.filter(message => message.method === 'session/set_config_option')
+            .map(message => message.params))
+            .toEqual([
+                { sessionId: 'session-1', configId: 'model', value: 'opencode/big-pickle' },
+                { sessionId: 'session-1', configId: 'thinking', value: 'medium' },
+            ]);
+    });
+
+    it('uses current ACP defaults when saved provider defaults are no longer offered', async () => {
+        const modelCatalogs = new ProviderModelCatalogs();
+
+        modelCatalogs.set('opencode', {
+            models: [{ id: 'opencode/retired', label: 'Retired', efforts: ['high'] }],
+            defaultModel: 'opencode/retired',
+            defaultEffort: 'high',
+        });
+        const { engine, agents } = makeEngine({
+            sessionResult: {
+                sessionId: 'session-1',
+                configOptions: [
+                    { id: 'model', category: 'model', name: 'Model', type: 'select', currentValue: 'opencode/current', options: [
+                        { id: 'opencode/current', name: 'Current' },
+                    ] },
+                    { id: 'thinking', category: 'effort', name: 'Thinking', type: 'select', currentValue: 'low', options: [
+                        { id: 'low', name: 'Low' },
+                    ] },
+                ],
+            },
+            modelCatalogs,
+            provider: 'opencode',
+        });
+
+        await collect(engine.runTurn(makeRequest({
+            model: null,
+            effort: null,
+            providerDefaultModel: 'opencode/retired',
+            providerDefaultEffort: 'high',
+        })));
+
+        expect(agents[0]?.sent.filter(message => message.method === 'session/set_config_option'))
+            .toEqual([]);
+        expect(modelCatalogs.get('opencode'))
+            .toMatchObject({ defaultModel: 'opencode/current', defaultEffort: 'low' });
+    });
+
+    it('applies a saved ACP model when a resumed session omits its current options', async () => {
+        const modelCatalogs = new ProviderModelCatalogs();
+
+        modelCatalogs.set('opencode', {
+            models: [{ id: 'opencode/model-x', label: 'Model X', efforts: [] }],
+            defaultModel: 'opencode/model-x',
+            defaultEffort: null,
+            currentModel: 'opencode/model-x',
+            modelConfigId: 'model',
+        });
+        const { engine, agents } = makeEngine({
+            capabilities: { loadSession: true },
+            modelCatalogs,
+            provider: 'opencode',
+        });
+
+        await collect(engine.runTurn(makeRequest({ sessionId: 'session-old', model: 'opencode/model-x' })));
+
+        expect(agents[0]?.sent.find(message => message.method === 'session/set_config_option')?.params)
+            .toEqual({ sessionId: 'session-old', configId: 'model', value: 'opencode/model-x' });
+    });
+
     it('streams the reply and offers no file system or terminal', async () => {
         const { engine, agents } = makeEngine();
 

@@ -362,6 +362,21 @@ const botModels = sqliteTable('bot_models', {
     documentsEffort: text('documents_effort'),
 });
 
+// One model and effort choice for each provider a bot uses. Null leaves the provider default.
+const botProviderModels = sqliteTable('bot_provider_models', {
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    provider: text('provider')
+        .notNull(),
+    model: text('model'),
+    effort: text('effort'),
+    defaultModel: text('default_model'),
+    defaultEffort: text('default_effort'),
+}, table => [
+    primaryKey({ columns: [table.botId, table.provider] }),
+]);
+
 // The time, spending and step limits per turn, for chat turns and for routine, webhook and watch turns.
 // A null column means no limit of that kind.
 const botLimits = sqliteTable('bot_limits', {
@@ -539,5 +554,5 @@ const pushSubscriptions = sqliteTable('push_subscriptions', {
         .on(table.endpoint),
 ]);
 
-export { botLimits, botModels, botRules, botSkills, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, emailAccounts, emailDeliveries, integrationRuns, integrations, messages, passkeys, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks, whatsappConnections, whatsappMessages };
+export { botLimits, botModels, botProviderModels, botRules, botSkills, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, emailAccounts, emailDeliveries, integrationRuns, integrations, messages, passkeys, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks, whatsappConnections, whatsappMessages };
 export type { StoredUploadRecord };

@@ -2206,7 +2206,7 @@ describe('ChatService model choices', () => {
     });
 
     // Sends one message from the given source, waits for its turn and returns the model the runner got.
-    async function runOneTurn(service: ChatService, runner: FakeAgentRunner, botId: string, source: 'chat' | 'routine'): Promise<string | undefined> {
+    async function runOneTurn(service: ChatService, runner: FakeAgentRunner, botId: string, source: 'chat' | 'routine'): Promise<string | null | undefined> {
         const finished = waitForTurnFinish(service, botId);
 
         await service.sendMessage(botId, 'Hi', source);

@@ -1,9 +1,17 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import type { EffortChoices, ModelChoices } from '../models/modelChoices.ts';
 import { toEffortChoice } from '../models/modelChoices.ts';
-import { botModels } from './schema.ts';
+import type { ProviderId } from '../providers/providerIds.ts';
+import { botModels, botProviderModels } from './schema.ts';
 import type { AppDatabase } from './types.ts';
+
+interface ProviderModelChoice {
+    model: string | null;
+    effort: string | null;
+    defaultModel: string | null;
+    defaultEffort: string | null;
+}
 
 // A bot with no row has no choices, so every kind uses the CLI default.
 const NO_CHOICES: ModelChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
@@ -78,6 +86,35 @@ class ModelStore {
             .onConflictDoUpdate({ target: botModels.botId, set: changes });
     }
 
+    async getProviderChoice(botId: string, provider: ProviderId): Promise<ProviderModelChoice | undefined> {
+        const botCondition = eq(botProviderModels.botId, botId);
+        const providerCondition = eq(botProviderModels.provider, provider);
+        const condition = and(botCondition, providerCondition);
+        const foundRows = await this.database.select()
+            .from(botProviderModels)
+            .where(condition);
+        const foundRow = foundRows[0];
+
+        if (foundRow === undefined) {
+            return undefined;
+        }
+
+        return { model: foundRow.model, effort: foundRow.effort, defaultModel: foundRow.defaultModel, defaultEffort: foundRow.defaultEffort };
+    }
+
+    async setProviderChoice(botId: string, provider: ProviderId, choice: ProviderModelChoice): Promise<void> {
+        const changes = {
+            model: choice.model,
+            effort: choice.effort,
+            defaultModel: choice.defaultModel,
+            defaultEffort: choice.defaultEffort,
+        };
+
+        await this.database.insert(botProviderModels)
+            .values({ botId, provider, ...changes })
+            .onConflictDoUpdate({ target: [botProviderModels.botId, botProviderModels.provider], set: changes });
+    }
+
     private async findRow(botId: string): Promise<typeof botModels.$inferSelect | undefined> {
         const botCondition = eq(botModels.botId, botId);
         const foundRows = await this.database.select()
@@ -89,3 +126,4 @@ class ModelStore {
 }
 
 export { ModelStore };
+export type { ProviderModelChoice };

@@ -2,6 +2,8 @@ import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from '../agent/AgentRunner.ts';
 import { PROVIDER_LABELS } from './providerIds.ts';
 import type { ProviderId } from './providerIds.ts';
+import type { ProviderModelChoice } from '../store/ModelStore.ts';
+import type { ProviderModelCatalogs } from './ProviderModelCatalogs.ts';
 
 interface ProviderEngine {
     runner: AgentRunner;
@@ -17,6 +19,8 @@ interface ClosableRunner extends AgentRunner {
 interface ProviderRunnerOptions {
     engines: Partial<Record<ProviderId, ProviderEngine>>;
     providerFor: (botId: string) => Promise<ProviderId>;
+    providerChoiceFor?: (botId: string, provider: ProviderId) => Promise<ProviderModelChoice | undefined>;
+    modelCatalogs?: ProviderModelCatalogs | undefined;
 }
 
 // A session id is tagged with its provider, so a bot that moves to another provider starts a new session
@@ -72,6 +76,36 @@ class ProviderRunner implements AgentRunner {
             delete providerRequest.sessionId;
         } else {
             providerRequest.sessionId = sessionId;
+        }
+
+        if (provider !== 'claude') {
+            const modelRevision = this.options.modelCatalogs?.revision(provider);
+            const choice = await this.options.providerChoiceFor?.(request.botId, provider);
+            const legacyGeminiModel = choice === undefined && provider === 'gemini' && request.model?.startsWith('gemini-') === true ? request.model : undefined;
+
+            delete providerRequest.model;
+            delete providerRequest.effort;
+            delete providerRequest.providerDefaultModel;
+            delete providerRequest.providerDefaultEffort;
+
+            if (choice !== undefined) {
+                providerRequest.model = choice.model;
+                providerRequest.effort = choice.effort;
+                providerRequest.providerDefaultModel = choice.defaultModel;
+                providerRequest.providerDefaultEffort = choice.defaultEffort;
+            } else {
+                if (legacyGeminiModel !== undefined) {
+                    providerRequest.model = legacyGeminiModel;
+
+                    if (request.effort !== undefined) {
+                        providerRequest.effort = request.effort;
+                    }
+                }
+            }
+
+            if (modelRevision !== undefined) {
+                providerRequest.providerModelRevision = modelRevision;
+            }
         }
 
         for await (const event of engine.runner.runTurn(providerRequest)) {

@@ -204,8 +204,7 @@ Status: **open** means the default is in use and waits for the owner.
 
 ### Default models
 
-- Status: open
-- Default: each CLI uses its own default model. An xAI key runs `xai/grok-4.7`
-  on opencode and a Moonshot key runs `kimi-k3`. The owner's model choices name
-  Claude models, so they apply to Claude only.
-- Other options: a model choice per provider in the chat.
+- Status: resolved
+- Default: each bot can keep a model and effort choice for each provider that
+  reports its available models. Otherwise, that provider uses its own default.
+- Other options: one model choice shared by all providers.

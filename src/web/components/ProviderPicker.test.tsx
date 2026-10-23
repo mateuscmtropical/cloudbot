@@ -2,8 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ProviderChoiceSummary } from '../../shared/providerTypes.ts';
-import { getBotProvider, listProviders, startProviderConnect, switchBotProvider } from '../apiClient.ts';
+import type { BotProviderSummary, ProviderChoiceSummary } from '../../shared/providerTypes.ts';
+import { getBotProvider, listProviders, saveProviderModel, startProviderConnect, switchBotProvider } from '../apiClient.ts';
 import { ProviderPicker } from './ProviderPicker.tsx';
 
 vi.mock('../apiClient.ts', () => ({
@@ -11,7 +11,12 @@ vi.mock('../apiClient.ts', () => ({
     listProviders: vi.fn(),
     startProviderConnect: vi.fn(),
     switchBotProvider: vi.fn(),
+    saveProviderModel: vi.fn(),
 }));
+
+const CLAUDE_SUMMARY: BotProviderSummary = {
+    provider: 'claude', label: 'Claude', model: 'sonnet', modelOptions: [], selectedModel: null, selectedEffort: null, effortOptions: [],
+};
 
 const PROVIDERS: ProviderChoiceSummary[] = [
     { id: 'claude', label: 'Claude', isConnected: true },
@@ -22,7 +27,7 @@ const PROVIDERS: ProviderChoiceSummary[] = [
 describe('ProviderPicker', () => {
     beforeEach(() => {
         vi.mocked(getBotProvider)
-            .mockResolvedValue({ provider: 'claude', label: 'Claude', model: 'sonnet' });
+            .mockResolvedValue(CLAUDE_SUMMARY);
         vi.mocked(listProviders)
             .mockResolvedValue(PROVIDERS);
     });
@@ -60,28 +65,28 @@ describe('ProviderPicker', () => {
 
         fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
 
-        const current = await screen.findByRole('menuitemradio', { name: 'Claude' });
-        const other = screen.getByRole('menuitemradio', { name: 'Gemini' });
+        const current = await screen.findByRole('button', { name: 'Claude' });
+        const other = screen.getByRole('button', { name: 'Gemini' });
 
-        expect(current.getAttribute('aria-checked'))
+        expect(current.getAttribute('aria-pressed'))
             .toBe('true');
-        expect(other.getAttribute('aria-checked'))
+        expect(other.getAttribute('aria-pressed'))
             .toBe('false');
-        expect(screen.getByRole('menuitem', { name: 'Connect ChatGPT' }))
+        expect(screen.getByRole('button', { name: 'Connect ChatGPT' }))
             .toBeTruthy();
     });
 
     it('switches the bot to the provider the owner picks and closes the menu', async () => {
         vi.mocked(switchBotProvider)
-            .mockResolvedValue({ provider: 'gemini', label: 'Gemini', model: null });
+            .mockResolvedValue({ ...CLAUDE_SUMMARY, provider: 'gemini', label: 'Gemini', model: null });
 
         render(<ProviderPicker botId="bot-1" onOpenSetupChat={() => {}} />);
 
         fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
-        fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Gemini' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Gemini' }));
 
         await waitFor(() => {
-            expect(screen.queryByRole('menu'))
+            expect(screen.queryByRole('dialog'))
                 .toBeNull();
         });
         expect(switchBotProvider)
@@ -98,7 +103,7 @@ describe('ProviderPicker', () => {
         render(<ProviderPicker botId="bot-1" onOpenSetupChat={onOpenSetupChat} />);
 
         fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
-        fireEvent.click(await screen.findByRole('menuitem', { name: 'Connect ChatGPT' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect ChatGPT' }));
 
         await waitFor(() => {
             expect(onOpenSetupChat)
@@ -113,9 +118,38 @@ describe('ProviderPicker', () => {
         render(<ProviderPicker botId="bot-1" onOpenSetupChat={() => {}} />);
 
         fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
-        fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Gemini' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Gemini' }));
 
         expect(await screen.findByText('The provider could not be changed.'))
+            .toBeTruthy();
+    });
+
+    it('saves the selected model and effort offered by the current provider', async () => {
+        const chatgpt: BotProviderSummary = {
+            provider: 'chatgpt', label: 'ChatGPT', model: 'gpt-6-luna',
+            modelOptions: [
+                { id: 'gpt-6-luna', label: 'GPT-6 Luna', efforts: ['low', 'medium'] },
+                { id: 'gpt-6-astra', label: 'GPT-6 Astra', efforts: ['high'] },
+            ],
+            selectedModel: null, selectedEffort: null, effortOptions: ['low', 'medium'],
+        };
+
+        vi.mocked(getBotProvider)
+            .mockResolvedValue(chatgpt);
+        vi.mocked(saveProviderModel)
+            .mockResolvedValue({ ...chatgpt, selectedModel: 'gpt-6-luna', selectedEffort: 'low' });
+
+        render(<ProviderPicker botId="bot-1" onOpenSetupChat={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
+        fireEvent.change(await screen.findByRole('combobox', { name: 'Model' }), { target: { value: 'gpt-6-luna' } });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Effort' }), { target: { value: 'low' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save model' }));
+
+        await waitFor(() => {
+            expect(saveProviderModel)
+                .toHaveBeenCalledWith('bot-1', 'gpt-6-luna', 'low');
+        });
+        expect(await screen.findByText('gpt-6-luna'))
             .toBeTruthy();
     });
 
@@ -123,11 +157,11 @@ describe('ProviderPicker', () => {
         render(<ProviderPicker botId="bot-1" onOpenSetupChat={() => {}} />);
 
         fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
-        await screen.findByRole('menu');
+        await screen.findByRole('dialog', { name: 'AI provider settings' });
         fireEvent.keyDown(document, { key: 'Escape' });
 
         await waitFor(() => {
-            expect(screen.queryByRole('menu'))
+            expect(screen.queryByRole('dialog'))
                 .toBeNull();
         });
     });

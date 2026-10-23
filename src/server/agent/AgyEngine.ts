@@ -89,7 +89,7 @@ const REVIEW_FAILED_REASON = 'CloudBot could not review this call, so it was ref
 // agy prints this to stderr when it has no saved sign-in.
 const NOT_SIGNED_IN = /authentication required|not signed in|log in/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-// The owner's model choices hold Claude names, which agy does not take, so only a Gemini slug is passed on.
+// A saved Gemini model choice is a slug, which agy accepts directly.
 const MODEL_SLUG = /^gemini-[a-z0-9.-]{1,58}$/;
 const MODEL_LEVEL = /-(low|medium|high)$/;
 const AGY_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
@@ -250,8 +250,8 @@ class AgyEngine implements AgentRunner {
             readOwnToolCall,
         });
         const sessionId = request.sessionId !== undefined && UUID.test(request.sessionId) ? request.sessionId : undefined;
-        const model = toAgyModel(request.model, request.effort);
-        const effort = request.effort !== undefined && AGY_EFFORTS.has(request.effort) ? request.effort : undefined;
+        const model = toAgyModel(request.model ?? undefined, request.effort ?? undefined);
+        const effort = request.effort !== undefined && request.effort !== null && AGY_EFFORTS.has(request.effort) ? request.effort : undefined;
         const environment: Record<string, string> = {
             PATH: process.env.PATH ?? '',
             ...request.extraEnvironment,

@@ -14,6 +14,7 @@ import type { KeyHeader, KeyProxy } from '../vault/KeyProxy.ts';
 import type { Vault } from '../vault/Vault.ts';
 import { createCliSignIn } from './createCliSignIn.ts';
 import type { ProviderEngine } from './ProviderRunner.ts';
+import type { ProviderModelCatalogs } from './ProviderModelCatalogs.ts';
 import type { ProviderId } from './providerIds.ts';
 
 type AcpProviderId = Exclude<ProviderId, 'claude' | 'chatgpt'>;
@@ -67,6 +68,7 @@ interface AcpProvidersOptions {
     dataDir: string;
     // Local mode runs a CLI only when its absolute path is given, such as CLOUDBOT_GEMINI_PATH.
     localPaths: Partial<Record<AcpProviderId, string>>;
+    modelCatalogs?: ProviderModelCatalogs | undefined;
 }
 
 interface AcpProviders {
@@ -279,6 +281,7 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
             ? undefined
             : new AcpEngine({
                     label: spec.label, command, args, homeFor: () => home, loopback: options.loopback, launch,
+                    provider: spec.id, modelCatalogs: options.modelCatalogs,
                     authMethodId: spec.signIn.authMethodId, headlessAuth: spec.signIn.headlessAuth,
                     askModeId: spec.askModeId, protectedFolders: spec.protectedFolders,
                 });
@@ -289,6 +292,7 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
             ? undefined
             : new AcpEngine({
                     label: spec.label, command, args, homeFor: () => home, loopback: options.loopback, launch,
+                    provider: spec.id, modelCatalogs: options.modelCatalogs,
                     authMethodId: keySpec.authMethodId, headlessAuth: keySpec.headlessAuth,
                     environment: keySpec.environment(proxy.url), askModeId: spec.askModeId,
                     protectedFolders: spec.protectedFolders,
@@ -314,7 +318,8 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
 
             // The agent user cannot enter the data folder, so its check runs in /tmp, which holds nothing of the bots.
             const checkFolder = launch === undefined ? home : '/tmp';
-            const status = await signInEngine.isSignedIn('setup', checkFolder);
+            const modelRevision = options.modelCatalogs?.revision(spec.id);
+            const status = await signInEngine.isSignedIn('setup', checkFolder, modelRevision);
 
             checkedAt = status === true ? Date.now() : 0;
 

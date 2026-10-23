@@ -1,4 +1,3 @@
-import type { EffortLevel } from '../models/modelChoices.ts';
 import type { AgentEvent } from './AgentEvent.ts';
 import type { LoopbackTool } from './createLoopbackToolServer.ts';
 
@@ -9,7 +8,7 @@ interface AgentDefinition {
     model?: string | undefined;
     tools?: string[] | undefined;
     disallowedTools?: string[] | undefined;
-    effort?: EffortLevel | undefined;
+    effort?: string | undefined;
 }
 
 // A remote MCP server of the owner, written to the CLI as one entry of its MCP config.
@@ -38,10 +37,15 @@ interface TurnRequest {
     workspaceDir: string;
     prompt: string;
     sessionId?: string;
-    // An alias or full model id from the owner's model choices. Unset keeps the CLI default.
-    model?: string;
-    // The effort level of the owner's effort choices. Unset keeps the CLI default.
-    effort?: EffortLevel;
+    // A model id, or null for a provider default. Unset keeps the engine default.
+    model?: string | null;
+    // An effort id, or null for a provider default. Unset keeps the engine default.
+    effort?: string | null;
+    // Saved provider defaults let an engine restore a choice after its process restarts.
+    providerDefaultModel?: string | null;
+    providerDefaultEffort?: string | null;
+    // Rejects an engine catalog response that belongs to an older provider auth method.
+    providerModelRevision?: number;
     // Helper agents the main turn can hand work to. Each has its own model and tools.
     agents?: Record<string, AgentDefinition>;
     systemPrompt?: string;

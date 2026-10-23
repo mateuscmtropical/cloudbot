@@ -35,6 +35,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Choose a model and effort per bot for providers that report their model list. The header shows the model in use when known. Providers without a model list keep their default.
 - A bot list row turns blue when its bot sent a message you have not seen, and the preview shows that message right away. Before, the row did not change until you reloaded the page.
 - The Connect apps panel offers Linear and Notion, plus a custom app address. Connect starts the existing approval and sign-in flow in the selected bot chat. The panel shows each app's state and can remove it.
 - A message that another bot sent shows on the bot side of the chat, with the mascot and the name of the sending bot above the task. It no longer looks like a message from the owner. The bot list shows the sender and the task as the preview.

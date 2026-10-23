@@ -46,6 +46,7 @@ import { PROVIDER_TOOL_FULL_NAMES, createProviderTools } from '../providers/crea
 import { PROVIDER_LABELS, isProviderId } from '../providers/providerIds.ts';
 import { KEEP_WAITING_CHOICE_ID, buildProviderSwitchCard } from '../providers/providerSwitchCard.ts';
 import type { ProviderToolDependencies } from '../providers/createProviderTools.ts';
+import type { ProviderModelCatalogs } from '../providers/ProviderModelCatalogs.ts';
 import { LIMITS_SET_TOOL_FULL_NAME, createLimitTools } from '../limits/createLimitTools.ts';
 import { TurnDeadline } from '../limits/TurnDeadline.ts';
 import { STALL_MESSAGE, StallWatchdog } from './StallWatchdog.ts';
@@ -220,6 +221,7 @@ interface ChatServiceOptions {
     templateGallery?: TemplateGallery | undefined;
     // Lets a bot list the AI providers, connect one and switch its own. Unset leaves the tools out.
     providerTools?: ProviderToolDependencies | undefined;
+    providerModelCatalogs?: ProviderModelCatalogs | undefined;
     emailPasswordStore?: Pick<EmailAccountService, 'savePassword'> | undefined;
     emailAccountService?: EmailAccountService | undefined;
     emailSender?: SmtpEmailSender | undefined;
@@ -681,6 +683,7 @@ class ChatService {
     private readonly botSecrets: BotSecrets | undefined;
     private readonly templateGallery: TemplateGallery | undefined;
     private readonly providerTools: ProviderToolDependencies | undefined;
+    private readonly providerModelCatalogs: ProviderModelCatalogs | undefined;
     private readonly emailPasswordStore: Pick<EmailAccountService, 'savePassword'> | undefined;
     private readonly emailAccountService: EmailAccountService | undefined;
     private readonly emailSender: SmtpEmailSender | undefined;
@@ -766,6 +769,7 @@ class ChatService {
         this.botSecrets = options.botSecrets;
         this.templateGallery = options.templateGallery;
         this.providerTools = options.providerTools;
+        this.providerModelCatalogs = options.providerModelCatalogs;
         this.emailPasswordStore = options.emailPasswordStore;
         this.emailAccountService = options.emailAccountService;
         this.emailSender = options.emailSender;
@@ -3542,8 +3546,14 @@ class ChatService {
             const routineTools = this.routineStore === undefined ? [] : createRoutineTools(this.routineStore, botId);
             const taskTools = this.taskStore === undefined ? [] : createTaskTools(this.taskStore, botId, { onBlocked: task => this.noticeBlockedTask(botId, task), onBoard: (cards, hiddenCount) => this.postTaskBoard(botId, cards, hiddenCount) });
             const integrationTools = this.integrationService === undefined ? [] : createIntegrationTools(this.integrationService, botId);
-            const modelTools = this.modelStore === undefined ? [] : createModelTools(this.modelStore, botId);
             const providerTools = this.providerTools === undefined ? [] : createProviderTools(this.providerTools, botId);
+            const providerDependencies = this.providerTools;
+            const modelTools = this.modelStore === undefined
+                ? []
+                : createModelTools(this.modelStore, botId, {
+                        providerFor: providerDependencies === undefined ? undefined : () => providerDependencies.providerFor(botId),
+                        modelCatalogs: this.providerModelCatalogs,
+                    });
             const limitTools = this.limitStore === undefined ? [] : createLimitTools(this.limitStore, botId);
             const webhookTools = this.webhookTools(botId);
             const watchTools = this.watchStore === undefined ? [] : createWatchTools(this.watchStore, botId);

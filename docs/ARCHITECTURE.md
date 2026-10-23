@@ -766,7 +766,18 @@ methods never overwrite each other. `GET` also returns `effortLevels`. A `PUT`
 parses the models and the efforts before either is saved, so one bad level
 returns 400 and saves nothing. `models_set` takes the same fields as a partial
 update, and the bot is told to pick a sensible effort when the owner names a
-model only.
+model only. This Claude behavior is unchanged.
+
+For other providers, `bot_provider_models` stores a separate chat model and
+effort for each bot and provider. The header picker and `models_set` use the
+provider's in-memory catalog. The ACP engine reads `configOptions` or legacy
+`models` from `session/new` and `session/load`, then applies choices with
+`session/set_config_option` or the legacy `session/set_model` call before the
+prompt. Codex reads `model/list` from app-server and sends `model` on thread
+start or resume, then `model` and `effort` on turn start. A provider with no reported models keeps its default and has no model
+picker controls. The header shows the selected model or reported provider
+default when known. Catalog responses carry a revision so an in-flight response
+from before an authentication-method change cannot replace the current list.
 
 A turn sends its choice to the CLI `--model` option. A routine or webhook turn
 uses the `routines` choice and falls back to `chat`. The `source` of a turn
@@ -882,7 +893,7 @@ Limits:
 
 With any MCP server, Codex also offers `list_mcp_resources`, `list_mcp_resource_templates` and `read_mcp_resource`, with no approval. The loopback server has no resources, so they read nothing. On a gated address the app proxy refuses every `resources/*` request before it leaves CloudBot. A body that is not JSON and a batch with a tool call are refused too. Claude turns keep the plain address. The canary checks that a refused connected tool never runs, an allowed one runs once, and no resource request reaches the server.
 
-Not covered yet: commands that Codex starts in their own session may outlive a stop, as with the Claude engine (#165). Also the spending limit (Codex reports tokens, not dollars) and the owner's model choices, which name Claude models.
+Not covered yet: commands that Codex starts in their own session may outlive a stop, as with the Claude engine (#165). Also the spending limit (Codex reports tokens, not dollars).
 
 ### Codex sign-in
 
@@ -1639,8 +1650,7 @@ home under `<data dir>/providers/<id>/home`.
 
 Not covered yet: real turns on a signed-in account for each CLI, so the
 permission coverage of each one (whether it reads files without asking) is
-known only from its own docs. The spending limit and the model choices apply to
-Claude only.
+known only from its own docs. The spending limit applies to Claude only.
 
 ## Claude
 

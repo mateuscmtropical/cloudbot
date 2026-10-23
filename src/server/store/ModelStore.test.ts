@@ -85,4 +85,21 @@ describe('ModelStore', () => {
         expect(await store.getEfforts(bot.id))
             .toEqual({ chat: 'xhigh', routines: null, review: null, browsing: null, documents: null });
     });
+
+    it('keeps a separate model and effort for each bot and provider', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const otherBot = await botStore.create({ name: 'Ben', title: 'Assistant', description: '' });
+
+        await store.setProviderChoice(bot.id, 'chatgpt', { model: 'gpt-6-luna', effort: 'low', defaultModel: 'gpt-6-sol', defaultEffort: 'medium' });
+        await store.setProviderChoice(bot.id, 'opencode', { model: 'opencode/deepseek-v4.1-flash-free', effort: null, defaultModel: 'opencode/big-pickle', defaultEffort: 'medium' });
+
+        expect(await store.getProviderChoice(bot.id, 'chatgpt'))
+            .toEqual({ model: 'gpt-6-luna', effort: 'low', defaultModel: 'gpt-6-sol', defaultEffort: 'medium' });
+        expect(await store.getProviderChoice(bot.id, 'opencode'))
+            .toEqual({ model: 'opencode/deepseek-v4.1-flash-free', effort: null, defaultModel: 'opencode/big-pickle', defaultEffort: 'medium' });
+        expect(await store.getProviderChoice(bot.id, 'claude'))
+            .toBeUndefined();
+        expect(await store.getProviderChoice(otherBot.id, 'chatgpt'))
+            .toBeUndefined();
+    });
 });

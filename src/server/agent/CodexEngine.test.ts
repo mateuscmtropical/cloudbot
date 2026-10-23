@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from './AgentEvent.ts';
 import type { ToolCallDecision, TurnRequest } from './AgentRunner.ts';
 import { CodexEngine, buildCodexArguments } from './CodexEngine.ts';
+import { ProviderModelCatalogs } from '../providers/ProviderModelCatalogs.ts';
 import type { SpawnFunction } from './ClaudeCliEngine.ts';
 import type { LoopbackToolServer, LoopbackTurnGrant } from './createLoopbackToolServer.ts';
 
@@ -29,11 +30,13 @@ class FakeAppServer extends EventEmitter {
     pid = 4242;
     private readonly onTurn: (server: FakeAppServer) => void;
     private readonly failThreadStart: boolean;
+    private readonly modelList: unknown;
 
-    constructor(onTurn: (server: FakeAppServer) => void, failThreadStart = false) {
+    constructor(onTurn: (server: FakeAppServer) => void, failThreadStart = false, modelList: unknown = { data: [] }) {
         super();
         this.onTurn = onTurn;
         this.failThreadStart = failThreadStart;
+        this.modelList = modelList;
         let buffer = '';
 
         this.stdin.on('data', (chunk: Buffer) => {
@@ -73,6 +76,10 @@ class FakeAppServer extends EventEmitter {
             this.say({ id: message.id, result: { type: 'apiKey' } });
         }
 
+        if (message.method === 'model/list') {
+            this.say({ id: message.id, result: this.modelList });
+        }
+
         if (message.method === 'thread/start' || message.method === 'thread/resume') {
             if (this.failThreadStart) {
                 this.say({ id: message.id, error: { code: -32600, message: 'bad config' } });
@@ -102,7 +109,7 @@ function completeTurn(server: FakeAppServer): void {
     server.say({ method: 'turn/completed', params: { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed', error: null, durationMs: 50 } } });
 }
 
-function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThreadStart?: boolean; loopback?: LoopbackToolServer; environment?: Record<string, string>; apiKeyLogin?: string } = {}): {
+function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThreadStart?: boolean; loopback?: LoopbackToolServer; environment?: Record<string, string>; apiKeyLogin?: string; modelList?: unknown; modelCatalogs?: ProviderModelCatalogs } = {}): {
     engine: CodexEngine;
     servers: FakeAppServer[];
     spawnOptions: SpawnOptions[];
@@ -132,7 +139,7 @@ function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThre
     const signals: string[] = [];
     const home = join(mkdtempSync(join(tmpdir(), 'cloudbot-codex-test-')), 'codex-home');
     const spawnFunction: SpawnFunction = (_command, args, spawned) => {
-        const server = new FakeAppServer(onTurn, options.failThreadStart);
+        const server = new FakeAppServer(onTurn, options.failThreadStart, options.modelList);
 
         servers.push(server);
         spawnOptions.push(spawned);
@@ -147,6 +154,7 @@ function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThre
         loopback: options.loopback,
         callGates,
         apiKeyLogin: options.apiKeyLogin,
+        modelCatalogs: options.modelCatalogs,
         spawnFunction,
         signalProcess: (_child, action) => {
             signals.push(action);
@@ -185,7 +193,7 @@ describe('buildCodexArguments', () => {
         const login = servers[0]?.sent.find(message => message.method === 'account/login/start');
 
         expect(methods?.slice(0, 4))
-            .toEqual(['initialize', 'initialized', 'account/login/start', 'thread/start']);
+            .toEqual(['initialize', 'initialized', 'account/login/start', 'model/list']);
         expect(login?.params)
             .toEqual({ type: 'apiKey', apiKey: 'cloudbot-key-proxy' });
     });
@@ -226,6 +234,92 @@ describe('CodexEngine', () => {
             .toEqual({ threadId: 'thread-1', input: [{ type: 'text', text: 'hello', text_elements: [] }] });
         expect(spawnOptions[0]?.env)
             .toEqual({ PATH: '/usr/bin', HOME: `${home}-home`, CODEX_HOME: home });
+    });
+
+    it('loads the Codex catalog and sends the selected model and effort before the first prompt', async () => {
+        const catalogs = new ProviderModelCatalogs();
+        const modelList = {
+            data: [
+                { id: 'gpt-6-luna', model: 'gpt-6-luna', displayName: 'GPT-6 Luna', isDefault: false, defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'low', description: 'Fast' }, { reasoningEffort: 'medium', description: 'Balanced' }] },
+                { id: 'gpt-6-sol', model: 'gpt-6-sol', displayName: 'GPT-6 Sol', isDefault: true, defaultReasoningEffort: 'high', supportedReasoningEfforts: [{ reasoningEffort: 'high', description: 'Deep' }] },
+            ],
+            nextCursor: null,
+        };
+        const { engine, servers } = makeEngine(completeTurn, { modelList, modelCatalogs: catalogs });
+
+        await collect(engine.runTurn(makeRequest({ model: 'gpt-6-luna', effort: 'low' })));
+
+        const threadStart = servers[0]?.sent.find(message => message.method === 'thread/start');
+        const turnStart = servers[0]?.sent.find(message => message.method === 'turn/start');
+
+        expect(threadStart?.params)
+            .toMatchObject({ model: 'gpt-6-luna' });
+        expect(turnStart?.params)
+            .toMatchObject({ model: 'gpt-6-luna', effort: 'low' });
+        expect(catalogs.get('chatgpt')?.models.map(model => model.id))
+            .toEqual(['gpt-6-luna', 'gpt-6-sol']);
+    });
+
+    it('sends the Codex provider defaults when a saved model and effort are cleared', async () => {
+        const modelList = {
+            data: [
+                { id: 'gpt-6-luna', model: 'gpt-6-luna', displayName: 'GPT-6 Luna', isDefault: false, defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low', description: 'Fast' }] },
+                { id: 'gpt-6-sol', model: 'gpt-6-sol', displayName: 'GPT-6 Sol', isDefault: true, defaultReasoningEffort: 'high', supportedReasoningEfforts: [{ reasoningEffort: 'high', description: 'Deep' }] },
+            ],
+        };
+        const { engine, servers } = makeEngine(completeTurn, { modelList });
+
+        await collect(engine.runTurn(makeRequest({
+            model: null,
+            effort: null,
+            providerDefaultModel: 'gpt-6-sol',
+            providerDefaultEffort: 'high',
+        })));
+
+        expect(servers[0]?.sent.find(message => message.method === 'thread/start')?.params)
+            .toMatchObject({ model: 'gpt-6-sol' });
+        expect(servers[0]?.sent.find(message => message.method === 'turn/start')?.params)
+            .toMatchObject({ model: 'gpt-6-sol', effort: 'high' });
+    });
+
+    it('falls back to current Codex defaults when saved provider defaults are no longer offered', async () => {
+        const modelList = {
+            data: [
+                { id: 'gpt-6-nova', model: 'gpt-6-nova', displayName: 'GPT-6 Nova', isDefault: true, defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low', description: 'Fast' }] },
+            ],
+        };
+        const { engine, servers } = makeEngine(completeTurn, { modelList });
+
+        await collect(engine.runTurn(makeRequest({
+            model: null,
+            effort: null,
+            providerDefaultModel: 'gpt-6-retired',
+            providerDefaultEffort: 'high',
+        })));
+
+        expect(servers[0]?.sent.find(message => message.method === 'thread/start')?.params)
+            .toMatchObject({ model: 'gpt-6-nova' });
+        expect(servers[0]?.sent.find(message => message.method === 'turn/start')?.params)
+            .toMatchObject({ model: 'gpt-6-nova', effort: 'low' });
+    });
+
+    it('keeps the Codex default when model/list reports no choices', async () => {
+        const { engine, servers } = makeEngine(completeTurn, { modelList: { data: [] } });
+
+        await collect(engine.runTurn(makeRequest({ model: 'gpt-6-retired', effort: 'high' })));
+
+        const threadStart = servers[0]?.sent.find(message => message.method === 'thread/start');
+        const turnStart = servers[0]?.sent.find(message => message.method === 'turn/start');
+
+        expect(threadStart?.params)
+            .not
+            .toHaveProperty('model');
+        expect(turnStart?.params)
+            .not
+            .toHaveProperty('model');
+        expect(turnStart?.params)
+            .not
+            .toHaveProperty('effort');
     });
 
     it.skipIf(process.platform === 'win32')('makes the Codex home and the user home for the owner only', async () => {
