@@ -13,7 +13,7 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
     mistral: 'Mistral',
     qwen: 'Qwen',
     kimi: 'Kimi',
-    opencode: 'opencode',
+    opencode: 'OpenCode',
 };
 
 function isProviderId(value: string): value is ProviderId {

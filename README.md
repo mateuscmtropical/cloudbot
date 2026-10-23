@@ -108,7 +108,7 @@ with Claude.
 | Mistral | Mistral Vibe | Mistral AI Studio account, link | Mistral AI Studio |
 | Qwen | Qwen Code | none | Alibaba Cloud Model Studio |
 | Kimi | Kimi Code | Kimi account, device code | Moonshot AI |
-| opencode | opencode | free models, no sign-in | none |
+| OpenCode | opencode | free models, no sign-in | none |
 
 - One connection serves every bot. Each bot runs on one provider, and you
   switch it by asking the bot. The next message starts a new conversation on

@@ -231,7 +231,7 @@ class SetupConversation {
         const otherOptions = ids.map((id) => {
             const signIn = this.signInById(id);
             const apiKey = this.apiKeyById(id);
-            // A provider with only a sign-in keeps its own wording, such as opencode free models.
+            // A provider with only a sign-in keeps its own wording, such as the free models of OpenCode.
             const onlySignInLabel = apiKey === undefined ? signIn?.optionLabel : undefined;
             const label = onlySignInLabel ?? signIn?.label ?? apiKey?.label ?? id;
 
