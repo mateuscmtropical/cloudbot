@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotSummary } from '../../shared/chatTypes.ts';
@@ -25,6 +25,20 @@ describe('BotList', () => {
 
         expect(labels)
             .toEqual(['People', 'Search bots', 'New bot']);
+    });
+
+    it('shows the Account button only when the CloudBot has an account to manage', () => {
+        const props = { bots: BOTS, selectedBotId: undefined, selectedMascotState: 'idle' as const, channels: [], selectedChannelId: undefined, isOpen: false, onSelectBot: vi.fn(), onSelectChannel: vi.fn(), onNewBot: vi.fn(), onConnectApps: vi.fn(), onPeople: vi.fn() };
+        const onAccount = vi.fn();
+        const { rerender } = render(<BotList {...props} />);
+
+        expect(screen.queryByRole('button', { name: 'Account' }))
+            .toBeNull();
+        rerender(<BotList {...props} onAccount={onAccount} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+
+        expect(onAccount)
+            .toHaveBeenCalledTimes(1);
     });
 
     it('shows a mascot in each bot, in the bot color and shape', () => {

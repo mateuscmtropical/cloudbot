@@ -26,6 +26,7 @@ import { DISABLE_NOTIFICATIONS_CHOICE_ID, ENABLE_NOTIFICATIONS_CHOICE_ID } from 
 import { ADD_PASSKEY_CHOICE_ID, REMOVE_PASSKEY_CHOICE_ID } from '../shared/passkeyTypes.ts';
 import { addPasskey, describePasskeyResult, removePasskey } from './passkeyClient.ts';
 import { SignInScreen } from './components/SignInScreen.tsx';
+import { AccountPanel } from './components/AccountPanel.tsx';
 import { PeopleHubHint } from './components/PeopleHubHint.tsx';
 import { PeoplePanel } from './components/PeoplePanel.tsx';
 import { getHubRole } from './peopleClient.ts';
@@ -148,6 +149,7 @@ function App(): ReactElement {
     const [isBotListOpen, setIsBotListOpen] = useState(false);
     const [hubRole, setHubRole] = useState<HubRole>('standalone');
     const [isPeopleOpen, setIsPeopleOpen] = useState(false);
+    const [isAccountOpen, setIsAccountOpen] = useState(false);
     // The connected remote MCP servers panel, opened from the sidebar.
     const [isConnectAppsOpen, setIsConnectAppsOpen] = useState(false);
     const [errorText, setErrorText] = useState<string | undefined>(undefined);
@@ -1181,10 +1183,21 @@ function App(): ReactElement {
                 onRenameBot={handleRenameBot}
                 onConnectApps={() => {
                     setIsPeopleOpen(false);
+                    setIsAccountOpen(false);
                     setIsConnectAppsOpen(true);
                 }}
+                {...(hubRole === 'standalone'
+                    ? {}
+                    : {
+                            onAccount: () => {
+                                setIsConnectAppsOpen(false);
+                                setIsPeopleOpen(false);
+                                setIsAccountOpen(true);
+                            },
+                        })}
                 onPeople={() => {
                     setIsConnectAppsOpen(false);
+                    setIsAccountOpen(false);
                     setIsPeopleOpen(true);
                 }}
             />
@@ -1216,6 +1229,15 @@ function App(): ReactElement {
                     : (
                             <p className="error-banner" role="alert">{errorText}</p>
                         )}
+                {isAccountOpen
+                    ? (
+                            <AccountPanel
+                                onClose={() => {
+                                    setIsAccountOpen(false);
+                                }}
+                            />
+                        )
+                    : null}
                 {isPeopleOpen && hubRole === 'owner'
                     ? (
                             <PeoplePanel

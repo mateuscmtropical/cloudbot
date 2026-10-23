@@ -292,6 +292,26 @@ describe('createFrontDoorRoutes', () => {
             .toBe(await inactiveResponse.text());
     });
 
+    it('accepts a capitalized name on the apex form and shows a wrong name on the same page', async () => {
+        const harness = await createHarness({ domain: 'localhost', secure: false });
+
+        harnesses.push(harness);
+        const capitalized = await harness.app.request('http://localhost:3200/__hub/redirect?name=%20Maria%20');
+        const wrong = await harness.app.request('http://localhost:3200/__hub/redirect?name=Nobody');
+        const wrongText = await wrong.text();
+
+        expect(capitalized.headers.get('location'))
+            .toBe('http://maria.localhost:3200/');
+        expect(wrong.status)
+            .toBe(404);
+        expect(wrongText)
+            .toContain('We could not find that name.');
+        expect(wrongText)
+            .toContain('value="Nobody"');
+        expect(wrongText)
+            .toContain('<form');
+    });
+
     it('signs a person in with a secure host-only cookie and the after-login path', async () => {
         const harness = await createHarness({ afterLogin: () => '/offer' });
 
@@ -485,6 +505,58 @@ describe('createFrontDoorRoutes', () => {
             .toBe(PERSON_NAME);
         expect(sessions.find(secondSession, harness.now()))
             .toBeUndefined();
+    });
+
+    it('lets a signed in person change the password with the current one and ends the other sessions', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        const loginResponse = await login(harness.app);
+        const cookie = cookieFrom(loginResponse);
+        const otherSession = new SqliteLoginSessions(harness.database)
+            .create(PERSON_NAME, harness.now());
+        const sendChange = (current: string, password: string): Promise<Response> => Promise.resolve(harness.app.request(`https://${PERSON_NAME}.example.test/__hub/password`, {
+            method: 'POST',
+            headers: { 'cookie': cookie, 'origin': `https://${PERSON_NAME}.example.test`, 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ current, password, confirmation: password }),
+        }));
+        const page = await harness.app.request(`https://${PERSON_NAME}.example.test/__hub/password`, { headers: { cookie } });
+        const wrong = await sendChange('not the password', 'new password value');
+        const changed = await sendChange(INITIAL_PASSWORD, 'new password value');
+        const sessions = new SqliteLoginSessions(harness.database);
+
+        expect(await page.text())
+            .toContain('Current password');
+        expect(wrong.status)
+            .toBe(401);
+        expect(await wrong.text())
+            .toContain('The current password is wrong.');
+        expect(changed.headers.get('location'))
+            .toBe('/');
+        expect(sessions.find(otherSession, harness.now()))
+            .toBeUndefined();
+        expect((await login(harness.app, 'new password value')).status)
+            .toBe(303);
+    });
+
+    it('locks the password change after five wrong current passwords', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        const cookie = cookieFrom(await login(harness.app));
+        const sendChange = (current: string): Promise<Response> => Promise.resolve(harness.app.request(`https://${PERSON_NAME}.example.test/__hub/password`, {
+            method: 'POST',
+            headers: { 'cookie': cookie, 'origin': `https://${PERSON_NAME}.example.test`, 'content-type': 'application/x-www-form-urlencoded', 'x-forwarded-for': '203.0.113.9' },
+            body: new URLSearchParams({ current, password: 'new password value', confirmation: 'new password value' }),
+        }));
+
+        await Promise.all([1, 2, 3, 4, 5].map(() => sendChange('wrong')));
+        const locked = await sendChange(INITIAL_PASSWORD);
+
+        expect(locked.status)
+            .toBe(401);
+        expect(await locked.text())
+            .toContain('Too many wrong tries.');
     });
 
     it('starts a stopped instance in the background and shows the busy page after a budget refusal', async () => {
