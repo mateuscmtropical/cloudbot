@@ -16,6 +16,17 @@ describe('BotList', () => {
         cleanup();
     });
 
+    it('orders the header buttons People, Search bots, New bot', () => {
+        const { container } = render(
+            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} onPeople={vi.fn()} />,
+        );
+        const labels = Array.from(container.querySelectorAll('.bot-list-header button'))
+            .map(button => button.getAttribute('aria-label'));
+
+        expect(labels)
+            .toEqual(['People', 'Search bots', 'New bot']);
+    });
+
     it('shows a mascot in each bot, in the bot color and shape', () => {
         const { container } = render(
             <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} onPeople={vi.fn()} />,
