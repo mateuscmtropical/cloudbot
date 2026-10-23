@@ -7,8 +7,8 @@ set -eu
 provider="${1:-}"
 action="${2:-}"
 
-if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "login" ] && [ "$action" != "status" ] && [ "$action" != "agy" ] && [ "$action" != "agy-review" ]; }; then
-    echo "cloudbot-provider takes a provider and acp, agy, agy-review, login or status." >&2
+if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "acp-key-zen" ] && [ "$action" != "acp-key-go" ] && [ "$action" != "login" ] && [ "$action" != "status" ] && [ "$action" != "agy" ] && [ "$action" != "agy-review" ]; }; then
+    echo "cloudbot-provider takes a provider and acp, an API-key action, agy, agy-review, login or status." >&2
     exit 2
 fi
 
@@ -95,9 +95,38 @@ case "$provider:$action" in
     kimi:acp) exec /usr/local/bin/kimi acp ;;
     kimi:login) exec /usr/local/bin/kimi login ;;
     qwen:acp) exec /usr/local/bin/qwen --acp --auth-type openai ;;
-    # opencode asks before every tool, so each call goes to the CloudBot review.
+    # OpenCode asks before every tool, so each call goes to the CloudBot review.
     opencode:acp)
-        export OPENCODE_CONFIG_CONTENT='{"permission":{"*":"ask"},"autoupdate":false}'
+        export OPENCODE_CONFIG_CONTENT='{"permission":{"*":"ask"},"autoupdate":false,"enabled_providers":["opencode"]}'
+        exec /usr/local/bin/opencode acp
+        ;;
+    opencode:acp-key-zen|opencode:acp-key-go)
+        case "${CLOUDBOT_KEY_PROXY_URL:-}" in
+            http://127.0.0.1:[0-9]*) ;;
+            *)
+                echo "cloudbot-provider needs the key proxy address." >&2
+                exit 2
+                ;;
+        esac
+        port="${CLOUDBOT_KEY_PROXY_URL#http://127.0.0.1:}"
+        case "$port" in
+            ''|*[!0-9]*)
+                echo "cloudbot-provider needs the key proxy address." >&2
+                exit 2
+                ;;
+        esac
+        if [ "${OPENCODE_API_KEY:-}" != "cloudbot-key-proxy" ]; then
+            echo "cloudbot-provider needs the OpenCode key placeholder." >&2
+            exit 2
+        fi
+        case "$action" in
+            acp-key-zen)
+                export OPENCODE_CONFIG_CONTENT="{\"permission\":{\"*\":\"ask\"},\"autoupdate\":false,\"enabled_providers\":[\"cloudbot-opencode-zen\"],\"model\":\"cloudbot-opencode-zen/cloudbot-default\",\"providers\":{\"cloudbot-opencode-zen\":{\"env\":[\"OPENCODE_API_KEY\"],\"package\":\"@opencode/ai/providers/openai-compatible\",\"settings\":{\"baseURL\":\"http://127.0.0.1:$port/inference/openai/v1\"},\"models\":{\"cloudbot-default\":{\"name\":\"DeepSeek V4.1 Flash\",\"modelID\":\"deepseek-v4.1-flash\"}}}}}"
+                ;;
+            acp-key-go)
+                export OPENCODE_CONFIG_CONTENT="{\"permission\":{\"*\":\"ask\"},\"autoupdate\":false,\"enabled_providers\":[\"cloudbot-opencode-go\"],\"model\":\"cloudbot-opencode-go/cloudbot-default\",\"providers\":{\"cloudbot-opencode-go\":{\"env\":[\"OPENCODE_API_KEY\"],\"package\":\"@opencode/ai/providers/openai-compatible\",\"settings\":{\"baseURL\":\"http://127.0.0.1:$port/inference/go/openai/v1\"},\"models\":{\"cloudbot-default\":{\"name\":\"DeepSeek V4.1 Flash\",\"modelID\":\"deepseek-v4.1-flash\"}}}}}"
+                ;;
+        esac
         exec /usr/local/bin/opencode acp
         ;;
     *)

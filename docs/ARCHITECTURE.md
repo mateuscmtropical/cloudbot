@@ -1499,10 +1499,12 @@ API credentials are removed before constructing the runner environment.
 
 The same conversation connects the other providers. The first card has one
 choice per installed provider. A provider with both ways asks Subscription or
-API key next, and one with a single way starts it. A choice that starts a
-sign-in carries `opensLink`, so the web page opens an empty tab inside the tap
-and puts the link in it when the link message arrives. If the CLI prints a
-refused code after the owner pasted one, the sign-in is stopped and fails.
+API key next, and one with a single way starts it. OpenCode asks whether to use
+free models or an account key, then asks whether the key is for Zen or Go. A
+choice that starts a sign-in carries `opensLink`, so the web page opens an
+empty tab inside the tap and puts the link in it when the link message arrives.
+If the CLI prints a refused code after the owner pasted one, the sign-in is
+stopped and fails.
 A CLI sign-in posts the link and the device code that the CLI prints, or a code
 field when the provider's page shows a code to paste back (Gemini). A key goes
 through the secure form, is checked with one request to the provider's model
@@ -1572,8 +1574,10 @@ other provider runs on `AcpEngine`, which speaks the Agent Client Protocol
   replayed history is dropped.
 - A stop sends `session/cancel`, then TERM and KILL to the process group.
 
-Each CLI was run in a throwaway container, up to its sign-in link and, for a
-key, a call through the key proxy to a fake upstream that logged the header:
+The provider integration checks used throwaway containers, fake keys and fake
+upstreams. OpenCode 2.1.2 was checked on Windows in an isolated home with a
+local fake server. It returned ACP model options and sent requests to that
+server for Zen and Go:
 
 | Provider | Command | Sign-in | Key route |
 | --- | --- | --- | --- |
@@ -1584,7 +1588,20 @@ key, a call through the key proxy to a fake upstream that logged the header:
 | Mistral | `vibe-acp` | `acp-login.js` runs `authenticate browser-auth`, the link goes through `BROWSER` | `MISTRAL_API_KEY` and `VIBE_PROVIDERS` with the proxy as `api_base` |
 | Qwen | `qwen --acp --auth-type openai` | none, the free account sign-in was removed | `OPENAI_API_KEY` and `OPENAI_BASE_URL` at DashScope's compatible mode |
 | Kimi | `kimi acp` | `kimi login` | `KIMI_MODEL_NAME`, `KIMI_MODEL_API_KEY` and `KIMI_MODEL_BASE_URL` |
-| OpenCode | `opencode acp` | none, free models only | none |
+| OpenCode | `opencode acp` | free models need no sign-in | Custom provider IDs `cloudbot-opencode-zen` and `cloudbot-opencode-go` use `OPENCODE_API_KEY` and `OPENCODE_CONFIG_CONTENT` at the local key proxy |
+
+OpenCode account keys come from `opencode.ai/auth`. The key check requests
+`/inference/v1/models` for Zen or `/inference/go/v1/models` for Go. Turns send
+requests through the proxy at `/inference/openai/v1` for Zen or
+`/inference/go/openai/v1` for Go. The wrapper passes only the placeholder key
+and proxy address through sudo, then creates the OpenCode 2 provider config
+with `OPENCODE_CONFIG_CONTENT`. OpenCode's official provider IDs are `opencode`
+for Zen and `opencode-go` for Go. CloudBot uses separate custom IDs for account
+mode, so an existing saved credential under either official ID cannot replace
+the proxy placeholder. The config defines a custom `cloudbot-default` model
+mapped to DeepSeek V4.1 Flash. The installed OpenCode 2.1.2 CLI stores its own
+credentials in SQLite. It imports the legacy `auth.json` format, but CloudBot
+does not sign in to OpenCode or write that file.
 
 Google ended Gemini CLI sign-ins for personal accounts and points them to the
 Antigravity CLI (`agy`), so a Gemini subscription runs on `AgyEngine`, not on

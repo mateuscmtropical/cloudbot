@@ -130,7 +130,7 @@ with Claude.
 | Mistral | Mistral Vibe | Mistral AI Studio account, link | Mistral AI Studio |
 | Qwen | Qwen Code | none | Alibaba Cloud Model Studio |
 | Kimi | Kimi Code | Kimi account, device code | Moonshot AI |
-| OpenCode | opencode | free models, no sign-in | none |
+| OpenCode | opencode | free models, no sign-in | OpenCode Zen or Go |
 
 - One connection serves every bot. Each bot runs on one provider, and you
   switch it by asking the bot. The next message starts a new conversation on
@@ -192,8 +192,10 @@ address, and the Docker image sets `HOST=0.0.0.0`.
 
 After opening the owner link, the first bot asks which provider to connect.
 This is a scripted conversation that works before any provider is connected.
-Pick a provider, then pick Subscription or API key. A provider with only one
-way skips the second question. On the web page, a sign-in opens in a new tab.
+Pick a provider, then pick Subscription or API key. OpenCode asks whether to
+use free models or an account key, then whether the account is Zen or Go. A
+provider with only one way skips the second question. On the web page, a
+sign-in opens in a new tab.
 
 - **Claude subscription:** open the sign-in link, sign in on Anthropic's page
   and paste its code into the code field. CloudBot passes it to the official
@@ -205,7 +207,8 @@ so and shows the providers again. The sign-in is checked when the CLI ends.
 - **API key:** paste the key into the secure form. CloudBot sends one cheap
   request to the provider to check it, then stores it only in the encrypted
   vault. The Anthropic key is saved without that check. Turns use the key
-  through a local key proxy, and the agent receives a dummy key.
+  through a local key proxy, and the agent receives a dummy key. OpenCode
+  account keys come from `opencode.ai/auth`.
 
 Setup remembers your mode and step across restarts. An interrupted subscription
 login gets a fresh link and code field because the old login process has ended.

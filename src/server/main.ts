@@ -370,7 +370,7 @@ let chatgptCheckedAt = 0;
 // The way each provider was connected last, a sign-in or an API key. A turn uses that way.
 const methodFor = async (provider: ProviderId): Promise<ProviderMethod | undefined> => {
     const saved = await settings.get(`provider.method.${provider}`);
-    const method = saved === 'apiKey' || saved === 'signIn' ? saved : undefined;
+    const method = saved === 'apiKey' || saved === 'apiKeyZen' || saved === 'apiKeyGo' || saved === 'signIn' ? saved : undefined;
 
     providerModelCatalogs.useMethod(provider, method);
 
