@@ -22,7 +22,6 @@ interface BotListProps {
     channels: ChannelSummary[];
     selectedChannelId: string | undefined;
     isOpen: boolean;
-    isPeopleAvailable: boolean;
     onSelectBot: (botId: string, sourceMascot: HTMLElement | null, rowEdge: MascotHopPoint) => void;
     onSelectChannel: (channelId: string) => void;
     onNewBot: () => void;
@@ -32,7 +31,7 @@ interface BotListProps {
     onRenameBot?: ((botId: string, name: string) => Promise<string | undefined>) | undefined;
 }
 
-function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, isPeopleAvailable, onSelectBot, onSelectChannel, onNewBot, onConnectApps, onPeople, onRenameBot }: BotListProps): ReactElement {
+function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, onSelectBot, onSelectChannel, onNewBot, onConnectApps, onPeople, onRenameBot }: BotListProps): ReactElement {
     const [renamingBotId, setRenamingBotId] = useState<string | undefined>(undefined);
     const lastTapRef = useRef<Tap | undefined>(undefined);
     const className = isOpen ? 'bot-list is-open' : 'bot-list';
@@ -46,17 +45,13 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
                         <path d="M20 20l-4.5-4.5" />
                     </svg>
                 </button>
-                {isPeopleAvailable
-                    ? (
-                            <button type="button" className="icon-button" aria-label="People" onClick={onPeople}>
-                                <svg viewBox="0 0 24 24" aria-hidden="true">
-                                    <circle cx="9" cy="8" r="3" />
-                                    <path d="M3.5 19v-1.5a5.5 5.5 0 0 1 11 0V19z" />
-                                    <path d="M16 5.5a3 3 0 0 1 0 5.8M17 14a5 5 0 0 1 3.5 4.8V19h-4" />
-                                </svg>
-                            </button>
-                        )
-                    : null}
+                <button type="button" className="icon-button" aria-label="People" onClick={onPeople}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="9" cy="8" r="3" />
+                        <path d="M3.5 19v-1.5a5.5 5.5 0 0 1 11 0V19z" />
+                        <path d="M16 5.5a3 3 0 0 1 0 5.8M17 14a5 5 0 0 1 3.5 4.8V19h-4" />
+                    </svg>
+                </button>
                 <button type="button" className="icon-button" aria-label="New bot" onClick={onNewBot}>
                     <PlusIcon />
                 </button>

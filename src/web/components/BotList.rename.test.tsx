@@ -19,7 +19,6 @@ function renderList(onRenameBot?: (botId: string, name: string) => Promise<strin
             channels={[]}
             selectedChannelId={undefined}
             isOpen={false}
-            isPeopleAvailable={false}
             onSelectBot={vi.fn()}
             onSelectChannel={vi.fn()}
             onNewBot={vi.fn()}

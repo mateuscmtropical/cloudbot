@@ -25,6 +25,7 @@ import { DISABLE_NOTIFICATIONS_CHOICE_ID, ENABLE_NOTIFICATIONS_CHOICE_ID } from 
 import { ADD_PASSKEY_CHOICE_ID, REMOVE_PASSKEY_CHOICE_ID } from '../shared/passkeyTypes.ts';
 import { addPasskey, describePasskeyResult, removePasskey } from './passkeyClient.ts';
 import { SignInScreen } from './components/SignInScreen.tsx';
+import { PeopleHubHint } from './components/PeopleHubHint.tsx';
 import { PeoplePanel } from './components/PeoplePanel.tsx';
 import { listPeople } from './peopleClient.ts';
 
@@ -1127,7 +1128,6 @@ function App(): ReactElement {
                 channels={channels}
                 selectedChannelId={selectedChannelId}
                 isOpen={isBotListOpen}
-                isPeopleAvailable={isPeopleAvailable}
                 onSelectBot={handleSelectBot}
                 onSelectChannel={handleSelectChannel}
                 onNewBot={handleNewBot}
@@ -1168,9 +1168,18 @@ function App(): ReactElement {
                     : (
                             <p className="error-banner" role="alert">{errorText}</p>
                         )}
-                {isPeopleOpen
+                {isPeopleOpen && isPeopleAvailable
                     ? (
                             <PeoplePanel
+                                onClose={() => {
+                                    setIsPeopleOpen(false);
+                                }}
+                            />
+                        )
+                    : null}
+                {isPeopleOpen && !isPeopleAvailable
+                    ? (
+                            <PeopleHubHint
                                 onClose={() => {
                                     setIsPeopleOpen(false);
                                 }}

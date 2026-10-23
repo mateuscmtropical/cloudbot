@@ -85,7 +85,7 @@ describe('App sign-in', () => {
 });
 
 describe('App bot list', () => {
-    it('hides the people icon when the people route answers 404', async () => {
+    it('shows the hub hint in the people panel when the people route answers 404', async () => {
         const notFoundError = new RequestFailedError('/api/people', 404);
 
         Object.defineProperty(notFoundError, 'status', { value: 404 });
@@ -102,7 +102,12 @@ describe('App bot list', () => {
             expect(listPeople)
                 .toHaveBeenCalledTimes(1);
         });
-        expect(screen.queryByRole('button', { name: 'People' }))
+
+        fireEvent.click(screen.getByRole('button', { name: 'People' }));
+
+        expect(await screen.findByText(/install CloudBot as a hub/))
+            .toBeTruthy();
+        expect(screen.queryByRole('textbox'))
             .toBeNull();
     });
 
