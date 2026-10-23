@@ -15,10 +15,13 @@ import type { PasskeyService } from './access/PasskeyService.ts';
 import { readPublicBaseUrl } from './access/setupLinkUrl.ts';
 import type { PeopleAdmin } from './people/PeopleAdmin.ts';
 import { createPeopleRoutes } from './people/createPeopleRoutes.ts';
+import { readHubConfig } from './people/hubConfig.ts';
 
 import { createChannelRoutes } from './channels/createChannelRoutes.ts';
 import { createChatRoutes } from './chat/createChatRoutes.ts';
 import type { ChatService } from './chat/ChatService.ts';
+import { createHubActivityRoutes } from './hub/createHubActivityRoutes.ts';
+import { readHubActivitySources } from './hub/readHubActivitySources.ts';
 import type { BotStore } from './store/BotStore.ts';
 import type { ChannelStore } from './store/ChannelStore.ts';
 import { createScreenRoutes } from './desktop/createScreenRoutes.ts';
@@ -139,6 +142,7 @@ function createApp(options: AppOptions): Hono {
     const webRoot = options.webRoot ?? DEFAULT_WEB_ROOT;
     const webhookRefusals = options.webhookRefusals ?? new WebhookRefusalLog();
     const webhookDeliveries = options.webhookDeliveries ?? new DeliveryMemory();
+    const hubMode = readHubConfig(process.env) !== undefined;
 
     const publicHost = readPublicHost(options.publicUrl);
     const securityHeaders = createSecurityHeaders(publicHost);
@@ -193,6 +197,22 @@ function createApp(options: AppOptions): Hono {
         const peopleRoutes = createPeopleRoutes({ peopleAdmin: options.peopleAdmin });
 
         app.route('/', peopleRoutes);
+    }
+
+    if (hubMode) {
+        const activityRoutes = createHubActivityRoutes({
+            readSources: () => readHubActivitySources({
+                ...(options.botStore === undefined ? {} : { botStore: options.botStore }),
+                ...(options.chatService === undefined ? {} : { chatService: options.chatService }),
+                ...(options.routineStore === undefined ? {} : { routineStore: options.routineStore }),
+                ...(options.watchStore === undefined ? {} : { watchStore: options.watchStore }),
+                ...(options.webhookStore === undefined ? {} : { webhookStore: options.webhookStore }),
+                ...(options.whatsappStore === undefined ? {} : { whatsappStore: options.whatsappStore }),
+                isReady: options.isReady ?? (() => true),
+            }),
+        });
+
+        app.route('/', activityRoutes);
     }
 
     // Chat routes sit behind the session check. The web fallback would otherwise answer them.

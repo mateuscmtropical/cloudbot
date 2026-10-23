@@ -1284,6 +1284,20 @@ class ChatService {
         return this.runningTurns.has(botId) || this.usageWaitTimers.has(botId) || waitingTurns.length > 0;
     }
 
+    isTelegramConnected(botId: string): boolean {
+        return this.telegram?.isConnected?.(botId) ?? false;
+    }
+
+    async hasConfiguredEmailAccount(botId: string): Promise<boolean> {
+        if (this.emailAccountService === undefined) {
+            return false;
+        }
+
+        const account = await this.emailAccountService.getAccount(botId);
+
+        return account !== undefined;
+    }
+
     // The webhook messages waiting in the bot's queue, not counting the one running. Webhook calls are refused past a cap.
     countQueuedWebhookTurns(botId: string): number {
         const waitingTurns = this.queuedTurns.get(botId) ?? [];
