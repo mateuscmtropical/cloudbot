@@ -62,8 +62,16 @@ jobs:
           CODEX_CANARY_PATH="$CODEX_CANARY_PATH" pnpm canary:codex
 
   docker:
-    name: Build image and check isolation
-    runs-on: ubuntu-latest
+    name: Build image and check isolation (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86-64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
 
@@ -106,8 +114,16 @@ jobs:
       - run: shellcheck docker/install.sh docker/cloudbot docker/check-container.sh docker/cloudbot-desktop docker/cloudbot-remove-workspace docker/cloudbot-read-memory docker/cloudbot-end-turn
 
   install:
-    name: Run install.sh on a fresh runner
-    runs-on: ubuntu-latest
+    name: Run install.sh on a fresh runner (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86-64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
 

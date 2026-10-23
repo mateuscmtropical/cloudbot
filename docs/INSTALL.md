@@ -8,6 +8,8 @@ instance.
 
 - A Debian 12 or newer, or Ubuntu 22.04 or newer VPS with a public IPv4 address
   and root or sudo access.
+- An x86-64 or an ARM (arm64) processor. CI builds and installs CloudBot on both,
+  for example on Oracle Always Free ARM machines.
 - A domain you control for production. You can instead use a free
   `<ip-with-dashes>.sslip.io` name when you do not provide one.
 - TCP ports 80 and 443 open to the VPS. Caddy uses port 80 for certificate
