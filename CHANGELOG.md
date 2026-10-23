@@ -21,6 +21,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- The Connect apps panel offers Linear and Notion, plus a custom app address. Connect starts the existing approval and sign-in flow in the selected bot chat. The panel shows each app's state and can remove it.
 - A message that another bot sent shows on the bot side of the chat, with the mascot and the name of the sending bot above the task. It no longer looks like a message from the owner. The bot list shows the sender and the task as the preview.
 - A bot is renamed with a double click, or a double tap on a phone, on its name in the header of the chat or in the bot list. Enter saves and Escape cancels. The name follows the same rules as when the bot renames itself.
 - The header of the chat shows the AI provider and the model of the bot. A tap opens the providers of the server. A connected one switches the bot, and the next message runs on it. One that is not connected has a Connect button that starts its sign-in in the setup chat.
