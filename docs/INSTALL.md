@@ -57,20 +57,31 @@ The special domain `localhost` is for local checks. It uses plain HTTP at
 
 ## Install on Windows
 
-CloudBot runs on Linux, so on Windows it runs inside WSL 2. The same stack
-runs there, and a Windows browser opens it.
+CloudBot runs on Linux, so on Windows it runs inside WSL 2. This works on
+Windows 10 and 11, on x64 and on ARM. WSL picks the Ubuntu build for the
+processor.
 
-1. Open PowerShell as administrator and run `wsl --install -d Ubuntu`. Restart
-   Windows if it asks, then open Ubuntu from the Start menu and create the
-   Linux user.
-2. In the Ubuntu window, run the installer with the `localhost` domain:
+The installer is a PowerShell script. Open PowerShell as administrator and run:
 
-   ```sh
-   curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash -s -- localhost owner
-   ```
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.ps1 -OutFile install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -OwnerName maria
+```
 
-3. Open `http://owner.localhost` in your Windows browser and sign in with the
-   first password the installer printed.
+The script installs the Ubuntu distro when it is missing, turns on systemd,
+and runs `install.sh` with the `localhost` domain. Windows may ask for a
+restart after it installs WSL. Run the script again after the restart. At the
+end it prints the owner address and the first password.
+
+Without the script, do the same by hand. Run `wsl --install -d Ubuntu` in an
+administrator PowerShell, open Ubuntu, and run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash -s -- localhost owner
+```
+
+Then open `http://owner.localhost` in your Windows browser and sign in with the
+first password the installer printed.
 
 What to expect:
 
@@ -81,7 +92,9 @@ What to expect:
 - WSL limits its memory to half of the computer's RAM by default. The default
   of 2560 MB for each person fits, but a computer with 8 GB of RAM fits one or
   two people.
-- Run every `cloudbot` command inside Ubuntu, not in PowerShell.
+- Run every `cloudbot` command inside Ubuntu, not in PowerShell. From PowerShell,
+  use `wsl -d Ubuntu -u root -- cloudbot status`.
+
 ## Add people and set limits
 
 Open the People panel in the owner's CloudBot to add, deactivate, reactivate or
