@@ -164,3 +164,12 @@ The hub stores each passkey in the `hub_passkeys` table, keyed by person and cre
 The front door passes the tenant of the request, the signed in person, the session check, the session cookie writer, the same-origin check and a page renderer. It appends `passkeyLoginExtras()` to the sign-in page and connects `createAfterLogin` to the redirect after a password sign-in. The offer appears only for a person without passkeys, and "Not now" stores a skip cookie for 180 days.
 
 A passkey proves who the person is. The front door still checks that the person is active before it starts the session.
+## Bot tools for people
+
+The bots of the owner get five tools when the instance has the hub people admin client: `person_list`, `person_add`, `person_deactivate`, `person_reactivate` and `person_reset_password`. A member's instance has none of them. No tool deletes a person. Deleting stays in the panel, where the owner types the name.
+
+`person_add`, `person_deactivate` and `person_reset_password` each show an approval card with the name of the person. The general tool review does not ask a second time for them.
+
+The tools never return a password. After an add or a reset, the server sends a `personCredentials` event to the web app of the owner, which shows the address and the password in a notice with Copy and Hide buttons. The event is not a chat message, so it is not stored and not logged. When no web app is open, the server keeps the event in memory until one subscribes. A restart of the server drops an undelivered event, and the owner resets the password from the panel.
+
+A failed call returns a short generic result to the model. The details of the hub error stay out of the chat.

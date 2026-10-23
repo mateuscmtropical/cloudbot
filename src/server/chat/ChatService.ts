@@ -63,6 +63,8 @@ import { DISABLE_NOTIFICATIONS_CHOICE_ID, ENABLE_NOTIFICATIONS_CHOICE_ID, KEEP_N
 import { ADD_PASSKEY_CHOICE_ID, KEEP_PASSKEY_CHOICE_ID, LATER_PASSKEY_CHOICE_ID, REMOVE_PASSKEY_CHOICE_ID } from '../../shared/passkeyTypes.ts';
 import { PASSKEY_TOOL_FULL_NAMES, createPasskeyTools } from '../access/createPasskeyTools.ts';
 import type { PasskeyService, PasskeySummary } from '../access/PasskeyService.ts';
+import { PEOPLE_TOOL_FULL_NAMES, createPeopleTools } from '../people/createPeopleTools.ts';
+import type { PeopleAdmin } from '../people/PeopleAdmin.ts';
 import type { PushNoticeKind } from '../../shared/pushTypes.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
 import type { ConnectedApps } from '../apps/ConnectedApps.ts';
@@ -135,6 +137,7 @@ import type {
     BotSummary,
     ChatEvent,
     ChatMessage,
+    ChatPersonCredentialsEvent,
     ChatRole,
     ChoiceBody,
     FileBody,
@@ -250,6 +253,8 @@ interface ChatServiceOptions {
     notifyOwner?: ((notice: OwnerNotice) => Promise<void>) | undefined;
     // The owner's passkeys. Unset means passkeys are off, and the passkey tools are not offered.
     passkeys?: PasskeyService | undefined;
+    // People on the hub. Unset means the bot has no people management tools.
+    peopleAdmin?: PeopleAdmin | undefined;
     // Connects a bot to the owner's Telegram account. Unset means the Telegram tools are not offered.
     telegram?: TelegramConnector | undefined;
     // Receives messages from the owner's WhatsApp number. Unset means the WhatsApp tools are not offered.
@@ -680,11 +685,13 @@ class ChatService {
     private readonly forgetGithub: ((botId: string) => Promise<void>) | undefined;
     private readonly notifyOwner: ((notice: OwnerNotice) => Promise<void>) | undefined;
     private readonly passkeys: PasskeyService | undefined;
+    private readonly peopleAdmin: PeopleAdmin | undefined;
     private readonly telegram: TelegramConnector | undefined;
     private readonly whatsapp: WhatsAppConnector | undefined;
     // Bots whose delete is running. New messages and uploads for them are refused.
     private readonly deletingBots = new Set<string>();
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
+    private readonly pendingPeopleCredentialsByBot = new Map<string, ChatPersonCredentialsEvent[]>();
     private readonly runningTurns = new Map<string, AbortController>();
     // The hand-offs each running turn has sent, by the sender's bot id. Cleared when the turn finishes.
     private readonly handoffsSentByTurn = new Map<string, number>();
@@ -756,6 +763,7 @@ class ChatService {
         this.forgetGithub = options.forgetGithub;
         this.notifyOwner = options.notifyOwner;
         this.passkeys = options.passkeys;
+        this.peopleAdmin = options.peopleAdmin;
         this.telegram = options.telegram;
         this.whatsapp = options.whatsapp;
         this.approvals = options.toolCallReviewer === undefined
@@ -1473,6 +1481,7 @@ class ChatService {
             clearTimeout(timer);
         });
         this.usageWaitTimers.clear();
+        this.pendingPeopleCredentialsByBot.clear();
     }
 
     // The "+" button. The new bot asks in its own chat for its name and job, and the owner answers there.
@@ -1728,6 +1737,7 @@ class ChatService {
         this.screenWaitBots.delete(botId);
         this.runningLimits.delete(botId);
         this.listenersByBot.delete(botId);
+        this.pendingPeopleCredentialsByBot.delete(botId);
         this.recordedSteps.delete(botId);
 
         // A deleted bot's recording ends now. Its steps are dropped.
@@ -3059,6 +3069,14 @@ class ChatService {
 
         listeners.add(listener);
         this.listenersByBot.set(botId, listeners);
+        const pendingCredentials = this.pendingPeopleCredentialsByBot.get(botId) ?? [];
+
+        if (pendingCredentials.length > 0) {
+            this.pendingPeopleCredentialsByBot.delete(botId);
+            pendingCredentials.forEach((event) => {
+                this.publish(botId, event);
+            });
+        }
 
         return () => {
             listeners.delete(listener);
@@ -3424,13 +3442,22 @@ class ChatService {
                         postAddCard: () => this.postPasskeyAddCard(botId),
                         postRemoveCard: passkey => this.postPasskeyRemoveCard(botId, passkey),
                     });
+            const peopleAdmin = this.peopleAdmin;
+            const peopleTools = peopleAdmin === undefined
+                ? []
+                : createPeopleTools({
+                        botId,
+                        peopleAdmin,
+                        approve: (summary, detail) => this.requestOwnerApproval(botId, summary, detail),
+                        announce: (event) => { this.announcePeopleCredentials(event); },
+                    });
             const telegramTools = this.telegram === undefined ? [] : createTelegramTools(this.telegram, botId);
             const whatsappTools = this.whatsapp === undefined ? [] : createWhatsAppTools(this.whatsapp, botId);
             const profileTools = createProfileTools(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...telegramTools, ...whatsappTools],
+                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...whatsappTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -3481,6 +3508,7 @@ class ChatService {
                 hasLimits: this.limitStore !== undefined,
                 hasNotifications: this.notifyOwner !== undefined,
                 hasPasskeys: this.passkeys !== undefined,
+                hasPeopleAdmin: this.peopleAdmin !== undefined,
                 hasEmail: this.emailAccountService !== undefined && this.emailSender !== undefined,
                 hasWhatsApp: this.whatsapp !== undefined,
                 ownerRules,
@@ -3611,7 +3639,14 @@ class ChatService {
             };
         }
 
-        return (call, signal) => approvals.review(botId, call, signal, channelId);
+        return (call, signal) => {
+            // The people mutation handlers show a named card themselves, so the general review must not ask twice.
+            if (PEOPLE_TOOL_FULL_NAMES.includes(call.toolName)) {
+                return Promise.resolve({ isAllowed: true });
+            }
+
+            return approvals.review(botId, call, signal, channelId);
+        };
     }
 
     // Asks the owner in the chat about an action the proxy holds, such as a push. Only a running turn can be asked, so without one the action is refused.
@@ -3682,7 +3717,7 @@ class ChatService {
             const emailToolNames = this.emailAccountService === undefined || this.emailSender === undefined ? [] : EMAIL_STATUS_TOOL_ONLY_FULL_NAMES;
             const whatsappToolNames = this.whatsapp === undefined ? [] : WHATSAPP_TOOL_FULL_NAMES;
 
-            return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...emailToolNames, ...this.ruleToolNamesAllowed(), ...this.skillToolNamesAllowed(), ...this.notificationToolNames(), ...whatsappToolNames];
+            return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...emailToolNames, ...this.ruleToolNamesAllowed(), ...this.skillToolNamesAllowed(), ...this.notificationToolNames(), ...whatsappToolNames, ...this.peopleToolNames()];
         }
 
         const browserToolNames = this.browser === undefined ? [] : BROWSER_TOOL_FULL_NAMES;
@@ -3715,15 +3750,33 @@ class ChatService {
         const emailToolNames = this.emailAccountService === undefined || this.emailSender === undefined ? [] : EMAIL_TOOL_FULL_NAMES;
 
         const passkeyToolNames = this.passkeys === undefined ? [] : PASSKEY_TOOL_FULL_NAMES;
+        const peopleToolNames = this.peopleToolNames();
         const telegramToolNames = this.telegram === undefined ? [] : TELEGRAM_TOOL_FULL_NAMES;
         const whatsappToolNames = this.whatsapp === undefined ? [] : WHATSAPP_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...telegramToolNames, ...whatsappToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...whatsappToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.
     private notificationToolNames(): string[] {
         return this.notifyOwner === undefined ? [] : [NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, NOTIFICATIONS_DISABLE_TOOL_FULL_NAME];
+    }
+
+    private peopleToolNames(): string[] {
+        return this.peopleAdmin === undefined ? [] : PEOPLE_TOOL_FULL_NAMES;
+    }
+
+    private announcePeopleCredentials(event: ChatPersonCredentialsEvent): void {
+        if (this.hasListener(event.botId)) {
+            this.publish(event.botId, event);
+
+            return;
+        }
+
+        const pendingEvents = this.pendingPeopleCredentialsByBot.get(event.botId) ?? [];
+
+        pendingEvents.push(event);
+        this.pendingPeopleCredentialsByBot.set(event.botId, pendingEvents);
     }
 
     // A task that moves to Blocked is a notice in the chat. The bot wrote it, so the line starts with the bot's prefix.

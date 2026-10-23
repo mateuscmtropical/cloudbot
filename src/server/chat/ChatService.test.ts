@@ -30,6 +30,8 @@ import { REQUEST_SECRET_TOOL_FULL_NAME } from '../secrets/createSecretTools.ts';
 import { TYPE_SECRET_TOOL_FULL_NAME } from '../secrets/createTypeSecretTool.ts';
 import { WHATSAPP_TOOL_FULL_NAMES } from '../whatsapp/createWhatsAppTools.ts';
 import type { WhatsAppConnector } from '../whatsapp/createWhatsAppTools.ts';
+import { PEOPLE_TOOL_FULL_NAMES } from '../people/createPeopleTools.ts';
+import type { PeopleAdmin } from '../people/PeopleAdmin.ts';
 import { Vault } from '../vault/Vault.ts';
 import { FakeAgentRunner } from '../agent/FakeAgentRunner.ts';
 import type { ScriptedAgentStep } from '../agent/FakeAgentRunner.ts';
@@ -37,7 +39,8 @@ import { BotStore } from '../store/BotStore.ts';
 import { MessageStore } from '../store/MessageStore.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
-import type { ChatEvent } from '../../shared/chatTypes.ts';
+import type { ChatEvent, ChatMessage } from '../../shared/chatTypes.ts';
+import type { Person } from '../../shared/peopleTypes.ts';
 import { ChatService, PendingUploadLimitError, UploadDuringTurnError, buildScreenshotName } from './ChatService.ts';
 import { CLEANUP_RETRIES } from './testCleanup.ts';
 
@@ -73,6 +76,10 @@ function describeEvent(event: ChatEvent): string {
 
     if (event.type === 'webhookUrl') {
         return 'webhookUrl';
+    }
+
+    if (event.type === 'personCredentials') {
+        return 'personCredentials';
     }
 
     if (event.type === 'screen') {
@@ -745,6 +752,121 @@ describe('ChatService', () => {
             .toEqual([{ kind: 'text', text: 'Hi' }, { kind: 'text', text: 'Hello' }]);
         expect(storedMessages?.map(message => message.role))
             .toEqual(['user', 'assistant']);
+    });
+
+    it('keeps one-time person credentials out of messages and logs and sends them after reconnect', async () => {
+        const generatedPassword = 'one-time-secret';
+        const person: Person = {
+            name: 'maria',
+            role: 'member',
+            state: 'active',
+            instance: 'stopped',
+            address: 'https://maria.example.test',
+            createdAt: 1,
+            lastSeenAt: null,
+        };
+        const peopleAdmin: PeopleAdmin = {
+            list: () => Promise.resolve([person]),
+            add: name => Promise.resolve({ person: { ...person, name }, password: generatedPassword }),
+            deactivate: name => Promise.resolve({ ...person, name, state: 'inactive' }),
+            reactivate: name => Promise.resolve({ ...person, name, state: 'active' }),
+            resetPassword: () => Promise.resolve({ password: generatedPassword }),
+            remove: () => Promise.resolve(),
+        };
+        const runner = new FakeAgentRunner([{ event: { type: 'turn_finished' }, delayMs: 60_000 }]);
+        const toolCallReviewer = vi.fn(() => Promise.resolve({ decision: 'ask' as const, summary: 'Generic tool review.' }));
+        const service = new ChatService({
+            botStore,
+            messageStore,
+            runner,
+            dataDir,
+            peopleAdmin,
+            toolCallReviewer,
+        });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        let approvalAnswer: Promise<ChatMessage> | undefined;
+        let unsubscribeApproval: () => void = () => undefined;
+        const logSpy = vi.spyOn(console, 'log')
+            .mockImplementation(() => undefined);
+        const errorSpy = vi.spyOn(console, 'error')
+            .mockImplementation(() => undefined);
+        const warnSpy = vi.spyOn(console, 'warn')
+            .mockImplementation(() => undefined);
+
+        unsubscribeApproval = service.subscribe(bot.id, (event) => {
+            if (event.type !== 'message' || event.message.body.kind !== 'choice' || event.message.body.isApproval !== true || event.message.body.chosenId !== undefined) {
+                return;
+            }
+
+            unsubscribeApproval();
+            approvalAnswer = service.answerSetup(bot.id, event.message.id, 'choice', 'approve');
+        });
+
+        await service.sendMessage(bot.id, 'Invite maria');
+        await vi.waitFor(() => {
+            expect(runner.receivedRequests)
+                .toHaveLength(1);
+        });
+
+        const turnRequest = runner.receivedRequests[0];
+        const personAddTool = turnRequest?.tools?.find(candidate => candidate.name === 'person_add');
+
+        expect(turnRequest?.allowedTools)
+            .toEqual(expect.arrayContaining(PEOPLE_TOOL_FULL_NAMES));
+        expect(turnRequest?.systemPrompt)
+            .toContain('Sign-in details are shown to the owner once and never to you.');
+
+        if (personAddTool === undefined) {
+            throw new Error('The person_add tool is missing.');
+        }
+
+        if (turnRequest?.reviewToolCall === undefined) {
+            throw new Error('The turn review callback is missing.');
+        }
+
+        const reviewDecision = await turnRequest.reviewToolCall({ toolName: 'mcp__cloudbot__person_add', input: { name: 'maria' } }, turnRequest.abortSignal);
+
+        expect(reviewDecision)
+            .toEqual({ isAllowed: true });
+        expect(toolCallReviewer)
+            .not.toHaveBeenCalled();
+
+        const result = await personAddTool.handler({ name: 'maria' }, {});
+
+        if (approvalAnswer === undefined) {
+            throw new Error('The owner approval card was not answered.');
+        }
+
+        await approvalAnswer;
+
+        expect(JSON.stringify(result))
+            .not.toContain(generatedPassword);
+
+        const credentialEvents: ChatEvent[] = [];
+        const unsubscribeCredentials = service.subscribe(bot.id, (event) => {
+            credentialEvents.push(event);
+        });
+
+        expect(credentialEvents)
+            .toEqual([{ type: 'personCredentials', botId: bot.id, name: 'maria', address: person.address, password: generatedPassword }]);
+
+        const storedMessages = await service.listMessages(bot.id);
+        const serializedLogs = JSON.stringify([logSpy.mock.calls, errorSpy.mock.calls, warnSpy.mock.calls]);
+
+        expect(JSON.stringify(storedMessages))
+            .not.toContain(generatedPassword);
+        expect(serializedLogs)
+            .not.toContain(generatedPassword);
+
+        unsubscribeCredentials();
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.stopTurn(bot.id);
+        await finished;
+        service.dispose();
+        logSpy.mockRestore();
+        errorSpy.mockRestore();
+        warnSpy.mockRestore();
     });
 
     it('stores the reply and streams it with a card number masked, even when the number comes in pieces', async () => {

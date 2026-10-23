@@ -1279,6 +1279,43 @@ describe('App setup reminder', () => {
             .toBeNull();
     });
 
+    it('shows one-time sign-in details from a person credentials event and Hide clears them', async () => {
+        const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
+
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('Ana')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(subscribeToEvents)
+            .mockImplementation((_botId, onEvent) => {
+                emitEvent.current = onEvent;
+
+                return () => {};
+            });
+
+        render(<App />);
+        await waitFor(() => {
+            expect(emitEvent.current)
+                .toBeDefined();
+        });
+
+        act(() => {
+            emitEvent.current?.({ type: 'personCredentials', botId: 'bot-1', name: 'maria', address: 'https://maria.example.test', password: 'one-time-secret' });
+        });
+
+        expect(await screen.findByLabelText('Sign-in address'))
+            .toHaveProperty('value', 'https://maria.example.test');
+        expect(screen.getByLabelText('Sign-in password'))
+            .toHaveProperty('value', 'one-time-secret');
+        expect(screen.getByText('Save this now. It is not shown again.'))
+            .toBeDefined();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Hide details' }));
+
+        expect(screen.queryByLabelText('Sign-in password'))
+            .toBeNull();
+    });
+
     it('keeps the first webhook URL when the bot makes a second one', async () => {
         const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
 

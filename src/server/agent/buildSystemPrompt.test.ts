@@ -72,6 +72,18 @@ describe('buildSystemPrompt', () => {
             .not.toContain('passkey_add');
     });
 
+    it('explains people tools and one-time credentials only on the owner instance in a hub', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+        const prompt = buildSystemPrompt(profile, { hasPeopleAdmin: true });
+
+        expect(prompt)
+            .toContain('person_list, person_add, person_deactivate, person_reactivate and person_reset_password');
+        expect(prompt)
+            .toContain('Sign-in details are shown to the owner once and never to you.');
+        expect(buildSystemPrompt(profile))
+            .not.toContain('person_list');
+    });
+
     it('explains mailbox setup, approvals and untrusted email only when email is available', () => {
         const profile = { name: 'Ana', title: 'Assistant', description: '' };
         const prompt = buildSystemPrompt(profile, { hasEmail: true });

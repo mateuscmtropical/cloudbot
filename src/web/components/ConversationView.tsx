@@ -1,7 +1,7 @@
 import { Suspense, createElement, lazy, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
-import type { BotSummary, ChatMessage, ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
+import type { BotSummary, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
 import { renderMarkdown } from '../markdown.ts';
 import type { MascotState } from '../mascotState.ts';
 import { MESSAGE_MASCOT_SIZE, showsMessageMascot } from '../messageMascot.ts';
@@ -13,6 +13,7 @@ import type { DraftAttachment } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
 import { ThinkingBubble } from './ThinkingBubble.tsx';
 import { WebhookUrlNotice } from './WebhookUrlNotice.tsx';
+import { PersonCredentialsNotice } from './PersonCredentialsNotice.tsx';
 import type { MessageActions } from './MessageItem.tsx';
 
 // Within this many pixels of the top, the view asks for the page of older messages.
@@ -56,6 +57,8 @@ interface ConversationViewProps {
     // Webhook URLs the bot just made for this bot. Each is shown until the owner hides it.
     webhookUrls?: ChatWebhookUrlEvent[] | undefined;
     onHideWebhookUrl?: (hidden: ChatWebhookUrlEvent) => void;
+    personCredentials?: ChatPersonCredentialsEvent[] | undefined;
+    onHidePersonCredentials?: (hidden: ChatPersonCredentialsEvent) => void;
 }
 
 // A message kept in place while older messages are added, and where it sat in the viewport.
@@ -109,6 +112,8 @@ function ConversationView({
     onAttach,
     webhookUrls = [],
     onHideWebhookUrl,
+    personCredentials = [],
+    onHidePersonCredentials,
 }: ConversationViewProps): ReactElement {
     const messageListRef = useRef<HTMLDivElement>(null);
     const previousBotIdRef = useRef<string | undefined>(undefined);
@@ -266,6 +271,17 @@ function ConversationView({
                                 name={notice.name}
                                 url={notice.url}
                                 onHide={() => { onHideWebhookUrl(notice); }}
+                            />
+                        ))}
+                {onHidePersonCredentials === undefined
+                    ? null
+                    : personCredentials.map(notice => (
+                            <PersonCredentialsNotice
+                                key={notice.name}
+                                name={notice.name}
+                                address={notice.address}
+                                password={notice.password}
+                                onHide={() => { onHidePersonCredentials(notice); }}
                             />
                         ))}
                 {isDesktopOpen

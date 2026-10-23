@@ -49,6 +49,10 @@ function describeEvent(event: ChatEvent): string {
         return 'webhookUrl';
     }
 
+    if (event.type === 'personCredentials') {
+        return 'personCredentials';
+    }
+
     if (event.type === 'screen') {
         return 'screen';
     }
