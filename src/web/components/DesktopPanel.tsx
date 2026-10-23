@@ -37,6 +37,8 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
     // Counts the owner's handoff clicks. A poll that started before a click must not override the click's result.
     const handoffCountRef = useRef(0);
     const [handoffProblem, setHandoffProblem] = useState('');
+    // Expanded fills the window so the screen is easier to use.
+    const [isExpanded, setIsExpanded] = useState(false);
 
     useEffect(() => {
         let isCurrent = true;
@@ -125,49 +127,50 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
         };
     }, [connectAttempt, view]);
 
+    const panelClass = isExpanded ? 'desktop-panel is-expanded' : 'desktop-panel';
+    const handoffLabel = holder === 'person' ? 'Done, take over' : 'Take the screen';
+    const handoffChange = holder === 'person' ? releaseScreen : takeScreen;
+
     return (
-        <section className="desktop-panel" aria-label="Bot screen">
-            <div className="desktop-header">
+        <section className={panelClass} aria-label="Bot screen">
+            <div className="desktop-stage">
+                {view === 'screencast'
+                    ? <ScreencastView holder={holder} attempt={connectAttempt} onStateChange={setConnectionState} />
+                    : <div className="desktop-screen" ref={screenRef} />}
+            </div>
+            <div className="desktop-side">
                 <h2>Screen</h2>
-                <button type="button" onClick={onClose}>Close</button>
-            </div>
-            <p className="desktop-status">
-                {holder === 'person' ? 'You have the screen. The bot is paused.' : 'The bot has the screen. You can watch.'}
-            </p>
-            <div className="desktop-actions">
-                {holder === 'person'
+                <p className="desktop-status">
+                    {holder === 'person' ? 'You have the screen. The bot is paused.' : 'The bot has the screen. You can watch.'}
+                </p>
+                <div className="desktop-actions">
+                    <button type="button" onClick={() => { changeHolder(handoffChange); }}>{handoffLabel}</button>
+                    <button type="button" aria-pressed={isExpanded} onClick={() => { setIsExpanded(!isExpanded); }}>
+                        {isExpanded ? 'Shrink' : 'Expand'}
+                    </button>
+                    <button type="button" onClick={onClose}>Close</button>
+                </div>
+                {handoffProblem === '' ? null : <p className="desktop-status" role="alert">{handoffProblem}</p>}
+                {connectionState === 'connecting' ? <p className="desktop-status">Connecting to the screen...</p> : null}
+                {connectionState === 'disconnected'
                     ? (
-                            <>
-                                <button type="button" onClick={() => { changeHolder(releaseScreen); }}>Done, take over</button>
-                                <button type="button" onClick={onClose}>I will keep it</button>
-                            </>
+                            <p className="desktop-status" role="alert">
+                                The screen is not available. The desktop may be starting.
+                                {' '}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setConnectionState('connecting');
+                                        setConnectAttempt(attempt => attempt + 1);
+                                    }}
+                                >
+                                    Try again
+                                </button>
+                            </p>
                         )
-                    : <button type="button" onClick={() => { changeHolder(takeScreen); }}>Take the screen</button>}
+                    : null}
             </div>
-            {handoffProblem === '' ? null : <p className="desktop-status" role="alert">{handoffProblem}</p>}
-            {connectionState === 'connecting' ? <p className="desktop-status">Connecting to the screen...</p> : null}
-            {connectionState === 'disconnected'
-                ? (
-                        <p className="desktop-status" role="alert">
-                            The screen is not available. The desktop may be starting.
-                            {' '}
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setConnectionState('connecting');
-                                    setConnectAttempt(attempt => attempt + 1);
-                                }}
-                            >
-                                Try again
-                            </button>
-                        </p>
-                    )
-                : null}
-            {view === 'screencast'
-                ? <ScreencastView holder={holder} attempt={connectAttempt} onStateChange={setConnectionState} />
-                : <div className="desktop-screen" ref={screenRef} />}
         </section>
     );
 }
-
 export { DesktopPanel, buildVncUrl };

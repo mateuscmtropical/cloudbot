@@ -10,6 +10,10 @@ All notable changes to this project are listed here. The format follows
 
 - The Claude CLI and every helper agent now disallow built-in tools for CLI schedules, cloud triggers, notifications, messaging, workflows, worktrees, design sync and other CLI-only services.
 
+### Changed
+
+- The Screen panel is bigger. The picture takes about 80% of the width and the controls sit in a column on the right. One button hands the screen over or takes it back, one expands the panel to the whole window, and one closes it. The duplicate "I will keep it" button is gone.
+
 ### Added
 
 - A server for many people that runs on localhost shows the right address for each person, such as `http://maria.localhost`, in the people panel, in the bot tools and in the instance settings. It showed port 3200 before.
