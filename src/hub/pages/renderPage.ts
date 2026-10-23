@@ -4,6 +4,8 @@ interface PageOptions {
     title: string;
     body: string;
     scripts?: readonly string[];
+    // An origin the forms of the page may send the browser to, besides the page itself.
+    formActionOrigin?: string | undefined;
 }
 
 interface RenderedPage {
@@ -72,7 +74,7 @@ function renderPage(options: PageOptions): RenderedPage {
     const scripts = (options.scripts ?? []).map(script => `<script nonce="${nonce}">${script}</script>`)
         .join('');
     const title = escapeHtml(options.title);
-    const csp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'; connect-src 'self'`;
+    const csp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data:; form-action 'self'${options.formActionOrigin === undefined ? '' : ` ${options.formActionOrigin}`}; frame-ancestors 'none'; connect-src 'self'`;
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><style>${PAGE_CSS}</style></head><body>${options.body}${scripts}</body></html>`;
 
     return { html, csp };

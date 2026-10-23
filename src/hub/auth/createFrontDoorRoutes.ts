@@ -53,6 +53,7 @@ const UPSTREAM_PORT = 3000;
 const UPSTREAM_CONNECT_FAILURE_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT']);
 const HOP_BY_HOP_HEADERS = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
 const LOGIN_FAILURE_MESSAGE = 'Sign-in failed. Check your password and try again.';
+const TOO_MANY_TRIES_MESSAGE = 'Too many wrong tries. Try again in a few minutes.';
 const UNKNOWN_CLIENT_ADDRESS = 'unknown';
 
 function nowFor(options: FrontDoorRoutesOptions): number {
@@ -123,6 +124,15 @@ function readAfterLoginPath(name: string, options: FrontDoorRoutesOptions, conte
     const path = options.afterLogin?.(name, context);
 
     return path !== undefined && path.startsWith('/') && !path.startsWith('//') ? path : '/';
+}
+
+// The pattern of every person's address, for the form-action of the name form.
+function personOriginPattern(hostHeader: string, domain: string, secure: boolean): string {
+    const hostUrl = new URL(`http://${hostHeader}`);
+    const localPort = domain.toLowerCase() === 'localhost' && hostUrl.port !== '' ? `:${hostUrl.port}` : '';
+    const scheme = secure ? 'https' : 'http';
+
+    return `${scheme}://*.${domain}${localPort}`;
 }
 
 function redirectForLocalHost(name: string, hostHeader: string, domain: string, secure: boolean): string {
@@ -351,16 +361,23 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
 
         if (hostRoute.isApex) {
             if (context.req.method === 'GET' && context.req.path === '/') {
-                const apexPage = renderApexPage();
+                const apexPage = renderApexPage(hostHeader === undefined ? {} : { formActionOrigin: personOriginPattern(hostHeader, options.domain, options.secure) });
 
                 return renderResponse(context, apexPage);
             }
 
             if (context.req.method === 'GET' && context.req.path === '/__hub/redirect') {
-                const name = context.req.query('name') ?? '';
+                const typedName = context.req.query('name') ?? '';
+                // Names are lowercase, and a phone keyboard or a habit may capitalize or add a space.
+                const name = typedName.trim()
+                    .toLowerCase();
+                const typedPerson = checkPersonName(name) === undefined ? options.people.find(name) : undefined;
 
-                if (checkPersonName(name) !== undefined || hostHeader === undefined) {
-                    return renderUnavailable(context);
+                if (typedPerson === undefined || typedPerson.state !== 'active' || hostHeader === undefined) {
+                    const retryOrigin = hostHeader === undefined ? undefined : personOriginPattern(hostHeader, options.domain, options.secure);
+                    const retryPage = renderApexPage({ name: typedName, error: 'We could not find that name. Check it and try again.', formActionOrigin: retryOrigin });
+
+                    return renderResponse(context, retryPage, 404);
                 }
 
                 const location = redirectForLocalHost(name, hostHeader, options.domain, options.secure);
@@ -440,34 +457,61 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
             return renderResponse(context, loginPage);
         }
 
-        if (person.mustChangePassword) {
-            if (context.req.path === '/__hub/password' && context.req.method === 'GET') {
-                const changePage = renderChangePasswordPage();
+        // A generated password must be changed first. Later the person changes it from the account menu, with the current one.
+        const needsCurrent = !person.mustChangePassword;
 
-                return renderResponse(context, changePage);
-            }
+        if (context.req.path === '/__hub/password' && context.req.method === 'GET') {
+            const changePage = renderChangePasswordPage({ needsCurrent });
 
-            if (context.req.path === '/__hub/password' && context.req.method === 'POST') {
-                const form = await context.req.parseBody()
-                    .catch((): ParsedFormFields => ({}));
-                const password = readFormField(form, 'password');
-                const confirmation = readFormField(form, 'confirmation');
+            return renderResponse(context, changePage);
+        }
 
-                if (password.length < 10 || password !== confirmation) {
-                    const error = password.length < 10 ? 'Use at least 10 characters.' : 'The passwords do not match.';
-                    const changePage = renderChangePasswordPage({ error });
+        if (context.req.path === '/__hub/password' && context.req.method === 'POST') {
+            const form = await context.req.parseBody()
+                .catch((): ParsedFormFields => ({}));
+            const password = readFormField(form, 'password');
+            const confirmation = readFormField(form, 'confirmation');
 
-                    return renderResponse(context, changePage, 401);
+            if (needsCurrent) {
+                const changeAddress = readClientAddress(context);
+                const attemptKeys = makeAttemptKeys(name, changeAddress);
+
+                if (isLocked(attemptKeys, failures, currentTime)) {
+                    const lockedPage = renderChangePasswordPage({ needsCurrent, error: TOO_MANY_TRIES_MESSAGE });
+
+                    return renderResponse(context, lockedPage, 401);
                 }
 
-                const passwordHash = await hashPassword(password);
+                const typedCurrent = readFormField(form, 'current');
+                const currentMatches = await verifyPassword(typedCurrent, person.passwordHash)
+                    .catch(() => false);
 
-                options.people.update(name, { passwordHash, mustChangePassword: false, lastSeenAt: nowFor(options) });
-                options.sessions.deleteOtherSessions(name, session.token);
+                if (!currentMatches) {
+                    recordFailure(attemptKeys, failures, currentTime);
+                    const wrongPage = renderChangePasswordPage({ needsCurrent, error: 'The current password is wrong.' });
 
-                return context.redirect('/', 303);
+                    return renderResponse(context, wrongPage, 401);
+                }
+
+                clearFailures(attemptKeys, failures);
             }
 
+            if (password.length < 10 || password !== confirmation) {
+                const error = password.length < 10 ? 'Use at least 10 characters.' : 'The passwords do not match.';
+                const changePage = renderChangePasswordPage({ needsCurrent, error });
+
+                return renderResponse(context, changePage, 401);
+            }
+
+            const passwordHash = await hashPassword(password);
+
+            options.people.update(name, { passwordHash, mustChangePassword: false, lastSeenAt: nowFor(options) });
+            options.sessions.deleteOtherSessions(name, session.token);
+
+            return context.redirect('/', 303);
+        }
+
+        if (person.mustChangePassword) {
             return context.redirect('/__hub/password', 303);
         }
 
@@ -478,7 +522,7 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
             return context.redirect('/__hub/login', 303);
         }
 
-        if (context.req.path === '/__hub/login' || context.req.path === '/__hub/password') {
+        if (context.req.path === '/__hub/login') {
             return context.redirect('/', 303);
         }
 

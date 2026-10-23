@@ -12,6 +12,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A CloudBot inside a hub has an Account button in the sidebar. It opens a panel to change the password, manage passkeys and sign out. A person can change the password at any time with the current one.
+- The name form of the hub address accepts a capitalized name and shows a wrong name on the same screen. It also works in Chrome and Opera, where the page policy blocked the redirect to the person.
 - `sudo cloudbot uninstall` removes CloudBot from the server, and the README lists how to update and remove it.
 
 ### Changed
@@ -39,6 +41,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A CloudBot inside a hub has an Account button in the sidebar. It opens a panel to change the password, manage passkeys and sign out. A person can change the password at any time with the current one.
+- The name form of the hub address accepts a capitalized name and shows a wrong name on the same screen. It also works in Chrome and Opera, where the page policy blocked the redirect to the person.
 - Choose a model and effort per bot for providers that report their model list. The header shows the model in use when known. Providers without a model list keep their default.
 - A bot list row turns blue when its bot sent a message you have not seen, and the preview shows that message right away. Before, the row did not change until you reloaded the page.
 - The Connect apps panel offers Linear and Notion, plus a custom app address. Connect starts the existing approval and sign-in flow in the selected bot chat. The panel shows each app's state and can remove it.
@@ -103,6 +107,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A CloudBot inside a hub has an Account button in the sidebar. It opens a panel to change the password, manage passkeys and sign out. A person can change the password at any time with the current one.
+- The name form of the hub address accepts a capitalized name and shows a wrong name on the same screen. It also works in Chrome and Opera, where the page policy blocked the redirect to the person.
 - Teach a task by recording the screen. Ask a bot to learn a task from you, do it once on its screen, and give the screen back. The bot turns the recorded steps into a skill for you to approve. Password and other secret fields are recorded only as a secret step, never with their value.
 - Skills. Ask a bot to learn a skill, or give it a link, and it saves the steps after you approve the whole text on a card. The bot reads a skill before a task it covers, and lists or removes its skills when asked.
 - Talk to a bot from Telegram. The owner saves a Telegram bot token through the secure form and sends a one-time code from the chat to the Telegram bot. Only that Telegram account can then talk to the bot, in a private chat, and the replies to its messages come back there. Text only for now.
@@ -144,6 +150,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A CloudBot inside a hub has an Account button in the sidebar. It opens a panel to change the password, manage passkeys and sign out. A person can change the password at any time with the current one.
+- The name form of the hub address accepts a capitalized name and shows a wrong name on the same screen. It also works in Chrome and Opera, where the page policy blocked the redirect to the person.
 - A bot exports itself as a template file, shared in the chat, when you ask. The file holds the name, title, description, look, rules (with their blocked tools) and routines (with their schedules). It never holds secrets, sign-ins, webhook addresses, shared files or learned memory. Version 1 of the format is read, and a file of another version is refused.
 - A bot can be made from a template file attached in the chat. The owner sees the whole template on the approval card first, with the blocked tools of each rule and the schedule of each routine. Routines start turned off. Each card works for ten minutes and for one import. A file that changed after its card is refused. So is a file from another chat, a file with unknown keys or a blocked tool name in the wrong format, and any file over 64 KB.
 - A thinking bubble shows beside the mascot while the bot works on a reply. It shows the thinking face and pulsing dots, changes its line every few seconds, and names the tool the bot is using in plain words. It goes away when the reply starts and comes back if the bot keeps working. It also shows for routine, webhook and watch turns while the chat is open.

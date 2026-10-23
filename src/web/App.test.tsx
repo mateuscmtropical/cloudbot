@@ -111,6 +111,38 @@ describe('App bot list', () => {
             .toBeNull();
     });
 
+    it('opens the account panel for a person of a hub and hides it elsewhere', async () => {
+        vi.mocked(getHubRole)
+            .mockResolvedValueOnce('member');
+        vi.mocked(listBots)
+            .mockResolvedValue([]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+
+        render(<App />);
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
+
+        expect(await screen.findByRole('heading', { name: 'Account' }))
+            .toBeTruthy();
+    });
+
+    it('does not offer an account on a CloudBot that runs without a hub', async () => {
+        vi.mocked(listBots)
+            .mockResolvedValue([]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+
+        render(<App />);
+
+        await waitFor(() => {
+            expect(getHubRole)
+                .toHaveBeenCalled();
+        });
+        expect(screen.queryByRole('button', { name: 'Account' }))
+            .toBeNull();
+    });
+
     it('tells a person of a hub to ask the owner', async () => {
         vi.mocked(getHubRole)
             .mockResolvedValueOnce('member');

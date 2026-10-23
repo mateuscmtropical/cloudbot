@@ -13,18 +13,30 @@ interface LoginPageExtras {
     script: string;
 }
 
+interface ApexPageOptions {
+    // The origin pattern of the people, such as https://*.example.com. The form sends the browser there, and the page policy must allow it.
+    formActionOrigin?: string | undefined;
+    // The name the person typed, so they can correct it.
+    name?: string | undefined;
+    error?: string | undefined;
+}
+
 interface ChangePasswordPageOptions {
     error?: string | undefined;
+    // A person who already chose a password gives the current one first.
+    needsCurrent?: boolean | undefined;
 }
 
 const LOADING_SCRIPT = `const checkStatus = async () => { try { const response = await fetch('/__hub/status', { cache: 'no-store' }); const answer = await response.json(); if (answer.status === 'running') { location.reload(); return; } if (answer.status === 'busy') { location.replace('/'); return; } } catch {} setTimeout(checkStatus, 2000); }; setTimeout(checkStatus, 2000);`;
 const BUSY_SCRIPT = `setTimeout(() => location.reload(), 2000);`;
 
-function renderApexPage(): RenderedPage {
+function renderApexPage(options: ApexPageOptions = {}): RenderedPage {
     const mascot = renderMascot('idle');
-    const body = `<main>${mascot}<h1>CloudBot</h1><p>Enter your name to open your CloudBot.</p><form method="get" action="/__hub/redirect"><label for="person-name">Your name</label><input id="person-name" name="name" type="text" autocomplete="username" minlength="2" maxlength="30" required><button type="submit">Continue</button></form></main>`;
+    const error = options.error === undefined ? '' : escapeHtml(options.error);
+    const typedName = options.name === undefined ? '' : escapeHtml(options.name);
+    const body = `<main>${mascot}<h1>CloudBot</h1><p>Enter your name to open your CloudBot.</p><form method="get" action="/__hub/redirect"><label for="person-name">Your name</label><input id="person-name" name="name" type="text" value="${typedName}" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="2" maxlength="30" required autofocus><p role="alert" aria-live="polite">${error}</p><button type="submit">Continue</button></form></main>`;
 
-    return renderPage({ title: 'CloudBot', body });
+    return renderPage({ title: 'CloudBot', body, formActionOrigin: options.formActionOrigin });
 }
 
 function renderLoginPage(options: LoginPageOptions): RenderedPage {
@@ -41,7 +53,10 @@ function renderLoginPage(options: LoginPageOptions): RenderedPage {
 function renderChangePasswordPage(options: ChangePasswordPageOptions = {}): RenderedPage {
     const error = options.error === undefined ? '' : escapeHtml(options.error);
     const mascot = renderMascot('idle');
-    const body = `<main>${mascot}<h1>Choose a new password</h1><p>Use at least 10 characters. Only you will know it.</p><form method="post" action="/__hub/password"><label for="new-password">New password</label><input id="new-password" name="password" type="password" autocomplete="new-password" minlength="10" required autofocus><label for="confirm-password">Confirm new password</label><input id="confirm-password" name="confirmation" type="password" autocomplete="new-password" minlength="10" required><p role="alert" aria-live="polite">${error}</p><button type="submit">Save password</button></form></main>`;
+    const heading = options.needsCurrent === true ? 'Change your password' : 'Choose a new password';
+    const currentField = options.needsCurrent === true ? '<label for="current-password">Current password</label><input id="current-password" name="current" type="password" autocomplete="current-password" required autofocus>' : '';
+    const backLink = options.needsCurrent === true ? '<p><a href="/">Back to CloudBot</a></p>' : '';
+    const body = `<main>${mascot}<h1>${heading}</h1><p>Use at least 10 characters. Only you will know it.</p><form method="post" action="/__hub/password">${currentField}<label for="new-password">New password</label><input id="new-password" name="password" type="password" autocomplete="new-password" minlength="10" required${options.needsCurrent === true ? '' : ' autofocus'}><label for="confirm-password">Confirm new password</label><input id="confirm-password" name="confirmation" type="password" autocomplete="new-password" minlength="10" required><p role="alert" aria-live="polite">${error}</p><button type="submit">Save password</button></form>${backLink}</main>`;
 
     return renderPage({ title: 'Change password', body });
 }
@@ -75,4 +90,4 @@ function renderUpstreamErrorPage(): RenderedPage {
     return renderPage({ title: 'CloudBot is unavailable', body });
 }
 export { renderApexPage, renderBusyPage, renderChangePasswordPage, renderLoadingPage, renderLoginPage, renderNotAvailablePage, renderUpstreamErrorPage };
-export type { ChangePasswordPageOptions, LoginPageExtras, LoginPageOptions };
+export type { ApexPageOptions, ChangePasswordPageOptions, LoginPageExtras, LoginPageOptions };

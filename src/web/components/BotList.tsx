@@ -26,12 +26,14 @@ interface BotListProps {
     onSelectChannel: (channelId: string) => void;
     onNewBot: () => void;
     onConnectApps: () => void;
+    // Only a CloudBot inside a hub has an account to manage.
+    onAccount?: (() => void) | undefined;
     onPeople: () => void;
     // Saves a new name for a bot, after a double tap on its row. It answers why the name was refused, or nothing. Without it the rows cannot be renamed.
     onRenameBot?: ((botId: string, name: string) => Promise<string | undefined>) | undefined;
 }
 
-function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, onSelectBot, onSelectChannel, onNewBot, onConnectApps, onPeople, onRenameBot }: BotListProps): ReactElement {
+function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, onSelectBot, onSelectChannel, onNewBot, onConnectApps, onAccount, onPeople, onRenameBot }: BotListProps): ReactElement {
     const [renamingBotId, setRenamingBotId] = useState<string | undefined>(undefined);
     const lastTapRef = useRef<Tap | undefined>(undefined);
     const className = isOpen ? 'bot-list is-open' : 'bot-list';
@@ -143,6 +145,7 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
             </div>
             <div className="bot-list-footer">
                 <button type="button" className="connect-apps-button" onClick={onConnectApps}>Connect apps</button>
+                {onAccount === undefined ? null : <button type="button" className="connect-apps-button" onClick={onAccount}>Account</button>}
             </div>
         </aside>
     );
