@@ -331,6 +331,28 @@ describe('AcpEngine', () => {
             .toEqual({ sessionId: 'session-1', modeId: 'ask' });
     });
 
+    it('uses the asking mode the agent lists when it renamed the configured one', async () => {
+        const sessionResult = { sessionId: 'session-1', modes: { currentModeId: 'manual', availableModes: [{ id: 'manual' }, { id: 'yolo' }, { id: 'auto' }] } };
+        const { engine, agents } = makeEngine({ sessionResult }, undefined, 'default');
+
+        await collect(engine.runTurn(makeRequest()));
+        const setMode = agents[0]?.sent.find(message => message.method === 'session/set_mode');
+
+        expect(setMode?.params)
+            .toEqual({ sessionId: 'session-1', modeId: 'manual' });
+    });
+
+    it('never picks a listed mode that approves calls by itself', async () => {
+        const sessionResult = { sessionId: 'session-1', modes: { currentModeId: 'yolo', availableModes: [{ id: 'yolo' }, { id: 'auto' }] } };
+        const { engine, agents } = makeEngine({ sessionResult }, undefined, 'default');
+
+        await collect(engine.runTurn(makeRequest()));
+        const setMode = agents[0]?.sent.find(message => message.method === 'session/set_mode');
+
+        expect(setMode?.params)
+            .toEqual({ sessionId: 'session-1', modeId: 'default' });
+    });
+
     it('tells whether the sign-in works without sending a prompt', async () => {
         const signedIn = makeEngine({}, 'cursor_login');
         const signedOut = makeEngine({ failAuthenticate: true }, 'cursor_login');

@@ -235,6 +235,32 @@ function readModeId(result: Record<string, unknown> | undefined): string | undef
     return readString(modes, 'currentModeId') ?? (modeOption === undefined ? undefined : readString(modeOption, 'currentValue'));
 }
 
+// The modes a new or loaded session lists, such as default, manual or yolo.
+function readAvailableModeIds(result: Record<string, unknown> | undefined): string[] {
+    const modes = readRecord(result?.modes);
+    const listed = Array.isArray(modes.availableModes) ? modes.availableModes as unknown[] : [];
+
+    const ids = listed.map((mode) => {
+        const record = readRecord(mode);
+
+        return readString(record, 'id');
+    });
+
+    return ids.filter(id => id !== undefined);
+}
+
+// The configured asking mode, unless the agent lists modes without it. Then the listed mode that asks before each tool.
+// A mode that approves calls by itself is never picked.
+function pickAskModeId(configured: string, listedModeIds: string[]): string {
+    if (listedModeIds.length === 0 || listedModeIds.includes(configured)) {
+        return configured;
+    }
+
+    const asking = listedModeIds.find(id => /^(default|manual|ask|normal)$/i.test(id) && !SELF_APPROVING_MODE.test(id));
+
+    return asking ?? configured;
+}
+
 function pickOption(options: AcpPermissionOption[], isAllowed: boolean): string | undefined {
     const wanted = isAllowed ? 'allow_once' : 'reject_once';
     const found = options.find(option => option.kind === wanted);
@@ -614,6 +640,7 @@ class AcpEngine implements AgentRunner {
             const sessionParams = { cwd: request.workspaceDir, mcpServers };
             let sessionId = canLoad ? request.sessionId : undefined;
             let startMode: string | undefined;
+            let listedModeIds: string[] = [];
 
             if (sessionId !== undefined) {
                 isLoading = true;
@@ -622,6 +649,7 @@ class AcpEngine implements AgentRunner {
                 isLoading = false;
                 sessionId = loaded.error === undefined ? sessionId : undefined;
                 startMode = readModeId(loaded.result);
+                listedModeIds = readAvailableModeIds(loaded.result);
             }
 
             if (sessionId === undefined) {
@@ -640,6 +668,7 @@ class AcpEngine implements AgentRunner {
 
                 sessionId = createdId;
                 startMode = readModeId(created.result);
+                listedModeIds = readAvailableModeIds(created.result);
             }
 
             currentSessionId = sessionId;
@@ -652,7 +681,8 @@ class AcpEngine implements AgentRunner {
             }
 
             if (this.options.askModeId !== undefined) {
-                const modeSet = await call('session/set_mode', { sessionId, modeId: this.options.askModeId });
+                const askModeId = pickAskModeId(this.options.askModeId, listedModeIds);
+                const modeSet = await call('session/set_mode', { sessionId, modeId: askModeId });
 
                 // A session that would accept calls without asking is never prompted.
                 if (modeSet.error !== undefined) {
