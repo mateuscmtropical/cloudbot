@@ -23,6 +23,35 @@ comes back when the job is done or when it needs you.
 > [MIT license](LICENSE). Its authors and contributors are not responsible for
 > how anyone uses it or for any loss, ban or claim that comes from that use.
 
+## Install
+
+On a Debian or Ubuntu server with a public IP, on x86-64 or ARM, one command
+installs Docker, starts CloudBot behind HTTPS and prints the owner's address
+and first password:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash
+```
+
+Without a domain it uses a free `<ip>.sslip.io` name. To use your own domain
+and the owner's name, add them:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash -s -- bot.example.com maria
+```
+
+On Windows, on x64 or ARM, open PowerShell as administrator and run one command.
+It installs WSL 2 with Ubuntu when it is missing, then runs the installer. If
+Windows asks for a restart, run the command again afterwards.
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.ps1))) -OwnerName maria
+```
+
+CloudBot then opens at `http://maria.localhost` in your Windows browser.
+
+The [install guide](docs/INSTALL.md) covers domains, adding people, updates and
+the `cloudbot` command.
 ## What it will do
 
 - **Chat like a messenger.** A list of bots on the left, the conversation in
@@ -159,17 +188,6 @@ Failures offer another choice. Normal chat starts once setup says the provider
 is ready. Ask a bot to connect another provider and the list comes back in the
 setup chat.
 
-## Install on a server
-
-On a fresh Debian or Ubuntu server with a public IP, one command installs Docker,
-starts CloudBot behind HTTPS and prints the setup link:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash
-```
-
-See [install guide](docs/INSTALL.md) for your own domain, updates and the `cloudbot` command.
-
 ## Run with Docker
 
 The image runs the server as the `cloudbot` user and runs the provider CLIs as
@@ -178,27 +196,10 @@ them. The data folder is a Docker volume that only
 `cloudbot` can read.
 
 The bot home and workspaces also use named volumes to preserve provider sign-ins,
-sessions and memory. See [installation and updates](docs/INSTALL.md) for volume
-and CLI update behavior.
-
-To run it locally behind Caddy on `https://localhost`:
-
-```sh
-docker compose -f docker/compose.yaml up --build
-```
-
-On a VPS, point a domain at the server and set it before you start:
-
-```sh
-CLOUDBOT_DOMAIN=bot.example.com docker compose -f docker/compose.yaml up -d --build
-```
-
-Caddy gets the HTTPS certificate for that domain. Ports 80 and 443 must be open.
-
-The setup link is in the logs (`docker compose -f docker/compose.yaml logs cloudbot`).
-To print a new one, run
-`docker compose -f docker/compose.yaml exec cloudbot node dist/server/newSetupLink.js`.
-
+sessions and memory. The install above starts a hub, a Docker socket proxy and
+Caddy, and the hub starts one container for each person. See the
+[install guide](docs/INSTALL.md) for volumes, updates and CLI update behavior,
+and [multi-user design](docs/MULTI_USER.md) for how the pieces fit.
 ## Security
 
 The [threat model](docs/THREAT_MODEL.md) says what the bot can reach, what stops
