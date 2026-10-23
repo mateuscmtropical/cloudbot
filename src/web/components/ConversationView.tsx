@@ -5,6 +5,7 @@ import type { BotSummary, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUr
 import { renderMarkdown } from '../markdown.ts';
 import type { MascotState } from '../mascotState.ts';
 import { MESSAGE_MASCOT_SIZE, showsMessageMascot } from '../messageMascot.ts';
+import { countProviderChanges } from '../providerChanges.ts';
 import { sentMessageTexts } from '../sentHistory.ts';
 import { BUBBLE_DELAY_MS, isThinkingBubbleShown } from '../thinkingBubble.ts';
 import { useDelayedFlag } from '../useDelayedFlag.ts';
@@ -12,6 +13,7 @@ import { CloudMascot } from './CloudMascot.tsx';
 import { Composer } from './Composer.tsx';
 import type { DraftAttachment } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
+import { ProviderPicker } from './ProviderPicker.tsx';
 import { ThinkingBubble } from './ThinkingBubble.tsx';
 import { WebhookUrlNotice } from './WebhookUrlNotice.tsx';
 import { PersonCredentialsNotice } from './PersonCredentialsNotice.tsx';
@@ -47,6 +49,8 @@ interface ConversationViewProps {
     isLoadingOlder?: boolean;
     onLoadOlder?: () => void;
     onOpenBotList: () => void;
+    // Opens the chat of the bot that holds a provider sign-in. Without it the header shows no provider picker.
+    onOpenSetupChat?: ((setupBotId: string) => void) | undefined;
     // Goes up each time the bot asks for the screen. The Screen panel opens then, so the owner sees the request at once.
     screenRequestId?: number | undefined;
     // The message a tapped notification was about. The view scrolls to it once the messages are there, and reports it handled.
@@ -105,6 +109,7 @@ function ConversationView({
     isLoadingOlder = false,
     onLoadOlder,
     onOpenBotList,
+    onOpenSetupChat,
     screenRequestId,
     focusMessageId,
     onFocusHandled,
@@ -126,6 +131,7 @@ function ConversationView({
     const previousIsLoadingRef = useRef(false);
     const botName = bot?.name ?? 'CloudBot';
     const sentHistory = useMemo(() => sentMessageTexts(messages), [messages]);
+    const providerChangeCount = useMemo(() => countProviderChanges(messages), [messages]);
     const isBubbleDue = isThinkingBubbleShown({ isRunning, draftText, messages });
     const isThinkingShown = useDelayedFlag(isBubbleDue, BUBBLE_DELAY_MS);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
@@ -261,6 +267,7 @@ function ConversationView({
                 <div className="bot-pill">
                     {bot === undefined ? null : <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={28} />}
                     <span className="bot-pill-name">{botName}</span>
+                    {bot === undefined || onOpenSetupChat === undefined ? null : <ProviderPicker botId={bot.id} changeCount={providerChangeCount} onOpenSetupChat={onOpenSetupChat} />}
                 </div>
             </header>
             {/* Notices and the Screen panel sit below the pill, so their title and Close stay clear of it. Empty when none show. */}

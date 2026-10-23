@@ -31,6 +31,11 @@ vi.mock('./apiClient.ts', () => ({
     subscribeToEvents: vi.fn(),
     uploadAttachments: vi.fn(),
     listUploads: vi.fn(() => Promise.resolve([])),
+    // The provider picker in the header reads the provider. These tests have none.
+    getBotProvider: vi.fn(() => Promise.reject(new Error('Provider route is not available.'))),
+    listProviders: vi.fn(() => Promise.resolve([])),
+    startProviderConnect: vi.fn(),
+    switchBotProvider: vi.fn(),
     removeUpload: vi.fn(),
 }));
 

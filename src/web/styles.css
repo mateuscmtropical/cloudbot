@@ -426,6 +426,88 @@ svg {
     font-weight: 600;
 }
 
+/* The provider and the model of the bot sit in the pill. A tap opens the list of providers under it. */
+.provider-picker {
+    position: relative;
+    flex: none;
+}
+
+.provider-picker-button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: var(--color-hover);
+    color: var(--color-text);
+    font-size: 0.8125rem;
+    cursor: pointer;
+}
+
+.provider-picker-model {
+    color: var(--color-text-muted);
+}
+
+.provider-menu {
+    position: absolute;
+    top: calc(100% + var(--space-3));
+    right: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 220px;
+    padding: var(--space-2);
+    border-radius: var(--radius-bubble);
+    background: var(--color-surface-raised);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+}
+
+.provider-menu-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+
+.provider-menu-item {
+    flex: 1;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: var(--space-3);
+    background: transparent;
+    color: var(--color-text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.provider-menu-item[aria-checked='true'] {
+    background: var(--color-hover);
+    font-weight: 600;
+}
+
+.provider-menu-item.is-off {
+    color: var(--color-text-muted);
+    cursor: default;
+}
+
+.provider-menu-connect {
+    padding: var(--space-1) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: var(--color-accent);
+    color: #fff;
+    cursor: pointer;
+}
+
+.provider-menu-note {
+    margin: 0;
+    padding: var(--space-1) var(--space-3);
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+}
+
 /* Notices and the Screen panel start below the pill. Empty, the wrapper takes no space. */
 .conversation-top:not(:empty) {
     padding-top: 64px;

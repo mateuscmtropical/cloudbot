@@ -5,6 +5,7 @@ import type { BotWatch } from '../shared/watchTypes.ts';
 import type { BotWebhook, CreatedBotWebhook } from '../shared/webhookTypes.ts';
 import type { TurnLimits } from '../shared/limitTypes.ts';
 import type { ChannelDetail, ChannelPostView, ChannelSummary } from '../shared/channelTypes.ts';
+import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse } from '../shared/providerTypes.ts';
 import type { PushKeyResponse, PushSubscriptionInput, PushUnsubscribeInput } from '../shared/pushTypes.ts';
 
 const API_ROOT = '/api';
@@ -367,6 +368,30 @@ function saveModelSettings(botId: string, settings: ModelSettings): Promise<Mode
     return requestJson<ModelSettings>(path, init);
 }
 
+// The AI provider a bot runs on. A switch takes effect from the next message.
+function getBotProvider(botId: string): Promise<BotProviderSummary> {
+    const path = botPath(botId, '/provider');
+
+    return requestJson<BotProviderSummary>(path, {});
+}
+
+function switchBotProvider(botId: string, provider: string): Promise<BotProviderSummary> {
+    const path = botPath(botId, '/provider');
+    const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider }) };
+
+    return requestJson<BotProviderSummary>(path, init);
+}
+
+// The providers of the server and which ones the owner connected. The server checks each sign-in, so this call can take a moment.
+function listProviders(): Promise<ProviderChoiceSummary[]> {
+    return requestJson<ProviderChoiceSummary[]>(`${API_ROOT}/providers`, {});
+}
+
+// Posts the provider list in the setup chat. The answer names the bot whose chat holds the sign-in.
+function startProviderConnect(): Promise<ProviderConnectResponse> {
+    return requestJson<ProviderConnectResponse>(`${API_ROOT}/providers/connect`, { method: 'POST' });
+}
+
 interface LimitBound {
     min: number;
     max: number;
@@ -494,7 +519,11 @@ export {
     removeWebhook,
     listWatches,
     removeWatch,
+    getBotProvider,
     getModelSettings,
+    listProviders,
+    startProviderConnect,
+    switchBotProvider,
     saveModelSettings,
     getLimits,
     saveLimits,

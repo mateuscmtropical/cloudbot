@@ -43,6 +43,8 @@ import { INTEGRATION_TOOL_FULL_NAMES, createIntegrationTools } from '../integrat
 import type { IntegrationService } from '../integrations/IntegrationService.ts';
 import { MODELS_SET_TOOL_FULL_NAME, createModelTools } from '../models/createModelTools.ts';
 import { PROVIDER_TOOL_FULL_NAMES, createProviderTools } from '../providers/createProviderTools.ts';
+import { PROVIDER_LABELS, isProviderId } from '../providers/providerIds.ts';
+import { KEEP_WAITING_CHOICE_ID, buildProviderSwitchCard } from '../providers/providerSwitchCard.ts';
 import type { ProviderToolDependencies } from '../providers/createProviderTools.ts';
 import { LIMITS_SET_TOOL_FULL_NAME, createLimitTools } from '../limits/createLimitTools.ts';
 import { TurnDeadline } from '../limits/TurnDeadline.ts';
@@ -1803,6 +1805,12 @@ class ChatService {
             if (notificationAnswer !== undefined) {
                 return notificationAnswer;
             }
+
+            const providerSwitchAnswer = await this.answerProviderSwitchCard(botId, messageId, value);
+
+            if (providerSwitchAnswer !== undefined) {
+                return providerSwitchAnswer;
+            }
         }
 
         // Two answers to one form could both read it as open, so a second answer during the first is refused.
@@ -1877,6 +1885,61 @@ class ChatService {
 
         if (!body.options.some(option => option.id === choiceId)) {
             throw new SetupAnswerError('This is not an answer of this card.');
+        }
+
+        return this.updateSetupMessage(messageId, { ...body, chosenId: choiceId });
+    }
+
+    // Posts the card that offers another provider after a usage limit. Without another connected provider there is nothing to offer.
+    private async postProviderSwitchCard(botId: string): Promise<void> {
+        const providerTools = this.providerTools;
+
+        if (providerTools === undefined) {
+            return;
+        }
+
+        const current = await providerTools.providerFor(botId);
+        const connected = await providerTools.connected();
+        const others = connected.filter(provider => provider !== current && providerTools.available.includes(provider));
+
+        if (others.length === 0) {
+            return;
+        }
+
+        const card = buildProviderSwitchCard(current, others);
+
+        await this.saveAndPublish(botId, 'assistant', card);
+    }
+
+    // Returns undefined when the message is not the provider card, so the setup handles it.
+    // A switch also ends the usage wait, so the owner sends the message again and it runs on the new provider.
+    private async answerProviderSwitchCard(botId: string, messageId: string, choiceId: string): Promise<ChatMessage | undefined> {
+        const stored = await this.messageStore.getById(messageId);
+        const body = stored?.content as MessageBody | undefined;
+
+        if (stored?.botId !== botId || body?.kind !== 'choice' || body.isProviderSwitch !== true) {
+            return undefined;
+        }
+
+        if (body.chosenId !== undefined) {
+            throw new SetupAnswerError('This question was already answered.');
+        }
+
+        if (!body.options.some(option => option.id === choiceId)) {
+            throw new SetupAnswerError('This is not an answer of this card.');
+        }
+
+        const providerTools = this.providerTools;
+
+        // The card offered only providers that were connected when it was posted, so the answer needs no new check.
+        if (choiceId !== KEEP_WAITING_CHOICE_ID && providerTools !== undefined && isProviderId(choiceId)) {
+            await providerTools.setProvider(botId, choiceId);
+
+            if (this.usageWaitTimers.has(botId)) {
+                await this.cancelUsageWait(botId);
+            }
+
+            await this.saveAndPublish(botId, 'system', { kind: 'text', text: `From your next message this bot runs on ${PROVIDER_LABELS[choiceId]}. Send your message again.` });
         }
 
         return this.updateSetupMessage(messageId, { ...body, chosenId: choiceId });
@@ -3268,6 +3331,13 @@ class ChatService {
         // The continuation of a check-in removes these too if it ends quiet. They are kept in memory only, so a restart in the wait keeps them in the chat.
         if (turn.source === 'checkin') {
             this.checkinCarry.set(turn.botId, [...collectCheckinMessageIds(turn, turnState), waitNotice.id]);
+        }
+
+        // Only the owner's own message gets the offer. A routine or a webhook waits without asking.
+        if (turn.source === 'chat') {
+            // Checking the sign-ins can take a minute, so the card comes when the check ends and the turn does not wait for it.
+            this.postProviderSwitchCard(turn.botId)
+                .catch(reportBackgroundError);
         }
     }
 
