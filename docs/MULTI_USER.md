@@ -147,6 +147,7 @@ The owner's instance exposes `/api/people` only when it has the hub people admin
 The panel lists the access state, the instance status, the address and the last seen time of each person. The owner can add a person, deactivate or reactivate them, reset a password, or delete them after typing their name.
 
 A new or reset password appears with the address in a one time card. The card stays in component state only. It disappears when the owner closes the panel or selects "I saved it".
+
 ## Passkey sign-in
 
 The hub stores each passkey in the `hub_passkeys` table, keyed by person and credential id. Deleting a person deletes their passkeys. Each person can register up to ten.
@@ -164,6 +165,7 @@ The hub stores each passkey in the `hub_passkeys` table, keyed by person and cre
 The front door passes the tenant of the request, the signed in person, the session check, the session cookie writer, the same-origin check and a page renderer. It appends `passkeyLoginExtras()` to the sign-in page and connects `createAfterLogin` to the redirect after a password sign-in. The offer appears only for a person without passkeys, and "Not now" stores a skip cookie for 180 days.
 
 A passkey proves who the person is. The front door still checks that the person is active before it starts the session.
+
 ## Bot tools for people
 
 The bots of the owner get five tools when the instance has the hub people admin client: `person_list`, `person_add`, `person_deactivate`, `person_reactivate` and `person_reset_password`. A member's instance has none of them. No tool deletes a person. Deleting stays in the panel, where the owner types the name.
@@ -173,6 +175,7 @@ The bots of the owner get five tools when the instance has the hub people admin 
 The tools never return a password. After an add or a reset, the server sends a `personCredentials` event to the web app of the owner, which shows the address and the password in a notice with Copy and Hide buttons. The event is not a chat message, so it is not stored and not logged. When no web app is open, the server keeps the event in memory until one subscribes. A restart of the server drops an undelivered event, and the owner resets the password from the panel.
 
 A failed call returns a short generic result to the model. The details of the hub error stay out of the chat.
+
 ## Hub settings
 
 The hub reads `CLOUDBOT_DOMAIN`, `HUB_PORT`, `HUB_HOST`, `HUB_DATA_DIR`, `DOCKER_API_URL`, `CLOUDBOT_INSTANCE_IMAGE`, `CLOUDBOT_INSTANCE_MEMORY_MB`, `CLOUDBOT_INSTANCE_BUDGET_MB`, `CLOUDBOT_INSTANCE_CPUS`, `CLOUDBOT_OWNER_NAME` and `HUB_CONTAINER_ID`. Only `CLOUDBOT_DOMAIN` is required. The hub container id defaults to `HOSTNAME`.
@@ -180,3 +183,17 @@ The hub reads `CLOUDBOT_DOMAIN`, `HUB_PORT`, `HUB_HOST`, `HUB_DATA_DIR`, `DOCKER
 Each person gets a container, a bridge network and four named volumes. The network is not internal, so the instance reaches AI providers and the web. Another network cannot reach it. The hub joins the network as `hub`, and it leaves the network before the network is removed. The instance has no published ports and fixed memory and CPU caps. The hub checks the total memory cap before it starts an instance and waits up to two minutes for its health check.
 
 On its first start the hub creates the owner and the instance of the owner, and prints one generated password. `node dist/hub/main.js reset-password <name>` prints a replacement password.
+
+## Front door
+
+`createFrontDoorRoutes` handles every request that is not under `/internal`. The host decides what happens. The apex shows a short page. A person's address (`<name>.<domain>`) needs a session of that person. An unknown or inactive name gets a not available page that looks the same.
+
+The routes under `/__hub/` on a person's address are the hub's own: `login`, `password`, `logout` and `status`. Everything else goes to the instance through `cloudbot-i-<name>:3000`. The hub removes the session cookie and the trust header from the browser request, then sets the trust header with the secret of the instance. `attachUpgradeProxy` does the same for WebSockets and checks the session and the origin before it connects.
+
+Sessions live in the hub database as hashes of random tokens. The cookie is host only, `HttpOnly`, `SameSite=Strict`, and `Secure` when the domain is not `localhost`. A person with a new password can only reach the change password page. A change signs out the other sessions of that person.
+
+Five failed sign-ins lock the name and the address for 15 minutes. The sign-in page never says whether the name or the password was wrong.
+
+When the instance is not running, the hub starts it and shows the loading page, which asks `/__hub/status` until the instance is ready. A start that does not fit the memory budget shows a busy page.
+
+In hub mode an instance accepts a request with the trust header and the right secret as the owner session. It has no setup link, no passkeys of its own and no `/setup` route.

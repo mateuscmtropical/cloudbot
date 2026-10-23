@@ -6,6 +6,8 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
 
+import { HUB_TRUST_HEADER } from '../../shared/hubProtocol.ts';
+import { isValidHubSecret } from '../access/hubSession.ts';
 import { SESSION_COOKIE_NAME } from '../access/requireSession.ts';
 import type { SetupAccess } from '../access/SetupAccess.ts';
 import { RfbInputFilter } from './RfbInputFilter.ts';
@@ -14,6 +16,7 @@ import type { ScreenHolder } from './ScreenHolder.ts';
 interface VncProxyOptions {
     server: Server;
     access: SetupAccess;
+    hubSecret?: string | undefined;
     // Mouse and keyboard reach the desktop only while a person holds the screen.
     screen: ScreenHolder;
     vncPort?: number;
@@ -131,6 +134,7 @@ function bridgeToVnc(webSocket: WebSocket, vncPort: number, screen: ScreenHolder
 interface SessionSocketOptions {
     server: Server;
     access: SetupAccess;
+    hubSecret?: string | undefined;
     // The only upgrade path this socket serves. Other paths get a 404.
     path: string;
     accept: (webSocket: WebSocket) => void;
@@ -165,8 +169,13 @@ function attachSessionSocket(options: SessionSocketOptions): void {
         }
 
         const sessionToken = readCookie(request, SESSION_COOKIE_NAME);
+        const hubSecret = request.headers[HUB_TRUST_HEADER];
+        const hubSecretValue = typeof hubSecret === 'string' ? hubSecret : undefined;
+        const isHubSession = isValidHubSecret(hubSecretValue, options.hubSecret);
 
-        options.access.isValidSession(sessionToken)
+        const sessionCheck = isHubSession ? Promise.resolve(true) : options.access.isValidSession(sessionToken);
+
+        sessionCheck
             .then((isValid) => {
                 if (!isValid) {
                     refuse(socket, '401 Unauthorized');
@@ -188,6 +197,7 @@ function attachVncProxy(options: VncProxyOptions): void {
     attachSessionSocket({
         server: options.server,
         access: options.access,
+        hubSecret: options.hubSecret,
         path: VNC_PATH,
         publicUrl: options.publicUrl,
         accept: (webSocket) => {

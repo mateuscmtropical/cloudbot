@@ -155,6 +155,25 @@ describe('attachVncProxy', () => {
             .toEqual(['RFB 003.008\n', 'RFB 003.008\n']);
     });
 
+    it('accepts a request with the matching hub secret and no owner cookie', async () => {
+        const vncPort = (vncServer.address() as AddressInfo).port;
+        const hubServer = createServer();
+
+        attachVncProxy({ server: hubServer, access, hubSecret: 'instance-secret', screen, vncPort });
+        const hubPort = await listenOnFreePort(hubServer);
+        const webSocket = new WebSocket(`ws://127.0.0.1:${String(hubPort)}/api/desktop/vnc`, {
+            headers: { 'origin': `http://127.0.0.1:${String(hubPort)}`, 'x-cloudbot-hub': 'instance-secret' },
+        });
+        const outcome = await waitForOutcome(webSocket);
+
+        expect(outcome)
+            .toBe('message:RFB 003.008\n');
+
+        webSocket.close();
+        hubServer.closeAllConnections();
+        hubServer.close();
+    });
+
     it('closes the socket when the desktop is not running', async () => {
         vncServer.close();
         httpServer.closeAllConnections();

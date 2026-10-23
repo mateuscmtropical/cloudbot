@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
 
-import { HUB_ACTIVITY_PATH } from '../../shared/hubProtocol.ts';
+import { HUB_ACTIVITY_PATH, HUB_TRUST_HEADER } from '../../shared/hubProtocol.ts';
 import { SetupAccess } from '../access/SetupAccess.ts';
 import { createApp } from '../createApp.ts';
 import { openDatabase } from '../store/openDatabase.ts';
@@ -102,13 +102,10 @@ describe('createHubActivityRoutes', () => {
             process.env.CLOUDBOT_PERSON_NAME = 'maria';
             process.env.CLOUDBOT_PERSON_ROLE = 'member';
 
-            const hubApp = createApp({ version: '1.2.3', access });
+            const hubApp = createApp({ version: '1.2.3', access, hubSecret: 'hub-secret' });
             const denied = await hubApp.request(HUB_ACTIVITY_PATH);
-            const setupCode = await access.issueSetupCode();
-            const signIn = await hubApp.request(`/setup?code=${setupCode}`);
-            const sessionToken = readSessionToken(signIn);
             const authorized = await hubApp.request(HUB_ACTIVITY_PATH, {
-                headers: { cookie: `cloudbot_session=${sessionToken}` },
+                headers: { [HUB_TRUST_HEADER]: 'hub-secret' },
             });
 
             expect(denied.status)
@@ -124,6 +121,9 @@ describe('createHubActivityRoutes', () => {
             delete process.env.CLOUDBOT_PERSON_ROLE;
 
             const standaloneApp = createApp({ version: '1.2.3', access });
+            const setupCode = await access.issueSetupCode();
+            const signIn = await standaloneApp.request(`/setup?code=${setupCode}`);
+            const sessionToken = readSessionToken(signIn);
             const notMounted = await standaloneApp.request(HUB_ACTIVITY_PATH, {
                 headers: { cookie: `cloudbot_session=${sessionToken}` },
             });

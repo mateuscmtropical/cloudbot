@@ -124,6 +124,32 @@ describe('attachScreencast', () => {
         webSocket.close();
     });
 
+    it('accepts a request with the matching hub secret and no owner cookie', async () => {
+        const browser = { connectPage: () => Promise.resolve(fake.page) } as unknown as BrowserControl;
+        const hubServer = createServer();
+
+        attachScreencast({ server: hubServer, access, hubSecret: 'instance-secret', browser, screen: new ScreenHolder() });
+        const hubPort = await listenOnFreePort(hubServer);
+        const webSocket = new WebSocket(`ws://127.0.0.1:${String(hubPort)}/api/desktop/screencast`, {
+            headers: { 'origin': `http://127.0.0.1:${String(hubPort)}`, 'x-cloudbot-hub': 'instance-secret' },
+        });
+        const firstMessage = new Promise<string>((resolve) => {
+            webSocket.on('message', (data: Buffer) => {
+                resolve(data.toString());
+            });
+        });
+
+        await waitUntil(() => fake.calls.includes('Page.startScreencast'));
+        fake.emit('Page.screencastFrame', { data: 'AAAA', sessionId: 3, metadata: { deviceWidth: 1280, deviceHeight: 800 } });
+
+        expect(JSON.parse(await firstMessage))
+            .toEqual({ type: 'frame', data: 'AAAA', width: 1280, height: 800 });
+
+        webSocket.close();
+        hubServer.closeAllConnections();
+        hubServer.close();
+    });
+
     it('refuses the upgrade without a session', async () => {
         const webSocket = new WebSocket(`ws://127.0.0.1:${String(httpPort)}/api/desktop/screencast`, { headers: { origin: `http://127.0.0.1:${String(httpPort)}` } });
         const status = await new Promise<string>((resolve) => {
