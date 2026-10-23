@@ -147,3 +147,20 @@ The owner's instance exposes `/api/people` only when it has the hub people admin
 The panel lists the access state, the instance status, the address and the last seen time of each person. The owner can add a person, deactivate or reactivate them, reset a password, or delete them after typing their name.
 
 A new or reset password appears with the address in a one time card. The card stays in component state only. It disappears when the owner closes the panel or selects "I saved it".
+## Passkey sign-in
+
+The hub stores each passkey in the `hub_passkeys` table, keyed by person and credential id. Deleting a person deletes their passkeys. Each person can register up to ten.
+
+`HubPasskeyService` makes discoverable credentials with required user verification and no attestation. A challenge is signed by the hub, binds the operation to its person, address and origin, expires after five minutes and works once. A production address is `https://<name>.<domain>`. With `CLOUDBOT_DOMAIN=localhost` the origin is the local HTTP address with its port.
+
+`createHubPasskeyRoutes` serves these routes at the root of the hub:
+
+- `POST /__hub/passkey/register/options` and `POST /__hub/passkey/register/verify` need the signed in person.
+- `POST /__hub/passkey/login/options` and `POST /__hub/passkey/login/verify` are public and sit behind the same-origin check.
+- `GET /__hub/passkey/list` and `DELETE /__hub/passkey/:id` need the signed in person.
+- `GET /__hub/passkey/offer` shows the one time offer after a password sign-in.
+- `GET /__hub/passkeys` shows the passkeys of the person.
+
+The front door passes the tenant of the request, the signed in person, the session check, the session cookie writer, the same-origin check and a page renderer. It appends `passkeyLoginExtras()` to the sign-in page and connects `createAfterLogin` to the redirect after a password sign-in. The offer appears only for a person without passkeys, and "Not now" stores a skip cookie for 180 days.
+
+A passkey proves who the person is. The front door still checks that the person is active before it starts the session.
