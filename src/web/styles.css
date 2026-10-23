@@ -960,6 +960,194 @@ svg {
     object-fit: contain;
     user-select: none;
 }
+
+/* The people screen replaces the main view and keeps long rosters inside the available space. */
+.people-panel {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--space-4);
+}
+
+.people-panel-header,
+.people-person-heading,
+.people-credential-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.people-panel-header {
+    max-width: 48rem;
+    margin: 0 auto var(--space-4);
+}
+
+.people-panel-header h1,
+.people-panel-header p,
+.people-add-form h2,
+.people-person h2 {
+    margin: 0;
+}
+
+.people-panel-header p {
+    margin-top: var(--space-1);
+    color: var(--color-text-muted);
+}
+
+.people-panel .setup-card {
+    width: min(48rem, 100%);
+    max-width: none;
+    margin: 0 auto var(--space-3);
+    padding: var(--space-4);
+    border-radius: var(--radius-bubble);
+    background: var(--color-surface);
+}
+
+.people-add-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.people-add-form h2,
+.people-add-form label {
+    flex-basis: 100%;
+}
+
+.people-add-form label,
+.people-field-label,
+.people-details dt {
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+}
+
+.people-add-form .setup-form {
+    width: 100%;
+}
+
+.people-add-form input,
+.people-delete-confirmation input {
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-surface-raised);
+    border-radius: var(--radius-control);
+    background: var(--color-background);
+}
+
+.people-list {
+    width: min(48rem, 100%);
+    margin: 0 auto;
+}
+
+.people-person-heading {
+    align-items: center;
+}
+
+.people-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-1);
+}
+
+.people-chip {
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-control);
+    background: var(--color-surface-raised);
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+}
+
+.people-chip.state-active {
+    color: var(--color-success);
+}
+
+.people-chip.state-inactive {
+    color: var(--color-danger);
+}
+
+.people-details {
+    display: grid;
+    gap: var(--space-2);
+    margin: var(--space-3) 0;
+}
+
+.people-details div,
+.people-credential-row > div {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.people-details dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.people-person .choice-buttons,
+.people-delete-confirmation {
+    margin-top: var(--space-2);
+}
+
+.people-delete-confirmation {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.people-delete-confirmation label {
+    flex-basis: 100%;
+}
+
+.people-delete-confirmation input {
+    flex: 1;
+}
+
+.people-credential > p:first-child {
+    margin: 0 0 var(--space-2);
+    font-weight: 600;
+}
+
+.people-credential-row {
+    align-items: center;
+    margin-top: var(--space-2);
+}
+
+.people-credential-row code {
+    overflow-wrap: anywhere;
+}
+
+.people-credential-row button,
+.people-credential .choice-buttons {
+    flex: none;
+    margin-top: var(--space-2);
+}
+
+.people-problem {
+    width: min(48rem, 100%);
+    margin: 0 auto var(--space-3);
+    color: var(--color-danger);
+}
+
+@media (max-width: 600px) {
+    .people-panel {
+        padding: var(--space-3);
+    }
+
+    .people-panel-header,
+    .people-person-heading,
+    .people-credential-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .people-credential-row button {
+        align-self: flex-start;
+    }
+}
 /* Thinking bubble (#130). Shown while a turn runs and no reply is streaming.
    The dots step on and off with steps(1, end), so there is no easing and no
    gliding. This keeps them moving when the OS asks for reduced motion. The

@@ -139,3 +139,11 @@ The hub accepts plain HTTP only when `CLOUDBOT_DOMAIN` is `localhost`. In that
 mode it sets the session cookie without the `Secure` flag, since there is no
 HTTPS. Instances keep `Secure` on their own cookie, which the hub mode does not
 use.
+
+## Owner people panel
+
+The owner's instance exposes `/api/people` only when it has the hub people admin client. The web app checks that route before it shows the People button. All panel routes sit behind the owner's session and the same-origin check.
+
+The panel lists the access state, the instance status, the address and the last seen time of each person. The owner can add a person, deactivate or reactivate them, reset a password, or delete them after typing their name.
+
+A new or reset password appears with the address in a one time card. The card stays in component state only. It disappears when the owner closes the panel or selects "I saved it".

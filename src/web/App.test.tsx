@@ -6,6 +6,7 @@ import type { BotSummary, ChatEvent, ChatMessage, PendingUpload } from '../share
 import { App } from './App.tsx';
 import { listBots, listMessages, listUploads, RequestFailedError, sendMessage, stopTurn, subscribeToEvents, uploadAttachments } from './apiClient.ts';
 import { MESSAGE_PAGE_SIZE } from './messageList.ts';
+import { listPeople } from './peopleClient.ts';
 
 // The waits below end when the state appears. The longer limit only covers slow runs with the whole suite in parallel.
 configure({ asyncUtilTimeout: 5000 });
@@ -31,6 +32,10 @@ vi.mock('./apiClient.ts', () => ({
     uploadAttachments: vi.fn(),
     listUploads: vi.fn(() => Promise.resolve([])),
     removeUpload: vi.fn(),
+}));
+
+vi.mock('./peopleClient.ts', () => ({
+    listPeople: vi.fn(() => Promise.reject(new Error('People route is not available.'))),
 }));
 
 function createBot(name: string, id = 'bot-1'): BotSummary {
@@ -74,6 +79,43 @@ describe('App sign-in', () => {
 });
 
 describe('App bot list', () => {
+    it('hides the people icon when the people route answers 404', async () => {
+        const notFoundError = new RequestFailedError('/api/people', 404);
+
+        Object.defineProperty(notFoundError, 'status', { value: 404 });
+        vi.mocked(listPeople)
+            .mockRejectedValueOnce(notFoundError);
+        vi.mocked(listBots)
+            .mockResolvedValue([]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+
+        render(<App />);
+
+        await waitFor(() => {
+            expect(listPeople)
+                .toHaveBeenCalledTimes(1);
+        });
+        expect(screen.queryByRole('button', { name: 'People' }))
+            .toBeNull();
+    });
+
+    it('opens the people panel when the people route answers successfully', async () => {
+        vi.mocked(listPeople)
+            .mockResolvedValue([]);
+        vi.mocked(listBots)
+            .mockResolvedValue([]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+
+        render(<App />);
+
+        fireEvent.click(await screen.findByRole('button', { name: 'People' }));
+
+        expect(await screen.findByRole('heading', { name: 'People' }))
+            .toBeTruthy();
+    });
+
     it('reloads the bot list when a turn ends so a renamed bot shows its new name', async () => {
         const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
 
