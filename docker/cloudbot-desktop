@@ -48,6 +48,7 @@ stop_children() {
         kill "${CHILD_PIDS[@]}" 2>/dev/null || true
         wait 2>/dev/null || true
     fi
+    pkill -u "$(id -u)" -f -- "--user-data-dir=$PROFILE_DIR" || true
 }
 
 # The server and this script share a process group, so only the started children are stopped.
@@ -78,6 +79,9 @@ fi
 openbox >> "$LOG_FILE" 2>&1 9>&- &
 CHILD_PIDS+=("$!")
 
+# The empty desktop has the dark color of the app, not black.
+xsetroot -solid '#1b1b1f' || true
+
 x11vnc -display "$DISPLAY" -localhost -rfbport "$VNC_PORT" -forever -shared -nopw -quiet >> "$LOG_FILE" 2>&1 9>&- &
 CHILD_PIDS+=("$!")
 
@@ -86,20 +90,28 @@ CHILD_PIDS+=("$!")
 
 # Docker's default seccomp profile blocks the namespaces Chromium's sandbox needs,
 # so the container is the sandbox. See docs/OWNER_QUESTIONS.md.
-chromium \
-    --no-sandbox \
-    --remote-debugging-port="$DEVTOOLS_PORT" \
-    --user-data-dir="$PROFILE_DIR" \
-    --no-first-run \
-    --no-default-browser-check \
-    --disable-dev-shm-usage \
-    --window-position=0,0 \
-    --window-size="$SCREEN_WIDTH,$SCREEN_HEIGHT" \
-    --proxy-server="socks5://127.0.0.1:$GATE_PORT" \
-    --proxy-bypass-list="<-loopback>" \
-    --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
-    --webrtc-ip-handling-policy=disable_non_proxied_udp \
-    https://www.google.com/ >> "$LOG_FILE" 2>&1 9>&- &
+# Chromium starts again a second after it closes, so closing its window never leaves an empty desktop.
+run_browser() {
+    while :; do
+        chromium \
+            --no-sandbox \
+            --remote-debugging-port="$DEVTOOLS_PORT" \
+            --user-data-dir="$PROFILE_DIR" \
+            --no-first-run \
+            --no-default-browser-check \
+            --disable-dev-shm-usage \
+            --window-position=0,0 \
+            --window-size="$SCREEN_WIDTH,$SCREEN_HEIGHT" \
+            --proxy-server="socks5://127.0.0.1:$GATE_PORT" \
+            --proxy-bypass-list="<-loopback>" \
+            --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
+            --webrtc-ip-handling-policy=disable_non_proxied_udp \
+            https://www.google.com/ >> "$LOG_FILE" 2>&1 9>&- || true
+        sleep 1
+    done
+}
+
+run_browser &
 CHILD_PIDS+=("$!")
 
 echo "The desktop is running on display $DISPLAY."
