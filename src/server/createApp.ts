@@ -21,6 +21,7 @@ import { createChannelRoutes } from './channels/createChannelRoutes.ts';
 import { createChatRoutes } from './chat/createChatRoutes.ts';
 import type { ChatService } from './chat/ChatService.ts';
 import { createHubActivityRoutes } from './hub/createHubActivityRoutes.ts';
+import { hasAgentProgramListening } from './hub/listeningPrograms.ts';
 import { readHubActivitySources } from './hub/readHubActivitySources.ts';
 import type { BotStore } from './store/BotStore.ts';
 import type { ChannelStore } from './store/ChannelStore.ts';
@@ -209,6 +210,7 @@ function createApp(options: AppOptions): Hono {
                 ...(options.watchStore === undefined ? {} : { watchStore: options.watchStore }),
                 ...(options.webhookStore === undefined ? {} : { webhookStore: options.webhookStore }),
                 ...(options.whatsappStore === undefined ? {} : { whatsappStore: options.whatsappStore }),
+                hasAgentProgram: () => hasAgentProgramListening({ agentUser: process.env.CLOUDBOT_AGENT_USER }),
                 isReady: options.isReady ?? (() => true),
             }),
         });

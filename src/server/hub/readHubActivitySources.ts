@@ -53,6 +53,7 @@ interface HubActivitySourceOptions {
     watchStore?: ActivityWatchStore;
     webhookStore?: ActivityWebhookStore;
     whatsappStore?: ActivityWhatsAppStore;
+    hasAgentProgram?: () => Promise<boolean>;
     isReady: () => boolean;
 }
 
@@ -76,6 +77,7 @@ async function readHubActivitySources(options: HubActivitySourceOptions): Promis
         : botIds.map(botId => chatService.isTelegramConnected(botId));
     const emailReads = chatService === undefined ? [] : botIds.map(botId => chatService.hasConfiguredEmailAccount(botId));
     const emailAccounts = chatService === undefined ? [] : await Promise.all(emailReads);
+    const hasAgentProgram = options.hasAgentProgram === undefined ? false : await options.hasAgentProgram();
 
     return {
         hasActiveTurn: bots.some(bot => chatService?.isBusy(bot.id) ?? false),
@@ -85,6 +87,7 @@ async function readHubActivitySources(options: HubActivitySourceOptions): Promis
         hasWhatsAppConnection: whatsappConnections.length > 0,
         hasTelegramConnection: telegramConnections.some(isConnected => isConnected),
         hasEmailAccount: emailAccounts.some(hasAccount => hasAccount),
+        hasAgentProgram,
         isLoginOrSetupInProgress: !options.isReady(),
     };
 }

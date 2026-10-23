@@ -11,6 +11,7 @@ const idleSources: ActivitySources = {
     hasWhatsAppConnection: false,
     hasTelegramConnection: false,
     hasEmailAccount: false,
+    hasAgentProgram: false,
     isLoginOrSetupInProgress: false,
 };
 
@@ -29,6 +30,7 @@ describe('computeActivity', () => {
             hasWhatsAppConnection: true,
             hasTelegramConnection: true,
             hasEmailAccount: true,
+            hasAgentProgram: true,
             isLoginOrSetupInProgress: true,
         };
 
@@ -43,6 +45,7 @@ describe('computeActivity', () => {
                     'WhatsApp connected',
                     'Telegram connected',
                     'email account configured',
+                    'program listening on a port',
                     'login or setup in progress',
                 ],
             });

@@ -98,8 +98,9 @@ busy and to try again soon. Both numbers are settings of the hub.
 
 After five minutes without a request, the hub asks the instance for
 `GET /api/hub/activity`. A running turn, an enabled routine, a page watch, a
-webhook or a WhatsApp, Telegram or email connection keeps it awake. Otherwise the
-hub stops it. The next sign-in starts it again.
+webhook, a WhatsApp, Telegram or email connection, or a program the bot user
+started that listens on a port, such as a Node dev server, keeps it awake.
+The desktop's own ports do not count. Otherwise the hub stops it. The next sign-in starts it again.
 
 ## Security notes
 

@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- An instance of a server for many people stays awake while a program that a person started listens on a port, such as a Node dev server in the workspace. It used to hibernate after five idle minutes, which stopped the server. It hibernates again after the program stops.
 - Closing the browser window on the Screen panel no longer leaves a black screen. The browser comes back a second later on Google, and the empty desktop has the dark color of the app.
 - The Screen panel is bigger. The picture takes about 80% of the width and the controls sit in a column on the right. One button hands the screen over or takes it back, one expands the panel to the whole window, and one closes it. The duplicate "I will keep it" button is gone.
 - The bot's browser opens on Google instead of a blank page. A new tab opened after all tabs were closed does the same.

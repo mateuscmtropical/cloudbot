@@ -75,7 +75,7 @@ sudo cloudbot update
 ```
 
 The hub hibernates an idle instance after five minutes by default. An active
-turn or another activity that needs the instance keeps it awake. A later visit
+turn, a program a person started that listens on a port, or another activity that needs the instance keeps it awake. A later visit
 starts a hibernated instance again.
 
 ## Commands and updates
