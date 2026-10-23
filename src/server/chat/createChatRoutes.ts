@@ -471,7 +471,7 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
             }
 
             const writeEvent = createEventWriter(stream);
-            const initialEvent: ChatEvent = { type: 'turn', botId, isRunning: chatService.isBusy(botId) };
+            const initialEvent: ChatEvent = { type: 'turn', botId, isRunning: chatService.isWorking(botId) };
 
             writeEvent(initialEvent);
 

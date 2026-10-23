@@ -765,11 +765,17 @@ describe('setup conversation', () => {
         expect(context.setup.isDone())
             .toBe(false);
         expect((await context.chat.sendMessage(context.botId, 'Hello'))?.body)
-            .toEqual({ kind: 'text', text: 'CloudBot is starting. Try again in a moment.' });
+            .toEqual({ kind: 'text', text: 'CloudBot is starting. I will answer your message as soon as it is ready.' });
+        expect(context.chat.isWorking(context.botId))
+            .toBe(true);
         expect(context.runner.receivedRequests)
             .toHaveLength(0);
         connected.resolve(undefined);
         await boot;
+        await vi.waitFor(() => {
+            expect(context.runner.receivedRequests)
+                .toHaveLength(1);
+        });
         expect((await stale).status)
             .toBe(409);
         expect(context.setup.isDone())
