@@ -16,6 +16,7 @@ interface ReviewContextSources {
     modelStore: Pick<ModelStore, 'get' | 'getEfforts'>;
     // The posts a channel turn is reviewed against. Without it a channel review gets no chat lines, never the bot's own chat.
     channelStore?: Pick<ChannelStore, 'listRecentMessages'>;
+    workspaceFor?: (botId: string) => string;
     messageCount?: number;
 }
 
@@ -120,10 +121,12 @@ function createReviewContextReader(sources: ReviewContextSources): (botId: strin
         ]);
         const reviewModelOption = modelChoices.review === null ? {} : { reviewModel: modelChoices.review };
         const reviewEffortOption = efforts.review === null ? {} : { reviewEffort: efforts.review };
+        const workspaceOption = sources.workspaceFor === undefined ? {} : { workspaceDir: sources.workspaceFor(botId) };
 
         return {
             ownerRules: rules.map(rule => `${rule.kind === 'block' ? 'Block' : 'Allow'}: ${rule.text}`),
             recentMessages,
+            ...workspaceOption,
             ...reviewModelOption,
             ...reviewEffortOption,
         };

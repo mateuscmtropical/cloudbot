@@ -37,6 +37,8 @@ interface ReviewContext {
     ownerRules: string[];
     // The last few chat messages as plain lines, oldest first.
     recentMessages: string[];
+    // The bot's workspace lets the reviewer tell an in-workspace path from an outside one.
+    workspaceDir?: string;
     // The model the owner chose for the review. Unset keeps the CLI default.
     reviewModel?: string;
     // The effort the owner chose for the review. Unset keeps the CLI default.
@@ -81,7 +83,7 @@ interface BotDeleteRefused {
 
 type BotDeleteCheck = BotDeleteAllowed | BotDeleteRefused;
 
-type ReviewCategory = 'send_message' | 'purchase' | 'booking' | 'other';
+type ReviewCategory = 'send_message' | 'purchase' | 'booking' | 'remote_write' | 'outside_workspace_change' | 'system_change' | 'connector_change' | 'owner_setting_change' | 'other';
 
 interface ModelAnswer {
     category: ReviewCategory;
@@ -91,6 +93,8 @@ interface ModelAnswer {
 }
 
 const ALLOW_HOST_TOOL_NAME = 'mcp__cloudbot__browser_allow_host';
+const APP_CONNECT_TOOL_NAME = 'mcp__cloudbot__app_connect';
+const PROVIDER_USE_TOOL_NAME = 'mcp__cloudbot__provider_use';
 const RULE_CHANGE_TOOL_NAME = 'mcp__cloudbot__rule_change';
 const BOT_DELETE_TOOL_NAME = 'mcp__cloudbot__bot_delete';
 const LIMITS_SET_TOOL_NAME = 'mcp__cloudbot__limits_set';
@@ -117,19 +121,47 @@ const CHANGE_CHECK_FAILED_REASON = 'The integration change could not be checked,
 const MAX_INPUT_LENGTH = 10_000;
 const MAX_LINE_LENGTH = 400;
 const DEFAULT_DENY_REASON = 'The review agent refused this action.';
-const SENSITIVE_CATEGORIES = new Set<ReviewCategory>(['send_message', 'purchase', 'booking']);
-const CATEGORIES = new Set<string>(['send_message', 'purchase', 'booking', 'other']);
+const ASK_CATEGORIES = new Set<ReviewCategory>([
+    'send_message',
+    'purchase',
+    'booking',
+    'remote_write',
+    'outside_workspace_change',
+    'system_change',
+    'connector_change',
+    'owner_setting_change',
+]);
+const CATEGORIES = new Set<string>([
+    'send_message',
+    'purchase',
+    'booking',
+    'remote_write',
+    'outside_workspace_change',
+    'system_change',
+    'connector_change',
+    'owner_setting_change',
+    'other',
+]);
 const DECISIONS = new Set<string>(['allow', 'ask', 'deny']);
 
 const REVIEW_INSTRUCTIONS = [
     'You review one tool call of a bot before it runs. You have no tools. Answer with one JSON object and nothing else.',
     'Fields: "category", "decision", "summary" and "reason".',
     '"category" is "send_message" when the call sends a message or post to another person or service on the owner\'s behalf,',
-    '"purchase" when it spends money, "booking" when it books or reserves something, and "other" otherwise.',
+    '"purchase" when it spends money, "booking" when it books or reserves something,',
+    '"remote_write" when it pushes to git or writes to a remote service,',
+    '"outside_workspace_change" when it deletes or overwrites something outside the bot\'s workspace,',
+    '"system_change" when it installs system packages or runs a command with sudo,',
+    '"connector_change" when it adds or connects a new service or connector,',
+    '"owner_setting_change" when it changes rules, limits or the bot\'s provider, and "other" otherwise.',
     // The hand-off tool stays in the other category, since the target is a bot of the owner and runs under its own approvals.
     'A hand-off to another bot of the owner (the tool bot_send) is "other", not "send_message". Ask only when it carries something the owner did not ask for.',
+    'Allow reading files and web pages, passive browsing, local commands in the bot\'s workspace that only read, build or test, and edits inside that workspace.',
+    'Use the provided bot workspace path to judge file paths. A relative file path is inside the workspace unless it climbs out with "..". If a path cannot be placed, ask.',
+    'Allow the bot\'s own notes and tasks without asking. Browsing that submits a message or form, spends money or books something is not passive browsing.',
     '"decision" is "allow" for a harmless call that fits the owner rules, "ask" when the owner should confirm it,',
-    'and "deny" when an owner rule forbids it.',
+    'and "deny" when an owner rule forbids it. A deny stays a deny even when the category normally asks.',
+    'Ask for the categories "send_message", "purchase", "booking", "remote_write", "outside_workspace_change", "system_change", "connector_change" and "owner_setting_change".',
     '"summary" is one short sentence for the owner that says what the call does, for example "Send an email to Ana".',
     '"reason" is one short sentence that says why a denied call was refused.',
     // Card and ID numbers are refused before this review, so the review only judges the other kinds of data.
@@ -154,9 +186,11 @@ function buildReviewPrompt(call: ToolCall, context: ReviewContext): string {
     const messageLines = context.recentMessages.map(line => `- ${truncate(line, MAX_LINE_LENGTH)}`);
     const rulesText = ruleLines.length === 0 ? '(none)' : ruleLines.join('\n');
     const messagesText = messageLines.length === 0 ? '(none)' : messageLines.join('\n');
+    const workspaceText = context.workspaceDir ?? '(unknown)';
 
     return [
         REVIEW_INSTRUCTIONS,
+        `Bot workspace: ${workspaceText}`,
         `Owner rules:\n${rulesText}`,
         `Recent chat:\n${messagesText}`,
         `Tool: ${call.toolName}`,
@@ -234,24 +268,32 @@ function toVerdict(answer: ModelAnswer, call: ToolCall): ToolCallVerdict {
     const summary = answer.summary === '' ? buildDefaultSummary(call) : answer.summary;
     // A hand-off goes to a bot of the owner, which works under its own rules and approvals. Only the decision of the review counts.
     const isHandoff = call.toolName === BOT_SEND_TOOL_FULL_NAME;
-    const isSensitive = !isHandoff && SENSITIVE_CATEGORIES.has(answer.category);
-
-    // Messages, purchases and bookings need the owner, whatever the model decided.
-    if (isSensitive || answer.decision === 'ask') {
-        return { decision: 'ask', summary };
-    }
 
     if (answer.decision === 'deny') {
         return { decision: 'deny', reason: answer.reason === '' ? DEFAULT_DENY_REASON : answer.reason };
     }
 
+    const needsOwner = !isHandoff && ASK_CATEGORIES.has(answer.category);
+
+    if (needsOwner || answer.decision === 'ask') {
+        return { decision: 'ask', summary };
+    }
+
     return { decision: 'allow' };
 }
 
-// The line the owner reads on the approval card. Opening a private host names the host, the other kinds name the risk.
+// The private-host card names the host and port. Other cards name the tool or setting they change.
 function describeAlwaysAsk(call: ToolCall): string {
     if (call.toolName !== ALLOW_HOST_TOOL_NAME) {
-        return `Run ${call.toolName}, which can send a message, buy or book.`;
+        if (call.toolName === APP_CONNECT_TOOL_NAME) {
+            return 'Connect a new app server.';
+        }
+
+        if (call.toolName === PROVIDER_USE_TOOL_NAME) {
+            return 'Switch this bot to another AI provider.';
+        }
+
+        return `Run ${call.toolName}, which needs your approval.`;
     }
 
     const input = call.input as AllowHostInput | null;

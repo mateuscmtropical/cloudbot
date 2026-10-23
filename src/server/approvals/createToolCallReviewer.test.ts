@@ -9,8 +9,45 @@ import type { ChangeCard, ChangeMode } from '../integrations/IntegrationService.
 const CONTEXT: ReviewContext = {
     ownerRules: ['Never email my boss.'],
     recentMessages: ['Owner: tidy my downloads folder'],
+    workspaceDir: '/var/lib/cloudbot-workspaces/bot-1',
 };
 const BASH_CALL = { toolName: 'Bash', input: { command: 'ls' } };
+
+interface ApprovalCategoryCase {
+    name: string;
+    category: string;
+    toolName: string;
+    input: unknown;
+}
+
+interface HarmlessReviewCase {
+    name: string;
+    toolName: string;
+    input: unknown;
+}
+
+const APPROVAL_CATEGORY_CASES: ApprovalCategoryCase[] = [
+    { name: 'messages', category: 'send_message', toolName: 'Bash', input: { command: 'echo local' } },
+    { name: 'purchases', category: 'purchase', toolName: 'Bash', input: { command: 'echo local' } },
+    { name: 'bookings', category: 'booking', toolName: 'Bash', input: { command: 'echo local' } },
+    { name: 'git pushes and remote service writes', category: 'remote_write', toolName: 'Bash', input: { command: 'git push origin main' } },
+    { name: 'deleting or overwriting outside the workspace', category: 'outside_workspace_change', toolName: 'Write', input: { file_path: '/etc/service.conf', content: 'changed' } },
+    { name: 'system package installs and sudo', category: 'system_change', toolName: 'Bash', input: { command: 'sudo apt-get install example' } },
+    { name: 'new connectors', category: 'connector_change', toolName: 'mcp__future__connect_account', input: {} },
+    { name: 'rule, limit and provider changes', category: 'owner_setting_change', toolName: 'Bash', input: { command: 'echo local' } },
+];
+const DENIED_CATEGORY_CASES: ApprovalCategoryCase[] = [
+    ...APPROVAL_CATEGORY_CASES,
+    { name: 'a sensitive message', category: 'send_message', toolName: 'Bash', input: {} },
+];
+
+const HARMLESS_REVIEW_CASES: HarmlessReviewCase[] = [
+    { name: 'a local read command', toolName: 'Bash', input: { command: 'git status' } },
+    { name: 'a local build command', toolName: 'Bash', input: { command: 'pnpm build' } },
+    { name: 'a local test command', toolName: 'Bash', input: { command: 'pnpm test' } },
+    { name: 'an edit inside the workspace', toolName: 'Write', input: { file_path: 'src/example.ts', content: 'export const answer = 42;' } },
+    { name: 'ordinary browsing', toolName: 'mcp__cloudbot__browser_click', input: { selector: 'a.next-page' } },
+];
 
 function answer(fields: Record<string, string>): string {
     return JSON.stringify({ category: 'other', decision: 'allow', summary: '', reason: '', ...fields });
@@ -180,6 +217,28 @@ describe('createToolCallReviewer', () => {
             .toEqual({ decision: 'ask', summary: 'Let the browser reach the private host intranet.test, port 8080.' });
     });
 
+    it('asks before connecting a new app server without consulting the model', async () => {
+        const { reviewer, askModel } = createReviewer('unused');
+
+        const verdict = await reviewer('bot-1', { toolName: 'mcp__cloudbot__app_connect', input: {} });
+
+        expect(verdict)
+            .toEqual({ decision: 'ask', summary: 'Connect a new app server.' });
+        expect(askModel)
+            .not.toHaveBeenCalled();
+    });
+
+    it('asks before switching the bot to another provider without consulting the model', async () => {
+        const { reviewer, askModel } = createReviewer('unused');
+
+        const verdict = await reviewer('bot-1', { toolName: 'mcp__cloudbot__provider_use', input: { provider: 'chatgpt' } });
+
+        expect(verdict)
+            .toEqual({ decision: 'ask', summary: 'Switch this bot to another AI provider.' });
+        expect(askModel)
+            .not.toHaveBeenCalled();
+    });
+
     it('allows a call the model allows', async () => {
         const { reviewer } = createReviewer(answer({ decision: 'allow' }));
 
@@ -198,13 +257,31 @@ describe('createToolCallReviewer', () => {
             .toEqual({ decision: 'ask', summary: 'Send an email to Ana' });
     });
 
-    it('asks for a sensitive category even when the model denies', async () => {
-        const { reviewer } = createReviewer(answer({ category: 'purchase', decision: 'deny', reason: 'No.' }));
+    it.each(APPROVAL_CATEGORY_CASES)('asks before $name when the model allows it', async ({ category, toolName, input }) => {
+        const { reviewer } = createReviewer(answer({ category, decision: 'allow', summary: 'Confirm this action.' }));
 
-        const verdict = await reviewer('bot-1', BASH_CALL);
+        const verdict = await reviewer('bot-1', { toolName, input });
 
-        expect(verdict.decision)
-            .toBe('ask');
+        expect(verdict)
+            .toEqual({ decision: 'ask', summary: 'Confirm this action.' });
+    });
+
+    it.each(DENIED_CATEGORY_CASES)('keeps a deny for $name', async ({ category, toolName, input }) => {
+        const { reviewer } = createReviewer(answer({ category, decision: 'deny', reason: 'An owner rule forbids it.' }));
+
+        const verdict = await reviewer('bot-1', { toolName, input });
+
+        expect(verdict)
+            .toEqual({ decision: 'deny', reason: 'An owner rule forbids it.' });
+    });
+
+    it.each(HARMLESS_REVIEW_CASES)('allows $name without an approval card when the model allows it', async ({ toolName, input }) => {
+        const { reviewer } = createReviewer(answer({ category: 'other', decision: 'allow' }));
+
+        const verdict = await reviewer('bot-1', { toolName, input });
+
+        expect(verdict)
+            .toEqual({ decision: 'allow' });
     });
 
     it('uses a default summary when the model gives none', async () => {
@@ -343,9 +420,32 @@ describe('buildReviewPrompt', () => {
             .toContain('web page, a file or a message');
     });
 
+    it('lists the actions that are allowed without a card and the actions that need one', () => {
+        const prompt = buildReviewPrompt(BASH_CALL, CONTEXT);
+
+        expect(prompt)
+            .toContain('local commands in the bot\'s workspace that only read, build or test');
+        expect(prompt)
+            .toContain('edits inside that workspace');
+        expect(prompt)
+            .toContain('outside_workspace_change');
+        expect(prompt)
+            .toContain('remote_write');
+        expect(prompt)
+            .toContain('system_change');
+        expect(prompt)
+            .toContain('connector_change');
+        expect(prompt)
+            .toContain('owner_setting_change');
+        expect(prompt)
+            .toContain('A deny stays a deny');
+    });
+
     it('lists the rules, the recent chat and the call', () => {
         const prompt = buildReviewPrompt(BASH_CALL, CONTEXT);
 
+        expect(prompt)
+            .toContain('Bot workspace: /var/lib/cloudbot-workspaces/bot-1');
         expect(prompt)
             .toContain('- Never email my boss.');
         expect(prompt)
