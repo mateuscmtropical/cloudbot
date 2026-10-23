@@ -73,6 +73,36 @@ describe('rule and delete approvals', () => {
             .toEqual({ decision: 'allow' });
     });
 
+    it('lets a hand-off run when the review files it as a message but allows it', async () => {
+        const reviewer = createToolCallReviewer({
+            askModel: vi.fn(() => Promise.resolve('{"category":"send_message","decision":"allow","summary":"","reason":""}')),
+            readContext: () => Promise.resolve({ ownerRules: [], recentMessages: [] }),
+        });
+
+        const verdict = await reviewer('bot-1', {
+            toolName: 'mcp__cloudbot__bot_send',
+            input: { bot: 'Ben', text: 'Summarize the notes.' },
+        }, signal);
+
+        expect(verdict)
+            .toEqual({ decision: 'allow' });
+    });
+
+    it('still denies a hand-off that the review denies', async () => {
+        const reviewer = createToolCallReviewer({
+            askModel: vi.fn(() => Promise.resolve('{"category":"send_message","decision":"deny","summary":"","reason":"An owner rule forbids it."}')),
+            readContext: () => Promise.resolve({ ownerRules: [], recentMessages: [] }),
+        });
+
+        const verdict = await reviewer('bot-1', {
+            toolName: 'mcp__cloudbot__bot_send',
+            input: { bot: 'Ben', text: 'Summarize the notes.' },
+        }, signal);
+
+        expect(verdict)
+            .toEqual({ decision: 'deny', reason: 'An owner rule forbids it.' });
+    });
+
     it('denies a block rule with a tool name that is not valid', async () => {
         const verdict = await describeRuleChange(fakeRuleStore([]), 'bot-1', {
             action: 'add',

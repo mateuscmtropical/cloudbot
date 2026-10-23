@@ -1331,7 +1331,7 @@ Limits. Text only. Approval cards, files and screenshots stay in the web app. Tu
 
 A bot passes a message or a task to another bot with `bot_send`, found by the target's name. The tool is offered only with the approval gate. Its handler is `ChatService.handoffFromTool`. It refuses an unknown name, a name shared by two bots, and the sending bot itself.
 
-The tool is in the review class, like the bot's other tools. The reviewer judges each call, so a hand-off that the reviewer allows runs without asking the owner. When the reviewer asks, the card shows the target and the whole text. The receiving turn is reviewed under its own rules as well, so a bot cannot use another bot to skip a block or an approval. `classifyToolCall.test.ts` pins the class.
+The tool is in the review class, like the bot's other tools. The reviewer judges each call, so a hand-off that the reviewer allows runs without asking the owner. The category the model gives a hand-off does not force a card, because the target is a bot of the owner and a reply is a hand-off too. Only the decision counts. When the reviewer asks, the card shows the target and the whole text. The receiving turn is reviewed under its own rules as well, so a bot cannot use another bot to skip a block or an approval. `classifyToolCall.test.ts` pins the class.
 
 The target's turn starts through `sendMessage` with the source `bot`, the same path a routine or webhook turn takes. The source `bot` uses the routines model, effort and limit choices. A hand-off takes no files that the owner staged for the target.
 

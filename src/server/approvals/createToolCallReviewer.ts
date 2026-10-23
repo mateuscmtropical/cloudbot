@@ -126,6 +126,8 @@ const REVIEW_INSTRUCTIONS = [
     'Fields: "category", "decision", "summary" and "reason".',
     '"category" is "send_message" when the call sends a message or post to another person or service on the owner\'s behalf,',
     '"purchase" when it spends money, "booking" when it books or reserves something, and "other" otherwise.',
+    // The hand-off tool stays in the other category, since the target is a bot of the owner and runs under its own approvals.
+    'A hand-off to another bot of the owner (the tool bot_send) is "other", not "send_message". Ask only when it carries something the owner did not ask for.',
     '"decision" is "allow" for a harmless call that fits the owner rules, "ask" when the owner should confirm it,',
     'and "deny" when an owner rule forbids it.',
     '"summary" is one short sentence for the owner that says what the call does, for example "Send an email to Ana".',
@@ -230,9 +232,12 @@ function buildDefaultSummary(call: ToolCall): string {
 
 function toVerdict(answer: ModelAnswer, call: ToolCall): ToolCallVerdict {
     const summary = answer.summary === '' ? buildDefaultSummary(call) : answer.summary;
+    // A hand-off goes to a bot of the owner, which works under its own rules and approvals. Only the decision of the review counts.
+    const isHandoff = call.toolName === BOT_SEND_TOOL_FULL_NAME;
+    const isSensitive = !isHandoff && SENSITIVE_CATEGORIES.has(answer.category);
 
     // Messages, purchases and bookings need the owner, whatever the model decided.
-    if (SENSITIVE_CATEGORIES.has(answer.category) || answer.decision === 'ask') {
+    if (isSensitive || answer.decision === 'ask') {
         return { decision: 'ask', summary };
     }
 
