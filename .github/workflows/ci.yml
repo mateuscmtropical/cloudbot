@@ -113,6 +113,38 @@ jobs:
 
       - run: shellcheck docker/install.sh docker/cloudbot docker/check-container.sh docker/cloudbot-desktop docker/cloudbot-remove-workspace docker/cloudbot-read-memory docker/cloudbot-end-turn
 
+  powershell:
+    name: Check the PowerShell installer (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: Windows x64
+            runner: windows-latest
+          - arch: Windows ARM
+            runner: windows-11-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Parse and lint docker/install.ps1
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $parseErrors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile("$PWD/docker/install.ps1", [ref]$null, [ref]$parseErrors)
+          if ($parseErrors.Count -gt 0) { $parseErrors; exit 1 }
+          $findings = Invoke-ScriptAnalyzer -Path docker/install.ps1 -Severity Error, Warning -ExcludeRule PSAvoidUsingWriteHost
+          $findings | Format-Table RuleName, Line, Message
+          if ($findings.Count -gt 0) { exit 1 }
+
+      - name: Check that a bad owner name is refused
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          powershell -NoProfile -ExecutionPolicy Bypass -File docker/install.ps1 -OwnerName Bad_Name 2>&1 | Out-Null
+          if ($LASTEXITCODE -eq 0) { throw 'The installer accepted a bad owner name.' }
+          exit 0
   install:
     name: Run install.sh on a fresh runner (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
