@@ -220,7 +220,7 @@ each time.
 When the desktop is enabled, the cloudbot tool server also has browser tools.
 `BrowserControl` in `src/server/desktop/` finds the first page in
 `/json/list` on the DevTools port, opens a WebSocket to it with Node's built-in
-client and closes it after each action. A new blank page is opened when none
+client and closes it after each action. A new page on Google is opened when none
 is left.
 
 | Tool | What it does |

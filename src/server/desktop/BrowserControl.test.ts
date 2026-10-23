@@ -318,7 +318,7 @@ describe('BrowserControl', () => {
         await browser.screenshot();
 
         expect(fetchCalls.calls[1])
-            .toEqual({ url: 'http://127.0.0.1:9222/json/new?about:blank', method: 'PUT' });
+            .toEqual({ url: 'http://127.0.0.1:9222/json/new?https://www.google.com/', method: 'PUT' });
         expect(sockets.urls)
             .toEqual(['ws://127.0.0.1:9222/devtools/page/new']);
     });

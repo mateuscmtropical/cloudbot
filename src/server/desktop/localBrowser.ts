@@ -130,7 +130,7 @@ function buildLocalBrowserArguments(options: LocalBrowserArgumentsOptions): stri
         // screencast frames to the Screen panel.
         '--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling',
         '--disable-backgrounding-occluded-windows',
-        'about:blank',
+        'https://www.google.com/',
     ];
 }
 

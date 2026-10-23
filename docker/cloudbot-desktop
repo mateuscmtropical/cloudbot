@@ -99,7 +99,7 @@ chromium \
     --proxy-bypass-list="<-loopback>" \
     --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
     --webrtc-ip-handling-policy=disable_non_proxied_udp \
-    about:blank >> "$LOG_FILE" 2>&1 9>&- &
+    https://www.google.com/ >> "$LOG_FILE" 2>&1 9>&- &
 CHILD_PIDS+=("$!")
 
 echo "The desktop is running on display $DISPLAY."

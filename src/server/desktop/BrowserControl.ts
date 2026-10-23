@@ -500,13 +500,13 @@ class BrowserControl {
         return checkedSocketUrl(firstPage.webSocketDebuggerUrl, devtoolsPort);
     }
 
-    // All tabs can be closed on the screen. Then a new blank tab is opened.
+    // All tabs can be closed on the screen. Then a new tab opens on Google.
     private async openNewPage(devtoolsUrl: string, devtoolsPort: string): Promise<string> {
         let target: PageTarget | undefined;
 
         try {
             const signal = AbortSignal.timeout(DEVTOOLS_HTTP_TIMEOUT_MS);
-            const response = await this.fetchFunction(`${devtoolsUrl}/json/new?about:blank`, { method: 'PUT', signal });
+            const response = await this.fetchFunction(`${devtoolsUrl}/json/new?https://www.google.com/`, { method: 'PUT', signal });
 
             target = await response.json() as PageTarget;
         } catch {
