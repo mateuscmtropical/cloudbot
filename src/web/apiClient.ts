@@ -445,6 +445,25 @@ function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void, o
     };
 }
 
+// The messages of every bot in one stream. The caller reloads the bot list on open, since events missed while it was down are lost.
+function subscribeToAllBotEvents(onEvent: (event: ChatEvent) => void, onOpen: () => void): () => void {
+    const eventSource = new EventSource(`${API_ROOT}/events`);
+
+    eventSource.addEventListener('open', () => {
+        onOpen();
+    });
+
+    eventSource.addEventListener('message', (messageEvent: MessageEvent<string>) => {
+        const parsedEvent = JSON.parse(messageEvent.data) as ChatEvent;
+
+        onEvent(parsedEvent);
+    });
+
+    return () => {
+        eventSource.close();
+    };
+}
+
 // The remote MCP servers the owner connected. The list never holds a token.
 function listConnectedApps(): Promise<ConnectedAppSummary[]> {
     return requestJson<ConnectedAppSummary[]>('/api/apps', {});
@@ -517,6 +536,7 @@ export {
     submitCode,
     submitSecret,
     subscribeToEvents,
+    subscribeToAllBotEvents,
     uploadAttachments,
     listUploads,
     removeUpload,

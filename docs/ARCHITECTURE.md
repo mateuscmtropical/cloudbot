@@ -425,6 +425,8 @@ never stored. When the block ends, its whole text goes out once as a `message`
 event, which replaces the draft. The web app shows the draft as an assistant
 bubble, so the text is never shown twice.
 
+`GET /api/events` is one stream with the `message` and `botDeleted` events of every bot. The bot list uses it to reload the previews and to mark a closed chat as unread. Each bot summary has `lastMessageSequence`, the sequence of the newest message from the bot. The browser keeps the newest sequence it has seen for each bot, and the row is unread when the bot has a newer one and its chat is not open.
+
 ## Attachments
 
 Uploads go to `POST /api/bots/:id/attachments` as multipart form data. Hono's

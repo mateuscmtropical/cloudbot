@@ -59,7 +59,8 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
             <div className="bot-items">
                 {bots.map((bot) => {
                     const isSelected = bot.id === selectedBotId;
-                    const itemClassName = isSelected ? 'bot-item is-selected' : 'bot-item';
+                    const selectedClassName = isSelected ? 'bot-item is-selected' : 'bot-item';
+                    const itemClassName = bot.hasUnread ? `${selectedClassName} is-unread` : selectedClassName;
                     const mascotState = isSelected ? selectedMascotState : 'idle';
 
                     if (renamingBotId === bot.id && onRenameBot !== undefined) {

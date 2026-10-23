@@ -29,6 +29,7 @@ vi.mock('./apiClient.ts', () => ({
     submitCode: vi.fn(),
     submitSecret: vi.fn(),
     subscribeToEvents: vi.fn(),
+    subscribeToAllBotEvents: vi.fn(() => () => undefined),
     uploadAttachments: vi.fn(),
     listUploads: vi.fn(() => Promise.resolve([])),
     // The provider picker in the header reads the provider. These tests have none.
@@ -54,7 +55,7 @@ function createBot(name: string, id = 'bot-1'): BotSummary {
         title: 'Coworker',
         mascotColor: 'blue', mascotShape: 'puff',
         lastMessagePreview: '',
-        hasUnread: false,
+        hasUnread: false, lastMessageSequence: 0,
     };
 }
 

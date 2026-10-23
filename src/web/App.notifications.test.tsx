@@ -28,6 +28,7 @@ vi.mock('./apiClient.ts', () => ({
     submitCode: vi.fn(),
     submitSecret: vi.fn(),
     subscribeToEvents: vi.fn(),
+    subscribeToAllBotEvents: vi.fn(() => () => undefined),
     uploadAttachments: vi.fn(),
     listUploads: vi.fn(() => Promise.resolve([])),
     // The provider picker in the header reads the provider. These tests have none.
@@ -54,7 +55,7 @@ vi.mock('./pushClient.ts', async (importOriginal) => {
 });
 
 function createBot(name: string, id: string): BotSummary {
-    return { id, name, title: 'Coworker', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false };
+    return { id, name, title: 'Coworker', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
 }
 
 const CARD: ChatMessage = {

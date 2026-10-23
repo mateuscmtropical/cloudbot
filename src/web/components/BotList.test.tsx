@@ -7,8 +7,8 @@ import type { ChannelSummary } from '../../shared/channelTypes.ts';
 import { BotList } from './BotList.tsx';
 
 const BOTS: BotSummary[] = [
-    { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false },
-    { id: 'bot-b', name: 'Bia', title: 'Assistant', mascotColor: 'pink', mascotShape: 'bubble', lastMessagePreview: '', hasUnread: false },
+    { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 },
+    { id: 'bot-b', name: 'Bia', title: 'Assistant', mascotColor: 'pink', mascotShape: 'bubble', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 },
 ];
 
 describe('BotList', () => {
