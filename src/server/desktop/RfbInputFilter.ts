@@ -121,6 +121,14 @@ class RfbInputFilter {
         return bytes;
     }
 
+    // The extended clipboard of noVNC sends the length as a negative number. Its size is the absolute value.
+    // Read as unsigned, that is almost 4 GB, and the filter would wait for it and hold back every later message.
+    private readCutTextLength(): number {
+        const length = this.pending.readInt32BE(4);
+
+        return Math.abs(length);
+    }
+
     // The size of the first pending message, or undefined when its header is not complete.
     private messageSize(): number | undefined {
         switch (this.pending[0]) {
@@ -139,7 +147,7 @@ class RfbInputFilter {
             case CLIENT_CUT_TEXT:
                 return this.pending.length < CLIENT_CUT_TEXT_HEADER_BYTES
                     ? undefined
-                    : CLIENT_CUT_TEXT_HEADER_BYTES + this.pending.readUInt32BE(4);
+                    : CLIENT_CUT_TEXT_HEADER_BYTES + this.readCutTextLength();
             default:
                 // An unknown type cannot be framed, and passing it on could hide input messages behind it.
                 throw new RfbStreamError('The message type is not known.');

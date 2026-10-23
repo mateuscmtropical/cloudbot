@@ -131,9 +131,26 @@ describe('RfbInputFilter', () => {
             .toThrow(RfbStreamError);
     });
 
+    it('frames the extended clipboard message of noVNC, which has a negative length', () => {
+        const filter = startedFilter(() => false);
+        const extendedClipboard = Buffer.from([6, 0, 0, 0, 255, 255, 255, 248, 31, 0, 0, 1, 0, 0, 0, 0]);
+
+        expect(filter.filter(Buffer.concat([extendedClipboard, UPDATE_REQUEST])))
+            .toEqual(UPDATE_REQUEST);
+    });
+
+    it('still forwards the messages after the extended clipboard message while input is allowed', () => {
+        const filter = startedFilter(() => true);
+        const extendedClipboard = Buffer.from([6, 0, 0, 0, 255, 255, 255, 248, 31, 0, 0, 1, 0, 0, 0, 0]);
+        const all = Buffer.concat([extendedClipboard, POINTER, UPDATE_REQUEST]);
+
+        expect(filter.filter(all))
+            .toEqual(all);
+    });
+
     it('refuses a clipboard message that is far too large', () => {
         const filter = startedFilter(() => false);
-        const header = Buffer.from([6, 0, 0, 0, 0xff, 0xff, 0xff, 0xff]);
+        const header = Buffer.from([6, 0, 0, 0, 0x7f, 0xff, 0xff, 0xff]);
 
         expect(() => filter.filter(Buffer.concat([header, Buffer.alloc(3 * 1024 * 1024)])))
             .toThrow(RfbStreamError);
