@@ -17,6 +17,8 @@ import type { ProviderId } from './providers/providerIds.ts';
 import { PROFILE_SERVER_NAME } from './agent/createProfileToolServer.ts';
 import { AGENT_TURN_ROOT, startLoopbackToolServer } from './agent/createLoopbackToolServer.ts';
 import { SetupAccess } from './access/SetupAccess.ts';
+import { HubClient } from './people/HubClient.ts';
+import { readHubConfig } from './people/hubConfig.ts';
 import { PasskeyService } from './access/PasskeyService.ts';
 import { buildSetupLink, readPublicBaseUrl, readServerHost, readServerPort } from './access/setupLinkUrl.ts';
 import { createAgyReviewModel } from './approvals/createAgyReviewModel.ts';
@@ -591,7 +593,11 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+// Inside the hub the owner's instance manages people through the hub. A member's instance and a server on its own do not.
+const hubConfig = readHubConfig(process.env);
+const peopleAdmin = hubConfig?.role === 'owner' ? new HubClient(hubConfig) : undefined;
+
+const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

@@ -13,6 +13,7 @@ import type { SetupAccess } from './access/SetupAccess.ts';
 import { createPasskeyRoutes } from './access/createPasskeyRoutes.ts';
 import type { PasskeyService } from './access/PasskeyService.ts';
 import { readPublicBaseUrl } from './access/setupLinkUrl.ts';
+import type { PeopleAdmin } from './people/PeopleAdmin.ts';
 
 import { createChannelRoutes } from './channels/createChannelRoutes.ts';
 import { createChatRoutes } from './chat/createChatRoutes.ts';
@@ -54,6 +55,8 @@ interface AppOptions {
     access: SetupAccess;
     // Passkey sign-in. Without it only the setup link signs the owner in.
     passkeys?: PasskeyService | undefined;
+    // Only on the owner's instance inside the hub. It adds and removes people through the hub.
+    peopleAdmin?: PeopleAdmin | undefined;
     webRoot?: string;
     chatService?: ChatService;
     // The channels the owner can see and post in. Without both stores the channel routes are not served.
