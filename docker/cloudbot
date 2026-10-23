@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs CloudBot on this server. install.sh links it as /usr/local/bin/cloudbot.
 #
-# Usage: sudo cloudbot <status|logs|update|reset-password [name]>
+# Usage: sudo cloudbot <status|logs|update|reset-password [name]|uninstall>
 
 set -euo pipefail
 
@@ -20,6 +20,7 @@ find_home() {
 }
 
 CLOUDBOT_HOME="${CLOUDBOT_HOME:-$(find_home)}"
+COMMAND_PATH="/usr/local/bin/cloudbot"
 
 usage() {
     cat <<'EOF'
@@ -30,6 +31,9 @@ Commands:
   logs                   Follow the hub logs (Ctrl+C to stop)
   update                 Pull the latest code and rebuild the hub image
   reset-password [name]  Print a new password for a person (default owner)
+  uninstall [--keep-data] [--yes]
+                         Remove CloudBot. --keep-data leaves the volumes and the install
+                         folder. --yes skips the question
 EOF
 }
 
@@ -74,6 +78,74 @@ command_reset_password() {
     compose exec -T hub node dist/hub/main.js reset-password "$person_name"
 }
 
+command_uninstall() {
+    local is_confirmed="false"
+    local keeps_data="false"
+    local argument
+    local answer
+    local command_target
+
+    for argument in "$@"; do
+        case "$argument" in
+            --yes)
+                is_confirmed="true"
+                ;;
+            --keep-data)
+                keeps_data="true"
+                ;;
+            *)
+                usage >&2
+                exit 1
+                ;;
+        esac
+    done
+
+    if [ ! -f "$CLOUDBOT_HOME/docker/compose.yaml" ]; then
+        echo "error: no CloudBot install found in $CLOUDBOT_HOME" >&2
+        exit 1
+    fi
+
+    if [ "$keeps_data" = "true" ]; then
+        echo "This removes the CloudBot containers, networks and image. Volumes and $CLOUDBOT_HOME stay."
+    else
+        echo "This removes CloudBot, every person's data and $CLOUDBOT_HOME. It cannot be undone."
+        echo "Back up the hub-data and cbi-* volumes first if you need them (see docs/INSTALL.md)."
+    fi
+
+    if [ "$is_confirmed" != "true" ]; then
+        read -r -p "Type uninstall to continue: " answer
+
+        if [ "$answer" != "uninstall" ]; then
+            echo "Cancelled."
+            exit 1
+        fi
+    fi
+
+    docker ps -aq --filter name=^cloudbot-i- | xargs --no-run-if-empty docker rm -f
+
+    if [ "$keeps_data" = "true" ]; then
+        compose down
+    else
+        compose down --volumes
+    fi
+
+    docker network ls -q --filter name=^cloudbot-net- | xargs --no-run-if-empty docker network rm
+    docker image rm cloudbot:local 2>/dev/null || true
+
+    command_target="$(readlink "$COMMAND_PATH" || true)"
+
+    if [ "$command_target" = "$CLOUDBOT_HOME/docker/cloudbot" ]; then
+        rm -f "$COMMAND_PATH"
+    fi
+
+    if [ "$keeps_data" != "true" ]; then
+        docker volume ls -q --filter name=^cbi- | xargs --no-run-if-empty docker volume rm
+        rm -rf "$CLOUDBOT_HOME"
+    fi
+
+    echo "CloudBot removed. Docker itself stays installed."
+}
+
 main() {
     local command="${1:-}"
 
@@ -100,6 +172,11 @@ main() {
                 exit 1
             fi
             command_reset_password "${2:-owner}"
+            ;;
+        uninstall)
+            require_root "$command"
+            shift
+            command_uninstall "$@"
             ;;
         *)
             usage >&2

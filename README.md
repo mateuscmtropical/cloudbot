@@ -52,6 +52,28 @@ CloudBot then opens at `http://maria.localhost` in your Windows browser.
 
 The [install guide](docs/INSTALL.md) covers domains, adding people, updates and
 the `cloudbot` command.
+
+### Update and remove
+
+Run these on the server:
+
+```sh
+sudo cloudbot update       # pull the latest code and recreate the hub
+sudo cloudbot status       # show the hub, Caddy and every person's instance
+sudo cloudbot uninstall    # remove CloudBot and all its data, after a question
+```
+
+After an update, remove an instance container to move that person to the new
+image. Their data stays:
+
+```sh
+sudo docker rm -f cloudbot-i-maria
+```
+
+`sudo cloudbot uninstall --keep-data` removes the containers and the image but
+keeps the volumes and the install folder. Docker stays installed. Back up the
+`hub-data` and `cbi-*` volumes first if you may want the data later, as the
+[install guide](docs/INSTALL.md#back-up-data) describes.
 ## What it will do
 
 - **Chat like a messenger.** A list of bots on the left, the conversation in
