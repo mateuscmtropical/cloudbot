@@ -15,6 +15,9 @@ as planned.
 The bot runs as its own Linux user. Files that belong to the server user, such
 as the vault and the database, are not readable by the bot.
 
+A server for many people runs one of these sets per person, behind a hub. See
+[MULTI_USER.md](MULTI_USER.md).
+
 ## Docker
 
 `docker/Dockerfile` builds on `node:24-bookworm-slim` in four stages: a base with pnpm,

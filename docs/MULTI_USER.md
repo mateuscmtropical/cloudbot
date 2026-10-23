@@ -1,0 +1,141 @@
+# Many people on one server
+
+The owner installs CloudBot on a VPS and invites a few people. Each person gets
+their own CloudBot with their own bots, chats, vault and AI provider login. The
+owner decides who has access. This page is the design. The code is split in the
+parts below.
+
+## Why one container per person
+
+CloudBot has one owner. Its session, vault, provider logins and workspaces are
+global, and all bots run as the same Linux user. Sharing one process between
+people would need an owner on every table, route and tool, and one missed check
+would leak a chat. Instead each person runs a full CloudBot in a container. The
+kernel keeps them apart, and the existing code needs almost no change.
+
+## Parts
+
+```text
+browser --> Caddy --> hub --> instance of maria   (own network, own volumes)
+                        |---> instance of joao
+                        |---> instance of the owner
+                        '---> docker socket proxy --> Docker
+```
+
+- **Caddy** terminates HTTPS for the domain and for `*.domain`. It asks the hub
+  before it gets a certificate for a name, so only known names get one. A
+  wildcard DNS record is enough, with no DNS provider key.
+- **Hub** is a small service from the same image, started with
+  `node dist/hub/main.js`. It keeps the people, signs them in, starts and stops
+  their containers and proxies traffic to them. It listens on port 3001 inside
+  the compose network.
+- **Docker socket proxy** is a stock `tecnativa/docker-socket-proxy` container.
+  It allows only the container, network and volume calls the hub needs. The hub
+  never mounts the Docker socket.
+- **Instance** is the normal CloudBot server in its own container, named
+  `cloudbot-i-<name>`. It has its own network `cloudbot-net-<name>`, and the hub
+  is the only other member. So instances cannot reach each other. It has four
+  volumes: `cbi-<name>-data`, `-home`, `-workspaces` and `-uploads`.
+
+The first instance belongs to the owner. The owner is a person like the others,
+with the role `owner`.
+
+## Addresses and cookies
+
+A person opens `https://<name>.<domain>`. The apex `https://<domain>` shows a
+page that asks for the name and sends the person to their address. Every
+subdomain is its own origin, so cookies and local storage are never shared. The
+hub session cookie is bound to the host, without a `Domain` attribute.
+
+## The request path
+
+1. The browser asks `maria.example.com`. Caddy sends it to the hub.
+2. The hub reads the `Host`. A name that is not a person gets a 404.
+3. Without a valid hub session the hub shows the login page. After a correct
+   name and password it sets the session cookie.
+4. If the instance is stopped, the hub shows the loading page, starts the
+   instance and the page continues by itself.
+5. The hub proxies the request to the instance. It removes any
+   `x-cloudbot-hub` header from the browser, adds its own with the secret of that
+   instance and keeps the `Host`. It proxies server sent events and WebSockets
+   the same way.
+6. The instance sees the header, checks the secret and treats the request as the
+   signed in owner of that instance. It has no setup link and no passkeys of its
+   own in this mode. The hub signs people in.
+
+The header names and the admin API are in `src/shared/hubProtocol.ts`.
+
+## Settings of an instance
+
+The hub passes these to each container it makes.
+
+| Variable | Meaning |
+|---|---|
+| `CLOUDBOT_HUB_SECRET` | Random, made when the person is added. Turns the hub mode on. |
+| `CLOUDBOT_HUB_URL` | `http://hub:3001`, reachable on the instance network. |
+| `CLOUDBOT_PERSON_NAME` | The name of the person. |
+| `CLOUDBOT_PERSON_ROLE` | `owner` or `member`. |
+| `CLOUDBOT_PUBLIC_URL` | `https://<name>.<domain>` |
+
+`readHubConfig` in `src/server/people/hubConfig.ts` reads them.
+
+## The admin API
+
+Only the owner's instance may call it, with its name and secret in headers. The
+panel and the bot tools call it through `HubClient`, so the browser and the model
+never talk to the hub admin API. A new person gets a generated password. It is
+returned once, shown once, and never goes to the model, the messages, the logs
+or the database of any instance.
+
+## Memory budget
+
+Every instance has a memory cap, 2560 MB by default. The hub keeps the sum of
+the caps of running instances under a total budget, 10240 MB by default. When
+one more instance would pass it, the person sees a page that says the server is
+busy and to try again soon. Both numbers are settings of the hub.
+
+## Idle instances
+
+After five minutes without a request, the hub asks the instance for
+`GET /api/hub/activity`. A running turn, an enabled routine, a page watch, a
+webhook or a WhatsApp, Telegram or email connection keeps it awake. Otherwise the
+hub stops it. The next sign-in starts it again.
+
+## Security notes
+
+- The hub holds no Docker socket. The socket proxy allows containers, networks
+  and volumes, and nothing else.
+- The hub makes containers only from the image of the running hub, with fixed
+  options and a validated name. No setting from a person reaches the Docker call.
+- Passwords are hashed with scrypt. Sign-in attempts are limited by name and by
+  address.
+- Each instance has its own secret. A leaked secret opens one instance.
+- An instance cannot reach another one or the hub admin API as another person.
+
+## Work split
+
+Each part is one pull request. These folders belong to one part, so the parts do
+not collide.
+
+| Part | Issue | Owns |
+|---|---|---|
+| Design and contracts | #241 | this page, `src/shared/peopleTypes.ts`, `src/shared/hubProtocol.ts`, `src/hub/contract.ts`, `src/hub/passwords.ts`, `src/hub/store/`, `src/server/people/` |
+| Containers | #242 | `src/hub/docker/`, `src/hub/instances/`, `src/hub/admin/`, `src/hub/main.ts`, `src/hub/config.ts` |
+| Front door | #243 | `src/hub/auth/`, `src/hub/proxy/`, `src/hub/pages/`, `src/server/access/` hub mode |
+| People panel | #244 | `src/server/people/createPeopleRoutes.ts`, `src/web/components/PeoplePanel.tsx` |
+| Bot tools | #245 | `src/server/people/createPeopleTools.ts` |
+| Idle instances | #246 | `src/hub/idle/`, `src/server/hub/` activity route |
+| Fingerprint and face | #247 | `src/hub/passkeys/` |
+| Install | #248 | `docker/`, `docs/INSTALL.md`, CI |
+
+Every part adds its own CHANGELOG line and its own section in this page or in
+`docs/ARCHITECTURE.md`.
+
+## Trying it on one machine
+
+A browser resolves `*.localhost` to the local machine, so
+`http://maria.localhost:3200` reaches the hub with no DNS and no certificate.
+The hub accepts plain HTTP only when `CLOUDBOT_DOMAIN` is `localhost`. In that
+mode it sets the session cookie without the `Secure` flag, since there is no
+HTTPS. Instances keep `Secure` on their own cookie, which the hub mode does not
+use.
