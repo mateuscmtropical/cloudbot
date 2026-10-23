@@ -50,6 +50,11 @@ function renderedBotName(): string | null | undefined {
 
 afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
+    document.querySelectorAll('[data-tab-icon]')
+        .forEach((tabIcon) => {
+            tabIcon.remove();
+        });
 });
 
 describe('App sign-in', () => {
@@ -1331,6 +1336,52 @@ describe('App thinking bubble', () => {
 
         expect(container.querySelector('[data-message-id="t1"]'))
             .toBeNull();
+    });
+
+    it('hides a failed tool row without leaving an empty message wrapper', async () => {
+        const toolRow: ChatMessage = {
+            id: 't1',
+            botId: 'bot-1',
+            role: 'assistant',
+            createdAt: 1,
+            sequence: 1,
+            body: { kind: 'toolActivity', toolName: 'read_file', status: 'error', summary: 'tool call denied by pre-tool hook: internal details' },
+        };
+        const { container, emit } = await renderApp();
+
+        emit({ type: 'message', message: toolRow });
+
+        expect(container.querySelector('.message-list')?.childElementCount)
+            .toBe(0);
+        expect(container.querySelector('[data-message-id="t1"]'))
+            .toBeNull();
+        expect(container.textContent)
+            .not.toContain('internal details');
+    });
+
+    it('does not mark a failed tool row as an unread reply', async () => {
+        const tabIcon = document.createElement('link');
+
+        tabIcon.setAttribute('data-tab-icon', '');
+        tabIcon.setAttribute('href', '/favicon.svg');
+        document.head.append(tabIcon);
+        vi.spyOn(document, 'hidden', 'get')
+            .mockReturnValue(true);
+
+        const failedToolRow: ChatMessage = {
+            id: 't1',
+            botId: 'bot-1',
+            role: 'assistant',
+            createdAt: 1,
+            sequence: 1,
+            body: { kind: 'toolActivity', toolName: 'read_file', status: 'error', summary: 'internal details' },
+        };
+        const { emit } = await renderApp();
+
+        emit({ type: 'message', message: failedToolRow });
+
+        expect(tabIcon.getAttribute('href'))
+            .toBe('/favicon.svg');
     });
 
     it('stops naming a tool once its row is stored, until the next tool starts', async () => {

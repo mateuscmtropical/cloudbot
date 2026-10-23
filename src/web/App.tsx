@@ -557,7 +557,7 @@ function App(): ReactElement {
                 }));
 
                 // A reply that arrives while the tab is in the background marks the tab icon until the owner looks.
-                if (event.message.role === 'assistant' && document.hidden) {
+                if (event.message.role === 'assistant' && event.message.body.kind !== 'toolActivity' && document.hidden) {
                     setHasUnreadReply(true);
                 }
 

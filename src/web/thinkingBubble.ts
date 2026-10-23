@@ -69,10 +69,10 @@ function isThinkingBubbleShown(input: { isRunning: boolean; draftText: string; m
         && findFailureState(input.messages) !== 'sleepy';
 }
 
-// Tool rows are not shown in the chat, except a failed one, which the owner should see. The bubble is the only sign of
-// a working tool.
+// Tool rows are not shown in the chat. A failed one holds an internal message, so it stays in the stored history only.
+// The bubble is the only sign of a working tool.
 function withoutToolRows(messages: ChatMessage[]): ChatMessage[] {
-    return messages.filter(message => message.body.kind !== 'toolActivity' || message.body.status === 'error');
+    return messages.filter(message => message.body.kind !== 'toolActivity');
 }
 
 export { BUBBLE_DELAY_MS, FALLBACK_TOOL_PHRASE, LINE_INTERVAL_MS, THINKING_LINES, isThinkingBubbleShown, thinkingLineAt, toolPhrase, withoutToolRows };
