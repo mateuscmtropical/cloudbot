@@ -1193,6 +1193,9 @@ function App(): ReactElement {
                                 onOpenBotList={() => {
                                     setIsBotListOpen(true);
                                 }}
+                                onOpenSetupChat={(setupBotId) => {
+                                    handleSelectBot(setupBotId);
+                                }}
                                 screenRequestId={screenRequestId}
                                 focusMessageId={focusMessageId}
                                 onFocusHandled={() => {

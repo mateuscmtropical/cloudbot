@@ -45,6 +45,8 @@ interface ChoiceBody {
     isNotificationOptOut?: boolean;
     // Set on the card that adds a passkey. Its first button asks the browser to make one.
     isPasskeyAdd?: boolean;
+    // Set on the card that offers another provider after a usage limit. Each option id is a provider id, or "wait".
+    isProviderSwitch?: boolean;
     // Set on the card that removes this passkey. Its first button removes it.
     removesPasskeyId?: string;
 }

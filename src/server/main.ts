@@ -8,6 +8,7 @@ import { ClaudeCliEngine } from './agent/ClaudeCliEngine.ts';
 import { CodexEngine } from './agent/CodexEngine.ts';
 import { join } from 'node:path';
 import { ProviderChoices } from './providers/ProviderChoices.ts';
+import type { ProviderToolDependencies } from './providers/createProviderTools.ts';
 import { ProviderRunner } from './providers/ProviderRunner.ts';
 import type { ProviderEngine } from './providers/ProviderRunner.ts';
 import { createChatgptSignIn } from './providers/chatgptSignIn.ts';
@@ -445,6 +446,14 @@ const whatsappSetup = new WhatsAppSetup({
 });
 // Only the owner's instance inside the hub manages people through the hub.
 const peopleAdmin = hubConfig?.role === 'owner' ? new HubClient(hubConfig) : undefined;
+// The bots use these through their provider tools, and the owner through the provider routes of the web app.
+const providerTools: ProviderToolDependencies = {
+    available: ['claude', ...(chatgptSignIn === undefined ? [] : ['chatgpt' as const]), ...acpProviders.available],
+    connected: () => setup.connectedProviders(),
+    providerFor: botId => providerChoices.forBot(botId),
+    setProvider: (botId, provider) => providerChoices.setForBot(botId, provider),
+    offerProviders: () => setup.offerProviders(),
+};
 const chatService: ChatService = new ChatService({
     notifyOwner: notice => pushNotifier.notify(notice),
     passkeys,
@@ -453,13 +462,7 @@ const chatService: ChatService = new ChatService({
     botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, skillStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     templateGallery,
-    providerTools: {
-        available: ['claude', ...(chatgptSignIn === undefined ? [] : ['chatgpt' as const]), ...acpProviders.available],
-        connected: () => setup.connectedProviders(),
-        providerFor: botId => providerChoices.forBot(botId),
-        setProvider: (botId, provider) => providerChoices.setForBot(botId, provider),
-        offerProviders: () => setup.offerProviders(),
-    },
+    providerTools,
     watchStore,
     connectedApps,
     integrationService,
@@ -597,7 +600,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

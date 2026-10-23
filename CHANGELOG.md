@@ -19,6 +19,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- The header of the chat shows the AI provider and the model of the bot. A tap opens the providers of the server. A connected one switches the bot, and the next message runs on it. One that is not connected has a Connect button that starts its sign-in in the setup chat.
+- After a usage limit, the chat asks whether to switch to another connected provider. Switching ends the wait and the owner sends the message again. Keep waiting leaves things as they were.
 - The arrow keys walk through the messages you sent in a chat, like a shell. Arrow up fills the message box with the last one and goes further back on each press. Arrow down comes forward again and ends on the text you had typed. On a message with several lines, the arrows still move the caret until it reaches the first or last line. Routines and messages from webhooks, emails, page watches and other bots are skipped.
 - A PowerShell installer for Windows, `docker/install.ps1`. It installs the Ubuntu distro of WSL 2 when it is missing, turns on systemd and runs `install.sh` inside it. It works on Windows x64 and on Windows on ARM.
 - A server for many people that runs on localhost shows the right address for each person, such as `http://maria.localhost`, in the people panel, in the bot tools and in the instance settings. It showed port 3200 before.
