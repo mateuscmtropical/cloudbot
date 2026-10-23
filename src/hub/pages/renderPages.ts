@@ -21,6 +21,11 @@ interface ApexPageOptions {
     error?: string | undefined;
 }
 
+interface SetupPageOptions {
+    ownerName: string;
+    error?: string | undefined;
+}
+
 interface ChangePasswordPageOptions {
     error?: string | undefined;
     // A person who already chose a password gives the current one first.
@@ -61,6 +66,15 @@ function renderChangePasswordPage(options: ChangePasswordPageOptions = {}): Rend
     return renderPage({ title: 'Change password', body });
 }
 
+function renderSetupPage(options: SetupPageOptions): RenderedPage {
+    const error = options.error === undefined ? '' : escapeHtml(options.error);
+    const ownerName = escapeHtml(options.ownerName);
+    const mascot = renderMascot('idle');
+    const body = `<main>${mascot}<h1>Set up CloudBot</h1><p>You are the first one here, so you are the owner. Your name is ${ownerName}. Choose a password with at least 10 characters.</p><form method="post" action="/__hub/setup"><label for="new-password">Password</label><input id="new-password" name="password" type="password" autocomplete="new-password" minlength="10" required autofocus><label for="confirm-password">Confirm password</label><input id="confirm-password" name="confirmation" type="password" autocomplete="new-password" minlength="10" required><p role="alert" aria-live="polite">${error}</p><button type="submit">Create the owner</button></form></main>`;
+
+    return renderPage({ title: 'Set up CloudBot', body });
+}
+
 function renderLoadingPage(): RenderedPage {
     const mascot = renderMascot('thinking')
         .replace('class="mascot"', 'class="mascot floating"');
@@ -89,5 +103,5 @@ function renderUpstreamErrorPage(): RenderedPage {
 
     return renderPage({ title: 'CloudBot is unavailable', body });
 }
-export { renderApexPage, renderBusyPage, renderChangePasswordPage, renderLoadingPage, renderLoginPage, renderNotAvailablePage, renderUpstreamErrorPage };
-export type { ApexPageOptions, ChangePasswordPageOptions, LoginPageExtras, LoginPageOptions };
+export { renderApexPage, renderBusyPage, renderChangePasswordPage, renderLoadingPage, renderLoginPage, renderNotAvailablePage, renderSetupPage, renderUpstreamErrorPage };
+export type { ApexPageOptions, ChangePasswordPageOptions, LoginPageExtras, LoginPageOptions, SetupPageOptions };

@@ -26,8 +26,8 @@ comes back when the job is done or when it needs you.
 ## Install
 
 On a Debian or Ubuntu server with a public IP, on x86-64 or ARM, one command
-installs Docker, starts CloudBot behind HTTPS and prints the owner's address
-and first password:
+installs Docker, starts CloudBot behind HTTPS and prints the owner's address.
+The first person to open it chooses a password and becomes the owner:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash

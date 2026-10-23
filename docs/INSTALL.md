@@ -45,11 +45,12 @@ curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/dock
 
 The installer installs Docker when needed, builds the image, starts the hub,
 the restricted Docker socket proxy and Caddy, then waits for the hub health
-check. It prints the owner's address and the first password. It also installs
+check. It prints the owner's address. It also installs
 the `cloudbot` command in `/usr/local/bin`.
 
-The owner address is `https://owner.example.com`. On the first sign-in, enter
-the printed password and choose a new one when asked. Then connect an AI
+The owner address is `https://owner.example.com`. Open it right after the install.
+The first person to open it chooses a password and becomes the owner. Nobody
+can sign in before that, and the page closes as soon as the owner exists. Then connect an AI
 provider in the chat.
 
 The special domain `localhost` is for local checks. It uses plain HTTP at
@@ -71,7 +72,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -OwnerName maria
 The script installs the Ubuntu distro when it is missing, turns on systemd,
 and runs `install.sh` with the `localhost` domain. Windows may ask for a
 restart after it installs WSL. Run the script again after the restart. At the
-end it prints the owner address and the first password.
+end it prints the owner address.
 
 Without the script, do the same by hand. Run `wsl --install -d Ubuntu` in an
 administrator PowerShell, open Ubuntu, and run:
@@ -80,8 +81,8 @@ administrator PowerShell, open Ubuntu, and run:
 curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash -s -- localhost owner
 ```
 
-Then open `http://owner.localhost` in your Windows browser and sign in with the
-first password the installer printed.
+Then open `http://owner.localhost` in your Windows browser and choose the
+password of the owner.
 
 What to expect:
 

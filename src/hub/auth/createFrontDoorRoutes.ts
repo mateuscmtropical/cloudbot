@@ -9,7 +9,7 @@ import { HUB_TRUST_HEADER } from '../../shared/hubProtocol.ts';
 import { checkPersonName } from '../../shared/peopleTypes.ts';
 import type { ActivityTracker, InstanceManager, PeopleStore, PersonRecord, StartResult } from '../contract.ts';
 import { hashPassword, verifyPassword } from '../passwords.ts';
-import { renderApexPage, renderBusyPage, renderChangePasswordPage, renderLoadingPage, renderLoginPage, renderUpstreamErrorPage } from '../pages/renderPages.ts';
+import { renderApexPage, renderBusyPage, renderChangePasswordPage, renderLoadingPage, renderLoginPage, renderSetupPage, renderUpstreamErrorPage } from '../pages/renderPages.ts';
 import type { LoginPageExtras } from '../pages/renderPages.ts';
 import type { LoginSessions } from './LoginSessions.ts';
 import { readHostRoute } from './hostRouting.ts';
@@ -19,6 +19,20 @@ import { HUB_SESSION_COOKIE } from './sessionCookie.ts';
 interface UpstreamTarget {
     hostname: string;
     port: number;
+}
+
+interface OwnerSetupOptions {
+    ownerName: string;
+    createOwner: (passwordHash: string) => Promise<void>;
+}
+
+interface OwnerSetupState {
+    isClaiming: boolean;
+}
+
+interface OwnerSetupRoute {
+    isApex: boolean;
+    name: string | undefined;
 }
 
 interface FrontDoorRoutesOptions {
@@ -31,6 +45,7 @@ interface FrontDoorRoutesOptions {
     afterLogin?: (name: string, context: Context) => string | undefined;
     loginExtras?: LoginPageExtras;
     loginAllowedIps?: BlockList;
+    ownerSetup?: OwnerSetupOptions;
     now?: () => number;
     upstreamFor?: (name: string) => UpstreamTarget;
 }
@@ -314,12 +329,76 @@ function beginStart(name: string, options: FrontDoorRoutesOptions, pendingStarts
     void finishedStart.catch(() => undefined);
 }
 
+async function handleOwnerSetup(context: Context, options: FrontDoorRoutesOptions, setup: OwnerSetupOptions, state: OwnerSetupState, route: OwnerSetupRoute): Promise<Response> {
+    const hostHeader = readRequestHost(context);
+
+    if (route.isApex) {
+        if (hostHeader === undefined || context.req.method !== 'GET' || context.req.path !== '/') {
+            return renderUnavailable(context);
+        }
+
+        const location = redirectForLocalHost(setup.ownerName, hostHeader, options.domain, options.secure);
+
+        return context.redirect(location, 303);
+    }
+
+    if (route.name !== setup.ownerName) {
+        return renderUnavailable(context);
+    }
+
+    if (context.req.method === 'POST' && context.req.path === '/__hub/setup') {
+        const form = await context.req.parseBody()
+            .catch((): ParsedFormFields => ({}));
+        const password = readFormField(form, 'password');
+        const confirmation = readFormField(form, 'confirmation');
+
+        if (password.length < 10 || password !== confirmation) {
+            const error = password.length < 10 ? 'Use at least 10 characters.' : 'The passwords do not match.';
+            const invalidPage = renderSetupPage({ ownerName: setup.ownerName, error });
+
+            return renderResponse(context, invalidPage, 401);
+        }
+
+        if (state.isClaiming) {
+            return renderUnavailable(context);
+        }
+
+        state.isClaiming = true;
+        const passwordHash = await hashPassword(password);
+        const isCreated = await setup.createOwner(passwordHash)
+            .then(() => true, () => false);
+
+        state.isClaiming = false;
+
+        if (!isCreated) {
+            const failedPage = renderSetupPage({ ownerName: setup.ownerName, error: 'Could not set up CloudBot. Try again.' });
+
+            return renderResponse(context, failedPage, 500);
+        }
+
+        const setupTime = nowFor(options);
+
+        startHubSession(context, options.sessions, setup.ownerName, options.secure, setupTime);
+
+        return context.redirect('/', 303);
+    }
+
+    if (context.req.method !== 'GET') {
+        return renderUnavailable(context);
+    }
+
+    const setupPage = renderSetupPage({ ownerName: setup.ownerName });
+
+    return renderResponse(context, setupPage);
+}
+
 function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
     const app = new Hono();
     const loginAllowedIps = options.loginAllowedIps;
     const failures = new Map<string, FailureState>();
     const pendingStarts = new Map<string, Promise<void>>();
     const busyPeople = new Set<string>();
+    const setupState: OwnerSetupState = { isClaiming: false };
 
     app.all('*', async (context, next) => {
         if (context.req.path === '/internal' || context.req.path.startsWith('/internal/')) {
@@ -330,7 +409,7 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
 
         const isPasswordLogin = context.req.path === '/__hub/login'
             && (context.req.method === 'GET' || context.req.method === 'POST');
-        const isPasswordChange = context.req.path === '/__hub/password' && context.req.method === 'POST';
+        const isPasswordChange = (context.req.path === '/__hub/password' || context.req.path === '/__hub/setup') && context.req.method === 'POST';
 
         if (loginAllowedIps !== undefined && (isPasswordLogin || isPasswordChange)) {
             const clientAddress = readClientAddress(context);
@@ -352,6 +431,15 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
 
         if (hostRoute === undefined) {
             return renderUnavailable(context);
+        }
+
+        const hasOwner = options.people.list()
+            .some(person => person.role === 'owner');
+
+        if (options.ownerSetup !== undefined && !hasOwner) {
+            const setupRoute: OwnerSetupRoute = { isApex: hostRoute.isApex, name: hostRoute.name };
+
+            return handleOwnerSetup(context, options, options.ownerSetup, setupState, setupRoute);
         }
 
         if (hostRoute.isApex) {
@@ -589,4 +677,4 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
 }
 
 export { createFrontDoorRoutes, requestHasSameOrigin };
-export type { FrontDoorRoutesOptions, UpstreamTarget };
+export type { FrontDoorRoutesOptions, OwnerSetupOptions, UpstreamTarget };

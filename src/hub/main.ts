@@ -20,11 +20,11 @@ import { openHubDatabase } from './store/openHubDatabase.ts';
 import { SqlitePeopleStore } from './store/SqlitePeopleStore.ts';
 import type { InstanceManager, PeopleStore, PersonRecord } from './contract.ts';
 
-interface CreateOwnerIfMissingOptions {
+interface CreateOwnerOptions {
     people: PeopleStore;
     instances: InstanceManager;
     ownerName: string;
-    writeLine: (line: string) => void;
+    passwordHash: string;
 }
 
 function makeOwnerRecord(ownerName: string, passwordHash: string): PersonRecord {
@@ -35,30 +35,26 @@ function makeOwnerRecord(ownerName: string, passwordHash: string): PersonRecord 
         role: 'owner',
         state: 'active',
         passwordHash,
-        mustChangePassword: true,
+        mustChangePassword: false,
         instanceSecret: secretBytes.toString('base64url'),
         createdAt: Date.now(),
         lastSeenAt: null,
     };
 }
 
-async function createOwnerIfMissing(options: CreateOwnerIfMissingOptions): Promise<void> {
-    const existingPeople = options.people.list();
-    const hasOwner = existingPeople.some(person => person.role === 'owner');
+async function createOwner(options: CreateOwnerOptions): Promise<void> {
+    const hasOwner = options.people.list()
+        .some(person => person.role === 'owner');
 
     if (hasOwner) {
-        return;
+        throw new Error('The hub already has an owner.');
     }
 
-    const password = generatePassword();
-    const passwordHash = await hashPassword(password);
-    const ownerRecord = makeOwnerRecord(options.ownerName, passwordHash);
+    const ownerRecord = makeOwnerRecord(options.ownerName, options.passwordHash);
 
     await options.instances.create(ownerRecord);
     options.people.add(ownerRecord);
-    options.writeLine(`Owner ${options.ownerName} password: ${password}`);
 }
-
 async function resetPassword(people: PeopleStore, name: string): Promise<string> {
     const person = people.find(name);
 
@@ -149,16 +145,6 @@ async function main(): Promise<void> {
         return;
     }
 
-    const ownerOptions: CreateOwnerIfMissingOptions = {
-        people,
-        instances,
-        ownerName: settings.ownerName,
-        writeLine: (line) => {
-            console.log(line);
-        },
-    };
-
-    await createOwnerIfMissing(ownerOptions);
     const activity = createIdleWatcher({
         people,
         instances,
@@ -176,6 +162,10 @@ async function main(): Promise<void> {
         domain: settings.domain,
         secure: settings.domain !== 'localhost',
         ...(settings.loginAllowedIps === undefined ? {} : { loginAllowedIps: settings.loginAllowedIps }),
+        ownerSetup: {
+            ownerName: settings.ownerName,
+            createOwner: passwordHash => createOwner({ people, instances, ownerName: settings.ownerName, passwordHash }),
+        },
         activity,
         hubPort: settings.port,
     };
@@ -211,4 +201,4 @@ if (isMainModule()) {
         });
 }
 
-export { createOwnerIfMissing, main, resetPassword };
+export { createOwner, main, resetPassword };
