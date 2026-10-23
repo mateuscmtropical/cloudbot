@@ -337,7 +337,7 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
 
             signIns.push(signInSpec.isFree === true || loginArgs === undefined
                 ? {
-                        id: spec.id, label: spec.label, site: signInSpec.site, optionLabel: signInSpec.optionLabel, isSignedIn,
+                        id: spec.id, label: spec.label, site: signInSpec.site, optionLabel: signInSpec.optionLabel, isFree: true, isSignedIn,
                         // A free provider has nothing to sign in to, so its sign-in ends at once.
                         start: () => ({ link: Promise.resolve(null), finished: Promise.resolve({ ok: true }), cancel: () => undefined }),
                     }

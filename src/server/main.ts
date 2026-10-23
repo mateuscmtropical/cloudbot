@@ -497,6 +497,7 @@ const setup = new SetupConversation({
     // Local sign-out is refused on macOS, so setup does not offer it there.
     ...(!agentUser && process.platform === 'darwin' ? {} : { signOut: () => signOutClaude(authOptions) }),
     localMode: !agentUser,
+    useProvider: provider => providerChoices.setForBot(firstBot.id, provider),
     noBrowser: isReusedGateBusy ? 'leftover' : noBrowserReason,
     signIns: [...(chatgptSignIn === undefined ? [] : [chatgptSignIn]), ...acpProviders.signIns],
     apiKeys: [

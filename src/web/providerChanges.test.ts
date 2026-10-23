@@ -18,6 +18,15 @@ describe('countProviderChanges', () => {
             .toBe(2);
     });
 
+    it('counts a ready message that says the bot runs on a provider now', () => {
+        const messages = [
+            message({ kind: 'text', text: 'OpenCode is ready. What would you like to do?', providerSwitched: true }, 1),
+        ];
+
+        expect(countProviderChanges(messages))
+            .toBe(1);
+    });
+
     it('ignores open cards, running calls and other messages', () => {
         const messages = [
             message({ kind: 'choice', prompt: 'Switch?', options: [{ id: 'gemini', label: 'Gemini' }], isProviderSwitch: true }, 1),

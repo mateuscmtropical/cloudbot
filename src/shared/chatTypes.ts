@@ -30,6 +30,8 @@ interface TextBody {
     attachments?: AttachmentSummary[];
     // Set on a user message sent during a turn. Cleared when its turn starts.
     isQueued?: boolean;
+    // Set on the message that says a provider is ready, since the bot of the chat now runs on it.
+    providerSwitched?: boolean;
 }
 
 interface ChoiceBody {

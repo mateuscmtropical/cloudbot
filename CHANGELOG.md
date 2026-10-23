@@ -14,6 +14,9 @@ All notable changes to this project are listed here. The format follows
 
 - The provider list calls the provider OpenCode, not "opencode free models".
 - The bot knows how to change its provider and that a subscription, plan or account means the sign-in at a provider. CloudBot has no paid plan of its own.
+=======
+- When you connect a provider in the chat, the bot of that chat runs on it from the next message, and the provider name in the header updates. Before, the bot kept the old provider.
+- Picking a provider that needs no sign-in, such as OpenCode, no longer opens a blank browser tab.
 - A routine can repeat every minute. The shortest interval was 5 minutes.
 - The People button shows on every instance. On one that is not the owner's instance inside the hub, the panel says that inviting people needs the hub and points to the install steps.
 - Tool reviews now allow reads and harmless workspace work without an approval card, and ask before remote writes, system changes, outside-workspace deletion or overwrite, new app connections and changes to rules, limits or the active provider. A review denial stays a denial.

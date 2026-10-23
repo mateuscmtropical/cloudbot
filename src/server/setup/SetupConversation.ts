@@ -56,6 +56,8 @@ interface ProviderSignIn {
     isSignedIn: () => Promise<boolean | undefined>;
     // The text of the choice. It defaults to the label and the word subscription.
     optionLabel?: string | undefined;
+    // True when the sign-in ends at once without a link, so the choice opens no browser tab.
+    isFree?: boolean | undefined;
 }
 
 // A provider that takes an API key. The key goes to the vault, and a local proxy adds it to each request.
@@ -92,6 +94,8 @@ interface SetupConversationOptions {
     authStatus: () => Promise<ClaudeAuthStatus>;
     // Called when Claude or another provider is connected, with the way another provider was connected.
     connect: (connection: SetupMode | ProviderId, method?: ProviderMethod) => Promise<void>;
+    // Called when the owner connects a provider in this chat, so the bot of the chat runs on it from the next message.
+    useProvider?: ((provider: ProviderId) => Promise<void>) | undefined;
     // The providers that sign in by link. Each one is a choice next to the two Claude ways.
     signIns?: ProviderSignIn[] | undefined;
     // The providers that take an API key. Each one is a choice too.
@@ -236,7 +240,9 @@ class SetupConversation {
             const label = onlySignInLabel ?? signIn?.label ?? apiKey?.label ?? id;
 
             // A provider with only a sign-in starts it at once, so the web page opens a tab for the link.
-            return apiKey === undefined ? { id: `${PROVIDER_CHOICE_PREFIX}${id}`, label, opensLink: true } : { id: `${PROVIDER_CHOICE_PREFIX}${id}`, label };
+            const opensLink = apiKey === undefined && signIn?.isFree !== true;
+
+            return opensLink ? { id: `${PROVIDER_CHOICE_PREFIX}${id}`, label, opensLink: true } : { id: `${PROVIDER_CHOICE_PREFIX}${id}`, label };
         });
 
         return [{ id: `${PROVIDER_CHOICE_PREFIX}claude`, label: 'Claude' }, ...otherOptions];
@@ -614,10 +620,10 @@ class SetupConversation {
                     await this.askSecret(keyProvider);
                 } else if (keyProvider === undefined) {
                     this.options.vault.set(API_KEY_NAME, trimmedKey);
-                    await this.ready();
+                    await this.ready(undefined, undefined, true);
                 } else {
                     this.options.vault.set(keyProvider.secretName, trimmedKey);
-                    await this.ready({ id: keyProvider.id, label: keyProvider.label }, 'apiKey');
+                    await this.ready({ id: keyProvider.id, label: keyProvider.label }, 'apiKey', true);
                 }
             } else {
                 const session = this.session;
@@ -698,7 +704,7 @@ class SetupConversation {
                 }
 
                 if (result.ok && await this.isConnected() !== false) {
-                    await this.ready();
+                    await this.ready(undefined, undefined, true);
                 } else {
                     const reason = result.ok ? 'Claude did not confirm sign-in.' : LOGIN_FAILURES[result.reason];
 
@@ -738,7 +744,8 @@ class SetupConversation {
     }
 
     // Without a provider this connects Claude, with one it connects that provider.
-    private async ready(signIn?: ConnectedProvider, method?: ProviderMethod): Promise<void> {
+    // A fresh connection comes from the owner in this chat. A restart only restores one, so it keeps the provider the bot has.
+    private async ready(signIn?: ConnectedProvider, method?: ProviderMethod, isFresh = false): Promise<void> {
         const mode = signIn === undefined ? this.state.mode ?? this.state.claudeMode : undefined;
         const wasDone = this.state.step === 'done';
         const connection = signIn?.id ?? mode;
@@ -748,6 +755,10 @@ class SetupConversation {
         }
 
         await (method === undefined ? this.options.connect(connection) : this.options.connect(connection, method));
+        if (isFresh) {
+            await this.options.useProvider?.(signIn?.id ?? 'claude');
+        }
+
         await this.retireActive();
         this.session = undefined;
         this.deviceSession = undefined;
@@ -759,8 +770,8 @@ class SetupConversation {
         }
         await this.persist();
 
-        if (!wasDone) {
-            await this.say(`${signIn?.label ?? 'Claude'} is ready. What would you like to do?`);
+        if (!wasDone || isFresh) {
+            await this.post({ kind: 'text', text: `${signIn?.label ?? 'Claude'} is ready. What would you like to do?`, ...(isFresh ? { providerSwitched: true } : {}) });
         }
 
         if (mode === 'subscription' && this.options.signOut !== undefined && this.state.messageId === undefined) {
@@ -890,7 +901,7 @@ class SetupConversation {
                 const isSignedIn = result.ok ? await signIn.isSignedIn() : false;
 
                 if (result.ok && isSignedIn !== false) {
-                    await this.ready({ id: signIn.id, label: signIn.label }, 'signIn');
+                    await this.ready({ id: signIn.id, label: signIn.label }, 'signIn', true);
                 } else if (link === null && result.ok) {
                     await this.fail(`${signIn.label} did not provide a sign-in link.`);
                 } else {
