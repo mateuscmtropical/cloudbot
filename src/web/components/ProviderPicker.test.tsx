@@ -149,8 +149,10 @@ describe('ProviderPicker', () => {
             expect(saveProviderModel)
                 .toHaveBeenCalledWith('bot-1', 'gpt-6-luna', 'low');
         });
-        expect(await screen.findByText('gpt-6-luna'))
-            .toBeTruthy();
+        const pickerButton = await screen.findByRole('button', { name: 'AI provider' });
+
+        expect(pickerButton.textContent)
+            .toBe('GPT-6 Luna');
     });
 
     it('closes the menu with Escape', async () => {

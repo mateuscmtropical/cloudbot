@@ -58,6 +58,8 @@ const SKIP_TOOL_NAMES = new Set([
     // Listing reads the provider status. Connecting only posts the provider list, and the owner signs in on the provider's page.
     'mcp__cloudbot__provider_list',
     'mcp__cloudbot__provider_connect',
+    // The owner asks for a model in the chat. The tool accepts only a model the provider lists, so it never needs a review.
+    'mcp__cloudbot__models_set',
     'mcp__cloudbot__email_status',
     // These only link or unlink a number and post secure forms. No WhatsApp message is ever sent.
     'mcp__cloudbot__whatsapp_connect',

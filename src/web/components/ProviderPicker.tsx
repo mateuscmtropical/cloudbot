@@ -160,6 +160,9 @@ function ProviderPicker({ botId, changeCount = 0, refreshCount = 0, onOpenSetupC
         return null;
     }
 
+    // A model the provider lists shows by its name alone, such as GPT-6 Luna. Any other model shows after the provider.
+    const modelOption = summary.modelOptions.find(option => option.id === summary.model);
+
     return (
         <div className="provider-picker" ref={containerRef}>
             <button
@@ -171,8 +174,14 @@ function ProviderPicker({ botId, changeCount = 0, refreshCount = 0, onOpenSetupC
                     setIsOpen(current => !current);
                 }}
             >
-                <span>{summary.label}</span>
-                {summary.model === null ? null : <span className="provider-picker-model">{summary.model}</span>}
+                {modelOption === undefined
+                    ? (
+                            <>
+                                <span>{summary.label}</span>
+                                {summary.model === null ? null : <span className="provider-picker-model">{summary.model}</span>}
+                            </>
+                        )
+                    : <span>{modelOption.label}</span>}
             </button>
             {isOpen
                 ? (
