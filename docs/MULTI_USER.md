@@ -173,3 +173,10 @@ The bots of the owner get five tools when the instance has the hub people admin 
 The tools never return a password. After an add or a reset, the server sends a `personCredentials` event to the web app of the owner, which shows the address and the password in a notice with Copy and Hide buttons. The event is not a chat message, so it is not stored and not logged. When no web app is open, the server keeps the event in memory until one subscribes. A restart of the server drops an undelivered event, and the owner resets the password from the panel.
 
 A failed call returns a short generic result to the model. The details of the hub error stay out of the chat.
+## Hub settings
+
+The hub reads `CLOUDBOT_DOMAIN`, `HUB_PORT`, `HUB_HOST`, `HUB_DATA_DIR`, `DOCKER_API_URL`, `CLOUDBOT_INSTANCE_IMAGE`, `CLOUDBOT_INSTANCE_MEMORY_MB`, `CLOUDBOT_INSTANCE_BUDGET_MB`, `CLOUDBOT_INSTANCE_CPUS`, `CLOUDBOT_OWNER_NAME` and `HUB_CONTAINER_ID`. Only `CLOUDBOT_DOMAIN` is required. The hub container id defaults to `HOSTNAME`.
+
+Each person gets a container, a bridge network and four named volumes. The network is not internal, so the instance reaches AI providers and the web. Another network cannot reach it. The hub joins the network as `hub`, and it leaves the network before the network is removed. The instance has no published ports and fixed memory and CPU caps. The hub checks the total memory cap before it starts an instance and waits up to two minutes for its health check.
+
+On its first start the hub creates the owner and the instance of the owner, and prints one generated password. `node dist/hub/main.js reset-password <name>` prints a replacement password.
