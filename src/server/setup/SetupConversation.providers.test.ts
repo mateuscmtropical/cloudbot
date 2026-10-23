@@ -15,7 +15,7 @@ import { SettingsStore } from '../store/SettingsStore.ts';
 import { openDatabase } from '../store/openDatabase.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { SetupConversation } from './SetupConversation.ts';
-import type { DeviceSignInResult } from './SetupConversation.ts';
+import type { DeviceSignInResult, SetupConversationOptions } from './SetupConversation.ts';
 
 const USER_CODE = 'ABCD-1234';
 
@@ -30,7 +30,10 @@ interface ProviderFixture {
     startClaudeLogin: Mock<() => ClaudeLoginSession>;
     submitGeminiCode: Mock<(code: string) => void>;
     checkGeminiKey: Mock<(key: string) => Promise<number>>;
+    checkOpenCodeZenKey: Mock<(key: string) => Promise<number>>;
+    checkOpenCodeGoKey: Mock<(key: string) => Promise<number>>;
     secrets: Map<string, string>;
+    restart: () => Promise<SetupConversation>;
 }
 
 describe('setup conversation with other providers', () => {
@@ -63,6 +66,10 @@ describe('setup conversation with other providers', () => {
         const submitGeminiCode = vi.fn<(code: string) => void>();
         const checkGeminiKey = vi.fn<(key: string) => Promise<number>>()
             .mockResolvedValue(200);
+        const checkOpenCodeZenKey = vi.fn<(key: string) => Promise<number>>()
+            .mockResolvedValue(200);
+        const checkOpenCodeGoKey = vi.fn<(key: string) => Promise<number>>()
+            .mockResolvedValue(200);
         const secrets = new Map<string, string>();
         const claudeSession: ClaudeLoginSession = {
             signInUrl: Promise.resolve('https://claude.ai/login'),
@@ -72,7 +79,7 @@ describe('setup conversation with other providers', () => {
         };
         const startClaudeLogin = vi.fn(() => claudeSession);
         const chat = new ChatService({ botStore: bots, messageStore: messages, runner: new FakeAgentRunner([]), dataDir });
-        const setup = new SetupConversation({
+        const setupOptions: SetupConversationOptions = {
             botId: bot.id, chat, messages, settings,
             vault: {
                 delete: (name) => {
@@ -118,14 +125,36 @@ describe('setup conversation with other providers', () => {
                 start: () => ({ link: Promise.resolve(null), finished: Promise.resolve({ ok: true }), cancel: vi.fn() }),
                 isSignedIn: () => Promise.resolve(undefined),
             }],
-            apiKeys: [{ id: 'gemini', label: 'Gemini', site: 'Google AI Studio', secretName: 'GEMINI_API_KEY', checkKey: checkGeminiKey }],
-        });
+            apiKeys: [{ id: 'gemini', label: 'Gemini', site: 'Google AI Studio', secretName: 'GEMINI_API_KEY', checkKey: checkGeminiKey }, {
+                id: 'opencode',
+                label: 'OpenCode',
+                site: 'opencode.ai/auth',
+                secretName: 'OPENCODE_API_KEY',
+                checkKey: checkOpenCodeZenKey,
+                variants: [
+                    { method: 'apiKeyZen', label: 'OpenCode Zen', site: 'opencode.ai/auth', checkKey: checkOpenCodeZenKey },
+                    { method: 'apiKeyGo', label: 'OpenCode Go', site: 'opencode.ai/auth', checkKey: checkOpenCodeGoKey },
+                ],
+            }],
+        };
+        const setup = new SetupConversation(setupOptions);
 
         chat.setSetup(setup);
         await setup.start();
 
+        const restart = async (): Promise<SetupConversation> => {
+            setup.close();
+            const restored = new SetupConversation(setupOptions);
+
+            chat.setSetup(restored);
+            await restored.start();
+
+            return restored;
+        };
+
         return {
-            chat, setup, botId: bot.id, connect, useProvider, startClaudeLogin, submitGeminiCode, checkGeminiKey, secrets,
+            chat, setup, botId: bot.id, connect, useProvider, startClaudeLogin, submitGeminiCode, checkGeminiKey,
+            checkOpenCodeZenKey, checkOpenCodeGoKey, secrets, restart,
             finishChatgpt: (result) => {
                 isChatgptSignedIn = result.ok;
                 finished.resolve(result);
@@ -204,11 +233,40 @@ describe('setup conversation with other providers', () => {
             .toHaveBeenCalledWith('gemini');
     });
 
-    it('switches to a free provider at once, and its choice opens no tab', async () => {
+    it('offers free models without opening a tab', async () => {
         const context = await fixture();
         const choice = await latest(context, 'choice');
 
         await context.chat.answerSetup(context.botId, choice.id, 'choice', 'provider:opencode');
+        const ways = await latest(context, 'choice');
+
+        expect(ways.body)
+            .toMatchObject({ options: [
+                { id: 'opencode', label: 'Free models' },
+                { id: 'key:opencode', label: 'My account (API key)' },
+            ] });
+
+        await context.chat.answerSetup(context.botId, ways.id, 'choice', 'opencode');
+
+        await vi.waitFor(() => {
+            expect(context.useProvider)
+                .toHaveBeenCalledWith('opencode');
+        });
+    });
+
+    it('restores the OpenCode free choice after a restart', async () => {
+        const context = await fixture();
+        const providerChoice = await latest(context, 'choice');
+
+        await context.chat.answerSetup(context.botId, providerChoice.id, 'choice', 'provider:opencode');
+        const ways = await latest(context, 'choice');
+
+        if (ways.body.kind !== 'choice') {
+            throw new Error('OpenCode usage choice is missing.');
+        }
+
+        await context.chat.updateSetupMessage(ways.id, { ...ways.body, chosenId: 'opencode' });
+        await context.restart();
 
         await vi.waitFor(() => {
             expect(context.useProvider)
@@ -228,6 +286,58 @@ describe('setup conversation with other providers', () => {
                 { id: 'gemini', label: 'Subscription', opensLink: true },
                 { id: 'key:gemini', label: 'API key' },
             ] });
+    });
+
+    it('asks whether OpenCode should use free models or an account key', async () => {
+        const context = await fixture();
+        const choice = await latest(context, 'choice');
+
+        await context.chat.answerSetup(context.botId, choice.id, 'choice', 'provider:opencode');
+        const ways = await latest(context, 'choice');
+
+        expect(ways.body)
+            .toMatchObject({ prompt: 'How would you like to use OpenCode?', options: [
+                { id: 'opencode', label: 'Free models' },
+                { id: 'key:opencode', label: 'My account (API key)' },
+            ] });
+    });
+
+    it('checks and stores an OpenCode Go key in the vault', async () => {
+        const context = await fixture();
+        const providerChoice = await latest(context, 'choice');
+
+        await context.chat.answerSetup(context.botId, providerChoice.id, 'choice', 'provider:opencode');
+        const ways = await latest(context, 'choice');
+
+        await context.chat.answerSetup(context.botId, ways.id, 'choice', 'key:opencode');
+        const plans = await latest(context, 'choice');
+
+        expect(plans.body)
+            .toMatchObject({ prompt: 'Which OpenCode account do you have?', options: [
+                { id: 'key:opencode:apiKeyZen', label: 'OpenCode Zen' },
+                { id: 'key:opencode:apiKeyGo', label: 'OpenCode Go' },
+            ] });
+
+        await context.chat.answerSetup(context.botId, plans.id, 'choice', 'key:opencode:apiKeyGo');
+        const form = await latest(context, 'secureForm');
+
+        expect(form.body)
+            .toMatchObject({ prompt: 'Add your OpenCode Go API key from opencode.ai/auth.', secretName: 'OPENCODE_API_KEY' });
+
+        await context.chat.answerSetup(context.botId, form.id, 'secret', 'oc_sk_fake_key');
+
+        expect(context.checkOpenCodeGoKey)
+            .toHaveBeenCalledWith('oc_sk_fake_key');
+        expect(context.checkOpenCodeZenKey)
+            .not.toHaveBeenCalled();
+        expect(context.secrets.get('OPENCODE_API_KEY'))
+            .toBe('oc_sk_fake_key');
+        expect(context.connect)
+            .toHaveBeenCalledWith('opencode', 'apiKeyGo');
+        expect(context.useProvider)
+            .toHaveBeenCalledWith('opencode');
+        expect((await texts(context)).join(' '))
+            .not.toContain('oc_sk_fake_key');
     });
 
     it('goes straight to the sign-in of a provider that has one way', async () => {

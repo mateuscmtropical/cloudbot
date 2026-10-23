@@ -86,7 +86,7 @@ RUN npm install --global @openai/codex@0.163.0 \
 # The agent CLIs of the other providers, which CloudBot runs over the Agent Client Protocol, see
 # src/server/providers/acpProviders.ts. They are root-owned, so the bot user cannot replace them. The ones without an
 # npm package come from each vendor's own install script, installed under /opt and linked into /usr/local/bin.
-RUN npm install --global @google/gemini-cli@0.65.0 @github/copilot@1.0.102 @qwen-code/qwen-code@0.26.0 opencode-ai@1.19.4 \
+RUN npm install --global @google/gemini-cli@0.65.0 @github/copilot@1.0.102 @qwen-code/qwen-code@0.26.0 @opencode/cli@2.1.2 \
     && install -d -m 0755 /opt/cloudbot-agents \
     && export HOME=/opt/cloudbot-agents \
     && curl -fsS https://cursor.com/install | bash \

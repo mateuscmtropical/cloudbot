@@ -8,7 +8,7 @@ import { signalProcessTree } from '../agent/ClaudeCliEngine.ts';
 import type { SpawnFunction } from '../agent/ClaudeCliEngine.ts';
 import { PROVIDER_AGENT_WRAPPER, wrapperAgentLaunch } from '../agent/codexAgentLaunch.ts';
 import type { LoopbackToolServer } from '../agent/createLoopbackToolServer.ts';
-import type { ProviderApiKey, ProviderMethod, ProviderSignIn } from '../setup/SetupConversation.ts';
+import type { ProviderApiKey, ProviderApiKeyVariant, ProviderMethod, ProviderSignIn } from '../setup/SetupConversation.ts';
 import { startKeyProxy } from '../vault/KeyProxy.ts';
 import type { KeyHeader, KeyProxy } from '../vault/KeyProxy.ts';
 import type { Vault } from '../vault/Vault.ts';
@@ -44,6 +44,16 @@ interface AcpApiKeySpec {
     // Google answers a wrong key with 400 API_KEY_INVALID instead of 401.
     badKeyStatus?: number | undefined;
     // The variables that point the CLI at the key proxy. The key the CLI sees is a placeholder.
+    environment: (proxyUrl: string) => Record<string, string>;
+    variants?: AcpApiKeyVariantSpec[] | undefined;
+}
+
+interface AcpApiKeyVariantSpec {
+    method: ProviderMethod;
+    label: string;
+    site: string;
+    checkUrl: string;
+    action?: string | undefined;
     environment: (proxyUrl: string) => Record<string, string>;
 }
 
@@ -84,6 +94,35 @@ const OPENCODE_FOLDERS = ['.opencode', 'opencode.json', 'opencode.jsonc', '.conf
 const BEARER: KeyHeader = { name: 'authorization', prefix: 'Bearer ' };
 // How long a sign-in check is trusted, so a turn does not start the CLI twice.
 const STATUS_CACHE_MS = 5 * 60 * 1000;
+
+type OpenCodeAccountProviderId = 'cloudbot-opencode-zen' | 'cloudbot-opencode-go';
+
+function openCodeKeyEnvironment(proxyUrl: string, providerId: OpenCodeAccountProviderId, endpoint: string): Record<string, string> {
+    const providerConfig = {
+        env: ['OPENCODE_API_KEY'],
+        package: '@opencode/ai/providers/openai-compatible',
+        settings: { baseURL: `${proxyUrl}${endpoint}` },
+        models: {
+            'cloudbot-default': {
+                name: 'DeepSeek V4.1 Flash',
+                modelID: 'deepseek-v4.1-flash',
+            },
+        },
+    };
+    const config = {
+        permission: { '*': 'ask' },
+        autoupdate: false,
+        enabled_providers: [providerId],
+        model: `${providerId}/cloudbot-default`,
+        providers: { [providerId]: providerConfig },
+    };
+
+    return {
+        OPENCODE_API_KEY: PLACEHOLDER_KEY,
+        CLOUDBOT_KEY_PROXY_URL: proxyUrl,
+        OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
+    };
+}
 
 // Each provider was checked against its real CLI, see docs/ARCHITECTURE.md. The local commands match the ones in
 // docker/cloudbot-provider, which the Docker image runs instead.
@@ -193,6 +232,32 @@ const ACP_PROVIDERS: AcpProviderSpec[] = [
         label: 'OpenCode',
         protectedFolders: OPENCODE_FOLDERS,
         signIn: { site: 'OpenCode', isFree: true },
+        apiKey: {
+            site: 'opencode.ai/auth',
+            secretName: 'OPENCODE_API_KEY',
+            upstreamUrl: 'https://opencode.ai',
+            keyHeader: BEARER,
+            checkUrl: 'https://opencode.ai/inference/v1/models',
+            environment: proxyUrl => openCodeKeyEnvironment(proxyUrl, 'cloudbot-opencode-zen', '/inference/openai/v1'),
+            variants: [
+                {
+                    method: 'apiKeyZen',
+                    label: 'OpenCode Zen',
+                    site: 'opencode.ai/auth',
+                    checkUrl: 'https://opencode.ai/inference/v1/models',
+                    action: 'acp-key-zen',
+                    environment: proxyUrl => openCodeKeyEnvironment(proxyUrl, 'cloudbot-opencode-zen', '/inference/openai/v1'),
+                },
+                {
+                    method: 'apiKeyGo',
+                    label: 'OpenCode Go',
+                    site: 'opencode.ai/auth',
+                    checkUrl: 'https://opencode.ai/inference/go/v1/models',
+                    action: 'acp-key-go',
+                    environment: proxyUrl => openCodeKeyEnvironment(proxyUrl, 'cloudbot-opencode-go', '/inference/go/openai/v1'),
+                },
+            ],
+        },
     },
 ];
 
@@ -242,11 +307,20 @@ function readWrapperStatus(launch: { spawnFunction: SpawnFunction }, provider: A
 }
 
 // Runs a turn with the sign-in or the key, whichever way the owner connected the provider last.
-function methodRunner(signInRunner: AgentRunner | undefined, keyRunner: AgentRunner | undefined, method: () => Promise<ProviderMethod | undefined>): AgentRunner {
+function methodRunner(
+    signInRunner: AgentRunner | undefined,
+    keyRunner: AgentRunner | undefined,
+    method: () => Promise<ProviderMethod | undefined>,
+    keyRunners: Partial<Record<ProviderMethod, AgentRunner>> = {},
+): AgentRunner {
     return {
         async* runTurn(request: TurnRequest): AsyncGenerator<AgentEvent> {
             const chosen = await method();
-            const runner = chosen === 'apiKey' ? keyRunner ?? signInRunner : signInRunner ?? keyRunner;
+            const runner = chosen === 'apiKey'
+                ? keyRunner ?? signInRunner
+                : chosen === 'apiKeyZen' || chosen === 'apiKeyGo'
+                    ? keyRunners[chosen] ?? keyRunner ?? signInRunner
+                    : signInRunner ?? keyRunner;
 
             if (runner !== undefined) {
                 yield* runner.runTurn(request);
@@ -288,15 +362,34 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
         const keySpec = spec.apiKey;
         const canUseKey = keySpec !== undefined;
         const proxy = canUseKey ? await startKeyProxy({ vault: options.vault, secretName: keySpec.secretName, upstreamUrl: keySpec.upstreamUrl, keyHeader: keySpec.keyHeader }) : undefined;
-        const keyEngine = proxy === undefined || keySpec === undefined
-            ? undefined
-            : new AcpEngine({
-                    label: spec.label, command, args, homeFor: () => home, loopback: options.loopback, launch,
-                    provider: spec.id, modelCatalogs: options.modelCatalogs,
-                    authMethodId: keySpec.authMethodId, headlessAuth: keySpec.headlessAuth,
-                    environment: keySpec.environment(proxy.url), askModeId: spec.askModeId,
-                    protectedFolders: spec.protectedFolders,
+        const keyVariantSpecs = keySpec === undefined
+            ? []
+            : keySpec.variants ?? [{ method: 'apiKey' as const, label: spec.label, site: keySpec.site, checkUrl: keySpec.checkUrl, environment: keySpec.environment }];
+        const keyRunnerEntries = proxy === undefined || keySpec === undefined
+            ? []
+            : keyVariantSpecs.map((variant) => {
+                    // A variant can run through its own action of the Docker wrapper. Local mode uses the same command.
+                    const variantArgs = launch !== undefined && variant.action !== undefined ? [spec.id, variant.action] : args;
+                    const engine = new AcpEngine({
+                        label: spec.label,
+                        command,
+                        args: variantArgs,
+                        homeFor: () => home,
+                        loopback: options.loopback,
+                        launch,
+                        provider: spec.id,
+                        modelCatalogs: options.modelCatalogs,
+                        authMethodId: keySpec.authMethodId,
+                        headlessAuth: keySpec.headlessAuth,
+                        environment: variant.environment(proxy.url),
+                        askModeId: spec.askModeId,
+                        protectedFolders: spec.protectedFolders,
+                    });
+
+                    return [variant.method, engine] as const;
                 });
+        const keyRunner = keyRunnerEntries[0]?.[1];
+        const keyRunners: Partial<Record<ProviderMethod, AgentRunner>> = Object.fromEntries(keyRunnerEntries);
 
         if (proxy !== undefined) {
             proxies.push(proxy);
@@ -343,19 +436,29 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
                     }));
         }
 
-        if (keySpec !== undefined && keyEngine !== undefined) {
+        if (keySpec !== undefined && keyRunner !== undefined) {
             apiKeys.push({
                 id: spec.id, label: spec.label, site: keySpec.site, secretName: keySpec.secretName,
                 checkKey: key => checkKeyAt(keySpec.checkUrl, keySpec.keyHeader, key, keySpec.badKeyStatus),
+                ...(keySpec.variants === undefined
+                    ? {}
+                    : {
+                            variants: keySpec.variants.map((variant): ProviderApiKeyVariant => ({
+                                method: variant.method,
+                                label: variant.label,
+                                site: variant.site,
+                                checkKey: key => checkKeyAt(variant.checkUrl, keySpec.keyHeader, key, keySpec.badKeyStatus),
+                            })),
+                        }),
             });
         }
 
         engines[spec.id] = {
-            runner: methodRunner(agyEngine ?? signInEngine, keyEngine, () => options.methodFor(spec.id)),
+            runner: methodRunner(agyEngine ?? signInEngine, keyRunner, () => options.methodFor(spec.id), keyRunners),
             isConnected: async () => {
                 const method = await options.methodFor(spec.id);
 
-                if (method === 'apiKey' && keySpec !== undefined) {
+                if ((method === 'apiKey' || method === 'apiKeyZen' || method === 'apiKeyGo') && keySpec !== undefined) {
                     return options.vault.has(keySpec.secretName);
                 }
 
@@ -385,5 +488,5 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
     };
 }
 
-export { ACP_PROVIDERS, BEARER, LOCAL_ACP_ARGS, PLACEHOLDER_KEY, checkKeyAt, createAcpProviders, methodRunner, readLocalAcpPaths };
+export { ACP_PROVIDERS, BEARER, LOCAL_ACP_ARGS, PLACEHOLDER_KEY, checkKeyAt, createAcpProviders, methodRunner, openCodeKeyEnvironment, readLocalAcpPaths };
 export type { AcpProviderSpec, AcpProviders };

@@ -25,6 +25,8 @@ interface SetupState {
     signIn?: string;
     // The provider whose API key the secret form asks for. Unset for the Claude key.
     keyFor?: string;
+    // The provider account variant whose API key the form asks for.
+    keyMethod?: ProviderMethod;
 }
 
 interface DeviceSignInLink {
@@ -69,6 +71,15 @@ interface ProviderApiKey {
     secretName: string;
     // Answers with the HTTP status of a cheap call made with the key.
     checkKey: (key: string) => Promise<number>;
+    // Some providers use different API routes for accounts under the same provider card.
+    variants?: ProviderApiKeyVariant[] | undefined;
+}
+
+interface ProviderApiKeyVariant {
+    method: ProviderMethod;
+    label: string;
+    site: string;
+    checkKey: (key: string) => Promise<number>;
 }
 
 interface ConnectedProvider {
@@ -76,7 +87,7 @@ interface ConnectedProvider {
     label: string;
 }
 
-type ProviderMethod = 'signIn' | 'apiKey';
+type ProviderMethod = 'signIn' | 'apiKey' | 'apiKeyZen' | 'apiKeyGo';
 
 interface ProviderOption {
     id: string;
@@ -168,9 +179,26 @@ class SetupConversation {
             return undefined;
         }
 
-        const id = choice.slice(KEY_CHOICE_PREFIX.length);
+        const id = choice.slice(KEY_CHOICE_PREFIX.length)
+            .split(':')[0];
 
-        return this.apiKeyById(id);
+        return id === undefined ? undefined : this.apiKeyById(id);
+    }
+
+    private apiKeyVariantByChoice(choice: string | undefined): ProviderApiKeyVariant | undefined {
+        if (choice?.startsWith(KEY_CHOICE_PREFIX) !== true) {
+            return undefined;
+        }
+
+        const [id, method] = choice.slice(KEY_CHOICE_PREFIX.length)
+            .split(':');
+        const apiKey = id === undefined ? undefined : this.apiKeyById(id);
+
+        return apiKey?.variants?.find(variant => variant.method === method);
+    }
+
+    private apiKeyVariantByMethod(apiKey: ProviderApiKey | undefined, method: ProviderMethod | undefined): ProviderApiKeyVariant | undefined {
+        return method === undefined ? undefined : apiKey?.variants?.find(variant => variant.method === method);
     }
 
     // A provider counts as connected with its sign-in or with its key in the vault.
@@ -260,7 +288,11 @@ class SetupConversation {
         const apiKey = this.apiKeyById(id);
 
         if (signIn !== undefined && apiKey !== undefined) {
-            await this.ask({ kind: 'choice', prompt: `How would you like to use ${signIn.label}?`, options: [{ id, label: 'Subscription', opensLink: true }, { id: `${KEY_CHOICE_PREFIX}${id}`, label: 'API key' }] });
+            const options = id === 'opencode'
+                ? [{ id, label: 'Free models' }, { id: `${KEY_CHOICE_PREFIX}${id}`, label: 'My account (API key)' }]
+                : [{ id, label: 'Subscription', opensLink: true }, { id: `${KEY_CHOICE_PREFIX}${id}`, label: 'API key' }];
+
+            await this.ask({ kind: 'choice', prompt: `How would you like to use ${signIn.label}?`, options });
 
             return;
         }
@@ -430,10 +462,23 @@ class SetupConversation {
                 return;
             }
 
+            const chosenSignIn = body?.kind === 'choice' && body.chosenId !== undefined ? this.signInById(body.chosenId) : undefined;
+
+            if (chosenSignIn !== undefined) {
+                await this.beginSignIn(chosenSignIn);
+
+                return;
+            }
+
             const chosenKey = body?.kind === 'choice' ? this.apiKeyByChoice(body.chosenId) : undefined;
+            const keyVariant = body?.kind === 'choice' ? this.apiKeyVariantByChoice(body.chosenId) : undefined;
 
             if (chosenKey !== undefined) {
-                await this.askSecret(chosenKey);
+                if (keyVariant === undefined) {
+                    await this.chooseApiKey(chosenKey);
+                } else {
+                    await this.askSecret(chosenKey, keyVariant);
+                }
 
                 return;
             }
@@ -473,8 +518,9 @@ class SetupConversation {
 
         if (this.state.mode === 'apiKey' || this.state.keyFor !== undefined) {
             const apiKey = this.state.keyFor === undefined ? undefined : this.apiKeyById(this.state.keyFor);
+            const keyVariant = this.apiKeyVariantByMethod(apiKey, this.state.keyMethod);
 
-            await this.askSecret(apiKey);
+            await this.askSecret(apiKey, keyVariant);
 
             return;
         }
@@ -545,9 +591,11 @@ class SetupConversation {
 
         const signIn = action === 'choice' ? this.signInById(value) : undefined;
         const chosenKey = action === 'choice' ? this.apiKeyByChoice(value) : undefined;
+        const keyVariant = action === 'choice' ? this.apiKeyVariantByChoice(value) : undefined;
         const providerChoice = action === 'choice' && value.startsWith(PROVIDER_CHOICE_PREFIX) ? value.slice(PROVIDER_CHOICE_PREFIX.length) : undefined;
         const chosenProvider = providerChoice !== undefined && this.isKnownProvider(providerChoice) ? providerChoice : undefined;
         const keyProvider = action === 'secret' && this.state.keyFor !== undefined ? this.apiKeyById(this.state.keyFor) : undefined;
+        const keyProviderVariant = this.apiKeyVariantByMethod(keyProvider, this.state.keyMethod);
 
         if (action === 'choice' && value === 'signOut' && !signingOut) {
             throw new SetupAnswerError('Choose a provider.');
@@ -575,7 +623,9 @@ class SetupConversation {
 
         if (action === 'secret') {
             try {
-                status = keyProvider === undefined ? await this.options.checkKey(trimmedKey) : await keyProvider.checkKey(trimmedKey);
+                const checkKey = keyProviderVariant?.checkKey ?? keyProvider?.checkKey ?? this.options.checkKey;
+
+                status = await checkKey(trimmedKey);
                 unchecked = status !== 401 && status !== 403 && (status < 200 || status >= 300);
             } catch {
                 unchecked = true;
@@ -599,7 +649,11 @@ class SetupConversation {
             } else if (signIn !== undefined) {
                 await this.beginSignIn(signIn);
             } else if (chosenKey !== undefined) {
-                await this.askSecret(chosenKey);
+                if (keyVariant === undefined) {
+                    await this.chooseApiKey(chosenKey);
+                } else {
+                    await this.askSecret(chosenKey, keyVariant);
+                }
             } else if (pastingCode) {
                 const pastedCode = value.trim();
 
@@ -614,16 +668,16 @@ class SetupConversation {
                 if (unchecked) {
                     // An unchecked key is never stored, so a mistyped key cannot end setup.
                     await this.say(`Could not reach ${keyProvider?.site ?? 'Anthropic'} to check the key. Try again.`);
-                    await this.askSecret(keyProvider);
+                    await this.askSecret(keyProvider, keyProviderVariant);
                 } else if (status === 401 || status === 403) {
                     await this.say('The key was rejected. Try another key.');
-                    await this.askSecret(keyProvider);
+                    await this.askSecret(keyProvider, keyProviderVariant);
                 } else if (keyProvider === undefined) {
                     this.options.vault.set(API_KEY_NAME, trimmedKey);
                     await this.ready(undefined, undefined, true);
                 } else {
                     this.options.vault.set(keyProvider.secretName, trimmedKey);
-                    await this.ready({ id: keyProvider.id, label: keyProvider.label }, 'apiKey', true);
+                    await this.ready({ id: keyProvider.id, label: keyProvider.label }, keyProviderVariant?.method ?? 'apiKey', true);
                 }
             } else {
                 const session = this.session;
@@ -929,7 +983,21 @@ class SetupConversation {
     }
 
     // Without a provider this asks for the Anthropic key.
-    private async askSecret(apiKey?: ProviderApiKey): Promise<void> {
+    private async chooseApiKey(apiKey: ProviderApiKey): Promise<void> {
+        const variants = apiKey.variants ?? [];
+
+        if (variants.length === 0) {
+            await this.askSecret(apiKey);
+
+            return;
+        }
+
+        const options = variants.map(variant => ({ id: `${KEY_CHOICE_PREFIX}${apiKey.id}:${variant.method}`, label: variant.label }));
+
+        await this.ask({ kind: 'choice', prompt: `Which ${apiKey.label} account do you have?`, options });
+    }
+
+    private async askSecret(apiKey?: ProviderApiKey, variant?: ProviderApiKeyVariant): Promise<void> {
         if (apiKey === undefined) {
             this.state = { ...this.kept(), step: 'secret', mode: 'apiKey' };
             await this.persist();
@@ -938,9 +1006,17 @@ class SetupConversation {
             return;
         }
 
-        this.state = { ...this.kept(), step: 'secret', keyFor: apiKey.id };
+        this.state = {
+            ...this.kept(),
+            step: 'secret',
+            keyFor: apiKey.id,
+            ...(variant === undefined ? {} : { keyMethod: variant.method }),
+        };
         await this.persist();
-        await this.ask({ kind: 'secureForm', prompt: `Add your ${apiKey.label} API key from ${apiKey.site}.`, secretName: apiKey.secretName, submitted: false });
+        const label = variant?.label ?? apiKey.label;
+        const site = variant?.site ?? apiKey.site;
+
+        await this.ask({ kind: 'secureForm', prompt: `Add your ${label} API key from ${site}.`, secretName: apiKey.secretName, submitted: false });
     }
 
     private async say(text: string): Promise<void> {
@@ -963,4 +1039,4 @@ class SetupConversation {
 }
 
 export { SetupConversation, SetupAnswerError, API_KEY_NAME };
-export type { DeviceSignInLink, DeviceSignInResult, DeviceSignInSession, ProviderApiKey, ProviderMethod, ProviderSignIn, SetupMode, SetupAction, SetupConversationOptions };
+export type { DeviceSignInLink, DeviceSignInResult, DeviceSignInSession, ProviderApiKey, ProviderApiKeyVariant, ProviderMethod, ProviderSignIn, SetupMode, SetupAction, SetupConversationOptions };
