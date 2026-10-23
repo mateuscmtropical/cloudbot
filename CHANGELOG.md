@@ -20,6 +20,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A message that another bot sent shows on the bot side of the chat, with the mascot and the name of the sending bot above the task. It no longer looks like a message from the owner. The bot list shows the sender and the task as the preview.
 - A bot is renamed with a double click, or a double tap on a phone, on its name in the header of the chat or in the bot list. Enter saves and Escape cancels. The name follows the same rules as when the bot renames itself.
 - The header of the chat shows the AI provider and the model of the bot. A tap opens the providers of the server. A connected one switches the bot, and the next message runs on it. One that is not connected has a Connect button that starts its sign-in in the setup chat.
 - After a usage limit, the chat asks whether to switch to another connected provider. Switching ends the wait and the owner sends the message again. Keep waiting leaves things as they were.

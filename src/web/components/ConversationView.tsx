@@ -4,6 +4,7 @@ import type { ReactElement } from 'react';
 import type { BotSummary, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
 import { nextTap } from '../doubleTap.ts';
 import type { Tap } from '../doubleTap.ts';
+import { findHandoffSender } from '../botHandoff.ts';
 import { renderMarkdown } from '../markdown.ts';
 import type { MascotState } from '../mascotState.ts';
 import { MESSAGE_MASCOT_SIZE, showsMessageMascot } from '../messageMascot.ts';
@@ -36,6 +37,8 @@ const lazyDesktopPanel = lazy(async () => {
 
 interface ConversationViewProps {
     bot: BotSummary | undefined;
+    // All the bots, to show the mascot of the bot that sent a hand-off.
+    bots?: BotSummary[] | undefined;
     // The face of the bot's mascot while it is the live bot. Idle when not given.
     mascotState?: MascotState | undefined;
     messages: ChatMessage[];
@@ -100,6 +103,7 @@ function topVisibleAnchor(messageListElement: HTMLElement): OlderAnchor | undefi
 
 function ConversationView({
     bot,
+    bots,
     mascotState = 'idle',
     messages,
     draftText,
@@ -356,6 +360,7 @@ function ConversationView({
                             message={message}
                             actions={actions}
                             mascot={message.role === 'assistant' ? bot : undefined}
+                            handoffSender={findHandoffSender(bots ?? [], message)}
                             isMascotShown={showsMessageMascot(messages, index, { isShown: draftText !== '' || isThinkingShown, botId: bot?.id })}
                             mascotState={mascotState === 'typing' ? 'typing' : 'idle'}
                         />

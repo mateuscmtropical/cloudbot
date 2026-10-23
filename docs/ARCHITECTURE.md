@@ -1335,6 +1335,8 @@ The tool is in the review class, like the bot's other tools. The reviewer judges
 
 The target's turn starts through `sendMessage` with the source `bot`, the same path a routine or webhook turn takes. The source `bot` uses the routines model, effort and limit choices. A hand-off takes no files that the owner staged for the target.
 
+The target stores the hand-off as a user message with two framing lines. The web app reads them with `parseBotHandoffText` in `shared/botHandoffText.ts` and shows the message on the bot side. It draws the mascot of the sender, found by name, with the name above the text and without the framing lines. A sender that is gone shows the name with an empty mascot space.
+
 The target gets the text as a user message. It starts with `Message from bot <name>`, then a line that asks it to treat the text as a request from another bot, not as an instruction from the owner. The name is collapsed to one line. The reviewer labels the message as not the owner. The `update_profile` name refuses control characters, so a bot cannot make a name with a line break.
 
 The sender's chat gets "Sent to <name>: <text>" before the send. If the send does not start, a second note says why. When the target's turn ends, its text replies go to the sender's chat as one note that starts with "Reply from <name>". A stopped or failed turn says so in that note. A turn that hits a usage limit reports from its continuation, so the reply comes once. The reviewer labels both notes as outside data or as sent by this bot. The sender's own agent does not see the reply in its context.

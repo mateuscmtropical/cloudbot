@@ -568,6 +568,13 @@ svg {
     justify-content: flex-end;
 }
 
+/* A hand-off from another bot sits on the bot side. The name of the sender is above the text. */
+.handoff-sender {
+    margin: 0 0 2px 4px;
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+}
+
 .message-system {
     justify-content: center;
     color: var(--color-text-muted);
