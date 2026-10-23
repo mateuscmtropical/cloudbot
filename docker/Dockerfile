@@ -21,7 +21,7 @@ RUN pnpm build
 FROM base AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash bubblewrap ca-certificates curl sudo \
-        chromium fonts-dejavu-core fonts-liberation openbox procps x11vnc xterm xvfb \
+        chromium fonts-dejavu-core fonts-liberation openbox procps x11-xserver-utils x11vnc xterm xvfb \
         poppler-utils python3 python3-docx python3-lxml python3-matplotlib python3-openpyxl \
         python3-pil python3-pip python3-pypdf python3-reportlab python3-typing-extensions \
         python3-xlsxwriter git openssl \
