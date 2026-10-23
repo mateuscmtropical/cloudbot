@@ -1193,6 +1193,7 @@ function App(): ReactElement {
                     ? (
                             <ConversationView
                                 bot={selectedBot}
+                                bots={bots}
                                 mascotState={liveMascotState}
                                 onTypingChange={setIsOwnerTyping}
                                 messages={visibleMessages}

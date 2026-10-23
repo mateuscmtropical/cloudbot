@@ -22,6 +22,7 @@ import { ModelStore } from '../store/ModelStore.ts';
 import { BOT_CREATE_TOOL_FULL_NAME } from '../bots/createBotTool.ts';
 import { BOT_DELETE_TOOL_FULL_NAME } from '../bots/createBotDeleteTool.ts';
 import { BOT_SEND_TOOL_FULL_NAME } from '../bots/createBotSendTool.ts';
+import { buildBotHandoffMessage } from '../bots/botHandoff.ts';
 import { BROWSER_TOOL_FULL_NAMES } from '../desktop/createBrowserTools.ts';
 import { BROWSER_ALLOW_TOOL_FULL_NAMES } from '../desktop/createBrowserAllowTools.ts';
 import { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
@@ -1113,6 +1114,20 @@ describe('ChatService', () => {
             .toEqual([
                 expect.objectContaining({ id: bot.id, name: 'Ana', lastMessagePreview: 'Hello there' }),
             ]);
+    });
+
+    it('shows the sender and the task as the preview of a hand-off', async () => {
+        const { service } = buildSetup([]);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, buildBotHandoffMessage('News', 'Find the top video.'));
+        await finished;
+
+        const bots = await service.listBots();
+
+        expect(bots)
+            .toEqual([expect.objectContaining({ id: bot.id, lastMessagePreview: 'News: Find the top video.' })]);
     });
 
     it('passes the profile tool, its allowed name and the bot prompt to each turn', async () => {

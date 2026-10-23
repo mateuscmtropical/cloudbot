@@ -124,6 +124,7 @@ import { RULE_LIST_TOOL_FULL_NAME, RULE_TOOL_FULL_NAMES, createRuleTools } from 
 import { SKILL_LIST_TOOL_FULL_NAME, SKILL_READ_TOOL_FULL_NAME, SKILL_TOOL_FULL_NAMES, createSkillTools } from '../skills/createSkillTools.ts';
 import type { SkillStore } from '../store/SkillStore.ts';
 import { BOT_SEND_TOOL_FULL_NAME, createBotSendTool } from '../bots/createBotSendTool.ts';
+import { parseBotHandoffText } from '../../shared/botHandoffText.ts';
 import type { BotSendInput, BotSendOutcome } from '../bots/createBotSendTool.ts';
 import { HANDOFF_SENT_PREFIX, MAX_HANDOFFS_PER_TURN, MAX_HANDOFF_DEPTH, buildBotHandoffMessage, describeHandoffReply } from '../bots/botHandoff.ts';
 import { CHANNEL_TRANSCRIPT_LIMIT, MAX_CHANNEL_TURNS_PER_OWNER_MESSAGE, buildChannelTurnPrompt, buildTranscript } from '../channels/channelRound.ts';
@@ -478,11 +479,20 @@ interface PendingTemplateCard {
 function templateCardKey(botId: string, filePath: string): string {
     return botId + '\n' + filePath;
 }
+// A hand-off from another bot shows the sender and the task, not the framing lines.
+function previewOfText(text: string): string {
+    const handoff = parseBotHandoffText(text);
+    const shownText = handoff === undefined ? text : `${handoff.senderName}: ${handoff.text}`;
+
+    return shownText.slice(0, PREVIEW_LENGTH);
+}
+
 function previewOf(body: MessageBody): string {
     switch (body.kind) {
         case 'tasks':
             return 'Task board';
         case 'text':
+            return previewOfText(body.text);
         case 'link':
         case 'screenLink':
             return body.text.slice(0, PREVIEW_LENGTH);

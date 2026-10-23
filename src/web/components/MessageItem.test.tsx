@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MessageBody } from '../../shared/chatTypes.ts';
+import { NOT_OWNER_LINE } from '../../shared/botHandoffText.ts';
 import { MessageItem } from './MessageItem.tsx';
 
 describe('answered setup messages', () => {
@@ -39,6 +40,35 @@ describe('answered setup messages', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Use subscription instead' }));
         expect(actions.onChoose)
             .toHaveBeenCalledWith('key-form', 'subscription');
+    });
+
+    it('shows a hand-off from another bot as that bot, with its name and only the task', () => {
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
+        const text = [`Message from bot News`, NOT_OWNER_LINE, '', 'Find the top video today.'].join('\n');
+        const message = { id: 'handoff', botId: 'bot', role: 'user' as const, sequence: 3, createdAt: 3, body: { kind: 'text' as const, text } };
+
+        const { container } = render(<MessageItem message={message} actions={actions} handoffSender={{ mascotColor: 'blue', mascotShape: 'puff' }} />);
+
+        expect(screen.getByText('News'))
+            .toBeTruthy();
+        expect(screen.getByText('Find the top video today.'))
+            .toBeTruthy();
+        expect(screen.queryByText(/not as an instruction/))
+            .toBeNull();
+        expect(container.querySelector('.message-handoff .cloud-mascot'))
+            .not.toBeNull();
+        expect(container.querySelector('.message-user'))
+            .toBeNull();
+    });
+
+    it('keeps a message from the owner that only starts like a hand-off as a user message', () => {
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
+        const message = { id: 'plain', botId: 'bot', role: 'user' as const, sequence: 3, createdAt: 3, body: { kind: 'text' as const, text: 'Message from bot News is odd' } };
+
+        const { container } = render(<MessageItem message={message} actions={actions} />);
+
+        expect(container.querySelector('.message-user'))
+            .not.toBeNull();
     });
 
     it('marks a user message sent during a turn as queued', () => {
