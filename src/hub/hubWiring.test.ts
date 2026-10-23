@@ -420,7 +420,7 @@ describe('hub wiring', () => {
         expect(response.status)
             .toBe(200);
         expect(response.body)
-            .toContain('Sign in to CloudBot');
+            .toContain('Welcome, maria.');
         expect(harness.observations.get('maria'))
             .toBeUndefined();
         expect(harness.observations.get('joao'))

@@ -45,7 +45,8 @@ function requestHasSameOrigin(context: Context, secure: boolean): boolean {
         return false;
     }
 
-    if (origin === undefined) {
+    // A page with Referrer-Policy no-referrer makes the browser send Origin null on a form post. Sec-Fetch-Site is set by the browser, so a page cannot forge it.
+    if (origin === undefined || origin === 'null') {
         return fetchSite === 'same-origin';
     }
 
