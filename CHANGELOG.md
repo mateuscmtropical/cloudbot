@@ -13,11 +13,11 @@ All notable changes to this project are listed here. The format follows
 ### Changed
 
 - On a provider such as OpenCode, the bot no longer asks you to approve its own CloudBot tools twice, such as connecting a provider. The tool server already decides each call.
+- When an AI provider renames its mode that asks before each tool, CloudBot uses the mode the agent lists instead of failing every turn with "could not switch to asking before each tool".
 - The provider list calls the provider OpenCode, not "opencode free models".
 - The bot knows how to change its provider and that a subscription, plan or account means the sign-in at a provider. CloudBot has no paid plan of its own.
 - When you connect a provider in the chat, the bot of that chat runs on it from the next message, and the provider name in the header updates. Before, the bot kept the old provider.
 - Picking a provider that needs no sign-in, such as OpenCode, no longer opens a blank browser tab.
-=======
 - Grok signs in and takes an xAI key the way the xAI docs describe, and always runs with the Ask permission mode, so a saved always-approve setting no longer skips the review.
 - A routine can repeat every minute. The shortest interval was 5 minutes.
 - The buttons at the top of the bot list are in the order People, Search, New bot.
