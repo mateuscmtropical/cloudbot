@@ -14,6 +14,7 @@ import { createPasskeyRoutes } from './access/createPasskeyRoutes.ts';
 import type { PasskeyService } from './access/PasskeyService.ts';
 import { readPublicBaseUrl } from './access/setupLinkUrl.ts';
 import type { PeopleAdmin } from './people/PeopleAdmin.ts';
+import { createPeopleRoutes } from './people/createPeopleRoutes.ts';
 
 import { createChannelRoutes } from './channels/createChannelRoutes.ts';
 import { createChatRoutes } from './chat/createChatRoutes.ts';
@@ -187,6 +188,12 @@ function createApp(options: AppOptions): Hono {
     // The origin check runs first, so a request from another page is refused before the cookie is read.
     app.use('/api/*', sameOriginCheck);
     app.use('/api/*', sessionCheck);
+
+    if (options.peopleAdmin !== undefined) {
+        const peopleRoutes = createPeopleRoutes({ peopleAdmin: options.peopleAdmin });
+
+        app.route('/', peopleRoutes);
+    }
 
     // Chat routes sit behind the session check. The web fallback would otherwise answer them.
     if (options.chatService !== undefined) {

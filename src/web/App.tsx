@@ -25,6 +25,8 @@ import { DISABLE_NOTIFICATIONS_CHOICE_ID, ENABLE_NOTIFICATIONS_CHOICE_ID } from 
 import { ADD_PASSKEY_CHOICE_ID, REMOVE_PASSKEY_CHOICE_ID } from '../shared/passkeyTypes.ts';
 import { addPasskey, describePasskeyResult, removePasskey } from './passkeyClient.ts';
 import { SignInScreen } from './components/SignInScreen.tsx';
+import { PeoplePanel } from './components/PeoplePanel.tsx';
+import { listPeople } from './peopleClient.ts';
 
 interface DraftState {
     botId: string;
@@ -127,6 +129,8 @@ function App(): ReactElement {
     // The screen holder seen on the last check. The Screen panel opens only when it changes to the owner.
     const lastScreenHolderRef = useRef<string | undefined>(undefined);
     const [isBotListOpen, setIsBotListOpen] = useState(false);
+    const [isPeopleAvailable, setIsPeopleAvailable] = useState(false);
+    const [isPeopleOpen, setIsPeopleOpen] = useState(false);
     // The connected remote MCP servers panel, opened from the sidebar.
     const [isConnectAppsOpen, setIsConnectAppsOpen] = useState(false);
     const [errorText, setErrorText] = useState<string | undefined>(undefined);
@@ -628,6 +632,26 @@ function App(): ReactElement {
             });
     }, []);
 
+    useEffect(() => {
+        let isCurrent = true;
+
+        listPeople()
+            .then(() => {
+                if (isCurrent) {
+                    setIsPeopleAvailable(true);
+                }
+            })
+            .catch(() => {
+                if (isCurrent) {
+                    setIsPeopleAvailable(false);
+                }
+            });
+
+        return () => {
+            isCurrent = false;
+        };
+    }, []);
+
     function updateOlderPaging(botId: string, changes: Partial<OlderPagingState>): void {
         setChatState(previousState => ({
             ...previousState,
@@ -723,6 +747,7 @@ function App(): ReactElement {
         setErrorText(previousError => (previousError === OLDER_ERROR_TEXT ? undefined : previousError));
         setSelectedChannelId(undefined);
         setSelectedBotId(botId);
+        setIsPeopleOpen(false);
         setIsBotListOpen(false);
     }
 
@@ -732,6 +757,7 @@ function App(): ReactElement {
         setMascotHopRequest(undefined);
         setChannelDetail(undefined);
         setSelectedChannelId(channelId);
+        setIsPeopleOpen(false);
         setIsBotListOpen(false);
     }
 
@@ -1077,11 +1103,17 @@ function App(): ReactElement {
                 channels={channels}
                 selectedChannelId={selectedChannelId}
                 isOpen={isBotListOpen}
+                isPeopleAvailable={isPeopleAvailable}
                 onSelectBot={handleSelectBot}
                 onSelectChannel={handleSelectChannel}
                 onNewBot={handleNewBot}
                 onConnectApps={() => {
+                    setIsPeopleOpen(false);
                     setIsConnectAppsOpen(true);
+                }}
+                onPeople={() => {
+                    setIsConnectAppsOpen(false);
+                    setIsPeopleOpen(true);
                 }}
             />
             {isConnectAppsOpen
@@ -1111,9 +1143,17 @@ function App(): ReactElement {
                     : (
                             <p className="error-banner" role="alert">{errorText}</p>
                         )}
-                {selectedChannelId === undefined
-                    ? null
-                    : (
+                {isPeopleOpen
+                    ? (
+                            <PeoplePanel
+                                onClose={() => {
+                                    setIsPeopleOpen(false);
+                                }}
+                            />
+                        )
+                    : null}
+                {!isPeopleOpen && selectedChannelId !== undefined
+                    ? (
                             <ChannelView
                                 channel={channelDetail?.id === selectedChannelId ? channelDetail : undefined}
                                 onPost={handlePostToChannel}
@@ -1122,8 +1162,9 @@ function App(): ReactElement {
                                     setIsBotListOpen(true);
                                 }}
                             />
-                        )}
-                {selectedChannelId === undefined
+                        )
+                    : null}
+                {!isPeopleOpen && selectedChannelId === undefined
                     ? (
                             <ConversationView
                                 bot={selectedBot}

@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A people panel for the owner of a server with many people. A button next to the search and the new bot button opens it in the chat area. The owner adds a person by name, deactivates or reactivates them, resets a password, or deletes them after typing the name. A new password is shown once and is not kept.
 - Run a task once at a set time. Ask a bot for a reminder in two hours, and it makes a routine that runs one time and then turns itself off. A time that has passed is refused.
 - Sign in with a passkey. Ask a bot in the chat to add one, tap the card, and this phone or computer can sign in from the new sign-in screen. The bot lists them and posts a card to remove one. The setup link from the server still works.
 - Import pasted instructions or attached plain text, Markdown and common JSON assistant exports. The owner approves the full profile and memory draft in chat. Platform tools, skills, files, credentials, approval settings and routines are not imported.

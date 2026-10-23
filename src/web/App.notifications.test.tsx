@@ -33,6 +33,10 @@ vi.mock('./apiClient.ts', () => ({
     removeUpload: vi.fn(),
 }));
 
+vi.mock('./peopleClient.ts', () => ({
+    listPeople: vi.fn(() => Promise.reject(new Error('People route is not available.'))),
+}));
+
 // Only the permission and subscription step is replaced. The helpers of the module stay real.
 vi.mock('./pushClient.ts', async (importOriginal) => {
     const original = await importOriginal<typeof PushClientModule>();

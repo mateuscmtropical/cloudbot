@@ -18,7 +18,7 @@ describe('BotList', () => {
 
     it('shows a mascot in each bot, in the bot color and shape', () => {
         const { container } = render(
-            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} />,
+            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} isPeopleAvailable={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} onPeople={vi.fn()} />,
         );
         const mascots = container.querySelectorAll('.bot-item .cloud-mascot');
 
@@ -32,7 +32,7 @@ describe('BotList', () => {
 
     it('shows the live face on the selected bot and the idle face on the others', () => {
         const { container } = render(
-            <BotList bots={BOTS} selectedBotId="bot-a" selectedMascotState="thinking" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} />,
+            <BotList bots={BOTS} selectedBotId="bot-a" selectedMascotState="thinking" channels={[]} selectedChannelId={undefined} isOpen={false} isPeopleAvailable={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} onPeople={vi.fn()} />,
         );
         const selectedFace = container.querySelector('.bot-item.is-selected .cloud-mascot');
         const otherFace = container.querySelector('.bot-item:not(.is-selected) .cloud-mascot');
@@ -56,7 +56,7 @@ describe('BotList', () => {
             },
         ];
         const { container, getByText } = render(
-            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={channels} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={onSelectChannel} onNewBot={vi.fn()} onConnectApps={vi.fn()} />,
+            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={channels} selectedChannelId={undefined} isOpen={false} isPeopleAvailable={false} onSelectBot={vi.fn()} onSelectChannel={onSelectChannel} onNewBot={vi.fn()} onConnectApps={vi.fn()} onPeople={vi.fn()} />,
         );
 
         expect(getByText('Ana (manager), Bia'))

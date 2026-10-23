@@ -10,6 +10,7 @@ import { FakeAgentRunner } from './agent/FakeAgentRunner.ts';
 import { ChatService } from './chat/ChatService.ts';
 import { CLEANUP_RETRIES } from './chat/testCleanup.ts';
 import { createApp } from './createApp.ts';
+import type { PeopleAdmin } from './people/PeopleAdmin.ts';
 import { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { MAX_RULES_PER_BOT } from './rules/createRuleRoutes.ts';
 import { PushSubscriptionStore } from './store/PushSubscriptionStore.ts';
@@ -109,6 +110,28 @@ describe('createApp', () => {
 
         expect(response.status)
             .toBe(404);
+    });
+
+    it('mounts the people routes behind the session check when people admin is set', async () => {
+        const peopleAdmin: PeopleAdmin = {
+            list: () => Promise.resolve([]),
+            add: () => Promise.reject(new Error('Not used.')),
+            deactivate: () => Promise.reject(new Error('Not used.')),
+            reactivate: () => Promise.reject(new Error('Not used.')),
+            resetPassword: () => Promise.reject(new Error('Not used.')),
+            remove: () => Promise.resolve(),
+        };
+        const app = createApp({ version: '1.2.3', access, peopleAdmin });
+        const unauthorized = await app.request('/api/people');
+        const sessionToken = await signIn(app, access);
+        const authorized = await requestWithSession(app, '/api/people', sessionToken);
+
+        expect(unauthorized.status)
+            .toBe(401);
+        expect(authorized.status)
+            .toBe(200);
+        expect(await authorized.json())
+            .toEqual([]);
     });
 
     it('rejects an api request without the cookie', async () => {
