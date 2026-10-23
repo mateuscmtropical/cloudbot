@@ -114,6 +114,7 @@ svg {
     border-radius: 12px;
     background: transparent;
     text-align: left;
+    touch-action: manipulation;
 }
 
 .bot-item:hover {
@@ -424,6 +425,34 @@ svg {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-weight: 600;
+    /* A double tap renames the bot, so the page must not wait for it or zoom. */
+    touch-action: manipulation;
+}
+
+/* The name as a text field, in the pill and in the bot list. It looks like the name, with a line under it. */
+.rename-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.rename-input {
+    width: 100%;
+    min-width: 12ch;
+    padding: 0 0 2px;
+    border: 0;
+    border-bottom: 2px solid var(--color-accent);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    outline: none;
+}
+
+.rename-problem {
+    color: var(--color-danger);
+    font-size: 0.8125rem;
 }
 
 /* The provider and the model of the bot sit in the pill. A tap opens the list of providers under it. */

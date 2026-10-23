@@ -12,7 +12,7 @@ import type { MascotHop, MascotHopPoint } from './mascotHop.ts';
 import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
-import { createBot, getChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload } from './apiClient.ts';
+import { createBot, getChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload, renameBot } from './apiClient.ts';
 import { mergeLoadedUploads } from './attachmentChips.ts';
 import { applyTabIcon } from './tabIcon.ts';
 import { MESSAGE_PAGE_SIZE, mergeMessages, removeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
@@ -759,6 +759,21 @@ function App(): ReactElement {
         setIsBotListOpen(false);
     }
 
+    // The new name shows in the list and in the header at once. A refusal comes back as text for the field to show.
+    function handleRenameBot(botId: string, name: string): Promise<string | undefined> {
+        return renameBot(botId, name)
+            .then((renamed) => {
+                setBots(previousBots => previousBots.map(bot => (bot.id === renamed.id ? { ...bot, name: renamed.name } : bot)));
+
+                return undefined;
+            })
+            .catch((error: unknown) => {
+                const serverMessage = error instanceof RequestFailedError ? error.serverMessage : undefined;
+
+                return serverMessage ?? 'The name could not be changed.';
+            });
+    }
+
     function handleSelectChannel(channelId: string): void {
         mascotHopRef.current?.cancel();
         mascotHopRef.current = undefined;
@@ -1116,6 +1131,7 @@ function App(): ReactElement {
                 onSelectBot={handleSelectBot}
                 onSelectChannel={handleSelectChannel}
                 onNewBot={handleNewBot}
+                onRenameBot={handleRenameBot}
                 onConnectApps={() => {
                     setIsPeopleOpen(false);
                     setIsConnectAppsOpen(true);
@@ -1193,6 +1209,7 @@ function App(): ReactElement {
                                 onOpenBotList={() => {
                                     setIsBotListOpen(true);
                                 }}
+                                onRenameBot={handleRenameBot}
                                 onOpenSetupChat={(setupBotId) => {
                                     handleSelectBot(setupBotId);
                                 }}

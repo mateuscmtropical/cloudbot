@@ -2,6 +2,8 @@ import { Suspense, createElement, lazy, useLayoutEffect, useMemo, useRef, useSta
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
+import { nextTap } from '../doubleTap.ts';
+import type { Tap } from '../doubleTap.ts';
 import { renderMarkdown } from '../markdown.ts';
 import type { MascotState } from '../mascotState.ts';
 import { MESSAGE_MASCOT_SIZE, showsMessageMascot } from '../messageMascot.ts';
@@ -14,6 +16,7 @@ import { Composer } from './Composer.tsx';
 import type { DraftAttachment } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
 import { ProviderPicker } from './ProviderPicker.tsx';
+import { RenameField } from './RenameField.tsx';
 import { ThinkingBubble } from './ThinkingBubble.tsx';
 import { WebhookUrlNotice } from './WebhookUrlNotice.tsx';
 import { PersonCredentialsNotice } from './PersonCredentialsNotice.tsx';
@@ -51,6 +54,8 @@ interface ConversationViewProps {
     onOpenBotList: () => void;
     // Opens the chat of the bot that holds a provider sign-in. Without it the header shows no provider picker.
     onOpenSetupChat?: ((setupBotId: string) => void) | undefined;
+    // Saves a new name for the bot, after a double tap on its name. It answers why the name was refused, or nothing. Without it the name cannot be changed here.
+    onRenameBot?: ((botId: string, name: string) => Promise<string | undefined>) | undefined;
     // Goes up each time the bot asks for the screen. The Screen panel opens then, so the owner sees the request at once.
     screenRequestId?: number | undefined;
     // The message a tapped notification was about. The view scrolls to it once the messages are there, and reports it handled.
@@ -110,6 +115,7 @@ function ConversationView({
     onLoadOlder,
     onOpenBotList,
     onOpenSetupChat,
+    onRenameBot,
     screenRequestId,
     focusMessageId,
     onFocusHandled,
@@ -135,12 +141,15 @@ function ConversationView({
     const isBubbleDue = isThinkingBubbleShown({ isRunning, draftText, messages });
     const isThinkingShown = useDelayedFlag(isBubbleDue, BUBBLE_DELAY_MS);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
+    const [isRenaming, setIsRenaming] = useState(false);
+    const lastNameTapRef = useRef<Tap | undefined>(undefined);
     const [shownBotId, setShownBotId] = useState(bot?.id);
     const [shownScreenRequestId, setShownScreenRequestId] = useState(screenRequestId);
 
     // React's pattern for state that follows a prop: reset it during render, not in an effect.
     if (shownBotId !== bot?.id) {
         setShownBotId(bot?.id);
+        setIsRenaming(false);
     }
 
     // Each new request from the bot opens the Screen panel, even when the owner had closed it.
@@ -266,7 +275,35 @@ function ConversationView({
                 </button>
                 <div className="bot-pill">
                     {bot === undefined ? null : <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={28} />}
-                    <span className="bot-pill-name">{botName}</span>
+                    {isRenaming && bot !== undefined && onRenameBot !== undefined
+                        ? (
+                                <RenameField
+                                    name={bot.name}
+                                    label={`Name of ${bot.name}`}
+                                    className="bot-pill-name"
+                                    onSubmit={newName => onRenameBot(bot.id, newName)}
+                                    onClose={() => {
+                                        setIsRenaming(false);
+                                    }}
+                                />
+                            )
+                        : (
+                                <span
+                                    className="bot-pill-name"
+                                    onPointerUp={(event) => {
+                                        // A double tap on the name of the bot renames it.
+                                        const result = nextTap(lastNameTapRef.current, bot?.id ?? '', event.timeStamp);
+
+                                        lastNameTapRef.current = result.tap;
+
+                                        if (result.isDouble && event.button === 0 && onRenameBot !== undefined && bot !== undefined) {
+                                            setIsRenaming(true);
+                                        }
+                                    }}
+                                >
+                                    {botName}
+                                </span>
+                            )}
                     {bot === undefined || onOpenSetupChat === undefined ? null : <ProviderPicker botId={bot.id} changeCount={providerChangeCount} onOpenSetupChat={onOpenSetupChat} />}
                 </div>
             </header>
