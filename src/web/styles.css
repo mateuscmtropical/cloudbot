@@ -125,6 +125,17 @@ svg {
     background: var(--color-surface-raised);
 }
 
+/* A chat with a message the owner has not seen. The row has a blue tint and the name and the preview are stronger. */
+.bot-item.is-unread {
+    background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+
+.bot-item.is-unread .bot-name,
+.bot-item.is-unread .bot-preview {
+    color: var(--color-text);
+    font-weight: 600;
+}
+
 .bot-text {
     display: flex;
     flex-direction: column;

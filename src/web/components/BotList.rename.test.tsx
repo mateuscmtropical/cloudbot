@@ -6,8 +6,8 @@ import type { BotSummary } from '../../shared/chatTypes.ts';
 import { BotList } from './BotList.tsx';
 
 const BOTS: BotSummary[] = [
-    { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: 'Hello', hasUnread: false },
-    { id: 'bot-b', name: 'Bia', title: 'Assistant', mascotColor: 'pink', mascotShape: 'bubble', lastMessagePreview: '', hasUnread: false },
+    { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: 'Hello', hasUnread: false, lastMessageSequence: 0 },
+    { id: 'bot-b', name: 'Bia', title: 'Assistant', mascotColor: 'pink', mascotShape: 'bubble', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 },
 ];
 
 function renderList(onRenameBot?: (botId: string, name: string) => Promise<string | undefined>): void {

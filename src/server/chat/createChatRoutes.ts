@@ -407,6 +407,48 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
         return context.body(null, 204);
     });
 
+    // One stream with the messages of every bot, so the bot list can mark an unread chat and show its newest message.
+    routes.get('/api/events', (context) => {
+        if (context.req.method === 'HEAD') {
+            return context.body(null, 200);
+        }
+
+        const requestSignal = context.req.raw.signal;
+
+        return streamSSE(context, async (stream) => {
+            if (requestSignal.aborted) {
+                return;
+            }
+
+            const writeEvent = createEventWriter(stream);
+            const unsubscribe = chatService.subscribeToAllBots((event) => {
+                if (event.type === 'message' || event.type === 'botDeleted') {
+                    writeEvent(event);
+                }
+            });
+            const heartbeatTimer = setInterval(() => {
+                void stream.write(HEARTBEAT_FRAME);
+            }, heartbeatIntervalMs);
+
+            await new Promise<void>((resolve) => {
+                let isCleanedUp = false;
+                const cleanup = (): void => {
+                    if (isCleanedUp) {
+                        return;
+                    }
+
+                    isCleanedUp = true;
+                    clearInterval(heartbeatTimer);
+                    unsubscribe();
+                    resolve();
+                };
+
+                stream.onAbort(cleanup);
+                requestSignal.addEventListener('abort', cleanup, { once: true });
+            });
+        });
+    });
+
     routes.get('/api/bots/:id/events', async (context) => {
         const botId = context.req.param('id');
         const isBotFound = await chatService.hasBot(botId);

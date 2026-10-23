@@ -357,6 +357,43 @@ describe('chat routes', () => {
             .not.toHaveBeenCalled();
     });
 
+    it('answers HEAD on the stream of all bots without subscribing', async () => {
+        const chatService = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir });
+        const routes = createChatRoutes(chatService);
+        const subscribeSpy = vi.spyOn(chatService, 'subscribeToAllBots');
+        const response = await routes.request('/api/events', { method: 'HEAD' });
+
+        expect(response.status)
+            .toBe(200);
+        expect(subscribeSpy)
+            .not.toHaveBeenCalled();
+    });
+
+    it('streams the messages of a bot on the stream of all bots without turn events', async () => {
+        const chatService = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([{ event: { type: 'text', text: 'Done.' } }]), dataDir });
+        const routes = createChatRoutes(chatService, { heartbeatIntervalMs: 5 });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const response = await routes.request('/api/events');
+        const decoder = new TextDecoder();
+        const chunks = response.body as AsyncIterable<Uint8Array>;
+        let receivedText = '';
+
+        await chatService.sendMessage(bot.id, 'Hi');
+
+        for await (const chunk of chunks) {
+            receivedText += decoder.decode(chunk, { stream: true });
+
+            if (receivedText.includes('Done.')) {
+                break;
+            }
+        }
+
+        expect(receivedText)
+            .toContain('"type":"message"');
+        expect(receivedText)
+            .not.toContain('"type":"turn"');
+    });
+
     it('sends a heartbeat comment on an idle event stream', async () => {
         const chatService = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir });
         const routes = createChatRoutes(chatService, { heartbeatIntervalMs: 5 });

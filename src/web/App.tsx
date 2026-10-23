@@ -12,8 +12,9 @@ import type { MascotHop, MascotHopPoint } from './mascotHop.ts';
 import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
-import { createBot, getChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToEvents, uploadAttachments, listUploads, removeUpload, renameBot } from './apiClient.ts';
+import { createBot, getChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToAllBotEvents, subscribeToEvents, uploadAttachments, listUploads, removeUpload, renameBot } from './apiClient.ts';
 import { mergeLoadedUploads } from './attachmentChips.ts';
+import { loadSeen, markUnread, saveSeen, updateSeen } from './unreadMarks.ts';
 import { applyTabIcon } from './tabIcon.ts';
 import { MESSAGE_PAGE_SIZE, mergeMessages, removeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
 import { withoutToolRows } from './thinkingBubble.ts';
@@ -103,9 +104,21 @@ function withPaging(
     return { ...olderPaging, [botId]: { ...previousState, ...changes } };
 }
 
+// Messages come in bursts, so the list is reloaded once the burst ends.
+const REFRESH_DELAY_MS = 400;
+
 function App(): ReactElement {
     const [bots, setBots] = useState<BotSummary[]>([]);
     const [selectedBotId, setSelectedBotId] = useState<string | undefined>(undefined);
+    // The newest message of each bot that the owner has seen. A closed chat with a newer one shows as unread.
+    const [seenSequences, setSeenSequences] = useState(loadSeen);
+    const nextSeenSequences = updateSeen(seenSequences, bots, selectedBotId);
+
+    if (nextSeenSequences !== seenSequences) {
+        setSeenSequences(nextSeenSequences);
+    }
+
+    const botsWithUnread = useMemo(() => markUnread(bots, nextSeenSequences, selectedBotId), [bots, nextSeenSequences, selectedBotId]);
     // A channel replaces the bot's conversation while it is selected. Only one of the two is shown.
     const [selectedChannelId, setSelectedChannelId] = useState<string | undefined>(undefined);
     const [channels, setChannels] = useState<ChannelSummary[]>([]);
@@ -257,6 +270,39 @@ function App(): ReactElement {
     useEffect(() => {
         selectedBotIdRef.current = selectedBotId;
     }, [selectedBotId]);
+
+    useEffect(() => {
+        saveSeen(seenSequences);
+    }, [seenSequences]);
+
+    // The messages of every bot keep the list fresh: the preview shows the newest message and a closed chat shows as unread.
+    useEffect(() => {
+        let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+        const refreshBots = (): void => {
+            clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(() => {
+                listBots()
+                    .then((loadedBots) => {
+                        setBots(loadedBots);
+
+                        if (!loadedBots.some(bot => bot.id === selectedBotIdRef.current)) {
+                            setSelectedBotId(loadedBots[0]?.id);
+                        }
+                    })
+                    .catch(() => undefined);
+            }, REFRESH_DELAY_MS);
+        };
+        const unsubscribe = subscribeToAllBotEvents((event: ChatEvent) => {
+            if (event.type === 'message' || event.type === 'botDeleted') {
+                refreshBots();
+            }
+        }, refreshBots);
+
+        return () => {
+            clearTimeout(refreshTimer);
+            unsubscribe();
+        };
+    }, []);
 
     useEffect(() => {
         listBots()
@@ -1122,7 +1168,7 @@ function App(): ReactElement {
     return (
         <div className="app">
             <BotList
-                bots={bots}
+                bots={botsWithUnread}
                 selectedBotId={selectedBotId}
                 selectedMascotState={liveMascotState}
                 channels={channels}

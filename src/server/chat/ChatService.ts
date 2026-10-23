@@ -487,6 +487,14 @@ function previewOfText(text: string): string {
     return shownText.slice(0, PREVIEW_LENGTH);
 }
 
+// The newest messages checked for the unread mark. A bot that only ran tools since the owner left has none to show.
+const UNREAD_SCAN_LIMIT = 30;
+
+// A message the owner has not written and that is not a tool line. Only these make a chat unread.
+function isReadableForOwner(role: string, body: MessageBody): boolean {
+    return role !== 'user' && body.kind !== 'toolActivity';
+}
+
 function previewOf(body: MessageBody): string {
     switch (body.kind) {
         case 'tasks':
@@ -706,6 +714,8 @@ class ChatService {
     // Bots whose delete is running. New messages and uploads for them are refused.
     private readonly deletingBots = new Set<string>();
     private readonly listenersByBot = new Map<string, Set<ChatEventListener>>();
+    // The owner's bot list listens here for the messages of every bot. These listeners do not count as an open chat.
+    private readonly allBotsListeners = new Set<ChatEventListener>();
     private readonly pendingPeopleCredentialsByBot = new Map<string, ChatPersonCredentialsEvent[]>();
     private readonly runningTurns = new Map<string, AbortController>();
     // The hand-offs each running turn has sent, by the sender's bot id. Cleared when the turn finishes.
@@ -3171,6 +3181,14 @@ class ChatService {
         return (this.listenersByBot.get(botId)?.size ?? 0) > 0;
     }
 
+    subscribeToAllBots(listener: ChatEventListener): () => void {
+        this.allBotsListeners.add(listener);
+
+        return () => {
+            this.allBotsListeners.delete(listener);
+        };
+    }
+
     subscribe(botId: string, listener: ChatEventListener): () => void {
         const listeners = this.listenersByBot.get(botId) ?? new Set<ChatEventListener>();
 
@@ -3196,6 +3214,8 @@ class ChatService {
         const lastMessagePreview = latestMessage === undefined
             ? ''
             : previewOf(latestMessage.content as MessageBody);
+        const recentMessages = await this.messageStore.listByBot(bot.id, { limit: UNREAD_SCAN_LIMIT });
+        const lastReadableMessage = recentMessages.find(message => isReadableForOwner(message.role, message.content as MessageBody));
 
         return {
             id: bot.id,
@@ -3205,6 +3225,7 @@ class ChatService {
             mascotShape: bot.mascotShape,
             lastMessagePreview,
             hasUnread: false,
+            lastMessageSequence: lastReadableMessage?.sequence ?? 0,
         };
     }
 
@@ -3212,6 +3233,9 @@ class ChatService {
         const listeners = this.listenersByBot.get(botId);
 
         listeners?.forEach((listener) => {
+            listener(event);
+        });
+        this.allBotsListeners.forEach((listener) => {
             listener(event);
         });
     }

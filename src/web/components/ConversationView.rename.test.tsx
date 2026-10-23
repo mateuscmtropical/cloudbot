@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BotSummary } from '../../shared/chatTypes.ts';
 import { ConversationView } from './ConversationView.tsx';
 
-const BOT: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false };
+const BOT: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
 
 const NOOP_ACTIONS = {
     onChoose: vi.fn(() => Promise.resolve()),
