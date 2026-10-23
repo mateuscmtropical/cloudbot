@@ -55,6 +55,33 @@ provider in the chat.
 The special domain `localhost` is for local checks. It uses plain HTTP at
 `http://owner.localhost` and does not request a public certificate.
 
+## Install on Windows
+
+CloudBot runs on Linux, so on Windows it runs inside WSL 2. The same stack
+runs there, and a Windows browser opens it.
+
+1. Open PowerShell as administrator and run `wsl --install -d Ubuntu`. Restart
+   Windows if it asks, then open Ubuntu from the Start menu and create the
+   Linux user.
+2. In the Ubuntu window, run the installer with the `localhost` domain:
+
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash -s -- localhost owner
+   ```
+
+3. Open `http://owner.localhost` in your Windows browser and sign in with the
+   first password the installer printed.
+
+What to expect:
+
+- CloudBot runs only while WSL runs. If Windows or WSL shuts down, the
+  instances stop. Open Ubuntu again and run `sudo cloudbot status`.
+- The address works on this computer only. For a server other people can
+  reach, use a VPS with a domain, as above.
+- WSL limits its memory to half of the computer's RAM by default. The default
+  of 2560 MB for each person fits, but a computer with 8 GB of RAM fits one or
+  two people.
+- Run every `cloudbot` command inside Ubuntu, not in PowerShell.
 ## Add people and set limits
 
 Open the People panel in the owner's CloudBot to add, deactivate, reactivate or
