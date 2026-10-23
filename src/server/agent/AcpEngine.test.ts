@@ -219,6 +219,31 @@ describe('AcpEngine', () => {
             .toEqual([{ outcome: { outcome: 'selected', optionId: 'yes' } }, { outcome: { outcome: 'selected', optionId: 'no' } }]);
     });
 
+    it('allows the permission question of a CloudBot tool without a review, and reviews other tools', async () => {
+        const reviewToolCall = vi.fn((): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: false, reason: 'no' }));
+        const answers: SentMessage[] = [];
+        const tools = [{ name: 'provider_connect', description: '', inputSchema: {}, handler: (): Promise<{ content: unknown[] }> => Promise.resolve({ content: [] }) }];
+        const { engine } = makeEngine({
+            onPrompt: (agent, promptId) => {
+                askPermission(agent, 905, { toolCallId: 't1', kind: 'other', title: 'cloudbot_provider_connect', rawInput: {} });
+                askPermission(agent, 906, { toolCallId: 't2', kind: 'other', title: 'mcp_cloudbot_provider_connect (cloudbot MCP Server)', rawInput: {} });
+                askPermission(agent, 907, { toolCallId: 't3', kind: 'other', title: 'other_server_provider_connect', rawInput: {} });
+                void Promise.all([agent.answerTo(905), agent.answerTo(906), agent.answerTo(907)])
+                    .then((found) => {
+                        answers.push(...found);
+                        agent.say({ id: promptId, result: { stopReason: 'end_turn' } });
+                    });
+            },
+        });
+
+        await collect(engine.runTurn(makeRequest({ reviewToolCall, tools })));
+
+        expect(answers.map(answer => answer.result))
+            .toEqual([{ outcome: { outcome: 'selected', optionId: 'yes' } }, { outcome: { outcome: 'selected', optionId: 'yes' } }, { outcome: { outcome: 'selected', optionId: 'no' } }]);
+        expect(reviewToolCall)
+            .toHaveBeenCalledTimes(1);
+    });
+
     it('refuses a client method it does not offer', async () => {
         let answer: SentMessage | undefined;
         const { engine } = makeEngine({
