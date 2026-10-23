@@ -168,6 +168,17 @@ describe('createAdminRoutes', () => {
             ]);
     });
 
+    it('lists plain local addresses without a port when the domain is localhost', async () => {
+        const people = new FakePeopleStore([OWNER, MEMBER]);
+        const instances = new FakeInstanceManager();
+        const app = createAdminRoutes({ people, instances, domain: 'localhost', secure: false });
+        const response = await app.request('/internal/people', { headers: OWNER_HEADERS });
+        const answer = await readResponseBody(response);
+        const addresses = (answer as TestRecord[]).map(person => person.address);
+
+        expect(addresses)
+            .toEqual(['http://owner.localhost', 'http://maria.localhost']);
+    });
     it('validates names and creates a person with a one-time password that is never logged', async () => {
         const { app, people, instances } = makeRoutes();
         const logSpy = vi.spyOn(console, 'log');

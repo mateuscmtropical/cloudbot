@@ -22,7 +22,6 @@ const HEALTH_TIMEOUT_MS = 120_000;
 const HEALTH_POLL_INTERVAL_MS = 1_000;
 const BYTES_PER_MB = 1024 * 1024;
 const NANO_CPUS_PER_CPU = 1_000_000_000;
-const LOCAL_PUBLIC_PORT = 3200;
 const VOLUME_TARGETS = [
     { suffix: 'data', target: '/var/lib/cloudbot' },
     { suffix: 'home', target: '/home/bot' },
@@ -52,7 +51,7 @@ function volumeNames(name: string): string[] {
 
 function publicUrl(name: string, settings: HubSettings): string {
     if (settings.domain === 'localhost') {
-        return `http://${name}.localhost:${String(LOCAL_PUBLIC_PORT)}`;
+        return `http://${name}.localhost`;
     }
 
     return `https://${name}.${settings.domain}`;

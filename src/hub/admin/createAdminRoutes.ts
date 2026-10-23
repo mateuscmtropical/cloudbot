@@ -26,7 +26,6 @@ interface UnknownRecord {
 const UNAUTHORIZED_MESSAGE = 'Owner authentication is required.';
 const NOT_FOUND_MESSAGE = 'Person not found.';
 const NAME_TAKEN_MESSAGE = 'That name is taken.';
-const LOCAL_PUBLIC_PORT = 3200;
 
 function hasMatchingSecret(candidate: string, expected: string): boolean {
     const candidateDigest = createHash('sha256')
@@ -64,7 +63,7 @@ function errorResponse(context: Context, message: string, status: 400 | 401 | 40
 
 function personAddress(name: string, options: CreateAdminRoutesOptions): string {
     if (options.domain === 'localhost') {
-        return `http://${name}.localhost:${String(LOCAL_PUBLIC_PORT)}`;
+        return `http://${name}.localhost`;
     }
 
     const scheme = options.secure ? 'https' : 'http';
