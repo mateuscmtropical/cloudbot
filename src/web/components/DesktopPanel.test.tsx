@@ -220,20 +220,36 @@ describe('DesktopPanel', () => {
             .toBe(false);
     });
 
-    it('keeps the screen and closes the panel on I will keep it', async () => {
+    it('keeps the screen when the panel is closed', async () => {
         vi.mocked(apiClient.getScreenHolder)
             .mockResolvedValue('person');
 
         const onClose = vi.fn();
 
         render(<DesktopPanel onClose={onClose} />);
-        fireEvent.click(await screen.findByRole('button', { name: 'I will keep it' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Close' }));
 
         expect(onClose)
             .toHaveBeenCalled();
         expect(apiClient.releaseScreen).not.toHaveBeenCalled();
+        expect(screen.queryByRole('button', { name: 'I will keep it' }))
+            .toBeNull();
     });
 
+    it('expands to fill the window and shrinks back', async () => {
+        const { container } = render(<DesktopPanel onClose={() => undefined} />);
+        const expandButton = await screen.findByRole('button', { name: 'Expand' });
+
+        fireEvent.click(expandButton);
+
+        expect(container.querySelector('.desktop-panel.is-expanded'))
+            .not.toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Shrink' }));
+
+        expect(container.querySelector('.desktop-panel.is-expanded'))
+            .toBeNull();
+    });
     it('shows a problem when the screen cannot change hands', async () => {
         vi.mocked(apiClient.takeScreen)
             .mockRejectedValueOnce(new Error('offline'));
