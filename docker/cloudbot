@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 # Runs CloudBot on this server. install.sh links it as /usr/local/bin/cloudbot.
 #
-# Usage: sudo cloudbot <status|logs|update|setup-link>
+# Usage: sudo cloudbot <status|logs|update|reset-password [name]>
 
 set -euo pipefail
 
-# The install folder is two levels above this script, which is found through
-# the symlink in /usr/local/bin. /opt/cloudbot is the fallback.
 find_home() {
     local script_path
     local candidate
@@ -28,10 +26,10 @@ usage() {
 Usage: sudo cloudbot <command>
 
 Commands:
-  status       Show the containers and their health
-  logs         Follow the logs (Ctrl+C to stop)
-  update       Pull the latest code and rebuild
-  setup-link   Print a new setup link. It ends every existing session.
+  status                 Show the hub, proxy, Caddy and instances with memory use
+  logs                   Follow the hub logs (Ctrl+C to stop)
+  update                 Pull the latest code and rebuild the hub image
+  reset-password [name]  Print a new password for a person (default owner)
 EOF
 }
 
@@ -47,20 +45,33 @@ require_root() {
 }
 
 command_status() {
-    compose ps
+    compose ps hub docker-proxy caddy
+    docker ps --filter name=cloudbot-i-
+    docker ps -q --filter name=cloudbot-i- | xargs --no-run-if-empty docker stats --no-stream
 }
 
 command_logs() {
-    compose logs --follow --tail=200
+    compose logs --follow --tail=200 hub | sed -E 's/(Owner [^ ]+ password: ).*/\1[redacted]/'
 }
 
 command_update() {
     git -C "$CLOUDBOT_HOME" pull --ff-only
-    compose up -d --build
+    compose pull docker-proxy caddy
+    compose build hub
+    compose up -d --force-recreate hub docker-proxy caddy
+    cat <<'EOF'
+Running instances keep their old image until recreated. To move an instance to
+this image, remove its container with:
+
+  docker rm -f cloudbot-i-<name>
+
+Its cbi-* volumes remain. The hub creates it from the new image on the next request.
+EOF
 }
 
-command_setup_link() {
-    compose exec -T cloudbot node dist/server/newSetupLink.js
+command_reset_password() {
+    local person_name="${1:-owner}"
+    compose exec -T hub node dist/hub/main.js reset-password "$person_name"
 }
 
 main() {
@@ -82,9 +93,13 @@ main() {
             require_root "$command"
             command_update
             ;;
-        setup-link)
+        reset-password)
             require_root "$command"
-            command_setup_link
+            if [ "$#" -gt 2 ]; then
+                usage >&2
+                exit 1
+            fi
+            command_reset_password "${2:-owner}"
             ;;
         *)
             usage >&2

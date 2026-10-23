@@ -71,7 +71,7 @@ jobs:
 
       - run: docker build -f docker/Dockerfile -t cloudbot:ci .
 
-      - name: Start the container
+      - name: Start the standalone container
         run: >
           docker run -d --name cloudbot-ci -p 3000:3000
           --health-interval=2s --health-start-period=2s
@@ -79,12 +79,23 @@ jobs:
           -v cloudbot-ci-home:/home/bot
           -v cloudbot-ci-workspaces:/var/lib/cloudbot-workspaces cloudbot:ci
 
-      - name: Check health route and data folder isolation
-        run: bash docker/check-container.sh cloudbot-ci 3000
+      - name: Start the hub stack
+        run: |
+          printf 'CLOUDBOT_DOMAIN=localhost\nCLOUDBOT_OWNER_NAME=owner\n' > .env
+          docker compose -f docker/compose.yaml --env-file .env config --quiet
+          docker compose -f docker/compose.yaml --env-file .env up -d --build
+
+      - name: Check health, isolation and socket proxy rules
+        run: |
+          HUB_CONTAINER_ID="$(docker compose -f docker/compose.yaml --env-file .env ps -q hub)"
+          bash docker/check-container.sh cloudbot-ci 3000 "$HUB_CONTAINER_ID"
 
       - name: Show container logs on failure
         if: failure()
-        run: docker logs cloudbot-ci
+        run: |
+          docker logs cloudbot-ci 2>&1 | sed -E -e 's/(Owner [^ ]+ password: ).*/\1[redacted]/' -e 's#(/setup\?code=)[A-Za-z0-9_-]+#\1[redacted]#g'
+          docker compose -f docker/compose.yaml --env-file .env logs --no-color caddy docker-proxy
+          docker compose -f docker/compose.yaml --env-file .env logs --no-color hub | sed -E 's/(Owner [^ ]+ password: ).*/\1[redacted]/'
 
   shellcheck:
     name: ShellCheck the shell scripts
@@ -104,20 +115,27 @@ jobs:
         run: sudo cp -a "$GITHUB_WORKSPACE" /opt/cloudbot
 
       - name: Run install.sh against the checkout
-        run: sudo CLOUDBOT_SKIP_CLONE=1 bash /opt/cloudbot/docker/install.sh localhost | tee install.log
+        run: sudo CLOUDBOT_SKIP_CLONE=1 bash /opt/cloudbot/docker/install.sh localhost owner > install.log
 
-      - name: Check the setup link printed by install.sh
-        run: grep -F 'https://localhost/setup?code=' install.log
+      - name: Check the owner address and first password
+        run: |
+          grep -Fx 'Owner address: http://owner.localhost' install.log
+          grep -Eq '^Owner owner password: [A-Za-z0-9_-]+$' install.log
+          grep -F 'Change this password at the first sign-in.' install.log
 
-      - name: Check the setup link from cloudbot setup-link
+      - name: Check status and reset-password command
         run: |
           sudo cloudbot status
-          sudo cloudbot setup-link | tee setup-link.log
-          grep -F 'https://localhost/setup?code=' setup-link.log
+          sudo cloudbot reset-password owner > reset-password.log
+          test -s reset-password.log
 
-      - name: Check the health route through Caddy
-        run: curl -ksf --retry 10 --retry-delay 3 --retry-all-errors https://localhost/api/health
+      - name: Check the sign-in page and the closed internal routes through Caddy
+        run: |
+          curl -fsS --retry 10 --retry-delay 3 --retry-all-errors http://owner.localhost/ | grep -F 'Sign in to open your CloudBot'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://owner.localhost/internal/health)" = 404
 
       - name: Show container logs on failure
         if: failure()
-        run: sudo docker compose -f /opt/cloudbot/docker/compose.yaml --env-file /opt/cloudbot/.env logs
+        run: |
+          docker compose -f /opt/cloudbot/docker/compose.yaml --env-file /opt/cloudbot/.env logs --no-color caddy docker-proxy
+          docker compose -f /opt/cloudbot/docker/compose.yaml --env-file /opt/cloudbot/.env logs --no-color hub | sed -E 's/(Owner [^ ]+ password: ).*/\1[redacted]/'

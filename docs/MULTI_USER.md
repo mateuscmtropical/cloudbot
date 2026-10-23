@@ -201,3 +201,13 @@ In hub mode an instance accepts a request with the trust header and the right se
 ## Wiring
 
 `main.ts` opens the people, login-session and passkey tables on the hub database. It shares one idle watcher between the front door and WebSocket proxy, starts it after the hub listens, and stops it during shutdown. `createHubApp` mounts health and TLS checks, then the internal admin API, passkey routes and the front door. Internal routes accept only `hub:3001` or loopback Hosts on the configured hub port, so a public person address gets the same generic 404 as an unknown hub route.
+
+## Install
+
+The Compose stack runs the hub, the Docker socket proxy and Caddy. The hub and per-person instances use the same `cloudbot:local` image. The hub stores its records in the `hub-data` volume. Instance data stays in separate `cbi-*` volumes.
+
+The socket proxy is reachable only from the hub on the internal `hubctl` network. It permits container, network and volume operations. Caddy sends requests to the hub and asks it before issuing an on-demand certificate. The `localhost` configuration serves plain HTTP for local checks.
+
+The installer writes the domain, owner name, memory budget and per-instance limits to `.env`. The defaults are a 10240 MB running-instance budget, 2560 MB per instance and 2 CPUs per instance. Idle instances hibernate after five minutes by default.
+
+`cloudbot update` pulls code and service images, rebuilds the shared image and recreates the hub. Existing instance containers keep the image they were created from. Removing an instance container leaves its `cbi-*` volumes in place, and the hub recreates it on the next request. Back up `hub-data` and all `cbi-*` volumes together.

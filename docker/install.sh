@@ -3,7 +3,7 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash
-#   curl -fsSL <same url> | sudo bash -s -- bot.example.com
+#   curl -fsSL <same url> | sudo bash -s -- bot.example.com owner
 #
 # Without a domain, CloudBot uses <public-ip-with-dashes>.sslip.io over HTTPS.
 #
@@ -11,6 +11,8 @@
 #   CLOUDBOT_INSTALL_DIR  where the repository lives (default /opt/cloudbot)
 #   CLOUDBOT_REPO_URL     repository to clone (default: the GitHub repository)
 #   CLOUDBOT_SKIP_CLONE   set to 1 to use the folder as it is (CI uses this)
+#   CLOUDBOT_INSTANCE_BUDGET_MB total memory budget (default 10240)
+#   CLOUDBOT_INSTANCE_MEMORY_MB memory limit per person (default 2560)
 
 set -euo pipefail
 
@@ -20,7 +22,9 @@ SKIP_CLONE="${CLOUDBOT_SKIP_CLONE:-0}"
 COMMAND_PATH="/usr/local/bin/cloudbot"
 HEALTH_ATTEMPTS=150
 DOMAIN=""
-CONTAINER_ID=""
+OWNER_NAME="owner"
+PUBLIC_IP=""
+HUB_CONTAINER_ID=""
 
 # A fresh VM may run apt or unattended upgrades right after boot, so apt waits
 # for the lock and does not stop to ask questions.
@@ -29,6 +33,10 @@ export NEEDRESTART_MODE=a
 
 log() {
     echo "==> $1"
+}
+
+warn() {
+    echo "warning: $1" >&2
 }
 
 fail() {
@@ -92,71 +100,125 @@ fetch_repository() {
     [ -f "$INSTALL_DIR/docker/compose.yaml" ] || fail "no docker/compose.yaml in $INSTALL_DIR"
 }
 
+read_public_ip() {
+    PUBLIC_IP="$(curl -fsS --max-time 15 https://api.ipify.org)" || fail "could not read the public IP address"
+    printf '%s' "$PUBLIC_IP" | grep -Eq '^[0-9]+(\.[0-9]+){3}$' || fail "could not read an IPv4 public IP address"
+}
+
 choose_domain() {
-    if [ "$#" -ge 1 ]; then
+    if [ "$#" -gt 2 ]; then
+        fail "usage: install.sh [domain] [owner-name]"
+    fi
+
+    OWNER_NAME="${2:-owner}"
+    case "$OWNER_NAME" in
+        "" | -* | *- | *[!a-z0-9-]*) fail "invalid owner name '$OWNER_NAME'. Use lowercase letters, numbers and internal hyphens." ;;
+    esac
+    [ "${#OWNER_NAME}" -le 63 ] || fail "owner name must be at most 63 characters"
+
+    if [ -n "${1:-}" ]; then
         DOMAIN="$1"
     else
-        local public_ip
-        public_ip="$(curl -fsS https://api.ipify.org)"
-        printf '%s' "$public_ip" | grep -Eq '^[0-9]+(\.[0-9]+){3}$' || fail "could not read the public IP address"
-        DOMAIN="${public_ip//./-}.sslip.io"
+        read_public_ip
+        DOMAIN="${PUBLIC_IP//./-}.sslip.io"
     fi
 
     case "$DOMAIN" in
-        "" | *[!A-Za-z0-9.-]*) fail "invalid domain '$DOMAIN'" ;;
+        "" | *[!A-Za-z0-9.-]* | -* | *- | *.) fail "invalid domain '$DOMAIN'" ;;
     esac
+    if [ "$DOMAIN" != localhost ] && [ -z "$PUBLIC_IP" ]; then
+        read_public_ip
+    fi
     log "domain: $DOMAIN"
+    log "owner name: $OWNER_NAME"
+}
+
+check_dns_record() {
+    local hostname="$1"
+    if getent hosts "$hostname" | awk -v expected_ip="$PUBLIC_IP" '$1 == expected_ip { found = 1 } END { exit !found }'; then
+        log "DNS for $hostname resolves to this server"
+        return 0
+    fi
+
+    warn "$hostname does not resolve to this server's public IP ($PUBLIC_IP). Set its A record before expecting HTTPS certificates to work. The installer will continue."
+}
+
+check_dns() {
+    if [ "$DOMAIN" = localhost ]; then
+        log "localhost uses plain HTTP and skips public DNS checks"
+        return
+    fi
+
+    local check_name
+    check_name="check-$(od -An -N4 -tx4 /dev/urandom | tr -d ' \n').$DOMAIN"
+    check_dns_record "$DOMAIN"
+    check_dns_record "$check_name"
 }
 
 write_env_file() {
+    local instance_budget_mb="${CLOUDBOT_INSTANCE_BUDGET_MB:-10240}"
+    local instance_memory_mb="${CLOUDBOT_INSTANCE_MEMORY_MB:-2560}"
+    local instance_cpus="${CLOUDBOT_INSTANCE_CPUS:-2}"
+    local idle_minutes="${CLOUDBOT_IDLE_MINUTES:-5}"
+
     (
         umask 077
-        printf 'CLOUDBOT_DOMAIN=%s\n' "$DOMAIN" > "$INSTALL_DIR/.env"
+        {
+            printf 'CLOUDBOT_DOMAIN=%s\n' "$DOMAIN"
+            printf 'CLOUDBOT_OWNER_NAME=%s\n' "$OWNER_NAME"
+            printf 'CLOUDBOT_INSTANCE_BUDGET_MB=%s\n' "$instance_budget_mb"
+            printf 'CLOUDBOT_INSTANCE_MEMORY_MB=%s\n' "$instance_memory_mb"
+            printf 'CLOUDBOT_INSTANCE_CPUS=%s\n' "$instance_cpus"
+            printf 'CLOUDBOT_IDLE_MINUTES=%s\n' "$idle_minutes"
+        } > "$INSTALL_DIR/.env"
     )
 }
 
 install_command() {
-    # A symlink, so `cloudbot update` also updates the command itself.
     chmod 0755 "$INSTALL_DIR/docker/cloudbot"
     ln -sfn "$INSTALL_DIR/docker/cloudbot" "$COMMAND_PATH"
     log "installed the cloudbot command at $COMMAND_PATH"
 }
 
-start_cloudbot() {
+start_hub() {
     log "building and starting CloudBot (the first build takes a few minutes)"
     compose up -d --build
 
-    CONTAINER_ID="$(compose ps -q cloudbot)"
-    [ -n "$CONTAINER_ID" ] || fail "the cloudbot container did not start"
+    HUB_CONTAINER_ID="$(compose ps -q hub)"
+    [ -n "$HUB_CONTAINER_ID" ] || fail "the hub container did not start"
 
     local status
     for _attempt in $(seq "$HEALTH_ATTEMPTS"); do
-        status="$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER_ID")"
+        status="$(docker inspect --format '{{.State.Health.Status}}' "$HUB_CONTAINER_ID")"
         if [ "$status" = "healthy" ]; then
-            log "CloudBot is healthy"
+            log "the hub is healthy"
             return 0
         fi
         sleep 2
     done
 
-    fail "CloudBot did not become healthy. See: cloudbot logs"
+    fail "the hub did not become healthy. See: cloudbot logs"
 }
 
-print_setup_link() {
-    # Only logs from this start of the container count. An older link in the
-    # history is spent, so it must not be printed.
+print_owner_access() {
+    local scheme="https"
     local started_at
-    local setup_link
-    started_at="$(docker inspect -f '{{.State.StartedAt}}' "$CONTAINER_ID")"
-    # Only a link on our own domain counts, and the server prints it first after start.
-    setup_link="$(compose logs --no-color --since "$started_at" cloudbot | grep -Eo "https://${DOMAIN//./\\.}/setup[?]code=[A-Za-z0-9_-]+" | head -n 1 || true)"
+    local owner_password
+
+    if [ "$DOMAIN" = localhost ]; then
+        scheme="http"
+    fi
+
+    started_at="$(docker inspect -f '{{.State.StartedAt}}' "$HUB_CONTAINER_ID")"
+    owner_password="$(compose logs --no-color --since "$started_at" hub | sed -n "s/^.*Owner ${OWNER_NAME} password: //p" | tail -n 1 || true)"
 
     echo ""
-    if [ -n "$setup_link" ]; then
-        echo "Open this link to make this browser the owner:"
-        echo "  $setup_link"
+    echo "Owner address: ${scheme}://${OWNER_NAME}.${DOMAIN}"
+    if [ -n "$owner_password" ]; then
+        echo "Owner ${OWNER_NAME} password: $owner_password"
+        echo "Change this password at the first sign-in."
     else
-        echo "No setup link in the logs. The owner may already be set. Run: sudo cloudbot setup-link"
+        echo "No first owner password was printed. If this is an existing install, reset it with: sudo cloudbot reset-password ${OWNER_NAME}"
     fi
 }
 
@@ -167,10 +229,11 @@ main() {
     install_docker
     fetch_repository
     choose_domain "$@"
+    check_dns
     write_env_file
     install_command
-    start_cloudbot
-    print_setup_link
+    start_hub
+    print_owner_access
 }
 
 main "$@"

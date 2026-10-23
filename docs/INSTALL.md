@@ -1,109 +1,128 @@
-# Install CloudBot on a server
+# Install CloudBot on a VPS
 
-This guide installs CloudBot on one server with a public IP address. It takes
-one command, and the first build takes a few minutes.
+CloudBot runs on a VPS as a hub. The hub creates a separate CloudBot container
+for each person. The owner controls access from the People panel in the owner
+instance.
 
 ## What you need
 
-- A fresh Debian (12 or newer) or Ubuntu (22.04 or newer) server, with root or
-  sudo access.
-- A public IP address. The installer uses it for the free HTTPS name.
-- Ports 80 and 443 open to the internet. Caddy needs port 80 to get the
-  certificate, and port 443 serves the site.
-- Your own domain (optional). Its DNS record must point to the server before
-  you install.
+- A Debian 12 or newer, or Ubuntu 22.04 or newer VPS with a public IPv4 address
+  and root or sudo access.
+- A domain you control for production. You can instead use a free
+  `<ip-with-dashes>.sslip.io` name when you do not provide one.
+- TCP ports 80 and 443 open to the VPS. Caddy uses port 80 for certificate
+  requests and port 443 for HTTPS.
+
+For your own domain, point both of these DNS `A` records at the VPS public IP:
+
+| Name | Type | Value |
+|---|---|---|
+| `example.com` | `A` | Your VPS public IP |
+| `*` | `A` | Your VPS public IP |
+
+The wildcard record covers the owner and each person's subdomain. The installer
+checks the apex and a random subdomain. It warns and continues when DNS does not
+point at the server. Caddy cannot get certificates until DNS and ports 80 and
+443 are correct.
 
 ## Install
 
-Run this on the server:
+Run the installer on the VPS. Pass the domain first and an optional owner name
+second. The default owner name is `owner`.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash -s -- example.com owner
+```
+
+Without a domain argument, the installer reads the public IP and uses its
+`sslip.io` name:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash
 ```
 
-The script:
+The installer installs Docker when needed, builds the image, starts the hub,
+the restricted Docker socket proxy and Caddy, then waits for the hub health
+check. It prints the owner's address and the first password. It also installs
+the `cloudbot` command in `/usr/local/bin`.
 
-1. Checks that the system is Debian or Ubuntu and that it runs as root.
-2. Installs git and curl.
-3. Installs Docker with Docker's official convenience script, only when Docker is missing.
-4. Clones CloudBot into `/opt/cloudbot`, or pulls the latest code if it is there.
-5. Picks the domain. With no argument it uses `<public-ip-with-dashes>.sslip.io`,
-   for example `203-0-113-5.sslip.io`.
-6. Writes `/opt/cloudbot/.env` with `CLOUDBOT_DOMAIN`.
-7. Runs `docker compose up -d --build`, then waits for the health check.
-8. Prints the setup link. Open it in your browser to become the owner.
-9. Installs the `cloudbot` command at `/usr/local/bin/cloudbot`.
+The owner address is `https://owner.example.com`. On the first sign-in, enter
+the printed password and choose a new one when asked. Then connect an AI
+provider in the chat.
 
-Open the setup link within a few minutes of the install. If you miss it, print a
-new one (see below).
+The special domain `localhost` is for local checks. It uses plain HTTP at
+`http://owner.localhost` and does not request a public certificate.
 
-## Setup link
+## Add people and set limits
 
-The first person who opens the setup link becomes the owner. The link works once.
+Open the People panel in the owner's CloudBot to add, deactivate, reactivate or
+remove people, or reset their passwords. A new person gets their own address,
+CloudBot container and one-time password.
 
-To print a new link, for example if you lost the first one:
+By default, each running instance has a 2560 MB memory limit and the hub allows
+up to 10240 MB of combined instance memory limits. This normally allows four
+instances at their default limit. Each instance is also limited to 2 CPUs by
+default. The budget applies to running instances. If starting an instance would
+exceed it, the person can try again when memory is available.
 
-```sh
-sudo cloudbot setup-link
-```
-
-A new link ends every existing session, so only use it when you need to.
-
-## Local mode
-
-Running without Docker, the bot runs as your own user on your computer. It can
-read your files, run commands and use your Python, with the same rights you
-have. CloudBot prints a warning at start. The safe way is Docker, or a separate
-user set in `CLOUDBOT_AGENT_USER`.
-
-A local run offers Claude, ChatGPT when `CODEX_PATH` is set, and each other
-provider whose CLI path is set in `CLOUDBOT_<PROVIDER>_PATH`, such as
-`CLOUDBOT_GEMINI_PATH=/usr/local/bin/gemini`. Their sign-ins stay under the
-data folder, never in your own CLI config.
-
-## Your own domain
-
-Point a DNS `A` record for your domain to the server IP, then install with the
-domain as an argument:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash -s -- bot.example.com
-```
-
-To change the domain later, run the same command again with the new domain.
-
-## Update
+Change `CLOUDBOT_INSTANCE_MEMORY_MB`, `CLOUDBOT_INSTANCE_BUDGET_MB` or
+`CLOUDBOT_INSTANCE_CPUS` in `/opt/cloudbot/.env`, then apply the settings with:
 
 ```sh
 sudo cloudbot update
 ```
 
-This pulls the latest code with `git pull --ff-only` and rebuilds the containers.
-Four volumes keep your data across updates:
+The hub hibernates an idle instance after five minutes by default. An active
+turn or another activity that needs the instance keeps it awake. A later visit
+starts a hibernated instance again.
 
-| Volume | Holds |
-|---|---|
-| `cloudbot-data` | The database and the vault |
-| `cloudbot-home` | The bot home: the sign-in and sessions of every provider CLI |
-| `cloudbot-workspaces` | Each bot's workspace, with its memory in `MEMORY.md` |
-| `cloudbot-uploads` | Files attached in chat. The bot can read them but cannot change them |
-
-The provider CLIs come with the image and do not update themselves, so a new
-image replaces them. The sign-ins stay in `cloudbot-home`.
-`docker compose down -v` deletes all four volumes, including every sign-in.
-
-## Commands
+## Commands and updates
 
 | Command | What it does |
 |---|---|
-| `sudo cloudbot status` | Shows the containers and their health |
-| `sudo cloudbot logs` | Follows the logs. Press Ctrl+C to stop. |
-| `sudo cloudbot update` | Pulls the latest code and rebuilds |
-| `sudo cloudbot setup-link` | Prints a new setup link. It ends every existing session. |
+| `sudo cloudbot status` | Shows the hub, Docker socket proxy, Caddy, instances and instance memory use |
+| `sudo cloudbot logs` | Follows hub logs. Press Ctrl+C to stop. |
+| `sudo cloudbot update` | Pulls code and service images, rebuilds the CloudBot image and recreates the hub |
+| `sudo cloudbot reset-password [name]` | Prints a new one-time password. The default name is `owner`. |
 
-## Troubleshooting
+After an update, instances that are already running continue on their existing
+image. To recreate one on the new image, remove its container:
 
-- The browser says the certificate is not valid: check that the DNS record
-  points to the server and that ports 80 and 443 are open. Caddy retries on its own.
-- The install stops at the health check: run `sudo cloudbot logs` and look for errors.
-- The setup link was not printed: the owner is already set. Run `sudo cloudbot setup-link`.
+```sh
+sudo docker rm -f cloudbot-i-maria
+```
+
+The person's `cbi-*` volumes stay in place. The hub creates the container from
+the new image on the person's next request.
+
+## Back up data
+
+Back up the `hub-data` volume and every `cbi-*` volume. The hub volume contains
+the people records. Each person's volumes contain their CloudBot data, provider
+sign-ins, workspaces and uploads. Stop the hub and instances first so SQLite
+and their files are consistent. This example writes one archive per volume to
+`./cloudbot-backup`:
+
+```sh
+sudo docker pull alpine:3.20
+sudo mkdir -p ./cloudbot-backup
+sudo docker compose -f /opt/cloudbot/docker/compose.yaml --env-file /opt/cloudbot/.env stop hub
+sudo docker ps -q --filter name=cloudbot-i- | xargs --no-run-if-empty sudo docker stop
+sudo docker volume ls -q | grep -E '^(hub-data|cbi-)' | while IFS= read -r volume; do
+  sudo docker run --rm \
+    -v "$volume:/source:ro" \
+    -v "$PWD/cloudbot-backup:/backup" \
+    alpine:3.20 \
+    tar -czf "/backup/$volume.tgz" -C /source .
+done
+sudo docker compose -f /opt/cloudbot/docker/compose.yaml --env-file /opt/cloudbot/.env start hub
+```
+
+Keep the archives somewhere outside the VPS too. Test restoring a backup before
+you rely on it.
+
+## Limits
+
+The memory budget limits container memory, not disk use. CloudBot does not set
+disk quotas. Monitor disk space and keep backups of all `hub-data` and `cbi-*`
+volumes.
