@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { Server } from 'node:http';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { serve } from '@hono/node-server';
@@ -9,6 +10,11 @@ import { createHubApp } from './createHubApp.ts';
 import type { CreateHubAppOptions } from './createHubApp.ts';
 import { DockerApi } from './docker/DockerApi.ts';
 import { DockerInstanceManager } from './instances/DockerInstanceManager.ts';
+import { createFetchActivity, createIdleWatcher } from './idle/IdleWatcher.ts';
+import { createLoginSessionTables, SqliteLoginSessions } from './auth/LoginSessions.ts';
+import { attachUpgradeProxy } from './proxy/attachUpgradeProxy.ts';
+import { createHubPasskeyTables, SqliteHubPasskeyStore } from './passkeys/HubPasskeyStore.ts';
+import { HubPasskeyService } from './passkeys/HubPasskeyService.ts';
 import { generatePassword, hashPassword } from './passwords.ts';
 import { openHubDatabase } from './store/openHubDatabase.ts';
 import { SqlitePeopleStore } from './store/SqlitePeopleStore.ts';
@@ -82,22 +88,47 @@ function readCommand(argumentsList: string[]): string | undefined {
     throw new Error('Usage: node dist/hub/main.js [reset-password <name>].');
 }
 
-function serveHub(app: ReturnType<typeof createHubApp>, settings: HubSettings, closeDatabase: () => void): void {
+function serveHub(app: ReturnType<typeof createHubApp>, settings: HubSettings, options: {
+    people: PeopleStore;
+    instances: InstanceManager;
+    sessions: SqliteLoginSessions;
+    activity: ReturnType<typeof createIdleWatcher>;
+    closeDatabase: () => void;
+}): void {
     const serverOptions = { fetch: app.fetch, port: settings.port, hostname: settings.host };
-    const server = serve(serverOptions, () => undefined);
+    const server = serve(serverOptions, () => {
+        options.activity.start();
+    }) as Server;
+
+    attachUpgradeProxy({
+        server,
+        people: options.people,
+        sessions: options.sessions,
+        instances: options.instances,
+        activity: options.activity,
+        domain: settings.domain,
+    });
     const shutdown = (): void => {
+        options.activity.stop();
         server.close();
     };
 
     process.once('SIGINT', shutdown);
     process.once('SIGTERM', shutdown);
-    server.once('close', closeDatabase);
+    server.once('close', options.closeDatabase);
 }
 
 async function main(): Promise<void> {
     const settings = readHubSettings(process.env);
     const database = openHubDatabase(settings.dataDir);
     const people = new SqlitePeopleStore(database);
+
+    createLoginSessionTables(database);
+    const sessions = new SqliteLoginSessions(database);
+
+    createHubPasskeyTables(database);
+    const passkeyStore = new SqliteHubPasskeyStore(database);
+    const passkeys = new HubPasskeyService({ store: passkeyStore, domain: settings.domain });
     const docker = new DockerApi(settings.dockerApiUrl);
     const instances = new DockerInstanceManager({ docker, people, settings });
     const commandArguments = process.argv.slice(2);
@@ -128,14 +159,32 @@ async function main(): Promise<void> {
     };
 
     await createOwnerIfMissing(ownerOptions);
-    const appOptions: CreateHubAppOptions = { people, instances, domain: settings.domain, secure: settings.domain !== 'localhost' };
+    const activity = createIdleWatcher({
+        people,
+        instances,
+        fetchActivity: createFetchActivity({
+            fetch,
+            instanceUrl: name => 'http://cloudbot-i-' + name + ':3000',
+        }),
+    });
+    const appOptions: CreateHubAppOptions = {
+        people,
+        instances,
+        sessions,
+        passkeys,
+        passkeyStore,
+        domain: settings.domain,
+        secure: settings.domain !== 'localhost',
+        activity,
+        hubPort: settings.port,
+    };
     const app = createHubApp(appOptions);
 
     const closeDatabase = (): void => {
         database.close();
     };
 
-    serveHub(app, settings, closeDatabase);
+    serveHub(app, settings, { people, instances, sessions, activity, closeDatabase });
 }
 
 function isMainModule(): boolean {

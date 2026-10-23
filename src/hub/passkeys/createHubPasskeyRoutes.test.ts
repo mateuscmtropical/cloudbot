@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
 
@@ -106,8 +106,23 @@ describe('createHubPasskeyRoutes', () => {
                 return host.endsWith('.example.test') ? host.slice(0, -'.example.test'.length) : undefined;
             },
             sessionPersonName: context => context.req.header('x-test-session'),
+            isPersonActive: (name) => {
+                const person = database.prepare('SELECT state FROM people WHERE name = ?')
+                    .get(name);
+
+                return person?.state === 'active';
+            },
             startSession: (name, response) => {
+                const person = database.prepare('SELECT state FROM people WHERE name = ?')
+                    .get(name);
+
+                if (person?.state !== 'active') {
+                    return false;
+                }
+
                 response.header('set-cookie', 'cloudbot_session=hub-' + name + '; Path=/; HttpOnly; SameSite=Lax');
+
+                return true;
             },
             renderPage,
         });
@@ -166,6 +181,74 @@ describe('createHubPasskeyRoutes', () => {
             .toBe(204);
         expect(verified.headers.get('set-cookie'))
             .toContain('cloudbot_session=hub-maria');
+    });
+
+    it('returns the front door not available page when a passkey person was deactivated before verification', async () => {
+        store.add({
+            personName: 'maria',
+            credentialId: 'credential-maria',
+            publicKey: 'AQ==',
+            counter: 0,
+            transports: [],
+            label: 'Phone',
+        });
+        const headers = { 'origin': 'https://maria.example.test', 'content-type': 'application/json' };
+        const options = await app.request('https://maria.example.test/__hub/passkey/login/options', {
+            method: 'POST',
+            headers,
+            body: '{}',
+        });
+
+        expect(options.status)
+            .toBe(200);
+        database.prepare('UPDATE people SET state = ? WHERE name = ?')
+            .run('inactive', 'maria');
+        const verified = await app.request('https://maria.example.test/__hub/passkey/login/verify', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ id: 'credential-maria' }),
+        });
+
+        expect(verified.status)
+            .toBe(404);
+        expect(await verified.text())
+            .toContain('This address is not available.');
+        expect(verified.headers.get('set-cookie'))
+            .toBeNull();
+    });
+
+    it('returns the front door not available page when the person and passkey were deleted before verification', async () => {
+        store.add({
+            personName: 'maria',
+            credentialId: 'credential-maria',
+            publicKey: 'AQ==',
+            counter: 0,
+            transports: [],
+            label: 'Phone',
+        });
+        const headers = { 'origin': 'https://maria.example.test', 'content-type': 'application/json' };
+        const options = await app.request('https://maria.example.test/__hub/passkey/login/options', {
+            method: 'POST',
+            headers,
+            body: '{}',
+        });
+
+        expect(options.status)
+            .toBe(200);
+        database.prepare('DELETE FROM people WHERE name = ?')
+            .run('maria');
+        const verified = await app.request('https://maria.example.test/__hub/passkey/login/verify', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ id: 'credential-maria' }),
+        });
+
+        expect(verified.status)
+            .toBe(404);
+        expect(await verified.text())
+            .toContain('This address is not available.');
+        expect(verified.headers.get('set-cookie'))
+            .toBeNull();
     });
 
     it('refuses cross-origin writes and request bodies over 64 KB', async () => {

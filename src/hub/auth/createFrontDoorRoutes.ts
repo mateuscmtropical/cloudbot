@@ -4,17 +4,16 @@ import { Readable } from 'node:stream';
 import type { Context } from 'hono';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono } from 'hono';
-import { getCookie, setCookie } from 'hono/cookie';
 
 import { HUB_TRUST_HEADER } from '../../shared/hubProtocol.ts';
 import { checkPersonName } from '../../shared/peopleTypes.ts';
 import type { ActivityTracker, InstanceManager, PeopleStore, PersonRecord, StartResult } from '../contract.ts';
 import { hashPassword, verifyPassword } from '../passwords.ts';
-import { renderApexPage, renderBusyPage, renderChangePasswordPage, renderLoadingPage, renderLoginPage, renderNotAvailablePage, renderUpstreamErrorPage } from '../pages/renderPages.ts';
+import { renderApexPage, renderBusyPage, renderChangePasswordPage, renderLoadingPage, renderLoginPage, renderUpstreamErrorPage } from '../pages/renderPages.ts';
 import type { LoginPageExtras } from '../pages/renderPages.ts';
-import type { RenderedPage } from '../pages/renderPage.ts';
 import type { LoginSessions } from './LoginSessions.ts';
 import { readHostRoute } from './hostRouting.ts';
+import { clearHubSessionCookie, readHubSession, readRequestHost, renderResponse, renderUnavailable, requestHasSameOrigin, startHubSession } from './routeHelpers.ts';
 import { HUB_SESSION_COOKIE } from './sessionCookie.ts';
 
 interface UpstreamTarget {
@@ -29,7 +28,7 @@ interface FrontDoorRoutesOptions {
     domain: string;
     secure: boolean;
     activity: ActivityTracker;
-    afterLogin?: (name: string) => string | undefined;
+    afterLogin?: (name: string, context: Context) => string | undefined;
     loginExtras?: LoginPageExtras;
     now?: () => number;
     upstreamFor?: (name: string) => UpstreamTarget;
@@ -44,46 +43,17 @@ interface HubStatusResponse {
     status: 'running' | 'starting' | 'busy' | 'stopped' | 'missing';
 }
 
-interface SessionState {
-    token: string;
-    name: string;
-}
-
 interface ParsedFormFields {
     [fieldName: string]: unknown;
 }
 
-interface SessionCookieOptions {
-    httpOnly: true;
-    secure: boolean;
-    sameSite: 'Strict';
-    path: '/';
-    maxAge: number;
-}
-
-const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const FAILURE_LIMIT = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
 const UPSTREAM_PORT = 3000;
+const UPSTREAM_CONNECT_FAILURE_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT']);
 const HOP_BY_HOP_HEADERS = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
 const LOGIN_FAILURE_MESSAGE = 'Sign-in failed. Check your password and try again.';
 const UNKNOWN_CLIENT_ADDRESS = 'unknown';
-
-function readRequestHost(context: Context): string | undefined {
-    const hostHeader = context.req.header('host');
-
-    if (hostHeader !== undefined) {
-        return hostHeader;
-    }
-
-    try {
-        const requestUrl = new URL(context.req.url);
-
-        return requestUrl.host;
-    } catch {
-        return undefined;
-    }
-}
 
 function nowFor(options: FrontDoorRoutesOptions): number {
     return options.now?.() ?? Date.now();
@@ -111,34 +81,6 @@ function readClientAddress(context: Context): string {
         return remoteAddress ?? UNKNOWN_CLIENT_ADDRESS;
     } catch {
         return UNKNOWN_CLIENT_ADDRESS;
-    }
-}
-
-function requestHasSameOrigin(context: Context, secure: boolean): boolean {
-    const fetchSite = context.req.header('sec-fetch-site');
-    const origin = context.req.header('origin');
-
-    if (fetchSite !== undefined && fetchSite !== 'same-origin') {
-        return false;
-    }
-
-    if (origin === undefined) {
-        return fetchSite === 'same-origin';
-    }
-
-    const host = readRequestHost(context);
-
-    if (host === undefined) {
-        return false;
-    }
-
-    try {
-        const originUrl = new URL(origin);
-        const expectedOrigin = `${secure ? 'https' : 'http'}://${host.toLowerCase()}`;
-
-        return originUrl.origin === expectedOrigin;
-    } catch {
-        return false;
     }
 }
 
@@ -171,47 +113,14 @@ function clearFailures(keys: string[], failures: Map<string, FailureState>): voi
     });
 }
 
-function renderResponse(context: Context, page: RenderedPage, status: 200 | 401 | 404 | 502 = 200): Response {
-    context.header('Content-Security-Policy', page.csp);
-    context.header('X-Frame-Options', 'DENY');
-    context.header('Referrer-Policy', 'no-referrer');
-    context.header('X-Content-Type-Options', 'nosniff');
-    context.header('Cache-Control', 'no-store');
-
-    return context.html(page.html, status);
-}
-
-function unavailable(context: Context): Response {
-    const page = renderNotAvailablePage();
-
-    return renderResponse(context, page, 404);
-}
-
-function readSession(context: Context, options: FrontDoorRoutesOptions): SessionState | undefined {
-    const token = getCookie(context, HUB_SESSION_COOKIE);
-
-    if (token === undefined || token === '') {
-        return undefined;
-    }
-
-    const currentTime = nowFor(options);
-    const name = options.sessions.find(token, currentTime);
-
-    return name === undefined ? undefined : { token, name };
-}
-
-function sessionCookieOptions(options: FrontDoorRoutesOptions): SessionCookieOptions {
-    return { httpOnly: true, secure: options.secure, sameSite: 'Strict', path: '/', maxAge: SESSION_MAX_AGE_SECONDS };
-}
-
 function readFormField(form: ParsedFormFields, key: string): string {
     const value = form[key];
 
     return typeof value === 'string' ? value : '';
 }
 
-function readAfterLoginPath(name: string, options: FrontDoorRoutesOptions): string {
-    const path = options.afterLogin?.(name);
+function readAfterLoginPath(name: string, options: FrontDoorRoutesOptions, context: Context): string {
+    const path = options.afterLogin?.(name, context);
 
     return path !== undefined && path.startsWith('/') && !path.startsWith('//') ? path : '/';
 }
@@ -310,6 +219,16 @@ function selectUpstream(name: string, options: FrontDoorRoutesOptions): Upstream
     const target = options.upstreamFor?.(name);
 
     return target ?? { hostname: `cloudbot-i-${name}`, port: UPSTREAM_PORT };
+}
+
+function isUpstreamConnectionFailure(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null || !('code' in error)) {
+        return false;
+    }
+
+    const code = error.code;
+
+    return typeof code === 'string' && UPSTREAM_CONNECT_FAILURE_CODES.has(code);
 }
 
 function proxyRequest(context: Context, person: PersonRecord, options: FrontDoorRoutesOptions): Promise<Response> {
@@ -427,7 +346,7 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
         const hostRoute = readHostRoute(hostHeader, options.domain);
 
         if (hostRoute === undefined) {
-            return unavailable(context);
+            return renderUnavailable(context);
         }
 
         if (hostRoute.isApex) {
@@ -441,7 +360,7 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
                 const name = context.req.query('name') ?? '';
 
                 if (checkPersonName(name) !== undefined || hostHeader === undefined) {
-                    return unavailable(context);
+                    return renderUnavailable(context);
                 }
 
                 const location = redirectForLocalHost(name, hostHeader, options.domain, options.secure);
@@ -449,23 +368,24 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
                 return context.redirect(location, 303);
             }
 
-            return unavailable(context);
+            return renderUnavailable(context);
         }
 
         const name = hostRoute.name;
 
         if (name === undefined) {
-            return unavailable(context);
+            return renderUnavailable(context);
         }
 
         const person = options.people.find(name);
 
         if (person === undefined || person.state !== 'active') {
-            return unavailable(context);
+            return renderUnavailable(context);
         }
 
         if (context.req.path === '/__hub/login' && context.req.method === 'GET') {
-            const currentSession = readSession(context, options);
+            const currentTime = nowFor(options);
+            const currentSession = readHubSession(context, options.sessions, currentTime);
 
             if (currentSession?.name === name) {
                 const redirectPath = person.mustChangePassword ? '/__hub/password' : '/';
@@ -504,17 +424,15 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
             }
 
             clearFailures(attemptKeys, failures);
-            const token = options.sessions.create(name, currentTime);
-            const cookieOptions = sessionCookieOptions(options);
-
-            setCookie(context, HUB_SESSION_COOKIE, token, cookieOptions);
+            startHubSession(context, options.sessions, name, options.secure, currentTime);
             options.people.update(name, { lastSeenAt: currentTime });
-            const redirectPath = person.mustChangePassword ? '/__hub/password' : readAfterLoginPath(name, options);
+            const redirectPath = person.mustChangePassword ? '/__hub/password' : readAfterLoginPath(name, options, context);
 
             return context.redirect(redirectPath, 303);
         }
 
-        const session = readSession(context, options);
+        const currentTime = nowFor(options);
+        const session = readHubSession(context, options.sessions, currentTime);
 
         if (session === undefined || session.name !== name) {
             const loginPage = renderLoginPage({ name, extras: options.loginExtras });
@@ -555,7 +473,7 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
 
         if (context.req.path === '/__hub/logout' && context.req.method === 'POST') {
             options.sessions.delete(session.token);
-            setCookie(context, HUB_SESSION_COOKIE, '', { ...sessionCookieOptions(options), maxAge: 0 });
+            clearHubSessionCookie(context, options.secure);
 
             return context.redirect('/__hub/login', 303);
         }
@@ -598,10 +516,28 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
         busyPeople.delete(name);
         options.activity.touch(name);
         options.people.update(name, { lastSeenAt: nowFor(options) });
+        let proxyError: unknown;
         const proxiedResponse = await proxyRequest(context, person, options)
-            .catch(() => undefined);
+            .catch((error: unknown) => {
+                proxyError = error;
+
+                return undefined;
+            });
 
         if (proxiedResponse === undefined) {
+            const latestStatus = await options.instances.status(name)
+                .catch(() => undefined);
+
+            if (latestStatus !== 'running') {
+                beginStart(name, options, pendingStarts, busyPeople);
+            }
+
+            if (isUpstreamConnectionFailure(proxyError) || latestStatus !== 'running') {
+                const startupPage = busyPeople.has(name) ? renderBusyPage() : renderLoadingPage();
+
+                return renderResponse(context, startupPage);
+            }
+
             const errorPage = renderUpstreamErrorPage();
 
             return renderResponse(context, errorPage, 502);

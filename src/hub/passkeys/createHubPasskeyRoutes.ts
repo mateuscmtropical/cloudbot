@@ -1,4 +1,4 @@
-﻿import { Hono } from 'hono';
+import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { Context, MiddlewareHandler } from 'hono';
 import type {
@@ -9,6 +9,7 @@ import type {
 import { HubPasskeyError } from './HubPasskeyService.ts';
 import type { HubPasskeyService } from './HubPasskeyService.ts';
 import { renderOfferPage, renderPasskeysPage } from './passkeyPage.ts';
+import { renderUnavailable } from '../auth/routeHelpers.ts';
 
 interface HubPasskeyPageInput {
     title: string;
@@ -27,7 +28,8 @@ interface HubPasskeyRoutesOptions {
     sameOriginCheck: MiddlewareHandler;
     requestPersonName: (context: Context) => string | undefined;
     sessionPersonName: (context: Context) => string | undefined;
-    startSession: (name: string, response: Context) => void | Promise<void>;
+    isPersonActive: (name: string) => boolean;
+    startSession: (name: string, response: Context) => boolean | undefined | Promise<boolean | undefined>;
     renderPage: (page: HubPasskeyPageInput) => HubPasskeyRenderedPage;
 }
 
@@ -164,13 +166,29 @@ function createHubPasskeyRoutes(options: HubPasskeyRoutesOptions): Hono {
             return refusal(context, undefined);
         }
 
+        if (!options.isPersonActive(personName)) {
+            return renderUnavailable(context);
+        }
+
         try {
             const signedInName = await passkeys.verifyLogin(body as unknown as AuthenticationResponseJSON, personName, context.req.url);
 
-            await options.startSession(signedInName, context);
+            if (!options.isPersonActive(signedInName)) {
+                return renderUnavailable(context);
+            }
+
+            const sessionStarted = await options.startSession(signedInName, context);
+
+            if (sessionStarted === false) {
+                return renderUnavailable(context);
+            }
 
             return context.body(null, 204);
         } catch (error: unknown) {
+            if (!options.isPersonActive(personName)) {
+                return renderUnavailable(context);
+            }
+
             return refusal(context, error);
         }
     });
