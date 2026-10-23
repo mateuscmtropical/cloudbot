@@ -142,6 +142,8 @@ class SetupConversation {
     private session: ClaudeLoginSession | undefined;
     private deviceSession: DeviceSignInSession | undefined;
     private starting = true;
+    // Settles when the current start ends, so a message sent during the start can wait for it.
+    private started = Promise.withResolvers<undefined>();
     private closed = false;
     private pending: Promise<unknown> = Promise.resolve();
 
@@ -214,6 +216,27 @@ class SetupConversation {
             .map(apiKey => apiKey.id);
 
         return [...signedIn, ...withKey];
+    }
+
+    // The first provider that is signed in, in the order of the list. The checks run together and the wait ends at the first hit, so a slow provider further down does not hold the start.
+    private async firstSignedInId(): Promise<ProviderId | undefined> {
+        const signIns = this.options.signIns ?? [];
+        const checks = signIns.map(signIn => signIn.isSignedIn()
+            .catch(() => undefined));
+        const noneYet = Promise.resolve<ProviderId | undefined>(undefined);
+        const firstSignedIn = await checks.reduce(async (found, check, index) => {
+            const earlier = await found;
+
+            return earlier ?? (await check === true ? signIns[index]?.id : undefined);
+        }, noneYet);
+
+        if (firstSignedIn !== undefined) {
+            return firstSignedIn;
+        }
+
+        const apiKeys = this.options.apiKeys ?? [];
+
+        return apiKeys.find(apiKey => this.options.vault.has(apiKey.secretName))?.id;
     }
 
     private connectedById(id: ProviderId): ConnectedProvider | undefined {
@@ -339,6 +362,10 @@ class SetupConversation {
         return this.starting;
     }
 
+    whenStarted(): Promise<undefined> {
+        return this.started.promise;
+    }
+
     isSetupBot(botId: string): boolean {
         return botId === this.options.botId;
     }
@@ -354,6 +381,8 @@ class SetupConversation {
         }
 
         this.starting = true;
+        this.started = Promise.withResolvers<undefined>();
+        const { resolve: endStart } = this.started;
         const result = this.pending.then(async () => {
             try {
                 if (!this.closed) {
@@ -365,6 +394,7 @@ class SetupConversation {
                 await this.fail('Setup could not start. Check the server log.');
             } finally {
                 this.starting = false;
+                endStart(undefined);
             }
         });
 
@@ -403,14 +433,16 @@ class SetupConversation {
             return;
         }
 
-        const signedIn = await this.signedInIds();
-        const firstSignIn = signedIn[0] === undefined ? undefined : this.connectedById(signedIn[0]);
+        // Only a CloudBot that connected a provider before needs to find it again. Asking every provider CLI takes long, so a fresh one skips it.
+        const hadProvider = this.state.step === 'done' || this.state.ready === true;
+        const firstSignInId = hadProvider ? await this.firstSignedInId() : undefined;
+        const firstSignIn = firstSignInId === undefined ? undefined : this.connectedById(firstSignInId);
 
         if (this.isClosed()) {
             return;
         }
 
-        if (firstSignIn !== undefined && (this.state.step === 'done' || this.state.ready === true)) {
+        if (firstSignIn !== undefined) {
             await this.ready(firstSignIn);
 
             return;

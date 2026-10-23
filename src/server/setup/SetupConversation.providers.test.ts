@@ -34,6 +34,10 @@ interface ProviderFixture {
     checkOpenCodeGoKey: Mock<(key: string) => Promise<number>>;
     secrets: Map<string, string>;
     restart: () => Promise<SetupConversation>;
+    // The providers asked whether they are signed in, in the order of the asks.
+    checkedProviders: string[];
+    // Makes the OpenCode check wait forever, like a CLI that is slow to open.
+    holdOpenCodeCheck: () => void;
 }
 
 describe('setup conversation with other providers', () => {
@@ -61,6 +65,8 @@ describe('setup conversation with other providers', () => {
             .mockResolvedValue(undefined);
         let isChatgptSignedIn = false;
         let isGeminiSignedIn = false;
+        let isOpenCodeCheckHeld = false;
+        const checkedProviders: string[] = [];
         const finished = Promise.withResolvers<DeviceSignInResult>();
         const geminiFinished = Promise.withResolvers<DeviceSignInResult>();
         const submitGeminiCode = vi.fn<(code: string) => void>();
@@ -105,7 +111,11 @@ describe('setup conversation with other providers', () => {
                     finished: finished.promise,
                     cancel: vi.fn(),
                 }),
-                isSignedIn: () => Promise.resolve(isChatgptSignedIn),
+                isSignedIn: () => {
+                    checkedProviders.push('chatgpt');
+
+                    return Promise.resolve(isChatgptSignedIn);
+                },
             }, {
                 id: 'gemini',
                 label: 'Gemini',
@@ -116,14 +126,22 @@ describe('setup conversation with other providers', () => {
                     cancel: vi.fn(),
                     submitCode: submitGeminiCode,
                 }),
-                isSignedIn: () => Promise.resolve(isGeminiSignedIn),
+                isSignedIn: () => {
+                    checkedProviders.push('gemini');
+
+                    return Promise.resolve(isGeminiSignedIn);
+                },
             }, {
                 id: 'opencode',
                 label: 'OpenCode',
                 site: 'OpenCode',
                 isFree: true,
                 start: () => ({ link: Promise.resolve(null), finished: Promise.resolve({ ok: true }), cancel: vi.fn() }),
-                isSignedIn: () => Promise.resolve(undefined),
+                isSignedIn: () => {
+                    checkedProviders.push('opencode');
+
+                    return isOpenCodeCheckHeld ? new Promise<undefined>(() => undefined) : Promise.resolve(undefined);
+                },
             }],
             apiKeys: [{ id: 'gemini', label: 'Gemini', site: 'Google AI Studio', secretName: 'GEMINI_API_KEY', checkKey: checkGeminiKey }, {
                 id: 'opencode',
@@ -154,7 +172,10 @@ describe('setup conversation with other providers', () => {
 
         return {
             chat, setup, botId: bot.id, connect, useProvider, startClaudeLogin, submitGeminiCode, checkGeminiKey,
-            checkOpenCodeZenKey, checkOpenCodeGoKey, secrets, restart,
+            checkOpenCodeZenKey, checkOpenCodeGoKey, secrets, restart, checkedProviders,
+            holdOpenCodeCheck: () => {
+                isOpenCodeCheckHeld = true;
+            },
             finishChatgpt: (result) => {
                 isChatgptSignedIn = result.ok;
                 finished.resolve(result);
@@ -200,6 +221,32 @@ describe('setup conversation with other providers', () => {
             ] }));
         expect(context.setup.isDone())
             .toBe(false);
+    });
+
+    it('does not ask the providers whether they are signed in on a fresh start', async () => {
+        const context = await fixture();
+
+        await latest(context, 'choice');
+        expect(context.checkedProviders)
+            .toEqual([]);
+    });
+
+    it('restores the first signed in provider without waiting for a slow one', async () => {
+        const context = await fixture();
+        const choice = await latest(context, 'choice');
+
+        await context.chat.answerSetup(context.botId, choice.id, 'choice', 'chatgpt');
+        context.finishChatgpt({ ok: true });
+        await vi.waitFor(() => {
+            expect(context.useProvider)
+                .toHaveBeenCalledWith('chatgpt');
+        });
+        context.holdOpenCodeCheck();
+
+        const restored = await context.restart();
+
+        expect(restored.isDone())
+            .toBe(true);
     });
 
     it('switches the bot to a provider when its sign-in ends and marks the ready message', async () => {

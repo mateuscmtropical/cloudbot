@@ -155,6 +155,7 @@ import type { TaskCard } from '../../shared/taskTypes.ts';
 
 // The profile of a bot made with the "+" button. The owner gives its real name and job in the chat.
 const NEW_BOT_PROFILE: BotProfile = { name: 'New bot', title: 'Your coworker', description: '' };
+const STARTING_NOTICE = 'CloudBot is starting. I will answer your message as soon as it is ready.';
 const NEW_BOT_GREETING = 'Hi, I am new here. What should I be called, and what job should I do for you?';
 const STOP_WAIT_MS = 30_000;
 const STOP_POLL_MS = 50;
@@ -1321,6 +1322,11 @@ class ChatService {
         return this.runningTurns.has(botId) || this.usageWaitTimers.has(botId) || waitingTurns.length > 0;
     }
 
+    // What the owner sees as the bot working. While CloudBot starts every bot looks busy, but it takes no turn yet.
+    isWorking(botId: string): boolean {
+        return this.isBusy(botId) || this.setup?.isStarting() === true;
+    }
+
     isTelegramConnected(botId: string): boolean {
         return this.telegram?.isConnected?.(botId) ?? false;
     }
@@ -2376,6 +2382,27 @@ class ChatService {
         return storedMessages.map(toChatMessage);
     }
 
+    // A message sent while CloudBot starts gets a note at once and runs by itself when the start ends.
+    private async sendWhenStarted(setup: SetupConversation, botId: string, text: string, source: TurnSource, handoff: BotHandoffSource | undefined, emailDeliveryId: string | undefined): Promise<ChatMessage | undefined> {
+        this.publishTurnState(botId);
+        const notice = await this.saveAndPublish(botId, 'assistant', { kind: 'text', text: STARTING_NOTICE });
+
+        void setup.whenStarted()
+            .then(() => this.sendMessage(botId, text, source, handoff, emailDeliveryId))
+            .catch(() => undefined);
+
+        return notice;
+    }
+
+    // Tells every bot that the start ended, so the owner sees them stop working.
+    async publishStartEnded(): Promise<void> {
+        const bots = await this.botStore.list();
+
+        bots.forEach((bot) => {
+            this.publishTurnState(bot.id);
+        });
+    }
+
     // A message sent while the bot is busy is saved as queued and runs after the work ahead of it.
     // The source only picks the model of the turn. Routine messages pass 'routine'.
     async sendMessage(botId: string, text: string, source: TurnSource = 'chat', handoff?: BotHandoffSource, emailDeliveryId?: string): Promise<ChatMessage | undefined> {
@@ -2389,12 +2416,14 @@ class ChatService {
             return undefined;
         }
 
+        if (this.setup !== undefined && this.setup.isStarting()) {
+            return this.sendWhenStarted(this.setup, botId, text, source, handoff, emailDeliveryId);
+        }
+
         if (this.setup !== undefined && !this.setup.isDone()) {
-            const reminder = this.setup.isStarting()
-                ? 'CloudBot is starting. Try again in a moment.'
-                : this.setup.isSetupBot(botId)
-                    ? 'Finish connecting an AI provider above to start chatting.'
-                    : 'Finish connecting an AI provider in the CloudBot conversation to start chatting.';
+            const reminder = this.setup.isSetupBot(botId)
+                ? 'Finish connecting an AI provider above to start chatting.'
+                : 'Finish connecting an AI provider in the CloudBot conversation to start chatting.';
 
             this.publishTurnState(botId);
 
@@ -3246,7 +3275,7 @@ class ChatService {
 
     // Every turn event says busy while the bot runs, waits or has queued work, so a bot never looks idle in between.
     private publishTurnState(botId: string): void {
-        this.publish(botId, { type: 'turn', botId, isRunning: this.isBusy(botId) });
+        this.publish(botId, { type: 'turn', botId, isRunning: this.isWorking(botId) });
     }
 
     private finishTurn(botId: string): void {

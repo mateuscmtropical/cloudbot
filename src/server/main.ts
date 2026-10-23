@@ -635,6 +635,7 @@ const server = serve({ fetch: app.fetch, port, hostname: host }, (address) => {
 
     console.log(`CloudBot is listening on http://${listenHost}:${String(address.port)}`);
     void setup.start()
+        .then(() => chatService.publishStartEnded())
         .catch(() => {
             console.error('Could not start Claude setup.');
         });

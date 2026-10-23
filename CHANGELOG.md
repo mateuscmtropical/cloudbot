@@ -16,6 +16,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- CloudBot starts faster. A new install no longer asks every AI provider whether it is signed in, and a restart stops at the first provider that is.
+- While CloudBot starts, the bot shows as working. A message sent then gets an immediate note that CloudBot is starting, and it runs by itself when the start ends.
 - The chat header shows only the model name for a provider that lists its models, such as GPT-6 Luna, and the bot no longer asks you to approve a model change.
 - On a provider such as OpenCode, the bot no longer asks you to approve its own CloudBot tools twice, such as connecting a provider. The tool server already decides each call.
 - When an AI provider renames its mode that asks before each tool, CloudBot uses the mode the agent lists instead of failing every turn with "could not switch to asking before each tool".
