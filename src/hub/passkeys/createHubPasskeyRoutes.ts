@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { Context, MiddlewareHandler } from 'hono';
+import type { BlockList } from 'node:net';
 import type {
     AuthenticationResponseJSON,
     RegistrationResponseJSON,
@@ -9,7 +10,7 @@ import type {
 import { HubPasskeyError } from './HubPasskeyService.ts';
 import type { HubPasskeyService } from './HubPasskeyService.ts';
 import { renderOfferPage, renderPasskeysPage } from './passkeyPage.ts';
-import { renderUnavailable } from '../auth/routeHelpers.ts';
+import { isClientAddressAllowed, readClientAddress, renderUnavailable, SIGN_IN_DENIED_MESSAGE } from '../auth/routeHelpers.ts';
 
 interface HubPasskeyPageInput {
     title: string;
@@ -24,6 +25,7 @@ interface HubPasskeyRenderedPage {
 
 interface HubPasskeyRoutesOptions {
     passkeys: HubPasskeyService;
+    loginAllowedIps?: BlockList;
     requireSession: MiddlewareHandler;
     sameOriginCheck: MiddlewareHandler;
     requestPersonName: (context: Context) => string | undefined;
@@ -84,7 +86,22 @@ function htmlPage(context: Context, options: HubPasskeyRoutesOptions, input: Hub
 function createHubPasskeyRoutes(options: HubPasskeyRoutesOptions): Hono {
     const routes = new Hono();
     const { passkeys } = options;
+    const loginAllowedIps = options.loginAllowedIps;
 
+    if (loginAllowedIps !== undefined) {
+        routes.use('/__hub/passkey/login/*', async (context: Context, next) => {
+            const clientAddress = readClientAddress(context);
+            const isAddressAllowed = isClientAddressAllowed(clientAddress, loginAllowedIps);
+
+            if (!isAddressAllowed) {
+                const error: ErrorResponse = { error: SIGN_IN_DENIED_MESSAGE };
+
+                return context.json(error, 403);
+            }
+
+            await next();
+        });
+    }
     routes.use('/__hub/passkey/register/*', options.sameOriginCheck);
     routes.use('/__hub/passkey/login/*', options.sameOriginCheck);
     routes.use('/__hub/passkey/:id', options.sameOriginCheck);

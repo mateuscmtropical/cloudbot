@@ -1,8 +1,8 @@
 import { request as httpRequest } from 'node:http';
+import type { BlockList } from 'node:net';
 import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http';
 import { Readable } from 'node:stream';
 import type { Context } from 'hono';
-import { getConnInfo } from '@hono/node-server/conninfo';
 import { Hono } from 'hono';
 
 import { HUB_TRUST_HEADER } from '../../shared/hubProtocol.ts';
@@ -13,7 +13,7 @@ import { renderApexPage, renderBusyPage, renderChangePasswordPage, renderLoading
 import type { LoginPageExtras } from '../pages/renderPages.ts';
 import type { LoginSessions } from './LoginSessions.ts';
 import { readHostRoute } from './hostRouting.ts';
-import { clearHubSessionCookie, readHubSession, readRequestHost, renderResponse, renderUnavailable, requestHasSameOrigin, startHubSession } from './routeHelpers.ts';
+import { clearHubSessionCookie, isClientAddressAllowed, readClientAddress, readHubSession, readRequestHost, renderResponse, renderUnavailable, requestHasSameOrigin, SIGN_IN_DENIED_MESSAGE, startHubSession } from './routeHelpers.ts';
 import { HUB_SESSION_COOKIE } from './sessionCookie.ts';
 
 interface UpstreamTarget {
@@ -30,6 +30,7 @@ interface FrontDoorRoutesOptions {
     activity: ActivityTracker;
     afterLogin?: (name: string, context: Context) => string | undefined;
     loginExtras?: LoginPageExtras;
+    loginAllowedIps?: BlockList;
     now?: () => number;
     upstreamFor?: (name: string) => UpstreamTarget;
 }
@@ -47,6 +48,10 @@ interface ParsedFormFields {
     [fieldName: string]: unknown;
 }
 
+interface SignInDeniedResponse {
+    error: string;
+}
+
 const FAILURE_LIMIT = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
 const UPSTREAM_PORT = 3000;
@@ -54,35 +59,9 @@ const UPSTREAM_CONNECT_FAILURE_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 
 const HOP_BY_HOP_HEADERS = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
 const LOGIN_FAILURE_MESSAGE = 'Sign-in failed. Check your password and try again.';
 const TOO_MANY_TRIES_MESSAGE = 'Too many wrong tries. Try again in a few minutes.';
-const UNKNOWN_CLIENT_ADDRESS = 'unknown';
 
 function nowFor(options: FrontDoorRoutesOptions): number {
     return options.now?.() ?? Date.now();
-}
-
-function readClientAddress(context: Context): string {
-    const forwardedFor = context.req.header('x-forwarded-for');
-    const firstForwardedAddress = forwardedFor?.split(',')[0]?.trim();
-
-    if (firstForwardedAddress !== undefined && firstForwardedAddress !== '') {
-        return firstForwardedAddress;
-    }
-
-    const realIp = context.req.header('x-real-ip')
-        ?.trim();
-
-    if (realIp !== undefined && realIp !== '') {
-        return realIp;
-    }
-
-    try {
-        const connectionInfo = getConnInfo(context);
-        const remoteAddress = connectionInfo.remote.address;
-
-        return remoteAddress ?? UNKNOWN_CLIENT_ADDRESS;
-    } catch {
-        return UNKNOWN_CLIENT_ADDRESS;
-    }
 }
 
 function makeAttemptKeys(name: string, clientAddress: string): string[] {
@@ -337,6 +316,7 @@ function beginStart(name: string, options: FrontDoorRoutesOptions, pendingStarts
 
 function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
     const app = new Hono();
+    const loginAllowedIps = options.loginAllowedIps;
     const failures = new Map<string, FailureState>();
     const pendingStarts = new Map<string, Promise<void>>();
     const busyPeople = new Set<string>();
@@ -346,6 +326,21 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
             await next();
 
             return;
+        }
+
+        const isPasswordLogin = context.req.path === '/__hub/login'
+            && (context.req.method === 'GET' || context.req.method === 'POST');
+        const isPasswordChange = context.req.path === '/__hub/password' && context.req.method === 'POST';
+
+        if (loginAllowedIps !== undefined && (isPasswordLogin || isPasswordChange)) {
+            const clientAddress = readClientAddress(context);
+            const isAddressAllowed = isClientAddressAllowed(clientAddress, loginAllowedIps);
+
+            if (!isAddressAllowed) {
+                const error: SignInDeniedResponse = { error: SIGN_IN_DENIED_MESSAGE };
+
+                return context.json(error, 403);
+            }
         }
 
         if (context.req.method === 'POST' && !requestHasSameOrigin(context, options.secure)) {

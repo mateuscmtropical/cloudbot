@@ -11,6 +11,7 @@ services:
     environment:
       NODE_ENV: production
       CLOUDBOT_DOMAIN: ${CLOUDBOT_DOMAIN:-localhost}
+      CLOUDBOT_LOGIN_ALLOWED_IPS: ${CLOUDBOT_LOGIN_ALLOWED_IPS:-}
       HUB_DATA_DIR: /var/lib/cloudbot-hub
       DOCKER_API_URL: http://docker-proxy:2375
       CLOUDBOT_INSTANCE_IMAGE: cloudbot:local

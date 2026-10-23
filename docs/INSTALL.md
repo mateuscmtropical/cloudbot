@@ -114,6 +114,13 @@ Change `CLOUDBOT_INSTANCE_MEMORY_MB`, `CLOUDBOT_INSTANCE_BUDGET_MB` or
 sudo cloudbot update
 ```
 
+To limit hub sign-in, set this variable in `/opt/cloudbot/.env` and run
+`sudo cloudbot update`:
+
+| Variable | Default | Description |
+|---|---|---|
+| `CLOUDBOT_LOGIN_ALLOWED_IPS` | Empty | Comma-separated IPv4 or IPv6 addresses and CIDR ranges. Keep the hub behind Caddy so the client address can be trusted. This limits sign-in only. It does not limit access to the rest of the site. |
+
 The hub hibernates an idle instance after five minutes by default. An active
 turn, a program a person started that listens on a port, or another activity that needs the instance keeps it awake. A later visit
 starts a hibernated instance again.

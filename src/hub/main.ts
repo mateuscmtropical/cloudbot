@@ -175,6 +175,7 @@ async function main(): Promise<void> {
         passkeyStore,
         domain: settings.domain,
         secure: settings.domain !== 'localhost',
+        ...(settings.loginAllowedIps === undefined ? {} : { loginAllowedIps: settings.loginAllowedIps }),
         activity,
         hubPort: settings.port,
     };
