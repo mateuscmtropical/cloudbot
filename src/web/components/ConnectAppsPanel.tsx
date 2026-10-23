@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 
 import type { ConnectedAppStatus, ConnectedAppSummary } from '../../shared/connectedApps.ts';
 import { listConnectedApps, removeConnectedApp } from '../apiClient.ts';
+import { CloseIcon } from './CloseIcon.tsx';
 
 interface ConnectAppsPanelProps {
     onClose: () => void;
@@ -69,7 +70,7 @@ function ConnectAppsPanel({ onClose }: ConnectAppsPanelProps): ReactElement {
         <section aria-label="Connect apps" className="webhook-section connect-apps-panel">
             <header className="connect-apps-header">
                 <h3>Connect apps</h3>
-                <button type="button" className="icon-button" aria-label="Close connect apps" onClick={onClose}>×</button>
+                <button type="button" className="icon-button" aria-label="Close connect apps" onClick={onClose}><CloseIcon /></button>
             </header>
             <p className="rules-help">
                 Remote MCP servers the bot can use. Ask the bot in the chat to connect one by its address.
