@@ -12,6 +12,7 @@ interface RenderOptions {
     attachments?: DraftAttachment[];
     onSend?: (text: string) => void;
     onRemoveAttachment?: (attachmentId: string) => void;
+    sentHistory?: string[];
 }
 
 function renderComposer(options: RenderOptions = {}): HTMLTextAreaElement {
@@ -25,6 +26,7 @@ function renderComposer(options: RenderOptions = {}): HTMLTextAreaElement {
             onStop={vi.fn()}
             onAttach={vi.fn()}
             onRemoveAttachment={options.onRemoveAttachment ?? vi.fn()}
+            sentHistory={options.sentHistory}
         />,
     );
 
@@ -206,6 +208,103 @@ describe('Composer', () => {
         } finally {
             vi.unstubAllGlobals();
         }
+    });
+});
+
+describe('Composer message history', () => {
+    afterEach(() => {
+        cleanup();
+    });
+
+    it('brings back the sent messages with arrow up, newest first', () => {
+        const textarea = renderComposer({ sentHistory: ['first', 'second', 'third'] });
+
+        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+
+        expect(textarea.value)
+            .toBe('third');
+
+        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+
+        expect(textarea.value)
+            .toBe('first');
+    });
+
+    it('goes forward with arrow down and returns the text that was being typed', () => {
+        const textarea = renderComposer({ sentHistory: ['first', 'second'] });
+
+        fireEvent.change(textarea, { target: { value: 'half written' } });
+        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+
+        expect(textarea.value)
+            .toBe('first');
+
+        fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+
+        expect(textarea.value)
+            .toBe('second');
+
+        fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+
+        expect(textarea.value)
+            .toBe('half written');
+    });
+
+    it('does nothing without history and leaves arrow down alone outside the history', () => {
+        const textarea = renderComposer();
+
+        fireEvent.change(textarea, { target: { value: 'typed' } });
+        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+        fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+
+        expect(textarea.value)
+            .toBe('typed');
+    });
+
+    it('stops the walk when the person types, and sends what is in the box', () => {
+        const onSend = vi.fn();
+        const textarea = renderComposer({ onSend, sentHistory: ['one', 'two'] });
+
+        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+        fireEvent.change(textarea, { target: { value: 'two edited' } });
+        fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+
+        expect(textarea.value)
+            .toBe('two edited');
+
+        fireEvent.keyDown(textarea, { key: 'Enter' });
+
+        expect(onSend)
+            .toHaveBeenCalledWith('two edited');
+    });
+
+    it('keeps the arrows for the caret inside a message with several lines', () => {
+        const textarea = renderComposer({ sentHistory: ['old'] });
+
+        fireEvent.change(textarea, { target: { value: 'line one\nline two' } });
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+
+        expect(textarea.value)
+            .toBe('line one\nline two');
+
+        textarea.setSelectionRange(0, 0);
+        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+
+        expect(textarea.value)
+            .toBe('old');
+    });
+
+    it('ignores the arrows with a modifier key', () => {
+        const textarea = renderComposer({ sentHistory: ['old'] });
+
+        fireEvent.keyDown(textarea, { key: 'ArrowUp', shiftKey: true });
+
+        expect(textarea.value)
+            .toBe('');
     });
 });
 

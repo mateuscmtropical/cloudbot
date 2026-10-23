@@ -1,10 +1,11 @@
-import { Suspense, createElement, lazy, useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, createElement, lazy, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
 import { renderMarkdown } from '../markdown.ts';
 import type { MascotState } from '../mascotState.ts';
 import { MESSAGE_MASCOT_SIZE, showsMessageMascot } from '../messageMascot.ts';
+import { sentMessageTexts } from '../sentHistory.ts';
 import { BUBBLE_DELAY_MS, isThinkingBubbleShown } from '../thinkingBubble.ts';
 import { useDelayedFlag } from '../useDelayedFlag.ts';
 import { CloudMascot } from './CloudMascot.tsx';
@@ -124,6 +125,7 @@ function ConversationView({
     const olderAnchorRef = useRef<OlderAnchor | undefined>(undefined);
     const previousIsLoadingRef = useRef(false);
     const botName = bot?.name ?? 'CloudBot';
+    const sentHistory = useMemo(() => sentMessageTexts(messages), [messages]);
     const isBubbleDue = isThinkingBubbleShown({ isRunning, draftText, messages });
     const isThinkingShown = useDelayedFlag(isBubbleDue, BUBBLE_DELAY_MS);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
@@ -336,6 +338,7 @@ function ConversationView({
                 isUploading={isUploading}
                 onRemoveAttachment={onRemoveAttachment}
                 onTypingChange={onTypingChange}
+                sentHistory={sentHistory}
                 onSend={onSend}
                 onStop={onStop}
                 onAttach={onAttach}
