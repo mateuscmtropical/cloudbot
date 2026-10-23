@@ -1573,7 +1573,7 @@ key, a call through the key proxy to a fake upstream that logged the header:
 | Mistral | `vibe-acp` | `acp-login.js` runs `authenticate browser-auth`, the link goes through `BROWSER` | `MISTRAL_API_KEY` and `VIBE_PROVIDERS` with the proxy as `api_base` |
 | Qwen | `qwen --acp --auth-type openai` | none, the free account sign-in was removed | `OPENAI_API_KEY` and `OPENAI_BASE_URL` at DashScope's compatible mode |
 | Kimi | `kimi acp` | `kimi login` | `KIMI_MODEL_NAME`, `KIMI_MODEL_API_KEY` and `KIMI_MODEL_BASE_URL` |
-| opencode | `opencode acp` | none, free models only | none |
+| OpenCode | `opencode acp` | none, free models only | none |
 
 Google ended Gemini CLI sign-ins for personal accounts and points them to the
 Antigravity CLI (`agy`), so a Gemini subscription runs on `AgyEngine`, not on

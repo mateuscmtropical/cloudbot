@@ -34,6 +34,15 @@ describe('buildSystemPrompt', () => {
             .not.toContain('models_set');
     });
 
+    it('explains how to change the provider only when the bot has the provider tools', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+
+        expect(buildSystemPrompt(profile, { hasProviders: true }))
+            .toContain('has no subscription of its own');
+        expect(buildSystemPrompt(profile))
+            .not.toContain('provider_use');
+    });
+
     it('explains bot_send only when the bot can hand work to other bots', () => {
         const profile = { name: 'Ana', title: 'Assistant', description: '' };
 

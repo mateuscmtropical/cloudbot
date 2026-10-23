@@ -196,9 +196,9 @@ const ACP_PROVIDERS: AcpProviderSpec[] = [
     },
     {
         id: 'opencode',
-        label: 'opencode',
+        label: 'OpenCode',
         protectedFolders: OPENCODE_FOLDERS,
-        signIn: { site: 'opencode', isFree: true, optionLabel: 'opencode free models' },
+        signIn: { site: 'OpenCode', isFree: true },
     },
 ];
 

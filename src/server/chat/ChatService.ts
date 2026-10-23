@@ -3640,6 +3640,7 @@ class ChatService {
                 hasModels: this.modelStore !== undefined,
                 hasWebhooks: this.webhookStore !== undefined,
                 hasWatches: this.watchStore !== undefined,
+                hasProviders: this.providerTools !== undefined,
                 hasGithub: this.githubEnvironment !== undefined,
                 hasHandoffs: this.approvals !== undefined,
                 otherBotNames,
