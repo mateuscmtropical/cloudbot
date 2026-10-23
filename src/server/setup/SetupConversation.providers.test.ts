@@ -24,6 +24,7 @@ interface ProviderFixture {
     setup: SetupConversation;
     botId: string;
     connect: Mock<(_: string, method?: string) => Promise<void>>;
+    useProvider: Mock<(provider: string) => Promise<void>>;
     finishChatgpt: (result: DeviceSignInResult) => void;
     finishGemini: (result: DeviceSignInResult) => void;
     startClaudeLogin: Mock<() => ClaudeLoginSession>;
@@ -52,6 +53,8 @@ describe('setup conversation with other providers', () => {
         const messages = new MessageStore(opened.db);
         const settings = new SettingsStore(opened.db);
         const connect = vi.fn<(_: string, method?: string) => Promise<void>>()
+            .mockResolvedValue(undefined);
+        const useProvider = vi.fn<(provider: string) => Promise<void>>()
             .mockResolvedValue(undefined);
         let isChatgptSignedIn = false;
         let isGeminiSignedIn = false;
@@ -82,6 +85,7 @@ describe('setup conversation with other providers', () => {
             },
             checkKey: () => Promise.resolve(200),
             connect,
+            useProvider,
             authStatus: () => Promise.resolve({ isLoggedIn: false }),
             startLogin: startClaudeLogin,
             localMode: false,
@@ -106,6 +110,13 @@ describe('setup conversation with other providers', () => {
                     submitCode: submitGeminiCode,
                 }),
                 isSignedIn: () => Promise.resolve(isGeminiSignedIn),
+            }, {
+                id: 'opencode',
+                label: 'OpenCode',
+                site: 'OpenCode',
+                isFree: true,
+                start: () => ({ link: Promise.resolve(null), finished: Promise.resolve({ ok: true }), cancel: vi.fn() }),
+                isSignedIn: () => Promise.resolve(undefined),
             }],
             apiKeys: [{ id: 'gemini', label: 'Gemini', site: 'Google AI Studio', secretName: 'GEMINI_API_KEY', checkKey: checkGeminiKey }],
         });
@@ -114,7 +125,7 @@ describe('setup conversation with other providers', () => {
         await setup.start();
 
         return {
-            chat, setup, botId: bot.id, connect, startClaudeLogin, submitGeminiCode, checkGeminiKey, secrets,
+            chat, setup, botId: bot.id, connect, useProvider, startClaudeLogin, submitGeminiCode, checkGeminiKey, secrets,
             finishChatgpt: (result) => {
                 isChatgptSignedIn = result.ok;
                 finished.resolve(result);
@@ -156,9 +167,53 @@ describe('setup conversation with other providers', () => {
                 { id: 'provider:claude', label: 'Claude' },
                 { id: 'provider:chatgpt', label: 'ChatGPT', opensLink: true },
                 { id: 'provider:gemini', label: 'Gemini' },
+                { id: 'provider:opencode', label: 'OpenCode' },
             ] }));
         expect(context.setup.isDone())
             .toBe(false);
+    });
+
+    it('switches the bot to a provider when its sign-in ends and marks the ready message', async () => {
+        const context = await fixture();
+        const choice = await latest(context, 'choice');
+
+        await context.chat.answerSetup(context.botId, choice.id, 'choice', 'chatgpt');
+        context.finishChatgpt({ ok: true });
+
+        await vi.waitFor(() => {
+            expect(context.useProvider)
+                .toHaveBeenCalledWith('chatgpt');
+        });
+
+        const ready = await latest(context, 'text');
+
+        expect(ready.body)
+            .toMatchObject({ text: 'ChatGPT is ready. What would you like to do?', providerSwitched: true });
+    });
+
+    it('switches the bot to a provider after its API key is stored', async () => {
+        const context = await fixture();
+        const choice = await latest(context, 'choice');
+
+        await context.chat.answerSetup(context.botId, choice.id, 'choice', 'key:gemini');
+        const form = await latest(context, 'secureForm');
+
+        await context.chat.answerSetup(context.botId, form.id, 'secret', 'AIza-test-key');
+
+        expect(context.useProvider)
+            .toHaveBeenCalledWith('gemini');
+    });
+
+    it('switches to a free provider at once, and its choice opens no tab', async () => {
+        const context = await fixture();
+        const choice = await latest(context, 'choice');
+
+        await context.chat.answerSetup(context.botId, choice.id, 'choice', 'provider:opencode');
+
+        await vi.waitFor(() => {
+            expect(context.useProvider)
+                .toHaveBeenCalledWith('opencode');
+        });
     });
 
     it('asks how to use a provider that has two ways', async () => {
