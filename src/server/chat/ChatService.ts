@@ -111,7 +111,7 @@ import { BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_SHAPE, BOT_IMPORT_TEXT_TOOL_FULL_
 import type { ExportedTemplate, ImportedBot } from '../bots/createBotTemplateTools.ts';
 import { describeBotImportDraft, parseBotImportDraft, readExternalBotFile } from '../bots/externalBotImport.ts';
 import type { BotImportDraft } from '../bots/externalBotImport.ts';
-import { buildBotTemplate, describeBotTemplate, parseBotTemplate, serializeBotTemplate, templateFileName } from '../bots/botTemplate.ts';
+import { MAX_NAME_LENGTH, buildBotTemplate, describeBotTemplate, isOneLine, parseBotTemplate, serializeBotTemplate, templateFileName } from '../bots/botTemplate.ts';
 import type { BotTemplate } from '../bots/botTemplate.ts';
 import { GALLERY_INSTALL_SHAPE, createGalleryInstallTool, createGalleryListTool, createGalleryShareTool, describeGalleryListing, galleryToolFullNames } from '../bots/createGalleryTools.ts';
 import { GalleryError, digestOf } from '../bots/templateGallery.ts';
@@ -162,6 +162,9 @@ const MEMORY_FILE_MODE = 0o660;
 // Why a bot was not deleted. 'deleted' is the only success.
 type DeleteBotOutcome = 'deleted' | 'missing' | 'last' | 'setup' | 'stopping' | 'deleting' | 'manager';
 type RefusedDeleteOutcome = Exclude<DeleteBotOutcome, 'deleted'>;
+
+// The owner renames a bot. A name that clashes with a channel member says why.
+type RenameBotOutcome = { kind: 'renamed'; bot: BotSummary } | { kind: 'missing' } | { kind: 'invalid' } | { kind: 'conflict'; reason: string };
 
 // The chat and the approval card say why a bot is not deleted, in the owner's words.
 const DELETE_REFUSAL_TEXT: Record<RefusedDeleteOutcome, string> = {
@@ -1786,6 +1789,37 @@ class ChatService {
         const summaryPromises = bots.map(bot => this.summarizeBot(bot));
 
         return Promise.all(summaryPromises);
+    }
+
+    // The name follows the rules of a bot that renames itself: one line of plain text, at most 40 characters, and no clash in a channel.
+    async renameBot(botId: string, requestedName: string): Promise<RenameBotOutcome> {
+        const name = requestedName.trim();
+
+        if (name === '' || name.length > MAX_NAME_LENGTH || !isOneLine(name)) {
+            return { kind: 'invalid' };
+        }
+
+        const bot = await this.botStore.getById(botId);
+
+        if (bot === undefined) {
+            return { kind: 'missing' };
+        }
+
+        const conflict = await this.channelNameConflict(botId, name);
+
+        if (conflict !== undefined) {
+            return { kind: 'conflict', reason: conflict };
+        }
+
+        const renamed = await this.botStore.updateProfile(botId, { name });
+
+        if (renamed === undefined) {
+            return { kind: 'missing' };
+        }
+
+        const summary = await this.summarizeBot(renamed);
+
+        return { kind: 'renamed', bot: summary };
     }
 
     setSetup(setup: SetupConversation): void {
@@ -4041,4 +4075,4 @@ class ChatService {
 }
 
 export { buildScreenshotName, ChatService, DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError };
-export type { ChatEventListener, ChatServiceOptions, DeleteBotOutcome, MessagePageOptions, SharedFileDownload, TurnSource };
+export type { ChatEventListener, ChatServiceOptions, DeleteBotOutcome, MessagePageOptions, RenameBotOutcome, SharedFileDownload, TurnSource };

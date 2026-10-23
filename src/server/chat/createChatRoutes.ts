@@ -22,6 +22,7 @@ interface ChatErrorResponse {
 
 const BOT_NOT_FOUND: ChatErrorResponse = { error: 'No bot has this id.' };
 const BOT_DELETING: ChatErrorResponse = { error: 'This bot is being deleted.' };
+const INVALID_NAME: ChatErrorResponse = { error: 'Send a name of 1 to 40 characters on one line.' };
 const DELETE_FAILED: ChatErrorResponse = { error: 'Could not delete this bot. Try again.' };
 // Each refusal has its own text, so the web app can show the owner why.
 const DELETE_REFUSED: Record<Exclude<DeleteBotOutcome, 'deleted' | 'missing'>, ChatErrorResponse> = {
@@ -206,6 +207,34 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
         }
 
         return context.json(DELETE_REFUSED[outcome], 409);
+    });
+
+    // The owner renames a bot, as the bot can with update_profile.
+    routes.put('/api/bots/:id/name', async (context) => {
+        const botId = context.req.param('id');
+        const payload: unknown = await context.req.json()
+            .catch(() => undefined);
+        const name = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>).name : undefined;
+
+        if (typeof name !== 'string') {
+            return context.json(INVALID_NAME, 400);
+        }
+
+        const outcome = await chatService.renameBot(botId, name);
+
+        if (outcome.kind === 'renamed') {
+            return context.json(outcome.bot);
+        }
+
+        if (outcome.kind === 'missing') {
+            return context.json(BOT_NOT_FOUND, 404);
+        }
+
+        if (outcome.kind === 'conflict') {
+            return context.json({ error: outcome.reason }, 409);
+        }
+
+        return context.json(INVALID_NAME, 400);
     });
 
     routes.get('/api/bots/:id/messages', async (context) => {

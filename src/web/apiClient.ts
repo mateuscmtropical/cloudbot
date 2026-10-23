@@ -355,6 +355,14 @@ interface ModelSettingsResponse extends ModelSettings {
     effortLevels: EffortLevel[];
 }
 
+// The owner renames a bot. The server refuses a name that is empty, too long, on two lines or taken in a channel of the bot.
+function renameBot(botId: string, name: string): Promise<BotSummary> {
+    const path = botPath(botId, '/name');
+    const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) };
+
+    return requestJson<BotSummary>(path, init);
+}
+
 function getModelSettings(botId: string): Promise<ModelSettingsResponse> {
     const path = botPath(botId, '/models');
 
@@ -524,6 +532,7 @@ export {
     listProviders,
     startProviderConnect,
     switchBotProvider,
+    renameBot,
     saveModelSettings,
     getLimits,
     saveLimits,

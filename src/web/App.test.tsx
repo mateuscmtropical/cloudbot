@@ -36,6 +36,7 @@ vi.mock('./apiClient.ts', () => ({
     listProviders: vi.fn(() => Promise.resolve([])),
     startProviderConnect: vi.fn(),
     switchBotProvider: vi.fn(),
+    renameBot: vi.fn(),
     removeUpload: vi.fn(),
 }));
 
