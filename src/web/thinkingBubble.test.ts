@@ -133,12 +133,12 @@ describe('withoutToolRows', () => {
             .toEqual(['u1', 'a1', 'c1']);
     });
 
-    it('keeps a tool row that ended in an error', () => {
-        const messages = [makeToolMessage('t1', 'error'), makeToolMessage('t2', 'done')];
+    it('drops a tool row that ended in an error, since its message is internal', () => {
+        const messages = [makeToolMessage('t1', 'error'), makeToolMessage('t2', 'done'), makeTextMessage('a1')];
 
         const remaining = withoutToolRows(messages);
 
         expect(remaining.map(message => message.id))
-            .toEqual(['t1']);
+            .toEqual(['a1']);
     });
 });
