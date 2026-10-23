@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A server for many people that runs on localhost shows the right address for each person, such as `http://maria.localhost`, in the people panel, in the bot tools and in the instance settings. It showed port 3200 before.
 - The sign-in, password, loading and passkey pages of a server with many people look like the app now. They have the cloud mascot, a centered card and the same colors. The fingerprint or face option sits below the password form.
 - A person can sign in at the front door from a browser. The sign-in form was refused because the browser sent Origin null.
 - The hub of a server with many people now runs as one piece. The sign-in page, the passkeys, the proxy for pages and WebSockets, and the idle shutdown all work together. The internal routes of the hub answer only to the other containers, never to a public address. A person that was deactivated cannot sign in with a passkey.
