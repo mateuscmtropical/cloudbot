@@ -5,6 +5,7 @@ import { INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER } from '../shared/hubProto
 import type { ActivityTracker, PeopleStore, PersonRecord, PersonUpdate } from './contract.ts';
 import type { InstanceManager } from './contract.ts';
 import { createHubApp } from './createHubApp.ts';
+import type { OwnerSetupOptions } from './auth/createFrontDoorRoutes.ts';
 import { createLoginSessionTables, SqliteLoginSessions } from './auth/LoginSessions.ts';
 import { openHubDatabase } from './store/openHubDatabase.ts';
 import { createHubPasskeyTables, SqliteHubPasskeyStore } from './passkeys/HubPasskeyStore.ts';
@@ -69,7 +70,7 @@ function makeRecord(name: string): PersonRecord {
     };
 }
 
-function createTestApp(people: PeopleStore, instances: InstanceManager = NOOP_INSTANCES, domain = 'example.com'): { app: Hono; database: ReturnType<typeof openHubDatabase> } {
+function createTestApp(people: PeopleStore, instances: InstanceManager = NOOP_INSTANCES, domain = 'example.com', ownerSetup?: OwnerSetupOptions): { app: Hono; database: ReturnType<typeof openHubDatabase> } {
     const database = openHubDatabase(':memory:');
 
     createLoginSessionTables(database);
@@ -86,6 +87,7 @@ function createTestApp(people: PeopleStore, instances: InstanceManager = NOOP_IN
         domain,
         secure: domain !== 'localhost',
         activity: NOOP_ACTIVITY,
+        ...(ownerSetup === undefined ? {} : { ownerSetup }),
     });
 
     return { app, database };
@@ -142,5 +144,25 @@ describe('createHubApp', () => {
         expect((await app.request('http://hub:3001/internal/tls-ask?domain=unknown.example.com', { headers })).status)
             .toBe(404);
         database.close();
+    });
+
+    it('allows the TLS request of the owner address only while the owner does not exist', async () => {
+        const ownerSetup: OwnerSetupOptions = { ownerName: 'boss', createOwner: () => Promise.resolve() };
+        const emptyPeople = new FakePeopleStore([]);
+        const emptyHub = createTestApp(emptyPeople, NOOP_INSTANCES, 'example.com', ownerSetup);
+        const headers = { host: 'hub:3001' };
+
+        expect((await emptyHub.app.request('http://hub:3001/internal/tls-ask?domain=boss.example.com', { headers })).status)
+            .toBe(200);
+        expect((await emptyHub.app.request('http://hub:3001/internal/tls-ask?domain=other.example.com', { headers })).status)
+            .toBe(404);
+        emptyHub.database.close();
+
+        const ownedPeople = new FakePeopleStore([makeRecord('owner')]);
+        const ownedHub = createTestApp(ownedPeople, NOOP_INSTANCES, 'example.com', ownerSetup);
+
+        expect((await ownedHub.app.request('http://hub:3001/internal/tls-ask?domain=boss.example.com', { headers })).status)
+            .toBe(404);
+        ownedHub.database.close();
     });
 });
