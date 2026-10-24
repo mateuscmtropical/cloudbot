@@ -589,6 +589,22 @@ for the origin of the server. `AppProxy` reads the access token for each request
 first when it ends within a minute, one refresh at a time. The token never reaches the page or the bot. A refresh
 that the server refuses fails the request, and the owner connects the app again.
 
+#### Google Workspace apps
+
+Gmail, Calendar, Drive, Docs and Sheets use Google's own remote servers, listed in `src/shared/googleApps.ts`.
+Google offers no client registration, so the owner makes an OAuth client of type Web application in their own
+Google Cloud project and saves the client ID and secret once per bot. The pair is one vault secret,
+`OAUTH_GOOGLE_CLIENT`, for `https://accounts.google.com`. The routes `GET`, `PUT` and `DELETE /api/apps/google/client`
+answer only whether a client is saved. `AppOAuth.start` treats an app as Google only when both its name and its address
+match a preset. It skips discovery, because the metadata link of these servers does not work, and uses the fixed
+Google endpoints. Without a saved client it answers `needs_client`, and the panel opens the Google setup form.
+
+The authorization address asks for the preset scopes with `access_type=offline` and `prompt=consent`, since Google
+sends a refresh token only then. CloudBot sends no `resource` parameter to Google, in the address or in the token request.
+The token request carries the client secret in the form body. The refresh path is the same as for other servers.
+While the Google Cloud app is in Testing, Google ends the refresh token after 7 days and the owner signs in again.
+The owner must also join the Google Workspace Developer Preview Program and turn on the MCP and product APIs.
+
 ## API integrations
 
 The bot writes a script in its workspace and registers it as an integration. An integration is a name, an entry file, a command and at most one secret.

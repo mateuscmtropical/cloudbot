@@ -7,6 +7,10 @@ import type { AppOAuthTokens } from './AppOAuthTokens.ts';
 import { discoverOAuth, registerClient } from './oauthDiscovery.ts';
 import type { OAuthEndpoints, RegisteredClient } from './oauthDiscovery.ts';
 import { parseAppUrl } from './appAddress.ts';
+import { findGoogleApp } from '../../shared/googleApps.ts';
+import type { GoogleApp } from '../../shared/googleApps.ts';
+import { googleEndpoints } from './googleClient.ts';
+import type { GoogleClientStore } from './googleClient.ts';
 import type { FetchFunction } from './probeAppServer.ts';
 
 // Connects a server with its own sign-in page, the way a browser app does. The owner is sent to the server's page,
@@ -31,18 +35,26 @@ interface AppOAuthDeps {
     connectedApps: Pick<ConnectedApps, 'connect' | 'dropUnusedSecret'>;
     tokens: Pick<AppOAuthTokens, 'store'>;
     fetchFunction: FetchFunction;
+    // The Google Cloud client of the owner. Without it a Google app answers needs_client.
+    googleClient?: Pick<GoogleClientStore, 'read'> | undefined;
     now?: (() => number) | undefined;
 }
 
-// A sign-in the owner has started and not yet finished. It lives in memory, so it ends with a restart.
-interface PendingSignIn {
+// What a sign-in needs before it starts.
+interface SignInPlan {
     botId: string;
     appName: string;
     serverUrl: string;
     redirectUri: string;
-    codeVerifier: string;
     client: RegisteredClient;
     endpoints: OAuthEndpoints;
+    // Google gets fixed endpoints, an offline refresh token, and no resource parameter.
+    isGoogle: boolean;
+}
+
+// A sign-in the owner has started and not yet finished. It lives in memory, so it ends with a restart.
+interface PendingSignIn extends SignInPlan {
+    codeVerifier: string;
     expiresAt: number;
 }
 
@@ -89,6 +101,12 @@ class AppOAuth {
             return { status: 'unsupported' };
         }
 
+        const googleApp = findGoogleApp(appName, address.href);
+
+        if (googleApp !== undefined) {
+            return this.startGoogle(botId, googleApp, redirectUri);
+        }
+
         const endpoints = await discoverOAuth(address.href, this.deps.fetchFunction);
 
         if (endpoints === undefined) {
@@ -101,26 +119,50 @@ class AppOAuth {
             return { status: 'failed', problem: FAILED_START };
         }
 
+        return this.beginSignIn({ botId, appName, serverUrl: address.href, redirectUri, client, endpoints, isGoogle: false });
+    }
+
+    // Google has fixed endpoints and no registration, so the client the owner saved in the vault is used.
+    private startGoogle(botId: string, googleApp: GoogleApp, redirectUri: string): AppSignInStart {
+        const savedClient = this.deps.googleClient?.read(botId);
+
+        if (savedClient === undefined) {
+            return { status: 'needs_client' };
+        }
+
+        const endpoints = googleEndpoints(googleApp);
+
+        return this.beginSignIn({ botId, appName: googleApp.serverName, serverUrl: googleApp.url, redirectUri, client: savedClient, endpoints, isGoogle: true });
+    }
+
+    private beginSignIn(plan: SignInPlan): AppSignInStart {
         const state = randomToken();
         const codeVerifier = randomToken();
 
         this.dropExpired();
-        this.pending.set(state, { botId, appName, serverUrl: address.href, redirectUri, codeVerifier, client, endpoints, expiresAt: this.now() + PENDING_LIFETIME_MS });
+        this.pending.set(state, { ...plan, codeVerifier, expiresAt: this.now() + PENDING_LIFETIME_MS });
 
-        const authorizationUrl = new URL(endpoints.authorizationEndpoint);
+        const authorizationUrl = new URL(plan.endpoints.authorizationEndpoint);
 
         authorizationUrl.searchParams.set('response_type', 'code');
-        authorizationUrl.searchParams.set('client_id', client.clientId);
-        authorizationUrl.searchParams.set('redirect_uri', redirectUri);
+        authorizationUrl.searchParams.set('client_id', plan.client.clientId);
+        authorizationUrl.searchParams.set('redirect_uri', plan.redirectUri);
         authorizationUrl.searchParams.set('state', state);
         const codeChallenge = challengeOf(codeVerifier);
 
         authorizationUrl.searchParams.set('code_challenge', codeChallenge);
         authorizationUrl.searchParams.set('code_challenge_method', 'S256');
-        authorizationUrl.searchParams.set('resource', address.href);
 
-        if (endpoints.scopes.length > 0) {
-            const scope = endpoints.scopes.join(' ');
+        // Google does not document the resource parameter, and it hands out a refresh token only on request.
+        if (plan.isGoogle) {
+            authorizationUrl.searchParams.set('access_type', 'offline');
+            authorizationUrl.searchParams.set('prompt', 'consent');
+        } else {
+            authorizationUrl.searchParams.set('resource', plan.serverUrl);
+        }
+
+        if (plan.endpoints.scopes.length > 0) {
+            const scope = plan.endpoints.scopes.join(' ');
 
             authorizationUrl.searchParams.set('scope', scope);
         }
@@ -153,8 +195,11 @@ class AppOAuth {
             redirect_uri: signIn.redirectUri,
             client_id: signIn.client.clientId,
             code_verifier: signIn.codeVerifier,
-            resource: signIn.serverUrl,
         };
+
+        if (!signIn.isGoogle) {
+            form['resource'] = signIn.serverUrl;
+        }
 
         if (signIn.client.clientSecret !== undefined) {
             form['client_secret'] = signIn.client.clientSecret;

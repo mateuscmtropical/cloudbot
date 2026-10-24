@@ -7,6 +7,7 @@ import { APP_CATALOG, APP_CATEGORIES } from '../appCatalog.ts';
 import type { AppCategory, CatalogApp } from '../appCatalog.ts';
 import { APP_SIGN_IN_CHANNEL, describeAppReturn, readAppReturnMessage } from '../appReturn.ts';
 import { APP_LOGOS, getLogoGlyphColor } from '../appLogos.ts';
+import { GoogleSetupForm } from './GoogleSetupForm.tsx';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
 import { CloseIcon, FilterIcon, SearchIcon } from './icons.tsx';
@@ -22,6 +23,12 @@ interface ConnectAppsPanelProps {
 
 type LoadState = 'loading' | 'ready' | 'failed';
 type CategoryFilter = AppCategory | 'All';
+
+// The Google app the owner clicked before the Google client was saved, so the sign-in goes on after the save.
+interface PendingGoogleApp {
+    name: string;
+    url: string;
+}
 
 interface AppIconProps {
     app: CatalogApp;
@@ -146,6 +153,8 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
     // The name of the app whose sign-in window is open, and what the window held back from this one.
     const [signInLabel, setSignInLabel] = useState<string | undefined>(undefined);
     const [returnNotice, setReturnNotice] = useState<string | undefined>(undefined);
+    const [isGoogleSetupOpen, setIsGoogleSetupOpen] = useState(false);
+    const [pendingGoogleApp, setPendingGoogleApp] = useState<PendingGoogleApp | undefined>(undefined);
 
     function stopWaiting(): void {
         setSignInLabel(undefined);
@@ -246,6 +255,14 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
 
                 signInWindow?.close();
 
+                if (signIn.status === 'needs_client') {
+                    setPendingGoogleApp({ name: appName, url: appUrl });
+                    setIsGoogleSetupOpen(true);
+                    setStartingAppName(undefined);
+
+                    return undefined;
+                }
+
                 if (signIn.status === 'failed') {
                     setProblem(signIn.problem);
                     setStartingAppName(undefined);
@@ -266,6 +283,19 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                 setProblem('The connection could not be started. Try again.');
                 setStartingAppName(undefined);
             });
+    }
+
+    // The Google client was saved. The sign-in the owner started goes on, if there was one.
+    function handleGoogleSaved(): void {
+        const googleApp = pendingGoogleApp;
+
+        if (googleApp === undefined) {
+            return;
+        }
+
+        setPendingGoogleApp(undefined);
+        setIsGoogleSetupOpen(false);
+        handleConnect(googleApp.name, googleApp.url);
     }
 
     function handleCustomSubmit(event: SyntheticEvent<HTMLFormElement>): void {
@@ -383,6 +413,23 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                             <button type="button" className="connect-app-action" aria-label="Cancel sign-in" onClick={stopWaiting}>Cancel</button>
                         </p>
                     )}
+            {selectedBotId === undefined || isGoogleSetupOpen
+                ? null
+                : (
+                        <button type="button" className="connect-app-action google-setup-open" onClick={() => { setIsGoogleSetupOpen(true); }}>Google setup</button>
+                    )}
+            {selectedBotId !== undefined && isGoogleSetupOpen
+                ? (
+                        <GoogleSetupForm
+                            botId={selectedBotId}
+                            onSaved={handleGoogleSaved}
+                            onClose={() => {
+                                setIsGoogleSetupOpen(false);
+                                setPendingGoogleApp(undefined);
+                            }}
+                        />
+                    )
+                : null}
             {selectedBotId === undefined ? <p className="connect-app-problem">Choose a bot before connecting an app.</p> : null}
             {loadState === 'loading' ? <p className="connect-app-message">Loading apps...</p> : null}
             {loadState === 'failed' ? <p className="connect-app-problem">The connected apps could not be loaded.</p> : null}

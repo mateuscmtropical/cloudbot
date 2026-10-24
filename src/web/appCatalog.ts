@@ -1,3 +1,5 @@
+import { GOOGLE_APPS } from '../shared/googleApps.ts';
+
 type AppCategory = 'Productivity' | 'Communication' | 'Code' | 'Data' | 'Design' | 'Finance' | 'Other';
 
 interface CatalogApp {
@@ -10,6 +12,15 @@ interface CatalogApp {
 
 // Display order of the category chips.
 const APP_CATEGORIES: AppCategory[] = ['Productivity', 'Communication', 'Code', 'Data', 'Design', 'Finance', 'Other'];
+
+// The Google apps keep their address and text in one shared table, which the server signs in with.
+const GOOGLE_CATALOG_APPS: CatalogApp[] = GOOGLE_APPS.map(app => ({
+    serverName: app.serverName,
+    displayName: app.displayName,
+    description: app.description,
+    url: app.url,
+    category: 'Productivity',
+}));
 
 const APP_CATALOG: CatalogApp[] = [
     {
@@ -481,6 +492,7 @@ const APP_CATALOG: CatalogApp[] = [
         url: 'https://mcp.semrush.com/v1/mcp',
         category: 'Other',
     },
+    ...GOOGLE_CATALOG_APPS,
 ];
 
 export { APP_CATALOG, APP_CATEGORIES };
