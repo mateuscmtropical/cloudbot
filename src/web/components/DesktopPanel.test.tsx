@@ -2,8 +2,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type RFB from '@novnc/novnc';
+
 import * as apiClient from '../apiClient.ts';
-import { DesktopPanel, buildVncUrl, buildVncViewportSize, shouldResizeDesktop } from './DesktopPanel.tsx';
+import { DesktopPanel, buildVncUrl, buildVncViewportSize, requestChromiumSizedDesktop, shouldResizeDesktop } from './DesktopPanel.tsx';
 
 vi.mock('../apiClient.ts', () => ({
     getScreenHolder: vi.fn(() => Promise.resolve('bot')),
@@ -21,6 +23,16 @@ interface FakeClient {
     disconnected: boolean;
     listeners: Record<string, () => void>;
     keys: number[];
+}
+
+interface ScreenSize {
+    w: number;
+    h: number;
+}
+
+interface ResizingClient {
+    _screenSize: () => ScreenSize;
+    _requestRemoteResize: () => void;
 }
 
 const clients: FakeClient[] = [];
@@ -206,6 +218,28 @@ describe('buildVncViewportSize', () => {
             .toEqual({ width: 720, height: 590 });
         expect(buildVncViewportSize(390, 590, false))
             .toEqual({ width: 390, height: 590 });
+    });
+
+    it('asks for a desktop wide enough for Chromium while the picture keeps the panel size', () => {
+        const requested: ScreenSize[] = [];
+        const client: ResizingClient = {
+            _screenSize(): ScreenSize {
+                return { w: 390, h: 590 };
+            },
+            _requestRemoteResize(): void {
+                const size = this._screenSize();
+
+                requested.push(size);
+            },
+        };
+
+        requestChromiumSizedDesktop(client as unknown as RFB);
+        client._requestRemoteResize();
+
+        expect(requested)
+            .toEqual([{ w: 500, h: 756 }]);
+        expect(client._screenSize())
+            .toEqual({ w: 390, h: 590 });
     });
 
     it('uses the default size before the panel has layout dimensions', () => {
@@ -400,11 +434,11 @@ describe('DesktopPanel', () => {
         const targetElement = container.querySelector<HTMLDivElement>('.desktop-vnc-target');
 
         expect(targetElement?.style.width)
-            .toBe('500px');
+            .toBe('390px');
         expect(targetElement?.style.height)
-            .toBe('756px');
+            .toBe('590px');
         expect(clientAt(0).scaleViewport)
-            .toBe(false);
+            .toBe(true);
         expect(container.querySelector('.desktop-screen.is-resizing'))
             .not.toBeNull();
     });

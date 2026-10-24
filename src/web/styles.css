@@ -2108,10 +2108,6 @@ button.list-row {
     background: #000;
 }
 
-.desktop-screen.is-resizing {
-    overflow: auto;
-}
-
 /* Expanded, the picture takes the height the panel has left. Then the controls stay on screen under it on a phone. */
 .desktop-panel.is-expanded {
     grid-template-rows: minmax(0, 1fr);
