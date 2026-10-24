@@ -5,8 +5,11 @@ import RFB from '@novnc/novnc';
 
 import type { ScreenHolderName, ScreenViewName } from '../../shared/chatTypes.ts';
 import { getScreenHolder, getScreenView, releaseScreen, takeScreen } from '../apiClient.ts';
+import { hasTouchScreen, KEYSYMS, keysymOfCharacter } from '../softKeyboard.ts';
+import type { ScreenKeyName } from '../softKeyboard.ts';
 import { ScreencastView } from './ScreencastView.tsx';
-import type { ConnectionState } from './ScreencastView.tsx';
+import type { ConnectionState, ScreencastInputMessage } from './ScreencastView.tsx';
+import { SoftKeyboardInput } from './SoftKeyboardInput.tsx';
 
 interface DesktopPanelProps {
     onClose: () => void;
@@ -39,6 +42,9 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
     const [handoffProblem, setHandoffProblem] = useState('');
     // Expanded fills the window so the screen is easier to use.
     const [isExpanded, setIsExpanded] = useState(false);
+    // The invisible field that opens the keyboard of a phone, and the way to type on the browser's frames in local mode.
+    const keyboardInputRef = useRef<HTMLTextAreaElement>(null);
+    const screencastSenderRef = useRef<((input: ScreencastInputMessage) => void) | undefined>(undefined);
 
     useEffect(() => {
         let isCurrent = true;
@@ -127,6 +133,35 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
         };
     }, [connectAttempt, view]);
 
+    function typeText(text: string): void {
+        if (view === 'screencast') {
+            screencastSenderRef.current?.({ type: 'text', text });
+
+            return;
+        }
+
+        const client = clientRef.current;
+
+        Array.from(text)
+            .forEach((character) => {
+                const keysym = keysymOfCharacter(character);
+
+                client?.sendKey(keysym, null);
+            });
+    }
+
+    function pressKey(key: ScreenKeyName): void {
+        if (view === 'screencast') {
+            screencastSenderRef.current?.({ type: 'key', key });
+
+            return;
+        }
+
+        const keysym = KEYSYMS[key];
+
+        clientRef.current?.sendKey(keysym, null);
+    }
+
     const panelClass = isExpanded ? 'desktop-panel is-expanded' : 'desktop-panel';
     const handoffLabel = holder === 'person' ? 'Done, take over' : 'Take the screen';
     const handoffChange = holder === 'person' ? releaseScreen : takeScreen;
@@ -135,8 +170,9 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
         <section className={panelClass} aria-label="Bot screen">
             <div className="desktop-stage">
                 {view === 'screencast'
-                    ? <ScreencastView holder={holder} attempt={connectAttempt} onStateChange={setConnectionState} />
+                    ? <ScreencastView holder={holder} attempt={connectAttempt} onStateChange={setConnectionState} inputSenderRef={screencastSenderRef} />
                     : <div className="desktop-screen" ref={screenRef} />}
+                <SoftKeyboardInput inputRef={keyboardInputRef} onText={typeText} onKey={pressKey} />
             </div>
             <div className="desktop-side">
                 <h2>Screen</h2>
@@ -145,6 +181,9 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
                 </p>
                 <div className="desktop-actions">
                     <button type="button" onClick={() => { changeHolder(handoffChange); }}>{handoffLabel}</button>
+                    {holder === 'person' && hasTouchScreen()
+                        ? <button type="button" onClick={() => { keyboardInputRef.current?.focus(); }}>Keyboard</button>
+                        : null}
                     <button type="button" aria-pressed={isExpanded} onClick={() => { setIsExpanded(!isExpanded); }}>
                         {isExpanded ? 'Shrink' : 'Expand'}
                     </button>

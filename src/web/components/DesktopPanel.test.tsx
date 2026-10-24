@@ -18,6 +18,7 @@ interface FakeClient {
     viewOnly: boolean;
     disconnected: boolean;
     listeners: Record<string, () => void>;
+    keys: number[];
 }
 
 const clients: FakeClient[] = [];
@@ -48,6 +49,7 @@ vi.mock('@novnc/novnc', () => ({
         public scaleViewport = false;
         public disconnected = false;
         public listeners: Record<string, () => void> = {};
+        public keys: number[] = [];
 
         public constructor(public target: HTMLElement, public url: string) {
             clients.push(this);
@@ -59,6 +61,10 @@ vi.mock('@novnc/novnc', () => ({
 
         public disconnect(): void {
             this.disconnected = true;
+        }
+
+        public sendKey(keysym: number): void {
+            this.keys.push(keysym);
         }
     },
 }));
@@ -121,6 +127,45 @@ describe('DesktopPanel', () => {
 
     afterEach(() => {
         cleanup();
+        vi.unstubAllGlobals();
+    });
+
+    it('opens the keyboard of a phone and types on the screen with it', async () => {
+        vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(pointer: coarse)' }));
+        vi.mocked(apiClient.getScreenHolder)
+            .mockResolvedValue('person');
+        render(<DesktopPanel onClose={() => undefined} />);
+        await waitFor(() => {
+            expect(clients)
+                .toHaveLength(1);
+        });
+
+        const field = screen.getByLabelText<HTMLTextAreaElement>('Type on the screen');
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Keyboard' }));
+
+        expect(document.activeElement)
+            .toBe(field);
+
+        field.value = ' hi';
+        fireEvent.input(field);
+        field.value = '';
+        fireEvent.input(field);
+
+        expect(clientAt(0).keys)
+            .toEqual([0x68, 0x69, 0xFF08]);
+        expect(field.value)
+            .toBe(' ');
+    });
+
+    it('offers no keyboard button without a touch screen', async () => {
+        vi.mocked(apiClient.getScreenHolder)
+            .mockResolvedValue('person');
+        render(<DesktopPanel onClose={() => undefined} />);
+        await screen.findByText('You have the screen. The bot is paused.');
+
+        expect(screen.queryByRole('button', { name: 'Keyboard' }))
+            .toBeNull();
     });
 
     it('connects in view only mode and shows a status until connected', async () => {
