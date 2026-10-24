@@ -124,15 +124,23 @@ describe('DesktopPanel in local mode', () => {
         vi.mocked(apiClient.getScreenHolder)
             .mockResolvedValueOnce('person');
         clients.length = 0;
-        render(<DesktopPanel onClose={() => undefined} />);
+        const { container } = render(<DesktopPanel onClose={() => undefined} />);
+
         await waitFor(() => {
             expect(sockets)
                 .toHaveLength(1);
         });
         await screen.findByText('You have the screen. The bot is paused.');
 
+        expect(container.querySelector('.desktop-panel[data-no-pull]'))
+            .not.toBeNull();
+
+        expect(container.querySelector('.desktop-screen.screencast[data-no-pull]'))
+            .not.toBeNull();
+
         expect(sockets[0]?.url.endsWith('/api/desktop/screencast'))
             .toBe(true);
+
         expect(clients)
             .toHaveLength(0);
 

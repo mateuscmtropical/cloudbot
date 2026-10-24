@@ -401,7 +401,7 @@ function ScreencastView({ holder, attempt, resizeToViewport, onStateChange, inpu
     const wrapperClassName = resizeToViewport ? 'desktop-screen screencast is-resizing' : 'desktop-screen screencast';
 
     return (
-        <div className={wrapperClassName} ref={wrapperRef} tabIndex={0} onKeyDown={handleKeyDown}>
+        <div className={wrapperClassName} ref={wrapperRef} tabIndex={0} onKeyDown={handleKeyDown} data-no-pull>
             <img
                 ref={imageRef}
                 alt="The bot's browser"

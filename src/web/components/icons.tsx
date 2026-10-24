@@ -35,6 +35,15 @@ function ShareIcon(): ReactElement {
     );
 }
 
+function RefreshIcon(): ReactElement {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 7v5h-5M4 17v-5h5" />
+            <path d="M5.5 9a7 7 0 0 1 12-2L20 9M4 15l2.5 2a7 7 0 0 0 12-2" />
+        </svg>
+    );
+}
+
 function CloseIcon(): ReactElement {
     return (
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -211,6 +220,7 @@ export {
     MoreIcon,
     PeopleIcon,
     PlusIcon,
+    RefreshIcon,
     SearchIcon,
     SendArrowIcon,
     ShareIcon,

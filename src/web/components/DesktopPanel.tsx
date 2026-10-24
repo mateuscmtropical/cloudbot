@@ -269,12 +269,12 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
     const handoffChange = holder === 'person' ? releaseScreen : takeScreen;
 
     return (
-        <section className={panelClass} aria-label="Bot screen">
+        <section className={panelClass} aria-label="Bot screen" data-no-pull>
             <div className="desktop-stage">
                 {view === 'screencast'
                     ? <ScreencastView holder={holder} attempt={connectAttempt} resizeToViewport={resizeToViewport} onStateChange={setConnectionState} inputSenderRef={screencastSenderRef} />
                     : (
-                            <div className={holder === 'person' && resizeToViewport ? 'desktop-screen is-resizing' : 'desktop-screen'} ref={screenViewportRef}>
+                            <div className={holder === 'person' && resizeToViewport ? 'desktop-screen is-resizing' : 'desktop-screen'} ref={screenViewportRef} data-no-pull>
                                 <div className="desktop-vnc-target" ref={screenRef} />
                             </div>
                         )}
