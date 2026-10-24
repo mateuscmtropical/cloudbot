@@ -85,7 +85,7 @@ describe('MobileSites', () => {
         expect(sent.find(call => call.method === 'Target.setAutoAttach')?.params)
             .toEqual({ autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
         expect(sessionCalls(sent, 'session-open-page'))
-            .toEqual(['Emulation.setUserAgentOverride', 'Emulation.setTouchEmulationEnabled', 'Emulation.setEmitTouchEventsForMouse', 'Emulation.setDeviceMetricsOverride']);
+            .toEqual(['Emulation.setUserAgentOverride', 'Emulation.setTouchEmulationEnabled', 'Emulation.setEmitTouchEventsForMouse']);
         expect(userAgentCall?.params.userAgent)
             .toBe(mobileUserAgent('131'));
         expect(mobileUserAgent('131'))
@@ -110,7 +110,7 @@ describe('MobileSites', () => {
             .at(-1))
             .toBe('Runtime.runIfWaitingForDebugger');
         expect(sessionCalls(sent, 'session-new-tab'))
-            .toHaveLength(5);
+            .toHaveLength(4);
         expect(sessionCalls(sent, 'session-worker'))
             .toEqual(['Runtime.runIfWaitingForDebugger']);
     });

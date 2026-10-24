@@ -51,8 +51,8 @@ function emulationCalls(chromeMajor: string): Array<[string, Record<string, unkn
         ['Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: MAX_TOUCH_POINTS }],
         // A drag on the phone reaches Chromium as a mouse drag. As touch, it scrolls the page.
         ['Emulation.setEmitTouchEventsForMouse', { enabled: true, configuration: 'mobile' }],
-        // Zero keeps the window size. Mobile makes Chromium follow the page's viewport tag and hide the scrollbars.
-        ['Emulation.setDeviceMetricsOverride', { width: 0, height: 0, deviceScaleFactor: 0, mobile: true }],
+        // No mobile viewport. A page loaded before the phone took the screen keeps a 980 pixel layout there and gets cut off.
+        // Without it every page lays out at the width of the window, which already is the width the phone asked for.
     ];
 }
 
