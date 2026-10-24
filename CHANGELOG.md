@@ -25,6 +25,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- After `cloudbot update` the hub could no longer reach any running instance, and every address showed "Starting your environment" without end. The hub now joins the network of every person again each time it starts.
 - A person whose container was removed, for example to move to a new image, gets the container again at the next visit. Before, the address showed "Starting your environment" without end. A failed start is now written to the hub log.
 
 ### Changed

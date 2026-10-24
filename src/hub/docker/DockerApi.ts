@@ -124,6 +124,8 @@ class DockerApi implements DockerApiClient {
             method: 'POST',
             path: `/networks/${encodeURIComponent(networkName)}/connect`,
             body: { Container: containerName, EndpointConfig: { Aliases: aliases } },
+            // Docker answers 403 when the container is already on the network.
+            acceptedStatuses: [403],
         };
 
         await this.request(requestOptions);
