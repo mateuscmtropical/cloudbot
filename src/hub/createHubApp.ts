@@ -176,7 +176,10 @@ function createHubApp(options: CreateHubAppOptions): Hono {
         const isPerson = host !== undefined && people
             .some(record => host === `${record.name}.${configuredDomain}`);
 
-        if (isApex || isPerson) {
+        const hasOwner = people.some(record => record.role === 'owner');
+        const isPendingOwner = options.ownerSetup !== undefined && !hasOwner && host === `${options.ownerSetup.ownerName}.${configuredDomain}`;
+
+        if (isApex || isPerson || isPendingOwner) {
             return context.body(null, 200);
         }
 
