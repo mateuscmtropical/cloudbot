@@ -28,6 +28,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- The first key typed with the Keyboard button of the Screen panel no longer erases a character on the screen and adds a space.
 - On a phone, the whole desktop fits in the Screen panel while you hold it. Before, the desktop stayed 500 pixels wide in a narrower panel, so its right side was cut off and could not be reached.
 - The Screen panel shows the desktop again. The server closed every viewer right after it connected, because it did not know the fence, continuous updates and QEMU key messages that noVNC sends.
 - The Screen panel on a phone no longer stays black. The server refused the resize request of the phone, because noVNC sends back the random screen id of TigerVNC, and the panel kept connecting again.

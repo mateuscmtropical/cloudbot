@@ -276,10 +276,13 @@ describe('DesktopPanel', () => {
 
         const field = screen.getByLabelText<HTMLTextAreaElement>('Type on the screen');
 
+        field.setSelectionRange(0, 0);
         fireEvent.click(await screen.findByRole('button', { name: 'Keyboard' }));
 
         expect(document.activeElement)
             .toBe(field);
+        expect(field.selectionStart)
+            .toBe(field.value.length);
 
         field.value = ' hi';
         fireEvent.input(field);

@@ -53,6 +53,13 @@ function SoftKeyboardInput({ inputRef, onText, onKey }: SoftKeyboardInputProps):
         reset(field);
     }
 
+    // Focus can leave the caret before the anchor. The first key would then read as a Backspace and a new space.
+    function handleFocus(event: SyntheticEvent<HTMLTextAreaElement>): void {
+        const field = event.currentTarget;
+
+        field.setSelectionRange(field.value.length, field.value.length);
+    }
+
     function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
         if (event.nativeEvent.isComposing || !isScreenKeyName(event.key)) {
             return;
@@ -73,6 +80,7 @@ function SoftKeyboardInput({ inputRef, onText, onKey }: SoftKeyboardInputProps):
             autoCorrect="off"
             spellCheck={false}
             rows={1}
+            onFocus={handleFocus}
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             onCompositionStart={() => {
