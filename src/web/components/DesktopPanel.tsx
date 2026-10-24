@@ -17,6 +17,17 @@ interface DesktopPanelProps {
     onClose: () => void;
 }
 
+interface RfbScreenSize {
+    w: number;
+    h: number;
+}
+
+// The two methods of noVNC 1.7 that pick the size of a desktop resize request.
+interface RfbResizeInternals {
+    _screenSize?: () => RfbScreenSize;
+    _requestRemoteResize?: () => void;
+}
+
 const VNC_PATH = '/api/desktop/vnc';
 // The bot can hand over the screen while the panel is open, so the holder is read again from time to time.
 const HOLDER_POLL_MS = 3000;
@@ -53,9 +64,40 @@ function buildVncViewportSize(width: number, height: number, shouldResize: boole
     return { width: screenWidth, height: boundedHeight };
 }
 
-function applyVncViewportSize(viewportElement: HTMLElement, targetElement: HTMLElement, shouldResize: boolean): void {
+// noVNC asks for the size of its element and scales the picture into it. Chromium keeps its window at least 500
+// pixels wide, so only the request asks for that wider desktop, with the shape of the panel. The picture then
+// shrinks into the panel and a touch still lands under the finger.
+// ponytail: patches two private methods of noVNC 1.7. Check them when noVNC is updated.
+function requestChromiumSizedDesktop(client: RFB): void {
+    const internals = client as unknown as RfbResizeInternals;
+    const readScreenSize = internals._screenSize?.bind(client);
+    const requestResize = internals._requestRemoteResize?.bind(client);
+
+    if (readScreenSize === undefined || requestResize === undefined) {
+        return;
+    }
+
+    const readDesktopSize = (): RfbScreenSize => {
+        const panelSize = readScreenSize();
+        const desktopSize = buildVncViewportSize(panelSize.w, panelSize.h, true);
+
+        return { w: desktopSize.width, h: desktopSize.height };
+    };
+
+    internals._requestRemoteResize = () => {
+        internals._screenSize = readDesktopSize;
+
+        try {
+            requestResize();
+        } finally {
+            internals._screenSize = readScreenSize;
+        }
+    };
+}
+
+function applyVncViewportSize(viewportElement: HTMLElement, targetElement: HTMLElement): void {
     const viewport = viewportElement.getBoundingClientRect();
-    const size = buildVncViewportSize(viewport.width, viewport.height, shouldResize);
+    const size = buildVncViewportSize(viewport.width, viewport.height, false);
     const width = `${String(size.width)}px`;
     const height = `${String(size.height)}px`;
 
@@ -177,9 +219,7 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
         }
 
         const updateViewportSize = (): void => {
-            const shouldResize = holder === 'person' && resizeToViewport;
-
-            applyVncViewportSize(viewportElement, targetElement, shouldResize);
+            applyVncViewportSize(viewportElement, targetElement);
         };
 
         updateViewportSize();
@@ -195,13 +235,12 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
         return () => {
             observer.disconnect();
         };
-    }, [holder, resizeToViewport, view]);
+    }, [view]);
 
     useEffect(() => {
         if (clientRef.current !== null) {
             clientRef.current.viewOnly = holder !== 'person';
             clientRef.current.resizeSession = holder === 'person' && resizeToViewport;
-            clientRef.current.scaleViewport = !(holder === 'person' && resizeToViewport);
         }
     }, [holder, connectAttempt, resizeToViewport]);
 
@@ -235,13 +274,14 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
             return;
         }
 
-        applyVncViewportSize(viewportElement, screenElement, holderRef.current === 'person' && resizeToViewport);
+        applyVncViewportSize(viewportElement, screenElement);
 
         const vncUrl = buildVncUrl(window.location);
         const client = new RFB(screenElement, vncUrl);
 
+        requestChromiumSizedDesktop(client);
         client.viewOnly = holderRef.current !== 'person';
-        client.scaleViewport = !(holderRef.current === 'person' && resizeToViewport);
+        client.scaleViewport = true;
         client.resizeSession = holderRef.current === 'person' && resizeToViewport;
         clientRef.current = client;
         // A client that was cleaned up still reports its close. That must not change the state of its successor.
@@ -355,4 +395,4 @@ function clamp(value: number, lowest: number, highest: number): number {
     return Math.min(valueAtLeastLowest, highest);
 }
 
-export { DesktopPanel, buildVncUrl, buildVncViewportSize, shouldResizeDesktop };
+export { DesktopPanel, buildVncUrl, buildVncViewportSize, requestChromiumSizedDesktop, shouldResizeDesktop };
