@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { KeyboardEvent, MouseEvent, ReactElement, WheelEvent } from 'react';
+import type { KeyboardEvent, MouseEvent, ReactElement, RefObject, WheelEvent } from 'react';
 
 import type { ScreenHolderName } from '../../shared/chatTypes.ts';
 
@@ -10,6 +10,8 @@ interface ScreencastViewProps {
     // Bumped by the panel's retry button, so the socket opens again.
     attempt: number;
     onStateChange: (state: ConnectionState) => void;
+    // The panel types on the screen through this, for the keyboard of a phone. The view fills it while it is shown.
+    inputSenderRef: RefObject<((input: ScreencastInputMessage) => void) | undefined>;
 }
 
 interface ScreencastFrame {
@@ -189,7 +191,7 @@ function clamp(value: number, lowest: number, highest: number): number {
 
 // The live view of the bot's browser in local mode. Frames come as pictures, and the owner's input goes back
 // only while the owner holds the screen. The server drops input otherwise.
-function ScreencastView({ holder, attempt, onStateChange }: ScreencastViewProps): ReactElement {
+function ScreencastView({ holder, attempt, onStateChange, inputSenderRef }: ScreencastViewProps): ReactElement {
     const imageRef = useRef<HTMLImageElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const socketRef = useRef<WebSocket | null>(null);
@@ -244,6 +246,14 @@ function ScreencastView({ holder, attempt, onStateChange }: ScreencastViewProps)
 
         socket.send(message);
     }
+
+    useEffect(() => {
+        inputSenderRef.current = send;
+
+        return () => {
+            inputSenderRef.current = undefined;
+        };
+    });
 
     function pointerRect(): ScreenRect | undefined {
         const image = imageRef.current;

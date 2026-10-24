@@ -23,9 +23,11 @@ All notable changes to this project are listed here. The format follows
 - When a bot opens a page in its browser, the Screen panel opens once in that turn, so you watch the live browser.
 - `sudo cloudbot update --all` also removes every instance container that uses an old image. Each person keeps the `cbi-*` volumes and the hub creates the container again on the next visit.
 - On a phone, a swipe to the right opens the bot list and a swipe to the left closes it.
+- The Screen panel has a Keyboard button on a phone while you hold the screen. It opens the keyboard of the phone and sends what you type to the browser of the bot.
 
 ### Fixed
 
+- Expanded, the Screen panel on a phone keeps its buttons on screen under the picture. They used to be pushed out of view.
 - After `cloudbot update` the hub could no longer reach any running instance, and every address showed "Starting your environment" without end. The hub now joins the network of every person again each time it starts.
 - On a phone, the bot pill and the menu button no longer mix with the messages under them. A fade, dark at the top and clear at the bottom, sits behind them.
 - The Connect apps and Account buttons in the sidebar have space between them.

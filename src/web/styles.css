@@ -1205,6 +1205,7 @@ svg {
 }
 
 .desktop-stage {
+    position: relative;
     min-width: 0;
 }
 
@@ -1250,14 +1251,41 @@ svg {
     background: #000;
 }
 
+/* Expanded, the picture takes the height the panel has left. Then the controls stay on screen under it on a phone. */
+.desktop-panel.is-expanded {
+    grid-template-rows: minmax(0, 1fr);
+}
+
+.desktop-panel.is-expanded .desktop-stage {
+    min-height: 0;
+}
+
 .desktop-panel.is-expanded .desktop-screen {
-    height: calc(100vh - 32px);
+    height: 100%;
+    min-height: 0;
+}
+
+/* The field only opens the keyboard of a phone. It is in the page but not seen. 16px keeps iOS from zooming in. */
+.desktop-keyboard-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    font-size: 16px;
+    resize: none;
+    pointer-events: none;
 }
 
 /* A narrow window puts the controls under the picture. */
 @media (max-width: 720px) {
     .desktop-panel {
         grid-template-columns: 1fr;
+    }
+
+    .desktop-panel.is-expanded {
+        grid-template-rows: minmax(0, 1fr) auto;
     }
 
     .desktop-actions {
