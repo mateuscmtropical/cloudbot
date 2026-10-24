@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotSummary } from '../../shared/chatTypes.ts';
@@ -14,9 +14,10 @@ const BOTS: BotSummary[] = [
 describe('BotList', () => {
     afterEach(() => {
         cleanup();
+        vi.useRealTimers();
     });
 
-    it('keeps People and New bot in the header', () => {
+    it('keeps the People, search, and New bot buttons in the header', () => {
         const { container } = render(
             <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} onPeople={vi.fn()} />,
         );
@@ -24,25 +25,45 @@ describe('BotList', () => {
             .map(button => button.getAttribute('aria-label'));
 
         expect(labels)
-            .toEqual(['People', 'New bot']);
+            .toEqual(['People', 'Focus search', 'New bot']);
     });
 
-    it('opens People without a known name and opens Account from the named avatar', () => {
+    it('keeps Account and People reachable on standalone and hub lists', () => {
         const props = { bots: BOTS, selectedBotId: undefined, selectedMascotState: 'idle' as const, channels: [], selectedChannelId: undefined, isOpen: false, onSelectBot: vi.fn(), onSelectChannel: vi.fn(), onNewBot: vi.fn(), onConnectApps: vi.fn(), onPeople: vi.fn() };
         const onAccount = vi.fn();
-        const { rerender } = render(<BotList {...props} />);
+        const { container, rerender } = render(<BotList {...props} onAccount={onAccount} />);
 
+        expect(screen.getByText('CB'))
+            .toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'People' }));
         expect(props.onPeople)
             .toHaveBeenCalledTimes(1);
+        fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+        expect(onAccount)
+            .toHaveBeenCalledTimes(1);
 
         rerender(<BotList {...props} personName="Maria Regina" onAccount={onAccount} />);
+        expect(container.querySelector('.bot-list-header .round-button-avatar')?.textContent)
+            .toBe('MR');
+        expect(screen.getByRole('button', { name: 'People' }))
+            .toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Account' }));
 
         expect(onAccount)
-            .toHaveBeenCalledTimes(1);
-        expect(screen.getByText('MR'))
-            .toBeTruthy();
+            .toHaveBeenCalledTimes(2);
+    });
+
+    it('focuses the bottom search pill from the header search button', () => {
+        render(
+            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} onPeople={vi.fn()} onAccount={vi.fn()} />,
+        );
+
+        const searchInput = screen.getByRole('searchbox', { name: 'Search bots' });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Focus search' }));
+
+        expect(document.activeElement)
+            .toBe(searchInput);
     });
 
     it('filters bots by name from the controlled search field', () => {
@@ -110,5 +131,93 @@ describe('BotList', () => {
 
         expect(onSelectChannel)
             .toHaveBeenCalledWith('channel-1');
+    });
+
+    it('opens a bot menu on right click without adding actions to channels', () => {
+        const onSelectBot = vi.fn();
+        const channels: ChannelSummary[] = [{ id: 'channel-1', name: 'Project', members: [] }];
+
+        render(
+            <BotList
+                bots={BOTS}
+                selectedBotId={undefined}
+                selectedMascotState="idle"
+                channels={channels}
+                selectedChannelId={undefined}
+                isOpen={false}
+                onSelectBot={onSelectBot}
+                onSelectChannel={vi.fn()}
+                onNewBot={vi.fn()}
+                onConnectApps={vi.fn()}
+                onPeople={vi.fn()}
+                onRenameBot={vi.fn(() => Promise.resolve(undefined))}
+                onDeleteBot={vi.fn(() => Promise.resolve(undefined))}
+            />,
+        );
+
+        const anaRow = screen.getByRole('button', { name: 'Ana' });
+
+        fireEvent.contextMenu(anaRow);
+
+        expect(screen.getByRole('dialog', { name: 'Actions for Ana' }))
+            .toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'More options for Project' }))
+            .toBeNull();
+        expect(onSelectBot)
+            .not.toHaveBeenCalled();
+    });
+
+    it('opens the bot menu after a touch hold, suppresses selection, and shows a delete refusal', async () => {
+        vi.useFakeTimers();
+        const onSelectBot = vi.fn();
+        const onDeleteBot = vi.fn(() => Promise.resolve('The last bot cannot be deleted.'));
+
+        render(
+            <BotList
+                bots={BOTS}
+                selectedBotId={undefined}
+                selectedMascotState="idle"
+                channels={[]}
+                selectedChannelId={undefined}
+                isOpen={false}
+                onSelectBot={onSelectBot}
+                onSelectChannel={vi.fn()}
+                onNewBot={vi.fn()}
+                onConnectApps={vi.fn()}
+                onPeople={vi.fn()}
+                onRenameBot={vi.fn(() => Promise.resolve(undefined))}
+                onDeleteBot={onDeleteBot}
+            />,
+        );
+
+        const anaRow = screen.getByRole('button', { name: 'Ana' });
+
+        fireEvent.pointerDown(anaRow, { pointerType: 'touch', pointerId: 1, button: 0, clientX: 20, clientY: 20 });
+        act(() => {
+            vi.advanceTimersByTime(450);
+        });
+        fireEvent.pointerUp(anaRow, { pointerType: 'touch', pointerId: 1, button: 0, clientX: 20, clientY: 20 });
+        fireEvent.click(anaRow);
+
+        expect(screen.getByRole('dialog', { name: 'Actions for Ana' }))
+            .toBeTruthy();
+        expect(onSelectBot)
+            .not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+        expect(screen.getByRole('alertdialog', { name: 'Delete Ana?' }).textContent)
+            .toContain('chats, rules, routines, webhooks, secrets, and files');
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+            await Promise.resolve();
+        });
+
+        expect(onDeleteBot)
+            .toHaveBeenCalledWith('bot-a');
+        const alertText = screen.getByRole('alert').textContent;
+
+        expect(alertText)
+            .toContain('The last bot cannot be deleted.');
     });
 });

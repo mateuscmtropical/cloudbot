@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotSummary, ChatEvent, ChatMessage, PendingUpload } from '../shared/chatTypes.ts';
@@ -12,6 +12,14 @@ import { getHubContext } from './peopleClient.ts';
 configure({ asyncUtilTimeout: 5000 });
 // Under the parallel full run, each test here can take more than the 5 s default.
 vi.setConfig({ testTimeout: 15000 });
+
+function getBotListHeaderButton(label: string): HTMLElement {
+    const botList = screen.getByRole('complementary', { name: 'Bots' });
+    const botListQueries = within(botList);
+    const button = botListQueries.getByRole('button', { name: label });
+
+    return button;
+}
 
 vi.mock('./apiClient.ts', () => ({
     // A stand-in class, so `instanceof` checks in the app have something to test against.
@@ -127,7 +135,7 @@ describe('App bot list', () => {
                 .toHaveBeenCalledTimes(1);
         });
 
-        fireEvent.click(screen.getByRole('button', { name: 'People' }));
+        fireEvent.click(getBotListHeaderButton('People'));
 
         expect(await screen.findByText('This CloudBot runs on its own'))
             .toBeTruthy();
@@ -145,7 +153,7 @@ describe('App bot list', () => {
 
         render(<App />);
 
-        fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
+        fireEvent.click(getBotListHeaderButton('Account'));
 
         expect(await screen.findByRole('heading', { name: 'Account' }))
             .toBeTruthy();
@@ -166,7 +174,7 @@ describe('App bot list', () => {
         expect(await screen.findByRole('textbox'))
             .toBeTruthy();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+        fireEvent.click(getBotListHeaderButton('Account'));
 
         expect(await screen.findByRole('heading', { name: 'Account' }))
             .toBeTruthy();
@@ -186,8 +194,7 @@ describe('App bot list', () => {
             expect(getHubContext)
                 .toHaveBeenCalled();
         });
-        fireEvent.click(screen.getByRole('button', { name: 'People' }));
-        fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
+        fireEvent.click(getBotListHeaderButton('Account'));
 
         expect(await screen.findByRole('switch', { name: 'Notifications on this device' }))
             .toBeTruthy();
@@ -209,8 +216,8 @@ describe('App bot list', () => {
             expect(getHubContext)
                 .toHaveBeenCalled();
         });
-        fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
-        fireEvent.click(screen.getByRole('button', { name: 'People' }));
+        fireEvent.click(getBotListHeaderButton('Account'));
+        fireEvent.click(getBotListHeaderButton('People'));
 
         expect(await screen.findByText('Only the owner of the hub adds people'))
             .toBeTruthy();
@@ -226,8 +233,8 @@ describe('App bot list', () => {
 
         render(<App />);
 
-        fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
-        fireEvent.click(screen.getByRole('button', { name: 'People' }));
+        fireEvent.click(getBotListHeaderButton('Account'));
+        fireEvent.click(getBotListHeaderButton('People'));
 
         expect(await screen.findByRole('heading', { name: 'People' }))
             .toBeTruthy();

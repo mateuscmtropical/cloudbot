@@ -116,6 +116,18 @@ svg {
     padding: var(--space-3) var(--space-4);
 }
 
+.bot-list-header-spacer {
+    width: var(--size-round-button);
+    height: var(--size-round-button);
+    flex: none;
+}
+
+.bot-list-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
 .bot-items {
     flex: 1;
     overflow-y: auto;
@@ -140,6 +152,40 @@ svg {
 
 .bot-item:hover {
     background: transparent;
+}
+
+.bot-list-item-wrap {
+    position: relative;
+}
+
+.bot-actions-menu {
+    position: absolute;
+    top: 50%;
+    right: var(--space-1);
+    z-index: 2;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.bot-list-item-wrap:focus-within > .bot-item {
+    padding-right: calc(var(--size-round-button) + var(--space-3));
+}
+
+.bot-list-item-wrap:focus-within .bot-actions-menu {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .bot-list-item-wrap:hover > .bot-item {
+        padding-right: calc(var(--size-round-button) + var(--space-3));
+    }
+
+    .bot-list-item-wrap:hover .bot-actions-menu {
+        opacity: 1;
+        pointer-events: auto;
+    }
 }
 
 .bot-name-line {
@@ -563,6 +609,11 @@ svg {
     color: var(--color-text-muted);
 }
 
+.popover-menu-item.is-danger,
+.popover-menu-item.is-danger .popover-menu-item-icon {
+    color: var(--color-danger);
+}
+
 .popover-provider-entry {
     display: flex;
     flex-direction: column;
@@ -690,6 +741,78 @@ button.list-row {
 .list-row-chevron {
     font-size: 1.5rem;
     line-height: 1;
+}
+
+.bot-list .list-row.channel-list-row {
+    min-height: 77px;
+    padding: var(--space-2);
+}
+
+.channel-list-row .list-row-copy {
+    gap: 2px;
+}
+
+.channel-list-row .list-row-title {
+    overflow: hidden;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.channel-list-row .list-row-description {
+    overflow: hidden;
+    font-size: 0.9375rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.confirm-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    place-items: center;
+    padding: var(--space-4);
+    background: rgb(0 0 0 / 0.56);
+}
+
+.confirm-dialog {
+    width: min(360px, 100%);
+    padding: var(--space-4);
+    border: 1px solid var(--color-surface-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface-raised);
+    box-shadow: 0 8px 28px rgb(0 0 0 / 0.4);
+    color: var(--color-text);
+}
+
+.confirm-dialog h2 {
+    margin: 0 0 var(--space-2);
+    font-size: 1.125rem;
+}
+
+.confirm-dialog p {
+    margin: 0;
+    color: var(--color-text-muted);
+}
+
+.confirm-dialog .confirm-dialog-error {
+    margin-top: var(--space-2);
+    color: var(--color-danger);
+}
+
+.confirm-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+}
+
+.choice-button.is-danger {
+    border-color: var(--color-danger);
+    background: var(--color-danger);
+    color: #fff;
 }
 
 /* Conversation */

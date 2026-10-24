@@ -13,7 +13,7 @@ import type { MascotHop, MascotHopPoint } from './mascotHop.ts';
 import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
-import { createBot, getChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToAllBotEvents, subscribeToEvents, uploadAttachments, listUploads, removeUpload, renameBot } from './apiClient.ts';
+import { createBot, deleteBot, getChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToAllBotEvents, subscribeToEvents, uploadAttachments, listUploads, removeUpload, renameBot } from './apiClient.ts';
 import { mergeLoadedUploads } from './attachmentChips.ts';
 import { loadSeen, markUnread, saveSeen, updateSeen } from './unreadMarks.ts';
 import { applyTabIcon } from './tabIcon.ts';
@@ -210,6 +210,19 @@ function App(): ReactElement {
 
     const messagesRef = useRef<ChatMessage[]>([]);
     const selectedBotIdRef = useRef<string | undefined>(undefined);
+    const refreshBotsAfterDeletion = useCallback((): Promise<void> => {
+        return listBots()
+            .then((loadedBots) => {
+                setBots(loadedBots);
+
+                if (!loadedBots.some(bot => bot.id === selectedBotIdRef.current)) {
+                    setSelectedBotId(loadedBots[0]?.id);
+                }
+            })
+            .catch(() => {
+                setErrorText('Could not load your bots.');
+            });
+    }, []);
     // Checked before the state updates, so a fast second scroll cannot start a duplicate request.
     const olderLoadsInFlightRef = useRef(new Set<string>());
     const generationsRef = useRef<Record<string, number>>({});
@@ -585,19 +598,9 @@ function App(): ReactElement {
                 return;
             }
 
-            // The bot deleted itself. Its row is gone already, so the list that comes back is the right one.
+            // A deleted bot leaves the list and moves the selection to the first one that remains.
             if (event.type === 'botDeleted') {
-                listBots()
-                    .then((loadedBots) => {
-                        setBots(loadedBots);
-
-                        if (!loadedBots.some(bot => bot.id === selectedBotIdRef.current)) {
-                            setSelectedBotId(loadedBots[0]?.id);
-                        }
-                    })
-                    .catch(() => {
-                        setErrorText('Could not load your bots.');
-                    });
+                void refreshBotsAfterDeletion();
 
                 return;
             }
@@ -685,7 +688,7 @@ function App(): ReactElement {
             flushPendingDraft();
             unsubscribe();
         };
-    }, [selectedBotId, loadPendingUploads]);
+    }, [selectedBotId, loadPendingUploads, refreshBotsAfterDeletion]);
 
     const showMessageResult = useCallback((resultPromise: Promise<ChatMessage>): void => {
         resultPromise
@@ -838,6 +841,20 @@ function App(): ReactElement {
                 const serverMessage = error instanceof RequestFailedError ? error.serverMessage : undefined;
 
                 return serverMessage ?? 'The name could not be changed.';
+            });
+    }
+
+    function handleDeleteBot(botId: string): Promise<string | undefined> {
+        return deleteBot(botId)
+            .then(async () => {
+                await refreshBotsAfterDeletion();
+
+                return undefined;
+            })
+            .catch((error: unknown) => {
+                const serverMessage = error instanceof RequestFailedError ? error.serverMessage : undefined;
+
+                return serverMessage ?? 'The bot could not be deleted.';
             });
     }
 
@@ -1200,6 +1217,7 @@ function App(): ReactElement {
                 onSelectChannel={handleSelectChannel}
                 onNewBot={handleNewBot}
                 onRenameBot={handleRenameBot}
+                onDeleteBot={handleDeleteBot}
                 personName={personName}
                 onConnectApps={() => {
                     setIsBotListOpen(false);

@@ -176,6 +176,23 @@ function PeopleIcon(): ReactElement {
     );
 }
 
+function EditIcon(): ReactElement {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m4 16.5-.8 4.3 4.3-.8L20 7.5 16.5 4z" />
+            <path d="m14.8 5.7 3.5 3.5" />
+        </svg>
+    );
+}
+
+function TrashIcon(): ReactElement {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16m-10 0V4h4v3m4 0-.8 13H6.8L6 7m4 4v5m4-5v5" />
+        </svg>
+    );
+}
+
 export {
     AppsGridIcon,
     BackIcon,
@@ -184,6 +201,7 @@ export {
     ClockIcon,
     CloseIcon,
     CodeIcon,
+    EditIcon,
     FilterIcon,
     FolderIcon,
     ImageIcon,
@@ -196,5 +214,6 @@ export {
     SearchIcon,
     SendArrowIcon,
     ShareIcon,
+    TrashIcon,
     WaveformIcon,
 };

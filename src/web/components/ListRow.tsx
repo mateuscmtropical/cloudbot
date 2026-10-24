@@ -10,6 +10,7 @@ interface ListRowProps {
     chevron?: boolean;
     href?: string | undefined;
     ariaLabel?: string | undefined;
+    ariaCurrent?: boolean | undefined;
     onClick?: MouseEventHandler<HTMLButtonElement> | undefined;
     className?: string | undefined;
 }
@@ -30,16 +31,16 @@ function ListRowContent({ title, description, value, leadingIcon, trailingContro
 }
 
 function ListRow(props: ListRowProps): ReactElement {
-    const { href, onClick, className } = props;
+    const { href, onClick, className, ariaCurrent } = props;
     const rootClassName = className === undefined ? 'list-row' : `list-row ${className}`;
     const content = <ListRowContent {...props} />;
 
     if (href !== undefined) {
-        return <a className={rootClassName} href={href} aria-label={props.ariaLabel}>{content}</a>;
+        return <a className={rootClassName} href={href} aria-label={props.ariaLabel} aria-current={ariaCurrent === true ? 'true' : undefined}>{content}</a>;
     }
 
     if (onClick !== undefined) {
-        return <button type="button" className={rootClassName} onClick={onClick} aria-label={props.ariaLabel}>{content}</button>;
+        return <button type="button" className={rootClassName} aria-label={props.ariaLabel} aria-current={ariaCurrent === true ? 'true' : undefined} onClick={onClick}>{content}</button>;
     }
 
     return <div className={rootClassName}>{content}</div>;
