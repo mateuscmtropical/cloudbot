@@ -7,6 +7,7 @@ import type { ConnectedAppSummary } from '../../shared/connectedApps.ts';
 import { listConnectedApps, removeConnectedApp, startAppConnection, startAppSignIn } from '../apiClient.ts';
 import { APP_CATALOG, APP_CATEGORIES } from '../appCatalog.ts';
 import { APP_SIGN_IN_CHANNEL } from '../appReturn.ts';
+import { APP_LOGOS } from '../appLogos.ts';
 import { ConnectAppsPanel } from './ConnectAppsPanel.tsx';
 
 vi.mock('../apiClient.ts', () => ({
@@ -78,8 +79,12 @@ describe('ConnectAppsPanel', () => {
             .toBeTruthy();
         expect(screen.getByRole('button', { name: 'Add custom app' }))
             .toBeTruthy();
+        const logoCount = Object.keys(APP_LOGOS).length;
+
+        expect(container.querySelectorAll('.connect-app-icon-logo'))
+            .toHaveLength(logoCount);
         expect(container.querySelectorAll('.connect-app-icon-app'))
-            .toHaveLength(APP_CATALOG.length);
+            .toHaveLength(APP_CATALOG.length - logoCount);
         expect(container.querySelectorAll('.connect-app-icon-custom'))
             .toHaveLength(1);
         expect(screen.getByRole('button', { name: 'All', pressed: true }))
@@ -94,6 +99,50 @@ describe('ConnectAppsPanel', () => {
             .not.toContain('tools');
     });
 
+    it('shows the logo of an app that has one and the initial of an app that does not', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        await screen.findByRole('region', { name: 'All apps' });
+
+        const linearRow = screen.getByText('Linear')
+            .closest('.connect-app-card');
+        const granolaRow = screen.getByText('Granola')
+            .closest('.connect-app-card');
+        const linearIcon = linearRow?.querySelector('.connect-app-icon');
+        const granolaIcon = granolaRow?.querySelector('.connect-app-icon');
+
+        expect(linearIcon?.querySelector('svg path')
+            ?.getAttribute('d'))
+            .toBe(APP_LOGOS.linear?.path);
+        expect(linearIcon?.textContent)
+            .toBe('');
+        expect(granolaIcon?.querySelector('svg'))
+            .toBeNull();
+        expect(granolaIcon?.textContent)
+            .toBe('G');
+    });
+    it('lists the catalog apps alphabetically by name', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+
+        const { container } = render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+
+        await screen.findByRole('region', { name: 'All apps' });
+
+        const cardTitles = Array.from(container.querySelectorAll('.connect-app-card-title'))
+            .map(title => title.textContent);
+        const sortedTitles = [...cardTitles]
+            .sort((first, second) => first.localeCompare(second, 'en', { sensitivity: 'base' }));
+
+        expect(cardTitles)
+            .toHaveLength(APP_CATALOG.length);
+        expect(cardTitles)
+            .toEqual(sortedTitles);
+        expect(cardTitles[0])
+            .toBe('Airtable');
+    });
     it('gives every category a chip and shows only its apps when pressed', async () => {
         vi.mocked(listConnectedApps)
             .mockResolvedValue([]);

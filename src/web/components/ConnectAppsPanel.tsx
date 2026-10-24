@@ -6,6 +6,7 @@ import { listConnectedApps, removeConnectedApp, startAppConnection, startAppSign
 import { APP_CATALOG, APP_CATEGORIES } from '../appCatalog.ts';
 import type { AppCategory, CatalogApp } from '../appCatalog.ts';
 import { APP_SIGN_IN_CHANNEL, describeAppReturn, readAppReturnMessage } from '../appReturn.ts';
+import { APP_LOGOS, getLogoGlyphColor } from '../appLogos.ts';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
 import { CloseIcon, FilterIcon, SearchIcon } from './icons.tsx';
@@ -35,6 +36,9 @@ const ALL_CATEGORIES: CategoryFilter = 'All';
 const CATEGORY_FILTERS: CategoryFilter[] = [ALL_CATEGORIES, ...APP_CATEGORIES];
 // The server keeps a sign-in for ten minutes.
 const SIGN_IN_WAIT_LIMIT_MS = 10 * 60 * 1000;
+// The catalog file keeps its own order. The panel shows the apps alphabetically.
+const SORTED_CATALOG = [...APP_CATALOG]
+    .sort((first, second) => first.displayName.localeCompare(second.displayName, 'en', { sensitivity: 'base' }));
 
 function getStatusLabel(status: ConnectedAppStatus): string {
     if (status === 'needs_token') {
@@ -109,6 +113,18 @@ function CustomAppIcon(): ReactElement {
 }
 
 function AppIcon({ app }: AppIconProps): ReactElement {
+    const logo = APP_LOGOS[app.serverName];
+
+    if (logo !== undefined) {
+        return (
+            <span className="connect-app-icon connect-app-icon-logo" aria-hidden="true">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d={logo.path} fill={getLogoGlyphColor(logo.color)} />
+                </svg>
+            </span>
+        );
+    }
+
     const iconStyle: AppIconStyle = { '--app-hue': getAppHue(app.serverName) };
     const initial = app.displayName.charAt(0)
         .toUpperCase();
@@ -290,7 +306,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
     const searchTerm = searchQuery.trim()
         .toLowerCase();
     const customApps = apps.filter(app => !APP_CATALOG.some(catalogApp => catalogApp.serverName === app.name));
-    const filteredCatalogApps = APP_CATALOG.filter((catalogApp) => {
+    const filteredCatalogApps = SORTED_CATALOG.filter((catalogApp) => {
         const connectedApp = apps.find(app => app.name === catalogApp.serverName);
         const matchesCategory = selectedCategory === ALL_CATEGORIES || catalogApp.category === selectedCategory;
         const matchesInstalledFilter = !isShowingInstalledOnly || connectedApp !== undefined;
@@ -377,49 +393,51 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
             <div className="connect-app-sections">
                 <div className="connect-app-section">
                     <ListGroup label={groupLabel} className="connect-app-group">
-                        {filteredCatalogApps.map((catalogApp) => {
-                            const connectedApp = apps.find(app => app.name === catalogApp.serverName);
-                            const isStarting = startingAppName === catalogApp.serverName;
-                            const description = connectedApp === undefined ? catalogApp.description : getStatusLabel(connectedApp.status);
-                            const actionButton = connectedApp?.status !== 'connected'
-                                ? (
-                                        <button
-                                            type="button"
-                                            className="connect-app-action"
-                                            disabled={selectedBotId === undefined || startingAppName !== undefined}
-                                            aria-label={`Connect ${catalogApp.displayName}`}
-                                            onClick={() => {
-                                                handleConnect(catalogApp.serverName, catalogApp.url);
-                                            }}
-                                        >
-                                            {isStarting ? startingLabel : 'Connect'}
-                                        </button>
-                                    )
-                                : (
-                                        <button
-                                            type="button"
-                                            className="connect-app-action"
-                                            disabled={removingIds.includes(connectedApp.id)}
-                                            aria-label={`Remove ${catalogApp.displayName}`}
-                                            onClick={() => {
-                                                handleRemove(connectedApp.id);
-                                            }}
-                                        >
-                                            Remove
-                                        </button>
-                                    );
+                        <div className="connect-app-grid">
+                            {filteredCatalogApps.map((catalogApp) => {
+                                const connectedApp = apps.find(app => app.name === catalogApp.serverName);
+                                const isStarting = startingAppName === catalogApp.serverName;
+                                const description = connectedApp === undefined ? catalogApp.description : getStatusLabel(connectedApp.status);
+                                const actionButton = connectedApp?.status !== 'connected'
+                                    ? (
+                                            <button
+                                                type="button"
+                                                className="connect-app-action"
+                                                disabled={selectedBotId === undefined || startingAppName !== undefined}
+                                                aria-label={`Connect ${catalogApp.displayName}`}
+                                                onClick={() => {
+                                                    handleConnect(catalogApp.serverName, catalogApp.url);
+                                                }}
+                                            >
+                                                {isStarting ? startingLabel : 'Connect'}
+                                            </button>
+                                        )
+                                    : (
+                                            <button
+                                                type="button"
+                                                className="connect-app-action"
+                                                disabled={removingIds.includes(connectedApp.id)}
+                                                aria-label={`Remove ${catalogApp.displayName}`}
+                                                onClick={() => {
+                                                    handleRemove(connectedApp.id);
+                                                }}
+                                            >
+                                                Remove
+                                            </button>
+                                        );
 
-                            return (
-                                <ListRow
-                                    key={catalogApp.serverName}
-                                    className="connect-app-row"
-                                    title={catalogApp.displayName}
-                                    description={description}
-                                    leadingIcon={<AppIcon app={catalogApp} />}
-                                    trailingControl={actionButton}
-                                />
-                            );
-                        })}
+                                return (
+                                    <div key={catalogApp.serverName} className="connect-app-card">
+                                        <AppIcon app={catalogApp} />
+                                        <div className="connect-app-card-copy">
+                                            <span className="connect-app-card-title">{catalogApp.displayName}</span>
+                                            <span className="connect-app-card-description">{description}</span>
+                                        </div>
+                                        {actionButton}
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </ListGroup>
                 </div>
                 <div className="connect-app-section">
