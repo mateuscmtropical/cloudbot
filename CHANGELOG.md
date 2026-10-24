@@ -8,6 +8,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- `sudo cloudbot update` removes build cache older than one day instead of three days, so the disk of a server that builds the image does not keep several GB of fresh cache.
 - The CloudBot image is smaller. It keeps one copy of the Claude CLI and one OpenCode binary, and it drops the npm, uv and installer caches. The install guide says which `docker image ls` number to read for the image size.
 - The chat header uses a bot profile pill and a More menu for model and provider settings. Assistant replies use full-width cards, and the composer has attachment and voice controls.
 - The attachment menu offers file, photo and photo or video picker modes.

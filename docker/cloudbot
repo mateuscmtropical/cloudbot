@@ -74,11 +74,11 @@ remove_outdated_instances() {
     done
 }
 
-# Frees the disk after an update. Images no tag points to are removed, and so is build cache older than three days.
+# Frees the disk after an update. Images no tag points to are removed, and so is build cache older than one day.
 # An image that a running instance still uses stays, so run it after remove_outdated_instances.
 prune_old_images() {
     docker image prune -f
-    docker builder prune -f --filter until=72h
+    docker builder prune -f --filter until=24h
 }
 
 command_update() {

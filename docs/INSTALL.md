@@ -144,7 +144,7 @@ sudo cloudbot update --all
 ```
 
 The update also removes images that no tag points to and build cache older than
-three days. An old image stays while an instance still runs on it, so it goes
+one day. An old image stays while an instance still runs on it, so it goes
 after the next `--all`.
 
 To move one person only, remove that container:
