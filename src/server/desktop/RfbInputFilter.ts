@@ -1,7 +1,7 @@
 import { isValidDesktopSize } from '../../shared/desktopSize.ts';
 import type { DesktopSize } from '../../shared/desktopSize.ts';
 
-// Filters the bytes a VNC client sends to TigerVNC. While the bot holds the screen, key events,
+// Filters the bytes a VNC client sends to TigerVNC. While the bot holds the screen, key events (plain and QEMU),
 // pointer events, clipboard text and desktop resize requests are dropped. Other messages pass.
 // TigerVNC has no password, so the handshake is: 12 bytes of version, 1 byte of security type, 1 byte of ClientInit.
 // Only RFB 3.8 is accepted. Older versions let the server pick the security type, so the framing below would shift by a byte.
@@ -13,11 +13,23 @@ const FRAMEBUFFER_UPDATE_REQUEST = 3;
 const KEY_EVENT = 4;
 const POINTER_EVENT = 5;
 const CLIENT_CUT_TEXT = 6;
+// noVNC asks TigerVNC for these extensions, and then sends their messages too.
+const ENABLE_CONTINUOUS_UPDATES = 150;
+const CLIENT_FENCE = 248;
 const SET_DESKTOP_SIZE = 251;
+const QEMU_CLIENT_MESSAGE = 255;
+// The only QEMU message noVNC sends: a key event with the scan code.
+const QEMU_EXTENDED_KEY_EVENT = 0;
 const SET_PIXEL_FORMAT_BYTES = 20;
 const FRAMEBUFFER_UPDATE_REQUEST_BYTES = 10;
 const KEY_EVENT_BYTES = 8;
 const POINTER_EVENT_BYTES = 6;
+// With extended mouse buttons, the high bit of the button byte is set and one more byte of buttons follows the position.
+const EXTENDED_POINTER_EVENT_BYTES = 7;
+const EXTENDED_POINTER_MARKER = 0x80;
+const ENABLE_CONTINUOUS_UPDATES_BYTES = 10;
+const CLIENT_FENCE_HEADER_BYTES = 9;
+const QEMU_EXTENDED_KEY_EVENT_BYTES = 12;
 const SET_DESKTOP_SIZE_BYTES = 24;
 const SET_ENCODINGS_HEADER_BYTES = 4;
 const ENCODING_BYTES = 4;
@@ -121,9 +133,10 @@ class RfbInputFilter {
         }
 
         // A key release always passes, so a key held when the screen changes hands does not stay down.
-        const isKeyRelease = type === KEY_EVENT && this.pending[1] === 0;
-        const isInput = type === KEY_EVENT || type === POINTER_EVENT || type === CLIENT_CUT_TEXT || isDesktopResize;
-        const buttons = type === POINTER_EVENT ? this.pending[1] ?? 0 : 0;
+        const isQemuKey = type === QEMU_CLIENT_MESSAGE;
+        const isKeyRelease = (type === KEY_EVENT && this.pending[1] === 0) || (isQemuKey && this.pending.readUInt16BE(2) === 0);
+        const isInput = type === KEY_EVENT || isQemuKey || type === POINTER_EVENT || type === CLIENT_CUT_TEXT || isDesktopResize;
+        const buttons = type === POINTER_EVENT ? this.readPointerButtons() : 0;
         const requestedSize = isDesktopResize
             ? { width: this.pending.readUInt16BE(2), height: this.pending.readUInt16BE(4) }
             : undefined;
@@ -160,6 +173,19 @@ class RfbInputFilter {
         return Math.abs(length);
     }
 
+    // The buttons held in the first pending pointer message. An extended message keeps buttons 8 and 9 in its last byte.
+    private readPointerButtons(): number {
+        const lowButtons = this.pending[1] ?? 0;
+
+        if ((lowButtons & EXTENDED_POINTER_MARKER) === 0) {
+            return lowButtons;
+        }
+
+        const highButtons = this.pending[6] ?? 0;
+
+        return (lowButtons & ~EXTENDED_POINTER_MARKER) | (highButtons << 7);
+    }
+
     // The size of the first pending message, or undefined when its header is not complete.
     private messageSize(): number | undefined {
         switch (this.pending[0]) {
@@ -170,7 +196,27 @@ class RfbInputFilter {
             case KEY_EVENT:
                 return KEY_EVENT_BYTES;
             case POINTER_EVENT:
-                return POINTER_EVENT_BYTES;
+                if (this.pending.length < 2) {
+                    return undefined;
+                }
+
+                return ((this.pending[1] ?? 0) & EXTENDED_POINTER_MARKER) === 0 ? POINTER_EVENT_BYTES : EXTENDED_POINTER_EVENT_BYTES;
+            case ENABLE_CONTINUOUS_UPDATES:
+                return ENABLE_CONTINUOUS_UPDATES_BYTES;
+            case CLIENT_FENCE:
+                return this.pending.length < CLIENT_FENCE_HEADER_BYTES
+                    ? undefined
+                    : CLIENT_FENCE_HEADER_BYTES + (this.pending[CLIENT_FENCE_HEADER_BYTES - 1] ?? 0);
+            case QEMU_CLIENT_MESSAGE:
+                if (this.pending.length < 2) {
+                    return undefined;
+                }
+
+                if (this.pending[1] !== QEMU_EXTENDED_KEY_EVENT) {
+                    throw new RfbStreamError('The QEMU message is not known.');
+                }
+
+                return QEMU_EXTENDED_KEY_EVENT_BYTES;
             case SET_ENCODINGS:
                 return this.pending.length < SET_ENCODINGS_HEADER_BYTES
                     ? undefined

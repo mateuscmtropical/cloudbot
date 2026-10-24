@@ -199,8 +199,59 @@ describe('RfbInputFilter', () => {
     it('refuses a message type it cannot frame', () => {
         const filter = startedFilter(() => false);
 
-        expect(() => filter.filter(Buffer.from([255, 0, 0, 0])))
+        expect(() => filter.filter(Buffer.from([200, 0, 0, 0])))
             .toThrow(RfbStreamError);
+    });
+
+    it('passes the fence and continuous updates messages that noVNC sends after the handshake', () => {
+        const filter = startedFilter(() => false);
+        const fence = Buffer.from([248, 0, 0, 0, 0x80, 0, 0, 3, 2, 7, 9]);
+        const continuousUpdates = Buffer.from([150, 1, 0, 0, 0, 0, 5, 0, 3, 0]);
+        const all = Buffer.concat([fence, continuousUpdates, UPDATE_REQUEST]);
+
+        expect(filter.filter(all))
+            .toEqual(all);
+    });
+
+    it('frames a fence that arrives in pieces', () => {
+        const filter = startedFilter(() => false);
+        const fence = Buffer.from([248, 0, 0, 0, 0x80, 0, 0, 3, 2, 7, 9]);
+
+        expect(filter.filter(fence.subarray(0, 5)))
+            .toHaveLength(0);
+        expect(filter.filter(Buffer.concat([fence.subarray(5), UPDATE_REQUEST])))
+            .toEqual(Buffer.concat([fence, UPDATE_REQUEST]));
+    });
+
+    it('treats the QEMU key event as a key', () => {
+        const filter = startedFilter(() => false);
+        const qemuKeyDown = Buffer.from([255, 0, 0, 1, 0, 0, 0, 97, 0, 0, 0, 30]);
+        const qemuKeyUp = Buffer.from([255, 0, 0, 0, 0, 0, 0, 97, 0, 0, 0, 30]);
+
+        expect(filter.filter(Buffer.concat([qemuKeyDown, qemuKeyUp, UPDATE_REQUEST])))
+            .toEqual(Buffer.concat([qemuKeyUp, UPDATE_REQUEST]));
+    });
+
+    it('refuses a QEMU message other than the key event', () => {
+        const filter = startedFilter(() => true);
+
+        expect(() => filter.filter(Buffer.from([255, 1, 0, 0])))
+            .toThrow(RfbStreamError);
+    });
+
+    it('frames the extended pointer event and reads its high buttons', () => {
+        let isAllowed = true;
+        const filter = startedFilter(() => isAllowed);
+        const pressBack = Buffer.from([5, 0x80, 0, 10, 0, 10, 1]);
+        const release = Buffer.from([5, 0x80, 0, 10, 0, 10, 0]);
+
+        expect(filter.filter(Buffer.concat([pressBack, UPDATE_REQUEST])))
+            .toEqual(Buffer.concat([pressBack, UPDATE_REQUEST]));
+
+        isAllowed = false;
+
+        expect(filter.filter(Buffer.concat([pressBack, release, UPDATE_REQUEST])))
+            .toEqual(Buffer.concat([release, UPDATE_REQUEST]));
     });
 
     it('frames the extended clipboard message of noVNC, which has a negative length', () => {
