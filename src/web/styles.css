@@ -396,63 +396,152 @@ svg {
     display: none;
 }
 
-/* The connected apps panel floats over the chat, and scrolls when the list is long. */
+/* Connected apps use a page layout on phones and a contained sheet on wide screens. */
 .connect-apps-panel {
     position: fixed;
-    top: 10vh;
+    top: 50%;
     left: 50%;
     z-index: 20;
-    width: min(480px, calc(100vw - 32px));
-    max-height: 70vh;
-    padding: 16px;
-    overflow: auto;
-    border-radius: 12px;
-    background: var(--color-surface-raised);
+    display: flex;
+    flex-direction: column;
+    width: min(560px, calc(100vw - 32px));
+    max-height: 82vh;
+    padding: var(--space-4);
+    overflow-y: auto;
+    border-radius: var(--radius-card);
+    background: var(--color-background);
     color: var(--color-text);
-    transform: translateX(-50%);
+    transform: translate(-50%, -50%);
 }
 
 .connect-apps-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: var(--space-3);
+    min-width: 0;
 }
 
-.connect-apps-header h3 {
+.connect-apps-header h1 {
+    flex: 1;
+    min-width: 0;
     margin: 0;
+    overflow: hidden;
+    font-size: 1.125rem;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-/* The panel itself is raised, so its buttons use the plain surface to stand out. */
-.connect-apps-panel button:not(.icon-button) {
-    padding: 4px 12px;
-    border: none;
-    border-radius: 999px;
-    background: var(--color-surface);
+.connect-app-installed-count {
+    flex: none;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
+    background: var(--color-surface-raised);
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+    white-space: nowrap;
+}
+
+.connect-app-search-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+}
+
+.connect-app-search-field {
+    flex: 1;
+    min-width: 0;
+}
+
+.connect-app-search-field input {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+}
+
+.connect-app-search-field input::placeholder {
+    color: var(--color-text-muted);
+    opacity: 1;
+}
+
+.connect-app-sections {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+}
+
+.connect-app-section {
+    position: relative;
+}
+
+.connect-apps-panel .connect-app-group {
+    overflow: visible;
+    border-radius: 0;
+    background: transparent;
+}
+
+.connect-app-group .list-group-label {
+    padding: var(--space-3) var(--space-1) var(--space-2);
+}
+
+.connect-app-group .list-group-rows > .list-row + .list-row {
+    border-top: 0;
+}
+
+.connect-app-see-all {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-1);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.875rem;
+}
+
+.connect-app-see-all:hover {
     color: var(--color-text);
 }
 
-.connect-app-list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
+.connect-apps-panel .connect-app-group .connect-app-row {
+    min-height: 72px;
+    padding: var(--space-2) var(--space-1);
 }
 
-.connect-app-card,
-.connect-app-custom {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3) 0;
-    border-bottom: 1px solid var(--color-surface-raised);
+.connect-app-row .list-row-copy {
+    gap: var(--space-1);
+}
+
+.connect-app-row .list-row-title {
+    font-weight: 500;
+    font-size: 1.0625rem;
+}
+
+.connect-app-row .list-row-description {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: 0.9375rem;
+    line-height: 1.3;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
 }
 
 .connect-app-icon {
     display: grid;
     place-items: center;
-    width: 40px;
-    height: 40px;
-    flex-shrink: 0;
-    border-radius: 12px;
+    width: var(--size-round-button);
+    height: var(--size-round-button);
+    flex: none;
+    border-radius: var(--space-3);
     font-size: 1.1rem;
     font-weight: 700;
 }
@@ -463,47 +552,110 @@ svg {
 }
 
 .connect-app-icon-notion {
-    border: 1px solid var(--color-surface-raised);
-    background: #111;
-    color: #fff;
+    border: 1px solid var(--color-surface-border);
+    background: var(--color-surface-control);
+    color: var(--color-text);
 }
 
 .connect-app-icon-custom {
-    background: var(--color-surface);
+    background: var(--color-surface-raised);
     color: var(--color-text-muted);
 }
 
-.connect-app-copy {
+.connect-app-icon-custom svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+}
+
+.connect-app-action {
+    min-height: 32px;
+    padding: var(--space-1) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.9375rem;
+    white-space: nowrap;
+}
+
+.connect-app-action:disabled {
+    cursor: default;
+    opacity: 0.55;
+}
+
+.connect-app-custom-form {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-1);
+}
+
+.connect-app-custom-copy {
     display: flex;
     flex: 1;
     flex-direction: column;
-    min-width: 0;
     gap: var(--space-1);
-    overflow-wrap: anywhere;
+    min-width: 0;
 }
 
-.connect-app-copy > span,
-.connect-app-copy > label {
+.connect-app-custom-copy label {
     color: var(--color-text-muted);
-    font-size: 0.85em;
+    font-size: 0.875rem;
 }
 
-.connect-app-custom {
-    align-items: flex-start;
-    border-bottom: 0;
-}
-
-.connect-app-custom input {
+.connect-app-custom-copy input {
     width: 100%;
-    margin-top: var(--space-2);
-    padding: var(--space-2);
-    border: 1px solid var(--color-surface-raised);
+    min-width: 0;
+    margin-top: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-surface-border);
     border-radius: var(--radius-control);
-    background: var(--color-surface);
+    background: var(--color-surface-control);
+    color: var(--color-text);
+    font: inherit;
 }
 
-.connect-app-custom button {
-    margin-top: var(--space-2);
+.connect-app-custom-form > .connect-app-action {
+    flex: none;
+    margin-top: var(--space-3);
+}
+
+.connect-app-message,
+.connect-app-problem {
+    margin: var(--space-3) var(--space-1) 0;
+}
+
+.connect-app-message {
+    color: var(--color-text-muted);
+}
+
+.connect-app-problem {
+    color: var(--color-danger);
+}
+
+@media (max-width: 600px) {
+    .connect-apps-panel {
+        inset: 0;
+        width: auto;
+        height: 100vh;
+        height: 100dvh;
+        max-height: none;
+        padding: max(var(--space-3), env(safe-area-inset-top)) var(--space-4) max(var(--space-4), env(safe-area-inset-bottom));
+        border-radius: 0;
+        transform: none;
+        animation: none;
+    }
+
+    .connect-apps-header {
+        min-height: var(--size-round-button);
+    }
 }
 
 /* Buttons */
@@ -1442,7 +1594,7 @@ button.list-row {
 @keyframes centered-drop-in {
     from {
         opacity: 0;
-        transform: translate(-50%, -6px);
+        transform: translate(-50%, calc(-50% - var(--space-2)));
     }
 }
 
@@ -1460,6 +1612,12 @@ button.list-row {
 
 .connect-apps-panel {
     animation: centered-drop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (max-width: 600px) {
+    .connect-apps-panel {
+        animation: none;
+    }
 }
 
 /* A short press gives the tap some weight. */

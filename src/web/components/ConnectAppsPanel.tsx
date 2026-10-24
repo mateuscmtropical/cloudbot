@@ -3,7 +3,11 @@ import type { ReactElement, SyntheticEvent } from 'react';
 
 import type { ConnectedAppStatus, ConnectedAppSummary } from '../../shared/connectedApps.ts';
 import { listConnectedApps, removeConnectedApp, startAppConnection } from '../apiClient.ts';
-import { CloseIcon } from './CloseIcon.tsx';
+import { ListGroup } from './ListGroup.tsx';
+import { ListRow } from './ListRow.tsx';
+import { CloseIcon, FilterIcon, SearchIcon } from './icons.tsx';
+import { PillField } from './PillField.tsx';
+import { RoundButton } from './RoundButton.tsx';
 
 interface ConnectAppsPanelProps {
     onClose: () => void;
@@ -29,7 +33,7 @@ const KNOWN_APPS: KnownApp[] = [
     {
         serverName: 'linear',
         displayName: 'Linear',
-        description: 'Find issues and update your team’s work.',
+        description: 'Find issues and update team projects.',
         url: 'https://mcp.linear.app/mcp',
         icon: 'linear',
     },
@@ -112,8 +116,11 @@ function ConnectAppsPanel({ onClose, selectedBotId }: ConnectAppsPanelProps): Re
     const [loadState, setLoadState] = useState<LoadState>('loading');
     const [problem, setProblem] = useState<string | undefined>(undefined);
     const [customAddress, setCustomAddress] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
     const [startingAppName, setStartingAppName] = useState<string | undefined>(undefined);
     const [removingIds, setRemovingIds] = useState<string[]>([]);
+    const [isShowingInstalledOnly, setIsShowingInstalledOnly] = useState(false);
+    const [isCustomFormOpen, setIsCustomFormOpen] = useState(false);
 
     useEffect(() => {
         let isCurrent = true;
@@ -193,35 +200,83 @@ function ConnectAppsPanel({ onClose, selectedBotId }: ConnectAppsPanelProps): Re
             });
     }
 
+    function showAllApps(): void {
+        setSearchQuery('');
+        setIsShowingInstalledOnly(false);
+    }
+
+    const searchTerm = searchQuery.trim()
+        .toLowerCase();
     const customApps = apps.filter(app => !KNOWN_APPS.some(knownApp => knownApp.serverName === app.name));
+    const filteredKnownApps = KNOWN_APPS.filter((knownApp) => {
+        const connectedApp = apps.find(app => app.name === knownApp.serverName);
+        const matchesInstalledFilter = !isShowingInstalledOnly || connectedApp !== undefined;
+        const knownAppName = knownApp.displayName.toLowerCase();
+        const matchesSearch = searchTerm.length === 0 || knownAppName.includes(searchTerm);
+
+        return matchesInstalledFilter && matchesSearch;
+    });
+    const filteredCustomApps = customApps.filter((app) => {
+        const displayName = getCustomDisplayName(app);
+        const normalizedDisplayName = displayName.toLowerCase();
+
+        return searchTerm.length === 0 || normalizedDisplayName.includes(searchTerm);
+    });
+    const hasMatchingApps = filteredKnownApps.length > 0 || filteredCustomApps.length > 0;
+    const installedCount = apps.length.toString();
+    const installedCountAccessibleLabel = `${installedCount} installed apps`;
+    const installedCountLabel = `${installedCount} installed`;
 
     return (
-        <section aria-label="Connect apps" className="webhook-section connect-apps-panel">
+        <section aria-label="Connect apps" className="connect-apps-panel">
             <header className="connect-apps-header">
-                <h3>Connect apps</h3>
-                <button type="button" className="icon-button" aria-label="Close connect apps" onClick={onClose}><CloseIcon /></button>
+                <RoundButton label="Close connect apps" onClick={onClose}><CloseIcon /></RoundButton>
+                <h1>Connect apps</h1>
+                <span className="connect-app-installed-count" aria-label={installedCountAccessibleLabel}>
+                    {installedCountLabel}
+                </span>
             </header>
-            <p className="rules-help">Give your bot access to an app. Connect starts the sign-in flow in your chat.</p>
-            {selectedBotId === undefined ? <p className="rules-problem">Choose a bot before connecting an app.</p> : null}
-            {loadState === 'loading' ? <p>Loading apps...</p> : null}
-            {loadState === 'failed' ? <p className="rules-problem">The connected apps could not be loaded.</p> : null}
-            {problem === undefined ? null : <p className="rules-problem" role="alert">{problem}</p>}
-            <ul className="connect-app-list">
-                {KNOWN_APPS.map((knownApp) => {
-                    const connectedApp = apps.find(app => app.name === knownApp.serverName);
-                    const isStarting = startingAppName === knownApp.serverName;
-
-                    return (
-                        <li key={knownApp.serverName} className="connect-app-card">
-                            <AppIcon name={knownApp.icon} />
-                            <div className="connect-app-copy">
-                                <strong>{knownApp.displayName}</strong>
-                                {connectedApp === undefined ? <span>{knownApp.description}</span> : <span>{getStatusLabel(connectedApp.status)}</span>}
-                            </div>
-                            {connectedApp === undefined
+            <div className="connect-app-search-row">
+                <PillField leftIcon={<SearchIcon />} className="connect-app-search-field">
+                    <input
+                        type="search"
+                        aria-label="Search apps"
+                        placeholder="Search apps"
+                        value={searchQuery}
+                        onChange={(event) => {
+                            setSearchQuery(event.currentTarget.value);
+                        }}
+                    />
+                </PillField>
+                <RoundButton
+                    label={isShowingInstalledOnly ? 'Show all apps' : 'Show installed apps'}
+                    tone={isShowingInstalledOnly ? 'accent' : 'default'}
+                    onClick={() => {
+                        setIsShowingInstalledOnly(currentValue => !currentValue);
+                    }}
+                >
+                    <FilterIcon />
+                </RoundButton>
+            </div>
+            {selectedBotId === undefined ? <p className="connect-app-problem">Choose a bot before connecting an app.</p> : null}
+            {loadState === 'loading' ? <p className="connect-app-message">Loading apps...</p> : null}
+            {loadState === 'failed' ? <p className="connect-app-problem">The connected apps could not be loaded.</p> : null}
+            {problem === undefined ? null : <p className="connect-app-problem" role="alert">{problem}</p>}
+            {!hasMatchingApps && loadState === 'ready'
+                ? <p className="connect-app-message">No apps match your search.</p>
+                : null}
+            <div className="connect-app-sections">
+                <div className="connect-app-section">
+                    <ListGroup label="Featured" className="connect-app-group">
+                        {filteredKnownApps.map((knownApp) => {
+                            const connectedApp = apps.find(app => app.name === knownApp.serverName);
+                            const isStarting = startingAppName === knownApp.serverName;
+                            const description = connectedApp === undefined ? knownApp.description : getStatusLabel(connectedApp.status);
+                            const actionButton = connectedApp === undefined
                                 ? (
                                         <button
                                             type="button"
+                                            className="connect-app-action"
                                             disabled={selectedBotId === undefined || startingAppName !== undefined}
                                             aria-label={`Connect ${knownApp.displayName}`}
                                             onClick={() => {
@@ -234,6 +289,7 @@ function ConnectAppsPanel({ onClose, selectedBotId }: ConnectAppsPanelProps): Re
                                 : (
                                         <button
                                             type="button"
+                                            className="connect-app-action"
                                             disabled={removingIds.includes(connectedApp.id)}
                                             aria-label={`Remove ${knownApp.displayName}`}
                                             onClick={() => {
@@ -242,53 +298,102 @@ function ConnectAppsPanel({ onClose, selectedBotId }: ConnectAppsPanelProps): Re
                                         >
                                             Remove
                                         </button>
-                                    )}
-                        </li>
-                    );
-                })}
-                {customApps.map((app) => {
-                    const displayName = getCustomDisplayName(app);
+                                    );
 
-                    return (
-                        <li key={app.id} className="connect-app-card">
-                            <AppIcon name="custom" />
-                            <div className="connect-app-copy">
-                                <strong>{displayName}</strong>
-                                <span>{getStatusLabel(app.status)}</span>
-                            </div>
-                            <button
-                                type="button"
-                                disabled={removingIds.includes(app.id)}
-                                aria-label={`Remove ${displayName}`}
-                                onClick={() => {
-                                    handleRemove(app.id);
-                                }}
-                            >
-                                Remove
-                            </button>
-                        </li>
-                    );
-                })}
-            </ul>
-            <form className="connect-app-custom" onSubmit={handleCustomSubmit}>
-                <AppIcon name="custom" />
-                <div className="connect-app-copy">
-                    <strong>Custom app</strong>
-                    <label htmlFor="custom-app-address">Connect any app by its address.</label>
-                    <input
-                        id="custom-app-address"
-                        type="url"
-                        placeholder="https://example.com/mcp"
-                        value={customAddress}
-                        onChange={(event) => {
-                            setCustomAddress(event.currentTarget.value);
-                        }}
-                    />
+                            return (
+                                <ListRow
+                                    key={knownApp.serverName}
+                                    className="connect-app-row"
+                                    title={knownApp.displayName}
+                                    description={description}
+                                    leadingIcon={<AppIcon name={knownApp.icon} />}
+                                    trailingControl={actionButton}
+                                />
+                            );
+                        })}
+                    </ListGroup>
+                    <button type="button" className="connect-app-see-all" aria-label="See all featured apps" onClick={showAllApps}>See all</button>
                 </div>
-                <button type="submit" aria-label="Connect custom app" disabled={selectedBotId === undefined || startingAppName !== undefined}>
-                    {startingAppName?.startsWith('custom-') ? 'Starting...' : 'Connect'}
-                </button>
-            </form>
+                <div className="connect-app-section">
+                    <ListGroup label="Custom" className="connect-app-group">
+                        {filteredCustomApps.map((app) => {
+                            const displayName = getCustomDisplayName(app);
+                            const removeButton = (
+                                <button
+                                    type="button"
+                                    className="connect-app-action"
+                                    disabled={removingIds.includes(app.id)}
+                                    aria-label={`Remove ${displayName}`}
+                                    onClick={() => {
+                                        handleRemove(app.id);
+                                    }}
+                                >
+                                    Remove
+                                </button>
+                            );
+
+                            return (
+                                <ListRow
+                                    key={app.id}
+                                    className="connect-app-row"
+                                    title={displayName}
+                                    description={getStatusLabel(app.status)}
+                                    leadingIcon={<AppIcon name="custom" />}
+                                    trailingControl={removeButton}
+                                />
+                            );
+                        })}
+                        <ListRow
+                            className="connect-app-row connect-app-add-row"
+                            title="Add custom app"
+                            description="Connect any app by its address."
+                            leadingIcon={<AppIcon name="custom" />}
+                            trailingControl={(
+                                <button
+                                    type="button"
+                                    className="connect-app-action"
+                                    aria-label="Add custom app"
+                                    aria-expanded={isCustomFormOpen}
+                                    onClick={() => {
+                                        setIsCustomFormOpen(currentValue => !currentValue);
+                                    }}
+                                >
+                                    {isCustomFormOpen ? 'Cancel' : 'Add'}
+                                </button>
+                            )}
+                        />
+                        {isCustomFormOpen
+                            ? (
+                                    <form className="connect-app-custom-form" onSubmit={handleCustomSubmit}>
+                                        <AppIcon name="custom" />
+                                        <div className="connect-app-custom-copy">
+                                            <strong>Custom app</strong>
+                                            <label htmlFor="custom-app-address">Connect any app by its address.</label>
+                                            <input
+                                                id="custom-app-address"
+                                                type="url"
+                                                placeholder="https://example.com/mcp"
+                                                value={customAddress}
+                                                onChange={(event) => {
+                                                    setCustomAddress(event.currentTarget.value);
+                                                }}
+                                            />
+                                        </div>
+                                        <button
+                                            type="submit"
+                                            className="connect-app-action"
+                                            aria-label="Connect custom app"
+                                            disabled={selectedBotId === undefined || startingAppName !== undefined}
+                                        >
+                                            {startingAppName?.startsWith('custom-') ? 'Starting...' : 'Connect'}
+                                        </button>
+                                    </form>
+                                )
+                            : null}
+                    </ListGroup>
+                    <button type="button" className="connect-app-see-all" aria-label="See all custom apps" onClick={showAllApps}>See all</button>
+                </div>
+            </div>
         </section>
     );
 }

@@ -30,17 +30,27 @@ describe('ConnectAppsPanel', () => {
         cleanup();
     });
 
-    it('shows the known apps with descriptions, icons, and connect buttons', async () => {
+    it('shows featured apps in order with a search field and custom app row', async () => {
         vi.mocked(listConnectedApps)
             .mockResolvedValue([]);
 
         const { container } = render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
 
-        expect(await screen.findByText('Linear'))
+        expect(await screen.findByRole('region', { name: 'Featured' }))
             .toBeTruthy();
-        expect(screen.getByText('Find issues and update your team’s work.'))
+        expect(screen.getByText('Linear'))
+            .toBeTruthy();
+        expect(screen.getByText('Find issues and update team projects.'))
             .toBeTruthy();
         expect(screen.getByText('Notion'))
+            .toBeTruthy();
+        expect(screen.getByRole('region', { name: 'Custom' }))
+            .toBeTruthy();
+        expect(screen.getByRole('searchbox', { name: 'Search apps' }))
+            .toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Show installed apps' }))
+            .toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Add custom app' }))
             .toBeTruthy();
         expect(container.querySelectorAll('.connect-app-icon'))
             .toHaveLength(3);
@@ -52,6 +62,56 @@ describe('ConnectAppsPanel', () => {
             .not.toMatch(/mcp/i);
         expect(container.textContent)
             .not.toContain('tools');
+    });
+
+    it('filters apps by name and can show only installed apps', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([LINEAR]);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+
+        expect(await screen.findByText('1 installed'))
+            .toBeTruthy();
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Search apps' }), { target: { value: 'notion' } });
+        expect(screen.getByText('Notion'))
+            .toBeTruthy();
+        expect(screen.queryByText('Linear'))
+            .toBeNull();
+
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Search apps' }), { target: { value: '' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Show installed apps' }));
+
+        expect(screen.getByText('Linear'))
+            .toBeTruthy();
+        expect(screen.queryByText('Notion'))
+            .toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Show all apps' }));
+        expect(screen.getByText('Notion'))
+            .toBeTruthy();
+    });
+
+    it('See all clears search and the installed filter', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([LINEAR]);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        const searchInput = screen.getByRole('searchbox', { name: 'Search apps' });
+
+        await screen.findByText('1 installed');
+        fireEvent.change(searchInput, { target: { value: 'missing app' } });
+        expect(screen.getByText('No apps match your search.'))
+            .toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Show installed apps' }));
+        fireEvent.click(screen.getByRole('button', { name: 'See all featured apps' }));
+
+        expect((searchInput as HTMLInputElement).value)
+            .toBe('');
+        expect(screen.getByRole('button', { name: 'Show installed apps' }))
+            .toBeTruthy();
+        expect(screen.getByText('Notion'))
+            .toBeTruthy();
     });
 
     it('starts the selected app flow in the active bot chat', async () => {
@@ -72,7 +132,7 @@ describe('ConnectAppsPanel', () => {
         });
     });
 
-    it('starts a custom app flow from its address', async () => {
+    it('starts a custom app flow from the add row', async () => {
         vi.mocked(listConnectedApps)
             .mockResolvedValue([]);
         vi.mocked(startAppConnection)
@@ -80,6 +140,9 @@ describe('ConnectAppsPanel', () => {
         const onClose = vi.fn();
 
         render(<ConnectAppsPanel selectedBotId="bot-1" onClose={onClose} />);
+        expect(screen.queryByLabelText('Connect any app by its address.'))
+            .toBeNull();
+        fireEvent.click(await screen.findByRole('button', { name: 'Add custom app' }));
         fireEvent.change(screen.getByLabelText('Connect any app by its address.'), { target: { value: 'https://example.com/mcp' } });
         fireEvent.click(screen.getByRole('button', { name: 'Connect custom app' }));
 
@@ -97,7 +160,9 @@ describe('ConnectAppsPanel', () => {
 
         const { container } = render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
 
-        expect(await screen.findByText('Connected.'))
+        expect(await screen.findByText('3 installed'))
+            .toBeTruthy();
+        expect(screen.getByText('Connected.'))
             .toBeTruthy();
         expect(screen.getByText('Sign-in needed. Finish in chat.'))
             .toBeTruthy();
