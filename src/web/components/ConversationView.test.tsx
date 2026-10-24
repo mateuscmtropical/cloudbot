@@ -80,6 +80,16 @@ type ApiClientModule = typeof apiClientTypes;
 
 vi.mock('../apiClient.ts', async importOriginal => ({
     ...(await importOriginal<ApiClientModule>()),
+    getBotProvider: vi.fn(() => Promise.resolve({
+        provider: 'claude',
+        label: 'Claude',
+        model: null,
+        modelOptions: [],
+        selectedModel: null,
+        selectedEffort: null,
+        effortOptions: [],
+    })),
+    listProviders: vi.fn(() => Promise.resolve([])),
     getScreenHolder: vi.fn(() => Promise.resolve('bot')),
     takeScreen: vi.fn(() => Promise.resolve('person')),
     releaseScreen: vi.fn(() => Promise.resolve('bot')),
@@ -170,7 +180,14 @@ function createSequencedMessage(sequence: number): ChatMessage {
 
 type HistoryProps = Pick<ConversationViewProps, 'hasOlderMessages' | 'isLoadingOlder' | 'onLoadOlder'>;
 
-function historyElement(messages: ChatMessage[], historyProps: HistoryProps, bot?: BotSummary, screenRequestId?: number): ReactElement {
+function historyElement(
+    messages: ChatMessage[],
+    historyProps: HistoryProps,
+    bot?: BotSummary,
+    screenRequestId?: number,
+    onOpenProfile?: () => void,
+    onOpenSetupChat?: (setupBotId: string) => void,
+): ReactElement {
     return (
         <ConversationView
             bot={bot}
@@ -179,6 +196,8 @@ function historyElement(messages: ChatMessage[], historyProps: HistoryProps, bot
             isRunning={false}
             actions={noopActions}
             onOpenBotList={vi.fn()}
+            onOpenProfile={onOpenProfile}
+            onOpenSetupChat={onOpenSetupChat}
             screenRequestId={screenRequestId}
             onSend={vi.fn()}
             onStop={vi.fn()}
@@ -508,10 +527,12 @@ describe('ConversationView header', () => {
 
     const ana: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
 
-    it('shows the bot name in one pill and no header buttons', () => {
+    it('shows the bot profile pill with back and more buttons', () => {
         render(historyElement([], {}, ana));
 
         expect(screen.getByText('Ana'))
+            .toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Open bot profile' }))
             .toBeTruthy();
         expect(screen.queryByRole('button', { name: 'Screen' }))
             .toBeNull();
@@ -524,6 +545,33 @@ describe('ConversationView header', () => {
         expect(screen.queryByRole('button', { name: 'Delete' }))
             .toBeNull();
         expect(screen.getByRole('button', { name: 'Show bots' }))
+            .toBeTruthy();
+        expect(screen.getByRole('button', { name: 'More options' }))
+            .toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+
+        expect(screen.getByRole('dialog', { name: 'Conversation options' }))
+            .toBeTruthy();
+    });
+
+    it('opens the bot profile from the center pill', () => {
+        const onOpenProfile = vi.fn();
+
+        render(historyElement([], {}, ana, undefined, onOpenProfile));
+        fireEvent.click(screen.getByRole('button', { name: 'Open bot profile' }));
+
+        expect(onOpenProfile)
+            .toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps model and provider settings inside the More menu', () => {
+        const onOpenSetupChat = vi.fn();
+
+        render(historyElement([], {}, ana, undefined, undefined, onOpenSetupChat));
+        fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+
+        expect(screen.getByText('Model and provider'))
             .toBeTruthy();
     });
 
@@ -597,11 +645,11 @@ describe('ConversationView thinking bubble', () => {
         return rendered;
     }
 
-    it('shows the bubble with the mascot while a turn runs and no reply streams', () => {
+    it('shows the avatar-free bubble while a turn runs and no reply streams', () => {
         const { container } = renderShown(viewWith({ isRunning: true, draftText: '' }));
 
         expect(container.querySelector('.message.is-thinking .cloud-mascot'))
-            .not.toBeNull();
+            .toBeNull();
     });
 
     it('scrolls the bubble into view when it shows up after the delay', () => {

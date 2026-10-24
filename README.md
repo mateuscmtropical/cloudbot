@@ -158,7 +158,7 @@ with CloudBot.
 
 ## Voice input
 
-In browsers with speech recognition, such as Chrome and Edge, the message box has a microphone button. Press it to speak, and the words go into the message box. Press it again to stop.
+In browsers with speech recognition, such as Chrome and Edge, the composer offers voice input. With an empty draft, press the waveform button to speak. With text in the field, use the microphone button to add spoken words. Press the active control again to stop. Use the plus button to choose a file, take a photo or add a photo or video.
 
 Chrome and Edge send the audio to their speech service to turn it into text. The app never receives the audio. The browser asks for microphone permission only when you press the button.
 

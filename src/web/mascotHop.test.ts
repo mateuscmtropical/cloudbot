@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { findLatestMessageMascot, startMascotHop } from './mascotHop.ts';
+import { findConversationMascot, startMascotHop } from './mascotHop.ts';
 import type { MascotHopPoint } from './mascotHop.ts';
 
 interface TestMediaQueryList {
@@ -53,15 +53,14 @@ function createMascots(): MascotElements {
     const conversationElement = document.createElement('section');
 
     conversationElement.className = 'conversation';
-    const latestMascotMessage = document.createElement('div');
-
-    latestMascotMessage.dataset.messageMascot = 'true';
     const targetMascot = document.createElement('span');
+    const botPill = document.createElement('button');
 
     targetMascot.className = 'cloud-mascot';
+    botPill.className = 'bot-pill';
     sidebarElement.append(sourceMascot);
-    latestMascotMessage.append(targetMascot);
-    conversationElement.append(latestMascotMessage);
+    botPill.append(targetMascot);
+    conversationElement.append(botPill);
     mainColumnElement.append(conversationElement);
     appElement.append(sidebarElement, mainColumnElement);
     document.body.append(appElement);
@@ -97,32 +96,27 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
-describe('findLatestMessageMascot', () => {
-    it('returns the mascot from the latest message that shows one', () => {
+describe('findConversationMascot', () => {
+    it('returns the mascot in the bot pill', () => {
         const conversationElement = document.createElement('section');
-        const earlierMascotMessage = document.createElement('div');
-        const earlierMascot = document.createElement('span');
-        const latestMascotMessage = document.createElement('div');
-        const latestMascot = document.createElement('span');
+        const botPill = document.createElement('button');
+        const botMascot = document.createElement('span');
 
-        earlierMascotMessage.dataset.messageMascot = 'true';
-        earlierMascot.className = 'cloud-mascot';
-        latestMascotMessage.dataset.messageMascot = 'true';
-        latestMascot.className = 'cloud-mascot';
-        earlierMascotMessage.append(earlierMascot);
-        latestMascotMessage.append(latestMascot);
-        conversationElement.append(earlierMascotMessage, latestMascotMessage);
+        botPill.className = 'bot-pill';
+        botMascot.className = 'cloud-mascot';
+        botPill.append(botMascot);
+        conversationElement.append(botPill);
 
-        const foundMascot = findLatestMessageMascot(conversationElement);
+        const foundMascot = findConversationMascot(conversationElement);
 
         expect(foundMascot)
-            .toBe(latestMascot);
+            .toBe(botMascot);
     });
 
-    it('returns null when no message shows a mascot', () => {
+    it('returns null when the header has no mascot', () => {
         const conversationElement = document.createElement('section');
 
-        const foundMascot = findLatestMessageMascot(conversationElement);
+        const foundMascot = findConversationMascot(conversationElement);
 
         expect(foundMascot)
             .toBeNull();

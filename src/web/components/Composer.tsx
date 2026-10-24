@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent, ReactElement } from 'react';
 
 import { stepBack, stepForward } from '../sentHistory.ts';
 import { joinVoiceText, useVoiceInput } from '../voiceInput.ts';
-import { PlusIcon } from './PlusIcon.tsx';
+import { PillField } from './PillField.tsx';
+import { PopoverMenu, PopoverMenuItem } from './PopoverMenu.tsx';
+import { CameraIcon, FolderIcon, ImageIcon, MicIcon, PlusIcon, SendArrowIcon, WaveformIcon } from './icons.tsx';
 
 interface DraftAttachment {
     id: string;
@@ -36,6 +38,7 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
     const draftBeforeHistoryRef = useRef('');
     const activeHistoryIndex = historyIndex !== undefined && historyIndex < sentHistory.length ? historyIndex : undefined;
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const textAreaRef = useRef<HTMLTextAreaElement>(null);
     // The text typed before the mic was pressed. Spoken words are added after it, and the owner edits all of it before sending.
     const draftBeforeVoiceRef = useRef('');
     const voice = useVoiceInput({
@@ -70,6 +73,19 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
     // A message sent during a turn is queued. Stop shows only while the draft is empty.
     const showStop = isRunning && trimmedDraft.length === 0;
 
+    useLayoutEffect(() => {
+        const textArea = textAreaRef.current;
+
+        if (textArea === null) {
+            return;
+        }
+
+        textArea.style.height = 'auto';
+        const nextHeight = Math.min(textArea.scrollHeight, 120);
+
+        textArea.style.height = `${nextHeight.toString()}px`;
+    }, [draft]);
+
     function sendDraft(): void {
         if (!canSend) {
             return;
@@ -82,6 +98,12 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
         setDraft('');
         setHistoryIndex(undefined);
         onTypingChange?.(false);
+    }
+
+    function stopTurn(): void {
+        stopListening();
+        draftBeforeVoiceRef.current = '';
+        onStop();
     }
 
     function showDraft(nextDraft: string): void {
@@ -158,8 +180,26 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
         event.target.value = '';
     }
 
-    function openFilePicker(): void {
-        fileInputRef.current?.click();
+    function openFilePicker(accept?: string, capture?: string): void {
+        const fileInput = fileInputRef.current;
+
+        if (fileInput === null) {
+            return;
+        }
+
+        if (accept === undefined) {
+            fileInput.removeAttribute('accept');
+        } else {
+            fileInput.setAttribute('accept', accept);
+        }
+
+        if (capture === undefined) {
+            fileInput.removeAttribute('capture');
+        } else {
+            fileInput.setAttribute('capture', capture);
+        }
+
+        fileInput.click();
     }
 
     return (
@@ -190,55 +230,78 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
                         </ul>
                     )}
             <div className="composer">
-                <button type="button" className="icon-button" aria-label="Attach files" disabled={isRunning} onClick={openFilePicker}>
-                    <PlusIcon />
-                </button>
-                <input ref={fileInputRef} type="file" multiple hidden onChange={handleFilesChosen} />
-                <textarea
-                    className="composer-input"
-                    rows={1}
-                    placeholder={`Message ${botName}`}
-                    value={draft}
-                    onChange={(event) => {
-                        // Typing takes over from the mic, so listening stops before the typed text is kept.
-                        stopListening();
-                        setHistoryIndex(undefined);
-                        setDraft(event.target.value);
-                        onTypingChange?.(event.target.value.trim().length > 0);
-                    }}
-                    onKeyDown={handleKeyDown}
-                />
-                {voice.isSupported
-                    ? (
-                            <button
-                                type="button"
-                                className={voice.isListening ? 'icon-button voice-button is-listening' : 'icon-button voice-button'}
-                                aria-label="Voice input"
-                                aria-pressed={voice.isListening}
-                                onClick={voice.toggle}
-                            >
-                                <svg viewBox="0 0 24 24" aria-hidden="true">
-                                    <rect x="9" y="3" width="6" height="12" rx="3" />
-                                    <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-                                </svg>
-                            </button>
-                        )
-                    : null}
+                <PopoverMenu
+                    label="Attachment options"
+                    triggerLabel="Attach files"
+                    triggerIcon={<PlusIcon />}
+                    placement="above-start"
+                    disabled={isRunning}
+                >
+                    {close => (
+                        <>
+                            <PopoverMenuItem label="Choose file" icon={<FolderIcon />} close={close} onSelect={() => { openFilePicker(); }} />
+                            <PopoverMenuItem label="Take photo" icon={<CameraIcon />} close={close} onSelect={() => { openFilePicker('image/*', 'environment'); }} />
+                            <PopoverMenuItem label="Photo or video" icon={<ImageIcon />} close={close} onSelect={() => { openFilePicker('image/*,video/*'); }} />
+                        </>
+                    )}
+                </PopoverMenu>
+                <input ref={fileInputRef} className="composer-file-input" type="file" multiple hidden onChange={handleFilesChosen} />
+                <PillField className="composer-field">
+                    <textarea
+                        ref={textAreaRef}
+                        className="composer-input"
+                        rows={1}
+                        placeholder={`Ask ${botName}...`}
+                        value={draft}
+                        onChange={(event) => {
+                            // Typing takes over from voice input, so listening stops before the typed text is kept.
+                            stopListening();
+                            setHistoryIndex(undefined);
+                            setDraft(event.target.value);
+                            onTypingChange?.(event.target.value.trim().length > 0);
+                        }}
+                        onKeyDown={handleKeyDown}
+                    />
+                    {trimmedDraft.length === 0 || !voice.isSupported
+                        ? null
+                        : (
+                                <button
+                                    type="button"
+                                    className={voice.isListening ? 'composer-mic is-listening' : 'composer-mic'}
+                                    aria-label="Voice input"
+                                    aria-pressed={voice.isListening}
+                                    onClick={voice.toggle}
+                                >
+                                    <MicIcon />
+                                </button>
+                            )}
+                </PillField>
                 {showStop
                     ? (
-                            <button type="button" className="send-button is-stop" aria-label="Stop" onClick={onStop}>
+                            <button type="button" className="send-button" aria-label="Stop" onClick={stopTurn}>
                                 <svg viewBox="0 0 24 24" aria-hidden="true">
                                     <rect x="7" y="7" width="10" height="10" rx="1" />
                                 </svg>
                             </button>
                         )
-                    : (
-                            <button type="button" className="send-button" aria-label="Send" disabled={!canSend} onClick={sendDraft}>
-                                <svg viewBox="0 0 24 24" aria-hidden="true">
-                                    <path d="M4 12l16-8-6 16-2-6z" />
-                                </svg>
-                            </button>
-                        )}
+                    : trimmedDraft.length === 0
+                        ? (
+                                <button
+                                    type="button"
+                                    className={voice.isListening ? 'send-button is-listening' : 'send-button'}
+                                    aria-label="Voice input"
+                                    aria-pressed={voice.isListening}
+                                    disabled={!voice.isSupported}
+                                    onClick={voice.toggle}
+                                >
+                                    <WaveformIcon />
+                                </button>
+                            )
+                        : (
+                                <button type="button" className="send-button" aria-label="Send" disabled={!canSend} onClick={sendDraft}>
+                                    <SendArrowIcon />
+                                </button>
+                            )}
             </div>
             <p className="voice-status" role="status">{voice.statusText ?? ''}</p>
         </>

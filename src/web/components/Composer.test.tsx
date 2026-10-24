@@ -30,7 +30,7 @@ function renderComposer(options: RenderOptions = {}): HTMLTextAreaElement {
         />,
     );
 
-    return screen.getByPlaceholderText<HTMLTextAreaElement>('Message CloudBot');
+    return screen.getByPlaceholderText<HTMLTextAreaElement>('Ask CloudBot...');
 }
 
 describe('Composer', () => {
@@ -126,6 +126,50 @@ describe('Composer', () => {
             .toBe(true);
     });
 
+    it('uses the file picker with the correct photo and video filters', () => {
+        const view = render(
+            <Composer
+                botName="CloudBot"
+                isRunning={false}
+                isUploading={false}
+                attachments={[]}
+                onSend={vi.fn()}
+                onStop={vi.fn()}
+                onAttach={vi.fn()}
+                onRemoveAttachment={vi.fn()}
+            />,
+        );
+        const fileInput = view.container.querySelector<HTMLInputElement>('.composer-file-input');
+
+        if (fileInput === null) {
+            throw new Error('The file picker is missing');
+        }
+
+        fireEvent.click(screen.getByRole('button', { name: 'Attach files' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Take photo' }));
+
+        expect(fileInput.getAttribute('accept'))
+            .toBe('image/*');
+        expect(fileInput.getAttribute('capture'))
+            .toBe('environment');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Attach files' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Photo or video' }));
+
+        expect(fileInput.getAttribute('accept'))
+            .toBe('image/*,video/*');
+        expect(fileInput.hasAttribute('capture'))
+            .toBe(false);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Attach files' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Choose file' }));
+
+        expect(fileInput.hasAttribute('accept'))
+            .toBe(false);
+        expect(fileInput.hasAttribute('capture'))
+            .toBe(false);
+    });
+
     it('removes a ready file through its remove button', () => {
         const onRemoveAttachment = vi.fn();
 
@@ -139,11 +183,55 @@ describe('Composer', () => {
             .toHaveBeenCalledWith('server-1');
     });
 
-    it('shows no voice button when the browser has no speech recognition', () => {
+    it('disables the waveform voice button when the browser has no speech recognition', () => {
         renderComposer();
 
-        expect(screen.queryByRole('button', { name: 'Voice input' }))
-            .toBeNull();
+        expect(screen.getByRole('button', { name: 'Voice input' })
+            .hasAttribute('disabled'))
+            .toBe(true);
+    });
+
+    it('starts voice input from the waveform button when the draft is empty', () => {
+        class HearingRecognition {
+            lang = '';
+            continuous = false;
+            interimResults = false;
+            onresult: ((event: { readonly results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null = null;
+            onerror: ((event: { readonly error: string }) => void) | null = null;
+            onend: (() => void) | null = null;
+            start = vi.fn();
+
+            stop(): void {
+                this.onend?.();
+            }
+
+            abort(): void {
+                this.onend?.();
+            }
+        }
+
+        const instances: HearingRecognition[] = [];
+
+        vi.stubGlobal('SpeechRecognition', class extends HearingRecognition {
+            constructor() {
+                super();
+                instances.push(this);
+            }
+        });
+
+        try {
+            renderComposer();
+            const waveformButton = screen.getByRole('button', { name: 'Voice input' });
+
+            fireEvent.click(waveformButton);
+
+            expect(waveformButton.getAttribute('aria-pressed'))
+                .toBe('true');
+            expect(instances[0]?.start)
+                .toHaveBeenCalledTimes(1);
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 
     it('puts the spoken words after the typed text, and shows the press state of the mic', () => {
@@ -355,15 +443,15 @@ function stubRecognition(): RecordingRecognition[] {
     return instances;
 }
 
-function composerElement(botName: string, onSend: (text: string) => void): ReactElement {
+function composerElement(botName: string, onSend: (text: string) => void, isRunning = false, onStop = vi.fn()): ReactElement {
     return (
         <Composer
             botName={botName}
-            isRunning={false}
+            isRunning={isRunning}
             isUploading={false}
             attachments={[]}
             onSend={onSend}
-            onStop={vi.fn()}
+            onStop={onStop}
             onAttach={vi.fn()}
             onRemoveAttachment={vi.fn()}
         />
@@ -382,7 +470,7 @@ describe('Composer voice input while listening', () => {
 
         render(composerElement('CloudBot', onSend));
 
-        const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Message CloudBot');
+        const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Ask CloudBot...');
 
         fireEvent.change(textarea, { target: { value: 'Hello' } });
         fireEvent.click(screen.getByRole('button', { name: 'Voice input' }));
@@ -410,7 +498,7 @@ describe('Composer voice input while listening', () => {
 
         render(composerElement('CloudBot', vi.fn()));
 
-        const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Message CloudBot');
+        const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Ask CloudBot...');
 
         fireEvent.click(screen.getByRole('button', { name: 'Voice input' }));
         fireEvent.change(textarea, { target: { value: 'Typed' } });
@@ -429,12 +517,32 @@ describe('Composer voice input while listening', () => {
             .toBe('Typed');
     });
 
+    it('stops voice input before stopping a turn that started while listening', () => {
+        const instances = stubRecognition();
+        const onStop = vi.fn();
+        const view = render(composerElement('CloudBot', vi.fn(), false, onStop));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Voice input' }));
+        view.rerender(composerElement('CloudBot', vi.fn(), true, onStop));
+        fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+        act(() => {
+            instances[0]?.hear('late words');
+        });
+
+        expect(onStop)
+            .toHaveBeenCalledTimes(1);
+        expect(instances[0]?.aborted)
+            .toBe(true);
+        expect(screen.getByPlaceholderText<HTMLTextAreaElement>('Ask CloudBot...').value)
+            .toBe('');
+    });
+
     it('an empty transcript leaves the draft as it is', () => {
         const instances = stubRecognition();
 
         render(composerElement('CloudBot', vi.fn()));
 
-        const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Message CloudBot');
+        const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Ask CloudBot...');
 
         fireEvent.change(textarea, { target: { value: 'Hi' } });
         fireEvent.click(screen.getByRole('button', { name: 'Voice input' }));
