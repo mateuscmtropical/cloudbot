@@ -70,6 +70,22 @@ const BROWSER_WEBAUTHN_HELPERS = [
     '        ? PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()',
     '        : Promise.resolve(false);',
     '};',
+    'const registerPasskey = async function () {',
+    '    const options = await postJson("/__hub/passkey/register/options");',
+    '    options.challenge = fromBase64Url(options.challenge);',
+    '    options.user = Object.assign({}, options.user, { id: fromBase64Url(options.user.id) });',
+    '    if (Array.isArray(options.excludeCredentials)) { options.excludeCredentials = options.excludeCredentials.map(function (item) { return Object.assign({}, item, { id: fromBase64Url(item.id) }); }); }',
+    '    const credential = await navigator.credentials.create({ publicKey: options });',
+    '    if (!credential) { throw new Error("No passkey was created."); }',
+    // The platform name tells the passkeys apart in the list, such as Android or Windows.
+    '    const platform = navigator.userAgentData && navigator.userAgentData.platform;',
+    '    await postJson("/__hub/passkey/register/verify", { response: serializeCredential(credential, true), label: platform ? platform + " device" : "This device" });',
+    '};',
+    'const registerProblem = function (error) {',
+    '    if (error instanceof Error && error.name === "InvalidStateError") { return "This device already has a passkey."; }',
+    '    if (error instanceof Error && error.name === "NotAllowedError") { return "Adding the passkey was canceled."; }',
+    '    return error instanceof Error ? error.message : "The passkey could not be added. Try again.";',
+    '};',
 ].join('\n');
 
 const PASSKEY_NOT_SET_UP_MESSAGE = 'Fingerprint or face sign-in was canceled or is not set up on this device. Sign in with your password, then turn it on from Account.';
@@ -120,16 +136,10 @@ const OFFER_SCRIPT = BROWSER_WEBAUTHN_HELPERS + '\n' + [
     '        skipButton.disabled = true;',
     '        problem.textContent = "";',
     '        try {',
-    '            const options = await postJson("/__hub/passkey/register/options");',
-    '            options.challenge = fromBase64Url(options.challenge);',
-    '            options.user = Object.assign({}, options.user, { id: fromBase64Url(options.user.id) });',
-    '            if (Array.isArray(options.excludeCredentials)) { options.excludeCredentials = options.excludeCredentials.map(function (item) { return Object.assign({}, item, { id: fromBase64Url(item.id) }); }); }',
-    '            const credential = await navigator.credentials.create({ publicKey: options });',
-    '            if (!credential) { throw new Error("No passkey was created."); }',
-    '            await postJson("/__hub/passkey/register/verify", { response: serializeCredential(credential, true), label: "This device" });',
+    '            await registerPasskey();',
     '            goHome();',
     '        } catch (error) {',
-    '            problem.textContent = error instanceof Error ? error.message : "The passkey could not be added. Try again.";',
+    '            problem.textContent = registerProblem(error);',
     '            enableButton.disabled = false;',
     '            skipButton.disabled = false;',
     '        }',
@@ -178,12 +188,29 @@ function renderPasskeysPage(passkeys: HubPasskeySummary[]): PasskeyManagementPag
     const emptyMessage = passkeys.length === 0 ? '<p id="hub-passkey-empty">No passkeys have been added.</p>' : '';
     const body = '<main aria-labelledby="hub-passkeys-title">' + renderMascot('idle')
         + '<h1 id="hub-passkeys-title">Your passkeys</h1><p>Passkeys are stored for this address only.</p>'
-        + emptyMessage + '<ul class="list">' + rows.join('') + '</ul><p id="hub-passkeys-problem" role="status" aria-live="polite"></p>'
+        + emptyMessage + '<ul class="list">' + rows.join('') + '</ul>'
+        + '<div class="actions"><button id="hub-passkey-add" type="button">Add fingerprint or face for this device</button></div>'
+        + '<p id="hub-passkeys-problem" role="status" aria-live="polite"></p>'
         + '<a href="/">Back to CloudBot</a></main>';
 
-    const script = [
+    const script = BROWSER_WEBAUTHN_HELPERS + '\n' + [
         '(function () {',
         '    const problem = document.getElementById("hub-passkeys-problem");',
+        '    const addButton = document.getElementById("hub-passkey-add");',
+        '    platformAuthenticatorAvailable().then(function (available) {',
+        '        if (!available) { addButton.disabled = true; problem.textContent = "This device has no fingerprint or face sign-in. Turn on a screen lock to add a passkey."; }',
+        '    }).catch(function () {});',
+        '    addButton.addEventListener("click", async function () {',
+        '        addButton.disabled = true;',
+        '        problem.textContent = "";',
+        '        try {',
+        '            await registerPasskey();',
+        '            window.location.reload();',
+        '        } catch (error) {',
+        '            problem.textContent = registerProblem(error);',
+        '            addButton.disabled = false;',
+        '        }',
+        '    });',
         '    document.querySelectorAll("[data-passkey-id]").forEach(function (button) {',
         '        button.addEventListener("click", async function () {',
         '            button.disabled = true;',

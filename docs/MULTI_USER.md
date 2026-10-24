@@ -166,7 +166,7 @@ The hub stores each passkey in the `hub_passkeys` table, keyed by person and cre
 - `POST /__hub/passkey/login/options` and `POST /__hub/passkey/login/verify` are public and sit behind the same-origin check.
 - `GET /__hub/passkey/list` and `DELETE /__hub/passkey/:id` need the signed in person.
 - `GET /__hub/passkey/offer` shows the one time offer after a password sign-in.
-- `GET /__hub/passkeys` shows the passkeys of the person.
+- `GET /__hub/passkeys` shows the passkeys of the person. It can remove one, or add one for the device in use.
 
 The front door passes the tenant of the request, the signed in person, the session check, the session cookie writer, the same-origin check and a page renderer. It appends `passkeyLoginExtras()` to the sign-in page and connects `createAfterLogin` to the redirect after a password sign-in. The offer appears only for a person without passkeys, and "Not now" stores a skip cookie for 180 days.
 

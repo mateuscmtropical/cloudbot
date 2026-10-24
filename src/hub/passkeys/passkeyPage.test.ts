@@ -1,3 +1,4 @@
+import { Script } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 import type { HubPasskeyStore } from './HubPasskeyStore.ts';
@@ -80,5 +81,23 @@ describe('passkeyPage', () => {
             .toContain('aria-label="Remove &lt;Phone&gt;"');
         expect(page.script)
             .toContain('method: "DELETE"');
+    });
+
+    it('offers to add a passkey for this device from the passkeys page', () => {
+        const page = renderPasskeysPage([]);
+
+        expect(page.body)
+            .toContain('id="hub-passkey-add"');
+        expect(page.script)
+            .toContain('/__hub/passkey/register/options');
+        expect(page.script)
+            .toContain('/__hub/passkey/register/verify');
+        expect(page.script)
+            .toContain('window.location.reload()');
+        // Compiling the scripts catches a syntax slip in the joined lines without running them.
+        expect(() => new Script(page.script))
+            .not.toThrow();
+        expect(() => new Script(renderOfferPage().script))
+            .not.toThrow();
     });
 });
