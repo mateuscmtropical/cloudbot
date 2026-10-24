@@ -198,7 +198,7 @@ class RfbInputFilter {
     private isValidDesktopResize(): boolean {
         const width = this.pending.readUInt16BE(2);
         const height = this.pending.readUInt16BE(4);
-        const screenId = this.pending.readUInt32BE(8);
+        // The screen id is not checked. noVNC sends back the id the server gave, and TigerVNC picks a random one.
         const screenX = this.pending.readUInt16BE(12);
         const screenY = this.pending.readUInt16BE(14);
         const screenWidth = this.pending.readUInt16BE(16);
@@ -206,7 +206,6 @@ class RfbInputFilter {
         const screenFlags = this.pending.readUInt32BE(20);
 
         return isValidDesktopSize(width, height)
-            && screenId === 0
             && screenX === 0
             && screenY === 0
             && screenWidth === width
