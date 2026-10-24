@@ -22,7 +22,7 @@ FROM base AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash bubblewrap ca-certificates curl sudo \
         chromium fonts-dejavu-core fonts-liberation openbox procps tigervnc-standalone-server wmctrl x11-xserver-utils xterm \
-        poppler-utils python3 python3-docx python3-lxml python3-matplotlib python3-openpyxl \
+        poppler-utils python3 python3-docx python3-lxml python3-openpyxl \
         python3-pil python3-pip python3-pypdf python3-reportlab python3-typing-extensions \
         python3-xlsxwriter git openssl \
     && rm -rf /var/lib/apt/lists/*
@@ -36,6 +36,11 @@ RUN install -d -m 0755 /etc/apt/keyrings \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
+# matplotlib comes from pip wheels. The Debian package pulls python3-fonttools, python3-scipy, gcc and g++, about 600 MB.
+# pillow comes from apt above. --only-binary makes the build fail instead of compiling anything.
+RUN python3 -m pip install --no-cache-dir --no-deps --only-binary=:all: --break-system-packages \
+        numpy==2.2.6 matplotlib==3.10.7 contourpy==1.3.2 cycler==0.12.1 fonttools==4.60.1 kiwisolver==1.4.9 \
+        pyparsing==3.2.5 python-dateutil==2.9.0.post0 packaging==25.0 six==1.17.0
 # Debian bookworm has no python3-pptx package. Its dependencies come from apt above.
 RUN python3 -m pip install --no-cache-dir --no-deps --break-system-packages python-pptx==1.0.2
 

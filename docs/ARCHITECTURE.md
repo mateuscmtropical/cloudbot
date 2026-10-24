@@ -328,7 +328,7 @@ that to the gate was not checked against a running Chromium here.
 The image installs Python 3 from Debian with `openpyxl`, `python-docx`,
 `python-pptx`, `reportlab`, `pypdf` and `matplotlib`, and `poppler-utils` for
 `pdftotext`. Debian has no package for `python-pptx`, so pip installs version
-1.0.2 without dependencies, which apt provides. The bot writes spreadsheets, documents, slides, PDFs and charts
+1.0.2 without dependencies, which apt provides. `matplotlib` and its libraries come from pip wheels with pinned versions, since the Debian package pulls in `gcc`, `g++` and `scipy`. The bot writes spreadsheets, documents, slides, PDFs and charts
 into its workspace with its shell and sends them with `share_file`.
 `buildSystemPrompt` names the libraries. `docker/check-container.sh` imports
 each one as the `bot` user. Open choices are in
