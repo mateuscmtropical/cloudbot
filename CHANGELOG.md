@@ -22,6 +22,10 @@ All notable changes to this project are listed here. The format follows
 - A bot on ChatGPT that makes an image with Codex now shows the image in the chat.
 - When a bot opens a page in its browser, the Screen panel opens once in that turn, so you watch the live browser.
 
+### Fixed
+
+- A person whose container was removed, for example to move to a new image, gets the container again at the next visit. Before, the address showed "Starting your environment" without end. A failed start is now written to the hub log.
+
 ### Changed
 
 - CloudBot starts faster. A new install no longer asks every AI provider whether it is signed in, and a restart stops at the first provider that is.

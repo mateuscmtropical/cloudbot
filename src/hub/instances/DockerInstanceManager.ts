@@ -208,6 +208,21 @@ class DockerInstanceManager implements InstanceManager {
         await this.docker.removeNetwork(personNetworkName);
     }
 
+    // The container was removed, for example to move the person to a new image. The network and the volumes are still
+    // there, so only the container is created again.
+    private async recreateContainer(name: string): Promise<void> {
+        const record = this.people.find(name);
+
+        if (record === undefined) {
+            throw new Error(`Instance ${name} does not exist.`);
+        }
+
+        const personContainerName = containerName(name);
+        const createContainerOptions = toContainerOptions(record, this.settings);
+
+        await this.docker.createContainer(personContainerName, createContainerOptions);
+    }
+
     private async startValidated(name: string): Promise<StartResult> {
         const currentStatus = await this.status(name);
 
@@ -216,7 +231,7 @@ class DockerInstanceManager implements InstanceManager {
         }
 
         if (currentStatus === 'missing') {
-            throw new Error(`Instance ${name} does not exist.`);
+            await this.recreateContainer(name);
         }
 
         if (currentStatus === 'starting') {
