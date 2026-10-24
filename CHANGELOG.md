@@ -22,10 +22,13 @@ All notable changes to this project are listed here. The format follows
 - A bot on ChatGPT that makes an image with Codex now shows the image in the chat.
 - When a bot opens a page in its browser, the Screen panel opens once in that turn, so you watch the live browser.
 - `sudo cloudbot update --all` also removes every instance container that uses an old image. Each person keeps the `cbi-*` volumes and the hub creates the container again on the next visit.
+- On a phone, a swipe to the right opens the bot list and a swipe to the left closes it.
 
 ### Fixed
 
 - After `cloudbot update` the hub could no longer reach any running instance, and every address showed "Starting your environment" without end. The hub now joins the network of every person again each time it starts.
+- On a phone, the bot pill and the menu button no longer mix with the messages under them. A fade, dark at the top and clear at the bottom, sits behind them.
+- The Connect apps and Account buttons in the sidebar have space between them.
 - A person whose container was removed, for example to move to a new image, gets the container again at the next visit. Before, the address showed "Starting your environment" without end. A failed start is now written to the hub log.
 
 ### Changed
