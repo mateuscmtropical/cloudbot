@@ -404,7 +404,7 @@ svg {
     z-index: 20;
     display: flex;
     flex-direction: column;
-    width: min(560px, calc(100vw - 32px));
+    width: min(1040px, calc(100vw - 32px));
     max-height: 82vh;
     padding: var(--space-4);
     overflow-y: auto;
@@ -562,6 +562,54 @@ svg {
     -webkit-line-clamp: 2;
 }
 
+.connect-app-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: var(--space-3);
+    padding: 0 var(--space-1);
+}
+
+.connect-app-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: var(--space-3);
+    border: 1px solid var(--color-surface-border);
+    border-radius: var(--radius-bubble);
+    background: var(--color-surface);
+}
+
+.connect-app-card-copy {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: var(--space-1);
+}
+
+.connect-app-card-title {
+    overflow: hidden;
+    font-size: 1.0625rem;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.connect-app-card-description {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+    line-height: 1.3;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.connect-app-card > .connect-app-action {
+    grid-column: 1 / -1;
+    justify-self: end;
+}
 .connect-app-icon {
     display: grid;
     place-items: center;
@@ -577,6 +625,16 @@ svg {
 .connect-app-icon-app {
     background: hsl(var(--app-hue) 55% 30%);
     color: #fff;
+}
+
+.connect-app-icon-logo {
+    background: #fff;
+}
+
+.connect-app-icon-logo svg {
+    width: 60%;
+    height: 60%;
+    stroke: none;
 }
 
 .connect-app-icon-custom {
@@ -681,6 +739,43 @@ svg {
 
     .connect-apps-header {
         min-height: var(--size-round-button);
+    }
+
+    .connect-app-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: var(--space-2);
+        padding: 0;
+    }
+
+    .connect-app-card {
+        grid-template-columns: minmax(0, 1fr);
+        align-content: start;
+        justify-items: center;
+        gap: var(--space-2);
+        padding: var(--space-3) var(--space-2);
+        text-align: center;
+    }
+
+    .connect-app-card-title {
+        display: -webkit-box;
+        font-size: 0.8125rem;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+        white-space: normal;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+    }
+
+    .connect-app-card-description {
+        display: none;
+    }
+
+    .connect-app-card > .connect-app-action {
+        grid-column: auto;
+        justify-self: stretch;
+        min-height: 40px;
+        padding: 0 var(--space-1);
+        font-size: 0.8125rem;
     }
 }
 
