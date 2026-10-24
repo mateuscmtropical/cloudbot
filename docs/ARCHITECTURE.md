@@ -161,6 +161,12 @@ holds the screen, and only for one screen between 240 and 1920 pixels wide and
 high. `DesktopResizeCoordinator` tracks resize requests across owner tabs. The
 newest request takes effect, closing a tab restores the latest remaining size,
 and giving up the screen or closing the last resized panel restores 1280 by 800.
+While a resize is held, `MobileSites` keeps one DevTools connection to the
+browser on `127.0.0.1:9222`. It auto attaches to every page, and each page gets
+the user agent of Chrome on Android, touch emulation, touch events for the
+mouse and a mobile viewport. New tabs wait until their overrides are set, so
+their first load is already mobile. Chromium drops the overrides when the
+connection closes, which happens when the last resize is released.
 A change to a wide viewport reconnects noVNC, which restores the same default
 size.
 

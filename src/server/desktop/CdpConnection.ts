@@ -81,12 +81,17 @@ class CdpConnection {
         return new CdpConnection(socket);
     }
 
+    get isOpen(): boolean {
+        return this.socket.readyState === SOCKET_OPEN;
+    }
+
     // One listener for the events of the page, such as a dialog that opens.
     onEvent(listener: CdpEventListener): void {
         this.eventListener = listener;
     }
 
-    call(method: string, params: Record<string, unknown> = {}, timeoutMs = CALL_TIMEOUT_MS): Promise<unknown> {
+    // A session id sends the command to a page attached through a browser connection.
+    call(method: string, params: Record<string, unknown> = {}, timeoutMs = CALL_TIMEOUT_MS, sessionId?: string): Promise<unknown> {
         if (this.socket.readyState !== SOCKET_OPEN) {
             return Promise.reject(new CdpError('The browser connection is closed.'));
         }
@@ -101,7 +106,7 @@ class CdpConnection {
                 reject(new CdpError(`The browser did not answer ${method} in time.`));
             }, timeoutMs);
 
-            const message = JSON.stringify({ id, method, params });
+            const message = JSON.stringify(sessionId === undefined ? { id, method, params } : { id, method, params, sessionId });
 
             this.pending.set(id, { resolve, reject, timer });
             this.socket.send(message);

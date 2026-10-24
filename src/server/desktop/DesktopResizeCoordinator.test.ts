@@ -92,4 +92,22 @@ describe('DesktopResizeCoordinator', () => {
         expect(socket.write)
             .toHaveBeenCalledWith(buildSetDesktopSizeMessage(DEFAULT_DESKTOP_SIZE));
     });
+
+    it('tells when a phone starts and stops holding the screen', () => {
+        const changes: boolean[] = [];
+        const coordinator = new DesktopResizeCoordinator((isPhoneHolding) => {
+            changes.push(isPhoneHolding);
+        });
+        const firstOwner = {};
+        const secondOwner = {};
+        const socket = makeSocket();
+
+        coordinator.request(firstOwner, asSocket(socket), { width: 500, height: 756 });
+        coordinator.request(secondOwner, asSocket(socket), { width: 500, height: 756 });
+        coordinator.release(firstOwner, asSocket(socket));
+        coordinator.restoreAll(asSocket(socket));
+
+        expect(changes)
+            .toEqual([true, true, true, false]);
+    });
 });

@@ -35,6 +35,8 @@ import { describeLimitChange } from './limits/createLimitTools.ts';
 import { createApp } from './createApp.ts';
 import { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { attachVncProxy } from './desktop/attachVncProxy.ts';
+import { DESKTOP_DEVTOOLS_URL } from './desktop/BrowserControl.ts';
+import { MobileSites } from './desktop/MobileSites.ts';
 import { attachScreencast } from './desktop/attachScreencast.ts';
 import { buildLocalBrowserCommand, buildLocalBrowserTools, createLocalBrowserSpawn, defaultLocalBrowserEnvironment, localBrowserProfileDir, localGatePortFor, planLocalBrowser, saveLocalGatePort, startPlannedGate, verifyLocalBrowserGate } from './desktop/localBrowser.ts';
 import { BrowserGate } from './desktop/BrowserGate.ts';
@@ -659,7 +661,9 @@ const server = serve({ fetch: app.fetch, port, hostname: host }, (address) => {
 const publicUrl = process.env.CLOUDBOT_PUBLIC_URL;
 
 if (desktop !== undefined) {
-    attachVncProxy({ server: server as Server, access, hubSecret: hubConfig?.secret, screen, publicUrl });
+    const mobileSites = new MobileSites({ devtoolsUrl: DESKTOP_DEVTOOLS_URL });
+
+    attachVncProxy({ server: server as Server, access, hubSecret: hubConfig?.secret, screen, publicUrl, mobileSites });
 } else if (browser !== undefined) {
     attachScreencast({ server: server as Server, access, hubSecret: hubConfig?.secret, browser, screen, publicUrl });
 }
