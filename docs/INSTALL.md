@@ -156,6 +156,18 @@ sudo docker rm -f cloudbot-i-maria
 The `cbi-*` volumes stay in place. The hub creates each container from the new
 image on the person's next request.
 
+### Image size
+
+A new Docker 29 install keeps images in the containerd store, and then
+`sudo docker image ls` shows two numbers for `cloudbot:local`. `CONTENT SIZE` is the compressed image, which
+is what a pull downloads. `DISK USAGE` is the compressed image plus its unpacked
+files, which is what the image takes on the disk. `docker image inspect` is not
+a safe number to compare, since it shows one or the other depending on the
+Docker version. The unpacked size alone is the sum of the layer sizes in `sudo docker history cloudbot:local`.
+Compare `DISK USAGE` with the free space, and compare like with like when you
+compare two images. Every instance shares the one image, so more people do not
+add image space.
+
 ## Back up data
 
 Back up the `hub-data` volume and every `cbi-*` volume. The hub volume contains

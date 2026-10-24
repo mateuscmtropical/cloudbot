@@ -65,28 +65,37 @@ RUN visudo -cf /etc/sudoers.d/cloudbot-agent
 
 # pipefail makes a failed download fail the build instead of piping nothing into bash.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-USER bot
-RUN curl -fsSL https://claude.ai/install.sh | bash
-
-# bot can write its own home, so the CLI runs from a root-owned copy instead. The bot's copies are removed,
-# and the build fails if any file named claude is left under the bot home.
-USER root
-RUN cp -L /home/bot/.local/bin/claude /usr/local/bin/claude \
+# bot can write its own home, so the CLI runs from a root-owned copy instead. The installer runs as bot in a
+# temporary home, and the copy and the removal happen in the same step, so no layer keeps a second copy.
+# The build fails if any file named claude is left under the bot home.
+RUN install -d -o bot -g bot -m 0700 /tmp/claude-install \
+    && runuser -u bot -- env HOME=/tmp/claude-install bash -o pipefail -c 'curl -fsSL https://claude.ai/install.sh | bash' \
+    && cp -L /tmp/claude-install/.local/bin/claude /usr/local/bin/claude \
     && chown root:root /usr/local/bin/claude \
     && chmod 0755 /usr/local/bin/claude \
-    && rm -rf /home/bot/.local/bin/claude /home/bot/.local/share/claude \
+    && rm -rf /tmp/claude-install \
     && ! find /home/bot -name claude \( -type f -o -type l \) -print | grep -q . \
     && /usr/local/bin/claude --version
 
 # The Codex CLI for bots that run on a ChatGPT subscription. The version must match CODEX_PROTOCOL_VERSION in
 # src/server/agent/codexProtocol.ts. npm installs it as root, so the bot user cannot replace it.
 RUN npm install --global @openai/codex@0.163.0 \
+    && npm cache clean --force \
     && /usr/local/bin/codex --version
 
 # The agent CLIs of the other providers, which CloudBot runs over the Agent Client Protocol, see
 # src/server/providers/acpProviders.ts. They are root-owned, so the bot user cannot replace them. The ones without an
 # npm package come from each vendor's own install script, installed under /opt and linked into /usr/local/bin.
-RUN npm install --global @google/gemini-cli@0.65.0 @github/copilot@1.0.102 @qwen-code/qwen-code@0.26.0 @opencode/cli@2.1.2 \
+# OpenCode comes as the one glibc binary for this architecture. Its launcher package would install every Linux
+# variant. On x86-64 it is the baseline build, which also runs on CPUs without AVX2.
+# The npm, uv and installer caches are removed in the same step, since no CLI reads them at run time.
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) opencode_package=@opencode/cli-linux-x64-baseline ;; \
+        arm64) opencode_package=@opencode/cli-linux-arm64 ;; \
+        *) echo "No OpenCode build for this architecture." >&2; exit 1 ;; \
+    esac \
+    && npm install --global @google/gemini-cli@0.65.0 @github/copilot@1.0.102 @qwen-code/qwen-code@0.26.0 "$opencode_package@2.1.2" \
+    && ln -sf "/usr/local/lib/node_modules/$opencode_package/bin/opencode" /usr/local/bin/opencode \
     && install -d -m 0755 /opt/cloudbot-agents \
     && export HOME=/opt/cloudbot-agents \
     && curl -fsS https://cursor.com/install | bash \
@@ -102,7 +111,9 @@ RUN npm install --global @google/gemini-cli@0.65.0 @github/copilot@1.0.102 @qwen
     && ln -sf /opt/cloudbot-agents/uv-bin/vibe-acp /usr/local/bin/vibe-acp \
     && ln -sf /opt/cloudbot-agents/.local/bin/agy /usr/local/bin/agy \
     && chmod -R a+rX,go-w /opt/cloudbot-agents \
-    && for cli in gemini copilot qwen opencode cursor-agent grok kimi vibe-acp agy; do ls -l "/usr/local/bin/$cli" && "/usr/local/bin/$cli" --version; done
+    && for cli in gemini copilot qwen opencode cursor-agent grok kimi vibe-acp agy; do ls -l "/usr/local/bin/$cli" && "/usr/local/bin/$cli" --version; done \
+    && rm -rf /opt/cloudbot-agents/.cache /root/.cache /root/.npm \
+    && find /tmp -mindepth 1 -maxdepth 1 ! -name .X11-unix -exec rm -rf {} +
 COPY --chmod=0755 docker/cloudbot-provider /usr/local/bin/cloudbot-provider
 COPY --chmod=0755 docker/cloudbot-print-url /usr/local/bin/cloudbot-print-url
 # COPY --chmod would give a folder it makes the file mode too, which nobody could enter.
