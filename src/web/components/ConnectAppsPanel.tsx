@@ -5,6 +5,7 @@ import type { ConnectedAppStatus, ConnectedAppSummary } from '../../shared/conne
 import { listConnectedApps, removeConnectedApp, startAppConnection, startAppSignIn } from '../apiClient.ts';
 import { APP_CATALOG, APP_CATEGORIES } from '../appCatalog.ts';
 import type { AppCategory, CatalogApp } from '../appCatalog.ts';
+import { APP_SIGN_IN_CHANNEL, describeAppReturn, readAppReturnMessage } from '../appReturn.ts';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
 import { CloseIcon, FilterIcon, SearchIcon } from './icons.tsx';
@@ -32,6 +33,8 @@ interface AppIconStyle extends CSSProperties {
 
 const ALL_CATEGORIES: CategoryFilter = 'All';
 const CATEGORY_FILTERS: CategoryFilter[] = [ALL_CATEGORIES, ...APP_CATEGORIES];
+// The server keeps a sign-in for ten minutes.
+const SIGN_IN_WAIT_LIMIT_MS = 10 * 60 * 1000;
 
 function getStatusLabel(status: ConnectedAppStatus): string {
     if (status === 'needs_token') {
@@ -82,6 +85,12 @@ function getCustomDisplayName(app: ConnectedAppSummary): string {
     }
 }
 
+function refreshApps(onLoaded: (loadedApps: ConnectedAppSummary[]) => void): void {
+    listConnectedApps()
+        .then(onLoaded)
+        .catch(() => undefined);
+}
+
 function getAppHue(serverName: string): number {
     const letters = Array.from(serverName);
     const hueSum = letters.reduce((sum, letter) => sum * 31 + (letter.codePointAt(0) ?? 0), 7);
@@ -118,6 +127,52 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
     const [isShowingInstalledOnly, setIsShowingInstalledOnly] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>(ALL_CATEGORIES);
     const [isCustomFormOpen, setIsCustomFormOpen] = useState(false);
+    // The name of the app whose sign-in window is open, and what the window held back from this one.
+    const [signInLabel, setSignInLabel] = useState<string | undefined>(undefined);
+    const [returnNotice, setReturnNotice] = useState<string | undefined>(undefined);
+
+    function stopWaiting(): void {
+        setSignInLabel(undefined);
+        setStartingAppName(undefined);
+        refreshApps(setApps);
+    }
+
+    // The window that comes back from the app tells this one on a channel. Only a panel that waits listens.
+    // The panel cannot see whether the sign-in window is still open, so it also stops waiting when the server forgets the sign-in.
+    useEffect(() => {
+        if (signInLabel === undefined) {
+            return undefined;
+        }
+
+        const timer = window.setTimeout(() => {
+            setSignInLabel(undefined);
+            setStartingAppName(undefined);
+            refreshApps(setApps);
+        }, SIGN_IN_WAIT_LIMIT_MS);
+        const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel(APP_SIGN_IN_CHANNEL);
+
+        if (channel !== undefined) {
+            channel.onmessage = (event: MessageEvent<unknown>) => {
+                const appReturn = readAppReturnMessage(event.data);
+
+                if (appReturn === undefined) {
+                    return;
+                }
+
+                const message = describeAppReturn(appReturn);
+
+                setReturnNotice(message);
+                setSignInLabel(undefined);
+                setStartingAppName(undefined);
+                refreshApps(setApps);
+            };
+        }
+
+        return () => {
+            window.clearTimeout(timer);
+            channel?.close();
+        };
+    }, [signInLabel]);
 
     useEffect(() => {
         let isCurrent = true;
@@ -146,16 +201,34 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
             return;
         }
 
+        // The window opens on the click itself, before the request, so a popup blocker lets it through.
+        // If it is blocked anyway, the sign-in page takes this window as before.
+        const signInWindow = window.open('', '_blank');
+        const catalogApp = APP_CATALOG.find(candidate => candidate.serverName === appName);
+
+        // The app's page must not reach back to this window through window.opener.
+        if (signInWindow !== null) {
+            signInWindow.opener = null;
+        }
+
+        setReturnNotice(undefined);
         setProblem(undefined);
         setStartingAppName(appName);
 
         startAppSignIn(selectedBotId, appName, appUrl)
             .then((signIn) => {
                 if (signIn.status === 'redirect') {
-                    window.location.assign(signIn.authorizationUrl);
+                    if (signInWindow === null) {
+                        window.location.assign(signIn.authorizationUrl);
+                    } else {
+                        signInWindow.location.href = signIn.authorizationUrl;
+                        setSignInLabel(catalogApp?.displayName ?? appName);
+                    }
 
                     return undefined;
                 }
+
+                signInWindow?.close();
 
                 if (signIn.status === 'failed') {
                     setProblem(signIn.problem);
@@ -173,6 +246,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                     });
             })
             .catch(() => {
+                signInWindow?.close();
                 setProblem('The connection could not be started. Try again.');
                 setStartingAppName(undefined);
             });
@@ -236,6 +310,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
     const installedCountAccessibleLabel = `${installedCount} installed apps`;
     const installedCountLabel = `${installedCount} installed`;
     const groupLabel = selectedCategory === ALL_CATEGORIES ? 'All apps' : selectedCategory;
+    const startingLabel = signInLabel === undefined ? 'Starting...' : 'Waiting...';
 
     return (
         <section aria-label="Connect apps" className="connect-apps-panel">
@@ -283,7 +358,15 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                     </button>
                 ))}
             </div>
-            {notice === undefined ? null : <p className="connect-app-message" role="status">{notice}</p>}
+            {notice === undefined && returnNotice === undefined ? null : <p className="connect-app-message" role="status">{returnNotice ?? notice}</p>}
+            {signInLabel === undefined
+                ? null
+                : (
+                        <p className="connect-app-message" role="status">
+                            {`Finish signing in to ${signInLabel} in the other window.`}
+                            <button type="button" className="connect-app-action" aria-label="Cancel sign-in" onClick={stopWaiting}>Cancel</button>
+                        </p>
+                    )}
             {selectedBotId === undefined ? <p className="connect-app-problem">Choose a bot before connecting an app.</p> : null}
             {loadState === 'loading' ? <p className="connect-app-message">Loading apps...</p> : null}
             {loadState === 'failed' ? <p className="connect-app-problem">The connected apps could not be loaded.</p> : null}
@@ -309,7 +392,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                                 handleConnect(catalogApp.serverName, catalogApp.url);
                                             }}
                                         >
-                                            {isStarting ? 'Starting...' : 'Connect'}
+                                            {isStarting ? startingLabel : 'Connect'}
                                         </button>
                                     )
                                 : (
@@ -410,7 +493,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                             aria-label="Connect custom app"
                                             disabled={selectedBotId === undefined || startingAppName !== undefined}
                                         >
-                                            {startingAppName?.startsWith('custom-') ? 'Starting...' : 'Connect'}
+                                            {startingAppName?.startsWith('custom-') ? startingLabel : 'Connect'}
                                         </button>
                                     </form>
                                 )

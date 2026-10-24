@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatMessage } from '../../shared/chatTypes.ts';
 import type { ConnectedAppSummary } from '../../shared/connectedApps.ts';
 import { listConnectedApps, removeConnectedApp, startAppConnection, startAppSignIn } from '../apiClient.ts';
 import { APP_CATALOG, APP_CATEGORIES } from '../appCatalog.ts';
+import { APP_SIGN_IN_CHANNEL } from '../appReturn.ts';
 import { ConnectAppsPanel } from './ConnectAppsPanel.tsx';
 
 vi.mock('../apiClient.ts', () => ({
@@ -18,6 +19,7 @@ vi.mock('../apiClient.ts', () => ({
 const LINEAR: ConnectedAppSummary = { id: 'app-1', name: 'linear', url: 'https://mcp.linear.app/mcp', status: 'connected', toolCount: 4 };
 const NOTION: ConnectedAppSummary = { id: 'app-2', name: 'notion', url: 'https://mcp.notion.com/mcp', status: 'needs_token', toolCount: 0 };
 const CUSTOM: ConnectedAppSummary = { id: 'app-3', name: 'custom-example-com', url: 'https://mcp.example.com/mcp', status: 'failed', toolCount: 0, problem: 'Private details from the server.' };
+const NOTION_CONNECTED: ConnectedAppSummary = { ...NOTION, status: 'connected', toolCount: 3 };
 const STARTED_MESSAGE: ChatMessage = {
     id: 'message-1',
     botId: 'bot-1',
@@ -27,14 +29,30 @@ const STARTED_MESSAGE: ChatMessage = {
     body: { kind: 'text', text: 'Connect an app.' },
 };
 
+interface FakeSignInWindow {
+    location: { href: string };
+    closed: boolean;
+    close: () => void;
+}
+
+function createSignInWindow(): FakeSignInWindow {
+    return { location: { href: '' }, closed: true, close: vi.fn() };
+}
+
+const openWindow = vi.fn<() => Window | null>();
+const NOTION_SIGN_IN = { status: 'redirect', authorizationUrl: 'https://mcp.notion.com/authorize?state=s1' } as const;
+
 describe('ConnectAppsPanel', () => {
     beforeEach(() => {
         vi.mocked(startAppSignIn)
             .mockResolvedValue({ status: 'unsupported' });
+        openWindow.mockImplementation(() => createSignInWindow() as unknown as Window);
+        vi.stubGlobal('open', openWindow);
     });
 
     afterEach(() => {
         cleanup();
+        vi.unstubAllGlobals();
         vi.restoreAllMocks();
     });
 
@@ -198,11 +216,72 @@ describe('ConnectAppsPanel', () => {
                 .toHaveBeenCalledWith('bot-1', 'todoist', 'https://ai.todoist.net/mcp');
         });
     });
-    it('opens the sign-in page of the app when it has one', async () => {
+
+    it('opens a window on the click and sends it to the sign-in page of the app', async () => {
+        const signInWindow = createSignInWindow();
+        let resolveSignIn: (value: typeof NOTION_SIGN_IN) => void = () => undefined;
+
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        openWindow
+            .mockReturnValue(signInWindow as unknown as Window);
+        vi.mocked(startAppSignIn)
+            .mockReturnValue(new Promise((resolve) => {
+                resolveSignIn = resolve;
+            }));
+        const assign = vi.fn();
+
+        vi.stubGlobal('location', { assign });
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Notion' }));
+
+        expect(openWindow)
+            .toHaveBeenCalledWith('', '_blank');
+        expect(signInWindow.location.href)
+            .toBe('');
+
+        await act(async () => {
+            resolveSignIn(NOTION_SIGN_IN);
+            await Promise.resolve();
+        });
+
+        expect(signInWindow.location.href)
+            .toBe('https://mcp.notion.com/authorize?state=s1');
+        expect(assign)
+            .not.toHaveBeenCalled();
+        expect(startAppSignIn)
+            .toHaveBeenCalledWith('bot-1', 'notion', 'https://mcp.notion.com/mcp');
+        expect(startAppConnection)
+            .not.toHaveBeenCalled();
+        vi.unstubAllGlobals();
+    });
+
+    it('shows that it waits for the other window and keeps the button disabled', async () => {
         vi.mocked(listConnectedApps)
             .mockResolvedValue([]);
         vi.mocked(startAppSignIn)
-            .mockResolvedValue({ status: 'redirect', authorizationUrl: 'https://mcp.notion.com/authorize?state=s1' });
+            .mockResolvedValue(NOTION_SIGN_IN);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Notion' }));
+
+        expect(await screen.findByText('Finish signing in to Notion in the other window.'))
+            .toBeTruthy();
+        const waitingButton = screen.getByRole('button', { name: 'Connect Notion' });
+
+        expect(waitingButton.textContent)
+            .toBe('Waiting...');
+        expect((waitingButton as HTMLButtonElement).disabled)
+            .toBe(true);
+    });
+
+    it('signs in on this window when the browser blocks the new one', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        openWindow
+            .mockReturnValue(null);
+        vi.mocked(startAppSignIn)
+            .mockResolvedValue(NOTION_SIGN_IN);
         const assign = vi.fn();
 
         vi.stubGlobal('location', { assign });
@@ -213,11 +292,171 @@ describe('ConnectAppsPanel', () => {
             expect(assign)
                 .toHaveBeenCalledWith('https://mcp.notion.com/authorize?state=s1');
         });
-        expect(startAppSignIn)
-            .toHaveBeenCalledWith('bot-1', 'notion', 'https://mcp.notion.com/mcp');
-        expect(startAppConnection)
-            .not.toHaveBeenCalled();
         vi.unstubAllGlobals();
+    });
+
+    it('closes the new window when the sign-in cannot start', async () => {
+        const signInWindow = createSignInWindow();
+
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        openWindow
+            .mockReturnValue(signInWindow as unknown as Window);
+        vi.mocked(startAppSignIn)
+            .mockResolvedValue({ status: 'failed', problem: 'The app did not accept the sign-in. Try again later.' });
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Linear' }));
+
+        expect(await screen.findByRole('alert'))
+            .toBeTruthy();
+        expect(signInWindow.close)
+            .toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the new window before the chat fallback when the app has no sign-in page', async () => {
+        const signInWindow = createSignInWindow();
+
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        openWindow
+            .mockReturnValue(signInWindow as unknown as Window);
+        vi.mocked(startAppConnection)
+            .mockResolvedValue(STARTED_MESSAGE);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Linear' }));
+
+        await waitFor(() => {
+            expect(startAppConnection)
+                .toHaveBeenCalledTimes(1);
+        });
+        expect(signInWindow.close)
+            .toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the new window when the request throws', async () => {
+        const signInWindow = createSignInWindow();
+
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        openWindow
+            .mockReturnValue(signInWindow as unknown as Window);
+        vi.mocked(startAppSignIn)
+            .mockRejectedValue(new Error('offline'));
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Linear' }));
+
+        expect(await screen.findByText('The connection could not be started. Try again.'))
+            .toBeTruthy();
+        expect(signInWindow.close)
+            .toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels the wait, enables Connect again and reloads the list', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        vi.mocked(startAppSignIn)
+            .mockResolvedValue(NOTION_SIGN_IN);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Notion' }));
+        await screen.findByText('Finish signing in to Notion in the other window.');
+        expect(listConnectedApps)
+            .toHaveBeenCalledTimes(1);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel sign-in' }));
+
+        expect(screen.queryByText('Finish signing in to Notion in the other window.'))
+            .toBeNull();
+        const connectButton = screen.getByRole('button', { name: 'Connect Notion' });
+
+        expect(connectButton.textContent)
+            .toBe('Connect');
+        expect((connectButton as HTMLButtonElement).disabled)
+            .toBe(false);
+        await waitFor(() => {
+            expect(listConnectedApps)
+                .toHaveBeenCalledTimes(2);
+        });
+    });
+
+    it('stops waiting after ten minutes, when the server has forgotten the sign-in', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        vi.mocked(startAppSignIn)
+            .mockResolvedValue(NOTION_SIGN_IN);
+
+        try {
+            render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+            fireEvent.click(await screen.findByRole('button', { name: 'Connect Notion' }));
+            await screen.findByText('Finish signing in to Notion in the other window.');
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(9 * 60 * 1000);
+            });
+            expect(screen.getByText('Finish signing in to Notion in the other window.'))
+                .toBeTruthy();
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(60 * 1000);
+            });
+            expect(screen.queryByText('Finish signing in to Notion in the other window.'))
+                .toBeNull();
+            expect(screen.getByRole('button', { name: 'Connect Notion' }).textContent)
+                .toBe('Connect');
+            expect(listConnectedApps)
+                .toHaveBeenCalledTimes(2);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('reloads the list and shows what happened when the other window reports back', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValueOnce([])
+            .mockResolvedValue([NOTION_CONNECTED]);
+        vi.mocked(startAppSignIn)
+            .mockResolvedValue(NOTION_SIGN_IN);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Notion' }));
+        await screen.findByText('Finish signing in to Notion in the other window.');
+
+        const channel = new BroadcastChannel(APP_SIGN_IN_CHANNEL);
+
+        channel.postMessage({ apps: 'connected', app: 'notion', bot: 'bot-1' });
+        channel.close();
+
+        expect(await screen.findByText('Notion is connected.'))
+            .toBeTruthy();
+        expect(screen.queryByText('Finish signing in to Notion in the other window.'))
+            .toBeNull();
+        expect(await screen.findByRole('button', { name: 'Remove Notion' }))
+            .toBeTruthy();
+    });
+
+    it('ignores the channel when it is not waiting for a sign-in', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        await screen.findByRole('button', { name: 'Connect Notion' });
+
+        const channel = new BroadcastChannel(APP_SIGN_IN_CHANNEL);
+
+        channel.postMessage({ apps: 'connected', app: 'notion', bot: 'bot-1' });
+        await new Promise((resolve) => {
+            setTimeout(resolve, 50);
+        });
+        channel.close();
+
+        expect(screen.queryByText('Notion is connected.'))
+            .toBeNull();
+        expect(listConnectedApps)
+            .toHaveBeenCalledTimes(1);
     });
 
     it('says why the sign-in could not start, and stays on the list', async () => {

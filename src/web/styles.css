@@ -658,6 +658,10 @@ svg {
     color: var(--color-text-muted);
 }
 
+.connect-app-message > .connect-app-action {
+    margin-left: var(--space-2);
+}
+
 .connect-app-problem {
     color: var(--color-danger);
 }

@@ -576,9 +576,10 @@ point the sign-in at a private host. `registerClient` registers CloudBot as a pu
 address, `CLOUDBOT_PUBLIC_URL` plus `/api/apps/oauth/callback`.
 
 `AppOAuth.start` keeps the code verifier and a random state in memory for ten minutes and answers with the
-authorization address. The panel opens it in the same tab. The server sends the owner back to the callback with a
-code. The callback route sits outside the session check, because the session cookie is `SameSite=Strict` and the
-browser does not send it on a return from another site. The state, which works once, ties the request to the owner
+authorization address. The panel opens the window on the click itself, so a popup blocker allows it, and points it
+at that address while it shows that it waits. The server sends the owner back to the callback with a code. The window
+that comes back tells the first one on a `BroadcastChannel` and closes itself. The callback route sits outside the
+session check, because the session cookie is `SameSite=Strict` and the browser does not send it on a return from another site. The state, which works once, ties the request to the owner
 who started it. The callback trades the code for tokens and then answers with a page that moves on by itself, since
 a redirect would drop the cookie too. The hub lets this one GET path through to a running instance without a hub
 session, for the same reason.
