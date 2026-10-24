@@ -22,6 +22,8 @@ const VNC_PATH = '/api/desktop/vnc';
 const HOLDER_POLL_MS = 3000;
 // Chromium keeps a normal browser window at least this wide.
 const MIN_CHROMIUM_WINDOW_WIDTH = 500;
+const AUTO_RETRY_MS = 3000;
+const MAX_AUTO_RETRIES = 10;
 
 function buildVncUrl(location: Location): string {
     const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -66,8 +68,9 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
     const screenViewportRef = useRef<HTMLDivElement>(null);
     const screenRef = useRef<HTMLDivElement>(null);
     const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
-    // Bumped by the reconnect button.
+    // Bumped by the reconnect button and the automatic retries.
     const [connectAttempt, setConnectAttempt] = useState(0);
+    const autoRetriesRef = useRef(0);
     // VNC on the Docker desktop, or the browser's frames in local mode. Unknown until the server answers.
     const [view, setView] = useState<ScreenViewName | undefined>(undefined);
     const clientRef = useRef<RFB | null>(null);
@@ -131,12 +134,39 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
     }, []);
 
     useEffect(() => {
+        if (view !== undefined) {
+            return;
+        }
+
         getScreenView()
             .then(setView)
             .catch(() => {
                 setConnectionState('disconnected');
             });
-    }, []);
+    }, [connectAttempt, view]);
+
+    // The desktop may still be starting, for example right after the bot wakes up. A lost screen is tried again on its own a few times.
+    useEffect(() => {
+        if (connectionState === 'connected') {
+            autoRetriesRef.current = 0;
+
+            return;
+        }
+
+        if (connectionState !== 'disconnected' || autoRetriesRef.current >= MAX_AUTO_RETRIES) {
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            autoRetriesRef.current += 1;
+            setConnectionState('connecting');
+            setConnectAttempt(attempt => attempt + 1);
+        }, AUTO_RETRY_MS);
+
+        return () => {
+            clearTimeout(timer);
+        };
+    }, [connectionState]);
 
     useEffect(() => {
         const viewportElement = screenViewportRef.current;
@@ -305,6 +335,7 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
                                 <button
                                     type="button"
                                     onClick={() => {
+                                        autoRetriesRef.current = 0;
                                         setConnectionState('connecting');
                                         setConnectAttempt(attempt => attempt + 1);
                                     }}

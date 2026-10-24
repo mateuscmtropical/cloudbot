@@ -9,8 +9,8 @@ type SwipeDirection = 'right' | 'left';
 
 const NARROW_SCREEN_QUERY = '(max-width: 720px)';
 const MIN_SWIPE_DISTANCE_PX = 60;
-// A drag that runs in a text field, a code block or the composer belongs to that element, not to the menu.
-const OWN_DRAG_SELECTOR = 'pre, code, table, input, textarea, .composer';
+// A drag that runs in a text field, a code block, the composer or the bot's screen belongs to that element, not to the menu.
+const OWN_DRAG_SELECTOR = 'pre, code, table, input, textarea, .composer, .desktop-panel';
 
 // A swipe is a mostly horizontal drag that is long enough. A slow diagonal scroll is not one.
 function readSwipe(start: TouchPoint, end: TouchPoint): SwipeDirection | undefined {
