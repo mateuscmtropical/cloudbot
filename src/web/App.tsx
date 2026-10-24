@@ -12,6 +12,7 @@ import { findConversationMascot, startMascotHop } from './mascotHop.ts';
 import type { MascotHop, MascotHopPoint } from './mascotHop.ts';
 import { useAppUpdate } from './useAppUpdate.ts';
 import { usePullToRefresh } from './usePullToRefresh.ts';
+import { describeAppReturn, readAppReturn } from './appReturn.ts';
 import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
@@ -163,7 +164,9 @@ function App(): ReactElement {
     const [isAccountOpen, setIsAccountOpen] = useState(false);
     const [isBotProfileOpen, setIsBotProfileOpen] = useState(false);
     // The connected remote MCP servers panel, opened from the sidebar.
-    const [isConnectAppsOpen, setIsConnectAppsOpen] = useState(false);
+    // It opens by itself when the owner comes back from an app's sign-in page.
+    const [appReturn] = useState(() => readAppReturn(window.location.search));
+    const [isConnectAppsOpen, setIsConnectAppsOpen] = useState(appReturn !== undefined);
     const [errorText, setErrorText] = useState<string | undefined>(undefined);
     const [needsSignIn, setNeedsSignIn] = useState(false);
     // Chips per bot: files still uploading, and the files the server holds for the next message.
@@ -435,6 +438,8 @@ function App(): ReactElement {
         }
 
         address.searchParams.delete('message');
+        address.searchParams.delete('apps');
+        address.searchParams.delete('app');
         window.history.replaceState(null, '', address);
     }, [selectedBotId, selectedChannelId]);
 
@@ -1256,6 +1261,7 @@ function App(): ReactElement {
                 ? (
                         <ConnectAppsPanel
                             selectedBotId={selectedBotId}
+                            notice={appReturn === undefined ? undefined : describeAppReturn(appReturn)}
                             onClose={() => {
                                 setIsConnectAppsOpen(false);
                             }}

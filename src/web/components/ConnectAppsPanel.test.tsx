@@ -1,16 +1,17 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatMessage } from '../../shared/chatTypes.ts';
 import type { ConnectedAppSummary } from '../../shared/connectedApps.ts';
-import { listConnectedApps, removeConnectedApp, startAppConnection } from '../apiClient.ts';
+import { listConnectedApps, removeConnectedApp, startAppConnection, startAppSignIn } from '../apiClient.ts';
 import { ConnectAppsPanel } from './ConnectAppsPanel.tsx';
 
 vi.mock('../apiClient.ts', () => ({
     listConnectedApps: vi.fn(),
     removeConnectedApp: vi.fn(),
     startAppConnection: vi.fn(),
+    startAppSignIn: vi.fn(),
 }));
 
 const LINEAR: ConnectedAppSummary = { id: 'app-1', name: 'linear', url: 'https://mcp.linear.app/mcp', status: 'connected', toolCount: 4 };
@@ -26,8 +27,14 @@ const STARTED_MESSAGE: ChatMessage = {
 };
 
 describe('ConnectAppsPanel', () => {
+    beforeEach(() => {
+        vi.mocked(startAppSignIn)
+            .mockResolvedValue({ status: 'unsupported' });
+    });
+
     afterEach(() => {
         cleanup();
+        vi.restoreAllMocks();
     });
 
     it('shows featured apps in order with a search field and custom app row', async () => {
@@ -114,6 +121,58 @@ describe('ConnectAppsPanel', () => {
             .toBeTruthy();
     });
 
+    it('opens the sign-in page of the app when it has one', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        vi.mocked(startAppSignIn)
+            .mockResolvedValue({ status: 'redirect', authorizationUrl: 'https://mcp.notion.com/authorize?state=s1' });
+        const assign = vi.fn();
+
+        vi.stubGlobal('location', { assign });
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Notion' }));
+
+        await waitFor(() => {
+            expect(assign)
+                .toHaveBeenCalledWith('https://mcp.notion.com/authorize?state=s1');
+        });
+        expect(startAppSignIn)
+            .toHaveBeenCalledWith('bot-1', 'notion', 'https://mcp.notion.com/mcp');
+        expect(startAppConnection)
+            .not.toHaveBeenCalled();
+        vi.unstubAllGlobals();
+    });
+
+    it('says why the sign-in could not start, and stays on the list', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        vi.mocked(startAppSignIn)
+            .mockResolvedValue({ status: 'failed', problem: 'The app did not accept the sign-in. Try again later.' });
+        const onClose = vi.fn();
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={onClose} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Linear' }));
+
+        expect(await screen.findByRole('alert'))
+            .toBeTruthy();
+        expect(screen.getByText('The app did not accept the sign-in. Try again later.'))
+            .toBeTruthy();
+        expect(onClose)
+            .not.toHaveBeenCalled();
+    });
+
+    it('shows what happened when the owner came back from a sign-in page', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} notice="Notion is connected." />);
+
+        expect(await screen.findByRole('status'))
+            .toBeTruthy();
+        expect(screen.getByText('Notion is connected.'))
+            .toBeTruthy();
+    });
+
     it('starts the selected app flow in the active bot chat', async () => {
         vi.mocked(listConnectedApps)
             .mockResolvedValue([]);
@@ -164,13 +223,13 @@ describe('ConnectAppsPanel', () => {
             .toBeTruthy();
         expect(screen.getByText('Connected.'))
             .toBeTruthy();
-        expect(screen.getByText('Sign-in needed. Finish in chat.'))
+        expect(screen.getByText('Sign-in needed.'))
             .toBeTruthy();
-        expect(screen.getByText('Could not connect. Open chat for details.'))
+        expect(screen.getByText('Could not connect.'))
             .toBeTruthy();
         expect(screen.getByRole('button', { name: 'Remove Linear' }))
             .toBeTruthy();
-        expect(screen.getByRole('button', { name: 'Remove Notion' }))
+        expect(screen.getByRole('button', { name: 'Connect Notion' }))
             .toBeTruthy();
         expect(screen.getByRole('button', { name: 'Remove example.com' }))
             .toBeTruthy();

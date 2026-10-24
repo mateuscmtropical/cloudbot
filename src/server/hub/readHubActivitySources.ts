@@ -55,6 +55,7 @@ interface HubActivitySourceOptions {
     whatsappStore?: ActivityWhatsAppStore;
     hasAgentProgram?: () => Promise<boolean>;
     isReady: () => boolean;
+    hasAppSignIn?: () => boolean;
 }
 
 async function readHubActivitySources(options: HubActivitySourceOptions): Promise<ActivitySources> {
@@ -89,6 +90,7 @@ async function readHubActivitySources(options: HubActivitySourceOptions): Promis
         hasEmailAccount: emailAccounts.some(hasAccount => hasAccount),
         hasAgentProgram,
         isLoginOrSetupInProgress: !options.isReady(),
+        hasAppSignIn: options.hasAppSignIn?.() ?? false,
     };
 }
 

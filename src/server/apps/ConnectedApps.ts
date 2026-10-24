@@ -4,6 +4,8 @@ import type { ConnectedAppRecord, ConnectedAppStore } from '../store/ConnectedAp
 import type { McpServerConfig } from '../agent/AgentRunner.ts';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
 import type { AppProxy } from './AppProxy.ts';
+import { isOAuthSecretName } from './AppOAuthTokens.ts';
+import type { AppOAuthTokens } from './AppOAuthTokens.ts';
 import { AppAddressError, checkAppUrl, defaultAppAddressDeps } from './appAddress.ts';
 import type { AllowedPrivateHost, AppAddressDeps, CheckedAppUrl } from './appAddress.ts';
 import { pinnedFetch } from './pinnedFetch.ts';
@@ -35,6 +37,8 @@ interface ConnectedAppsDeps {
     allowedHosts: () => Promise<AllowedPrivateHost[]>;
     addressDeps?: ((allowedHosts: AllowedPrivateHost[]) => AppAddressDeps) | undefined;
     fetchFunction?: FetchFunction | undefined;
+    // Reads the access token of a server that was connected through its own sign-in page.
+    oauthTokens?: Pick<AppOAuthTokens, 'accessToken'> | undefined;
 }
 
 // A token that is not usable for an address is reported as a problem, and the proxy never sends the request without it.
@@ -101,7 +105,7 @@ class ConnectedApps {
             return { outcome: 'refused', problem: error instanceof AppAddressError ? error.message : 'That address could not be checked.' };
         }
 
-        const token = this.readTokenFor(botId, input.tokenSecret, checked.url);
+        const token = await this.readTokenFor(botId, input.tokenSecret, checked.url);
 
         if (token.problem !== undefined) {
             return { outcome: 'refused', problem: token.problem };
@@ -134,6 +138,15 @@ class ConnectedApps {
         return removed;
     }
 
+    // Deletes a vault secret that no connected server uses, such as the token of a sign-in that did not end connected.
+    async dropUnusedSecret(botId: string, secretName: string): Promise<void> {
+        const isInUse = await this.deps.store.isSecretInUse(botId, secretName);
+
+        if (!isInUse) {
+            this.deps.secrets.remove(botId, secretName);
+        }
+    }
+
     // Removes the servers whose token this bot saved, since the token goes with the bot. Servers without a token are shared and stay.
     async removeSavedBy(botId: string): Promise<void> {
         const records = await this.deps.store.list();
@@ -163,7 +176,8 @@ class ConnectedApps {
     }
 
     // The token is read only for an https address, and only when the saved secret is for the same origin.
-    private readTokenFor(botId: string, tokenSecret: string | undefined, url: URL): TokenRead {
+    // A sign-in saved by the server's own page holds more than a token, and gives the access token, renewed when it is old.
+    private async readTokenFor(botId: string, tokenSecret: string | undefined, url: URL): Promise<TokenRead> {
         if (tokenSecret === undefined) {
             return { value: undefined };
         }
@@ -182,7 +196,11 @@ class ConnectedApps {
             return { value: undefined, problem: 'The saved secret is for another site, so it is not sent here.' };
         }
 
-        return { value: secret.value };
+        const signInToken = this.deps.oauthTokens !== undefined && isOAuthSecretName(tokenSecret)
+            ? await this.deps.oauthTokens.accessToken(botId, tokenSecret, secret)
+            : undefined;
+
+        return { value: signInToken ?? secret.value };
     }
 
     private async probe(checked: CheckedAppUrl, token: string | undefined): Promise<ProbeResult> {
@@ -270,12 +288,20 @@ class ConnectedApps {
 
         this.deps.proxy.register(record.id, {
             upstream,
-            readToken: () => {
+            readToken: async () => {
                 if (secretName === null || secretBotId === null) {
                     return undefined;
                 }
 
-                const token = this.readTokenFor(secretBotId, secretName, upstream);
+                let token: TokenRead;
+
+                try {
+                    token = await this.readTokenFor(secretBotId, secretName, upstream);
+                } catch (error: unknown) {
+                    await this.endSignIn(record);
+
+                    throw error;
+                }
 
                 if (token.problem !== undefined) {
                     throw new Error(token.problem);
@@ -284,6 +310,14 @@ class ConnectedApps {
                 return token.value;
             },
         });
+    }
+
+    // The server refused to renew the sign-in. The app waits for a new one, and the panel offers Connect again.
+    private async endSignIn(record: ConnectedAppRecord): Promise<void> {
+        this.deps.proxy.remove(record.id);
+
+        await this.deps.store.save({ name: record.name, url: record.url, status: 'needs_token', toolCount: 0, problem: undefined, secretName: undefined, secretBotId: undefined });
+        await this.dropReplacedSecret(record);
     }
 }
 

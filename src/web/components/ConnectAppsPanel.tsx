@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactElement, SyntheticEvent } from 'react';
 
 import type { ConnectedAppStatus, ConnectedAppSummary } from '../../shared/connectedApps.ts';
-import { listConnectedApps, removeConnectedApp, startAppConnection } from '../apiClient.ts';
+import { listConnectedApps, removeConnectedApp, startAppConnection, startAppSignIn } from '../apiClient.ts';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
 import { CloseIcon, FilterIcon, SearchIcon } from './icons.tsx';
@@ -12,6 +12,8 @@ import { RoundButton } from './RoundButton.tsx';
 interface ConnectAppsPanelProps {
     onClose: () => void;
     selectedBotId: string | undefined;
+    // What happened when the owner came back from an app's sign-in page, shown once at the top.
+    notice?: string | undefined;
 }
 
 type LoadState = 'loading' | 'ready' | 'failed';
@@ -48,11 +50,11 @@ const KNOWN_APPS: KnownApp[] = [
 
 function getStatusLabel(status: ConnectedAppStatus): string {
     if (status === 'needs_token') {
-        return 'Sign-in needed. Finish in chat.';
+        return 'Sign-in needed.';
     }
 
     if (status === 'failed') {
-        return 'Could not connect. Open chat for details.';
+        return 'Could not connect.';
     }
 
     return 'Connected.';
@@ -111,7 +113,7 @@ function AppIcon({ name }: AppIconProps): ReactElement {
     return <span className={`connect-app-icon connect-app-icon-${name}`} aria-hidden="true">{initial}</span>;
 }
 
-function ConnectAppsPanel({ onClose, selectedBotId }: ConnectAppsPanelProps): ReactElement {
+function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelProps): ReactElement {
     const [apps, setApps] = useState<ConnectedAppSummary[]>([]);
     const [loadState, setLoadState] = useState<LoadState>('loading');
     const [problem, setProblem] = useState<string | undefined>(undefined);
@@ -143,6 +145,7 @@ function ConnectAppsPanel({ onClose, selectedBotId }: ConnectAppsPanelProps): Re
         };
     }, []);
 
+    // The app's own sign-in page opens when it has one. Otherwise the bot asks in the chat, as before.
     function handleConnect(appName: string, appUrl: string): void {
         if (selectedBotId === undefined || startingAppName !== undefined) {
             return;
@@ -151,16 +154,31 @@ function ConnectAppsPanel({ onClose, selectedBotId }: ConnectAppsPanelProps): Re
         setProblem(undefined);
         setStartingAppName(appName);
 
-        const connectionRequest = startAppConnection(selectedBotId, appName, appUrl);
+        startAppSignIn(selectedBotId, appName, appUrl)
+            .then((signIn) => {
+                if (signIn.status === 'redirect') {
+                    window.location.assign(signIn.authorizationUrl);
 
-        connectionRequest
-            .then(() => {
-                onClose();
+                    return undefined;
+                }
+
+                if (signIn.status === 'failed') {
+                    setProblem(signIn.problem);
+                    setStartingAppName(undefined);
+
+                    return undefined;
+                }
+
+                return startAppConnection(selectedBotId, appName, appUrl)
+                    .then(() => {
+                        onClose();
+                    })
+                    .finally(() => {
+                        setStartingAppName(undefined);
+                    });
             })
             .catch(() => {
-                setProblem('The connection could not be started. Try again from chat.');
-            })
-            .finally(() => {
+                setProblem('The connection could not be started. Try again.');
                 setStartingAppName(undefined);
             });
     }
@@ -258,6 +276,7 @@ function ConnectAppsPanel({ onClose, selectedBotId }: ConnectAppsPanelProps): Re
                     <FilterIcon />
                 </RoundButton>
             </div>
+            {notice === undefined ? null : <p className="connect-app-message" role="status">{notice}</p>}
             {selectedBotId === undefined ? <p className="connect-app-problem">Choose a bot before connecting an app.</p> : null}
             {loadState === 'loading' ? <p className="connect-app-message">Loading apps...</p> : null}
             {loadState === 'failed' ? <p className="connect-app-problem">The connected apps could not be loaded.</p> : null}
@@ -272,7 +291,7 @@ function ConnectAppsPanel({ onClose, selectedBotId }: ConnectAppsPanelProps): Re
                             const connectedApp = apps.find(app => app.name === knownApp.serverName);
                             const isStarting = startingAppName === knownApp.serverName;
                             const description = connectedApp === undefined ? knownApp.description : getStatusLabel(connectedApp.status);
-                            const actionButton = connectedApp === undefined
+                            const actionButton = connectedApp?.status !== 'connected'
                                 ? (
                                         <button
                                             type="button"

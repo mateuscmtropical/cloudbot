@@ -16,5 +16,18 @@ interface ConnectedAppSummary {
     problem?: string | undefined;
 }
 
-export { CONNECTED_APP_STATUSES };
-export type { ConnectedAppStatus, ConnectedAppSummary };
+// Where the app sends the owner back after the sign-in page of a connected server. The hub lets this one path through
+// without a session, since the browser comes back from another site and drops its strict cookie.
+const APP_OAUTH_CALLBACK_PATH = '/api/apps/oauth/callback';
+
+// The answer to starting a sign-in from the Connect apps panel.
+// redirect: open the address, the server's own sign-in page.
+// unsupported: the server has no sign-in page for apps, so the bot asks for a token in the chat instead.
+// failed: the sign-in could not start.
+type AppSignInStart
+    = | { status: 'redirect'; authorizationUrl: string }
+        | { status: 'unsupported' }
+        | { status: 'failed'; problem: string };
+
+export { APP_OAUTH_CALLBACK_PATH, CONNECTED_APP_STATUSES };
+export type { AppSignInStart, ConnectedAppStatus, ConnectedAppSummary };

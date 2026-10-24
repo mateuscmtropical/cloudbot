@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 
-import type { ConnectedAppSummary } from '../../shared/connectedApps.ts';
+import type { AppSignInStart, ConnectedAppSummary } from '../../shared/connectedApps.ts';
 import type { ChatMessage } from '../../shared/chatTypes.ts';
 import { BotDeletingError } from '../bots/BotDeletingError.ts';
 import type { ChatService } from '../chat/ChatService.ts';
 import { parseAppUrl } from './appAddress.ts';
+import type { AppOAuth } from './AppOAuth.ts';
 import type { ConnectedApps } from './ConnectedApps.ts';
 
 interface AppErrorResponse {
@@ -15,6 +16,14 @@ interface AppErrorResponse {
 interface AppRoutesOptions {
     connectedApps: Pick<ConnectedApps, 'list' | 'remove'>;
     chatService?: Pick<ChatService, 'sendMessage'> | undefined;
+    // The sign-in through the server's own page, and the address the server sends the owner back to.
+    signIn?: AppSignInOptions | undefined;
+}
+
+interface AppSignInOptions {
+    oauth: Pick<AppOAuth, 'start'>;
+    redirectUri: string;
+    hasBot: (botId: string) => Promise<boolean>;
 }
 
 const APP_NOT_FOUND: AppErrorResponse = { error: 'No connected server has this id.' };
@@ -73,6 +82,36 @@ function createAppRoutes(options: AppRoutesOptions): Hono {
         return context.json(apps);
     });
 
+    const signIn = options.signIn;
+
+    if (signIn !== undefined) {
+        routes.post('/api/apps/oauth/start', async (context) => {
+            let requestBody: unknown;
+
+            try {
+                requestBody = await context.req.json();
+            } catch {
+                requestBody = undefined;
+            }
+
+            const request = readConnectionRequest(requestBody);
+
+            if (request === undefined) {
+                return context.json(INVALID_CONNECTION, 400);
+            }
+
+            const isKnownBot = await signIn.hasBot(request.botId);
+
+            if (!isKnownBot) {
+                return context.json(BOT_NOT_FOUND, 404);
+            }
+
+            const start: AppSignInStart = await signIn.oauth.start(request.botId, request.name, request.url, signIn.redirectUri);
+
+            return context.json(start);
+        });
+    }
+
     if (chatService !== undefined) {
         routes.post('/api/apps/connect', async (context) => {
             let requestBody: unknown;
@@ -125,4 +164,4 @@ function createAppRoutes(options: AppRoutesOptions): Hono {
 }
 
 export { createAppRoutes };
-export type { AppRoutesOptions };
+export type { AppRoutesOptions, AppSignInOptions };

@@ -16,6 +16,11 @@ const idleSources: ActivitySources = {
 };
 
 describe('computeActivity', () => {
+    it('lists a pending app sign-in as a reason to stay awake', () => {
+        expect(computeActivity({ ...idleSources, hasAppSignIn: true }))
+            .toEqual({ isBusy: true, reasons: ['app sign-in in progress'] });
+    });
+
     it('reports no busy reasons when every source is idle', () => {
         expect(computeActivity(idleSources))
             .toEqual({ isBusy: false, reasons: [] });

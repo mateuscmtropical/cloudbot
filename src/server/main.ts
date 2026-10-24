@@ -77,7 +77,10 @@ import { Vault } from './vault/Vault.ts';
 import { startKeyProxy } from './vault/KeyProxy.ts';
 import type { KeyProxy } from './vault/KeyProxy.ts';
 import { AppProxy } from './apps/AppProxy.ts';
+import { AppOAuth } from './apps/AppOAuth.ts';
+import { AppOAuthTokens } from './apps/AppOAuthTokens.ts';
 import { ConnectedApps } from './apps/ConnectedApps.ts';
+import { createGuardedFetch } from './apps/guardedFetch.ts';
 import { GithubProxy } from './github/GithubProxy.ts';
 import { createLoopbackCertificate, removeLoopbackCertificate } from './github/loopbackCertificate.ts';
 import { readGithubToken } from './github/githubRouting.ts';
@@ -236,7 +239,11 @@ const appProxy = new AppProxy({
         return checked.addresses;
     },
 });
-const connectedApps = new ConnectedApps({ store: connectedAppStore, secrets: botSecrets, proxy: appProxy, allowedHosts: allowedPrivateHosts });
+// The sign-in of a server with its own page: the owner approves there, and the token goes to the vault, never to the page or the bot.
+const appOAuthFetch = createGuardedFetch(allowedPrivateHosts);
+const appOAuthTokens = new AppOAuthTokens({ secrets: botSecrets, fetchFunction: appOAuthFetch });
+const connectedApps = new ConnectedApps({ store: connectedAppStore, secrets: botSecrets, proxy: appProxy, allowedHosts: allowedPrivateHosts, oauthTokens: appOAuthTokens });
+const appOAuth = new AppOAuth({ connectedApps, tokens: appOAuthTokens, fetchFunction: appOAuthFetch });
 
 // The gate is the browser's only way out. It starts before the browser, so Chromium never runs without it.
 function createBrowserGate(gatePort: number | undefined): BrowserGate {
@@ -614,7 +621,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

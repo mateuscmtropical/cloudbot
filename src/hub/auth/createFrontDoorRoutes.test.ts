@@ -715,6 +715,49 @@ describe('createFrontDoorRoutes', () => {
             .toEqual([PERSON_NAME]);
     });
 
+    it('lets the sign-in return of a connected app reach the instance without a hub session', async () => {
+        const upstream = await startLocalServer((request, response) => {
+            const body = JSON.stringify({ path: request.url ?? '', hubSecret: readHeaderValue(request.headers['x-cloudbot-hub']) });
+
+            response.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+            response.end(body);
+        });
+
+        localServers.push(upstream.server);
+        const harness = await createHarness({ upstreamFor: () => upstream.target });
+
+        harnesses.push(harness);
+        const response = await harness.app.request(`https://${PERSON_NAME}.example.test/api/apps/oauth/callback?state=s1&code=c1`);
+        const observed = await response.json() as { path: string; hubSecret: string };
+        const otherPath = await harness.app.request(`https://${PERSON_NAME}.example.test/api/apps`);
+        const postResponse = await harness.app.request(`https://${PERSON_NAME}.example.test/api/apps/oauth/callback`, { method: 'POST', headers: { origin: `https://${PERSON_NAME}.example.test` } });
+
+        expect(response.status)
+            .toBe(200);
+        expect(observed.path)
+            .toBe('/api/apps/oauth/callback?state=s1&code=c1');
+        expect(observed.hubSecret)
+            .toBe(PERSON_SECRET);
+        // No other path and no other method goes through without a session.
+        expect(await otherPath.text())
+            .toContain('<form');
+        expect(await postResponse.text())
+            .toContain('<form');
+    });
+
+    it('sends the owner to the page when the instance is not running for a sign-in return', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        harness.instances.setStatus(PERSON_NAME, 'stopped');
+        const response = await harness.app.request(`https://${PERSON_NAME}.example.test/api/apps/oauth/callback?state=s1&code=c1`);
+
+        expect(response.status)
+            .toBe(303);
+        expect(response.headers.get('location'))
+            .toBe('/');
+    });
+
     it('streams server events and tracks the long-lived response', async () => {
         let releaseStream: (() => void) | undefined;
         const streamReady = new Promise<void>((resolve) => {
