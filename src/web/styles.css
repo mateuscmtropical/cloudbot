@@ -301,6 +301,9 @@ svg {
 }
 
 .bot-list-footer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
     padding: 12px;
 }
 
@@ -493,6 +496,17 @@ svg {
     justify-content: center;
     align-items: center;
     padding: 12px 16px;
+    pointer-events: none;
+}
+
+/* A fade behind the pill and the menu button, dark at the top and clear at the bottom. Messages that scroll under them
+   stay readable, and no bar shows. */
+.conversation-header::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 -20px;
+    z-index: -1;
+    background: linear-gradient(to bottom, var(--color-background) 40%, transparent);
     pointer-events: none;
 }
 

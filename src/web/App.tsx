@@ -7,6 +7,7 @@ import { BotList } from './components/BotList.tsx';
 import { ChannelView } from './components/ChannelView.tsx';
 import type { MessageActions } from './components/MessageItem.tsx';
 import { deriveMascotState } from './mascotState.ts';
+import { useSwipeMenu } from './useSwipeMenu.ts';
 import { findLatestMessageMascot, startMascotHop } from './mascotHop.ts';
 import type { MascotHop, MascotHopPoint } from './mascotHop.ts';
 import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
@@ -147,6 +148,9 @@ function App(): ReactElement {
     // The screen holder seen on the last check. The Screen panel opens only when it changes to the owner.
     const lastScreenHolderRef = useRef<string | undefined>(undefined);
     const [isBotListOpen, setIsBotListOpen] = useState(false);
+
+    useSwipeMenu(isBotListOpen, setIsBotListOpen);
+
     const [hubRole, setHubRole] = useState<HubRole>('standalone');
     const [isPeopleOpen, setIsPeopleOpen] = useState(false);
     const [isAccountOpen, setIsAccountOpen] = useState(false);
