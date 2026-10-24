@@ -10,9 +10,13 @@ import { deriveMascotState } from './mascotState.ts';
 import { useSwipeMenu } from './useSwipeMenu.ts';
 import { findConversationMascot, startMascotHop } from './mascotHop.ts';
 import type { MascotHop, MascotHopPoint } from './mascotHop.ts';
+import { useAppUpdate } from './useAppUpdate.ts';
+import { usePullToRefresh } from './usePullToRefresh.ts';
 import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
+import { PullIndicator } from './components/PullIndicator.tsx';
+import { UpdateBanner } from './components/UpdateBanner.tsx';
 import { createBot, deleteBot, getChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToAllBotEvents, subscribeToEvents, uploadAttachments, listUploads, removeUpload, renameBot } from './apiClient.ts';
 import { mergeLoadedUploads } from './attachmentChips.ts';
 import { loadSeen, markUnread, saveSeen, updateSeen } from './unreadMarks.ts';
@@ -1197,6 +1201,12 @@ function App(): ReactElement {
 
     const botAttachments = selectedBotId === undefined ? [] : (attachmentsByBot[selectedBotId] ?? []);
     const isUploading = botAttachments.some(attachment => attachment.status === 'uploading');
+    const uploadsByBot = Object.values(attachmentsByBot);
+    const isAnyUploadInProgress = uploadsByBot
+        .some(attachments => attachments.some(attachment => attachment.status === 'uploading'));
+    const isAppBusy = runningBotId !== undefined || isOwnerTyping || isAnyUploadInProgress || isChannelRoundActive;
+    const { isUpdateReady, canApplyUpdate, applyUpdate, dismissUpdate } = useAppUpdate(isAppBusy);
+    const pullToRefresh = usePullToRefresh();
     const botWebhookUrls = webhookUrls.filter(notice => notice.botId === selectedBotId);
     const botPersonCredentials = personCredentials.filter(notice => notice.botId === selectedBotId);
 
@@ -1206,6 +1216,7 @@ function App(): ReactElement {
 
     return (
         <div className="app">
+            <PullIndicator distance={pullToRefresh.distance} isRefreshing={pullToRefresh.isRefreshing} />
             <BotList
                 bots={botsWithUnread}
                 selectedBotId={selectedBotId}
@@ -1281,6 +1292,7 @@ function App(): ReactElement {
                                 </button>
                             </div>
                         )}
+                {isUpdateReady ? <UpdateBanner canApplyUpdate={canApplyUpdate} onApply={applyUpdate} onDismiss={dismissUpdate} /> : null}
                 {isAccountOpen
                     ? (
                             <AccountPanel

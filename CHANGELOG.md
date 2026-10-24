@@ -19,6 +19,8 @@ All notable changes to this project are listed here. The format follows
 ### Added
 
 - Bot rows now have a Rename and Delete menu on long press, right click, or the More button. The list keeps Account and People available and adds a search button.
+- The web app reloads when pulled down from the top and detects new builds while open.
+
 - `sudo cloudbot update` removes the old image and the build cache older than three days, so the disk does not fill up. The old image goes once no instance runs on it, which `--all` makes happen.
 - A bot profile page opens from the chat header and collects bot settings in one place. Account and People now use the shared settings page header and grouped rows.
 - The bot list now uses a dark chat layout with bot activity times, name search, and shared controls.
