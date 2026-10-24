@@ -4,6 +4,8 @@ import type { ReactElement, SyntheticEvent } from 'react';
 import type { Person, PersonWithPassword } from '../../shared/peopleTypes.ts';
 import { RequestFailedError } from '../apiClient.ts';
 import { addPerson, deactivatePerson, deletePerson, listPeople, reactivatePerson, resetPersonPassword } from '../peopleClient.ts';
+import { CloseIcon } from './icons.tsx';
+import { RoundButton } from './RoundButton.tsx';
 
 interface PeoplePanelProps {
     onClose: () => void;
@@ -180,12 +182,12 @@ function PeoplePanel({ onClose }: PeoplePanelProps): ReactElement {
 
     return (
         <section className="people-panel" aria-labelledby="people-title">
-            <header className="people-panel-header">
-                <div>
+            <header className="people-panel-header settings-page-header">
+                <RoundButton label="Close people panel" onClick={onClose}><CloseIcon /></RoundButton>
+                <div className="settings-page-title">
                     <h1 id="people-title">People</h1>
                     <p>Manage access to this CloudBot server.</p>
                 </div>
-                <button type="button" className="choice-button" aria-label="Close people panel" onClick={onClose}>Close</button>
             </header>
 
             {problem === undefined ? null : <p className="people-problem" role="alert">{problem}</p>}

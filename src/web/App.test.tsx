@@ -90,6 +90,30 @@ describe('App sign-in', () => {
 });
 
 describe('App bot list', () => {
+    it('opens Bot Profile from the header pill and returns to the hidden chat', async () => {
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(subscribeToEvents)
+            .mockReturnValue(() => undefined);
+
+        render(<App />);
+
+        await screen.findByRole('textbox');
+        fireEvent.click(screen.getByRole('button', { name: 'Open CloudBot profile' }));
+
+        expect(await screen.findByRole('heading', { name: 'CloudBot' }))
+            .toBeTruthy();
+        expect(screen.queryByRole('textbox'))
+            .toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Back to chat' }));
+
+        expect(await screen.findByRole('textbox'))
+            .toBeTruthy();
+    });
+
     it('tells the owner of a CloudBot that runs on its own to install a hub', async () => {
         vi.mocked(listBots)
             .mockResolvedValue([]);
@@ -165,7 +189,7 @@ describe('App bot list', () => {
         fireEvent.click(screen.getByRole('button', { name: 'People' }));
         fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
 
-        expect(await screen.findByRole('heading', { name: 'Notifications' }))
+        expect(await screen.findByRole('switch', { name: 'Notifications on this device' }))
             .toBeTruthy();
         expect(screen.queryByRole('link', { name: 'Change password' }))
             .toBeNull();

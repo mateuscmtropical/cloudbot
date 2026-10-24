@@ -22,11 +22,11 @@ describe('ListRow', () => {
     });
 
     it('renders a link when a destination is supplied', () => {
-        render(<ListRow title="Account" href="/account" />);
+        render(<ListRow title="Password" href="/__hub/password" ariaLabel="Change password" />);
 
-        expect(screen.getByRole('link', { name: 'Account' })
+        expect(screen.getByRole('link', { name: 'Change password' })
             .getAttribute('href'))
-            .toBe('/account');
+            .toBe('/__hub/password');
     });
 
     it('renders a button and handles its action when clicked', () => {
