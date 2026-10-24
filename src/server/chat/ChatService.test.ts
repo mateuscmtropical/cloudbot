@@ -1414,6 +1414,29 @@ describe('ChatService', () => {
             .toContain('GitHub shows a check I cannot pass.');
     });
 
+    it('gives the screen back to the bot when the owner sends a message, and keeps it for a routine', async () => {
+        const screen = new ScreenHolder();
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, screen });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const routineFinished = waitForTurnFinish(service, bot.id);
+
+        screen.giveToPerson();
+        await service.sendMessage(bot.id, 'Check the schedule', 'routine');
+        await routineFinished;
+
+        expect(screen.holder)
+            .toBe('person');
+
+        const chatFinished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Go on');
+        await chatFinished;
+
+        expect(screen.holder)
+            .toBe('bot');
+    });
+
     it('keeps the screen with the bot when the note cannot be saved', async () => {
         const screen = new ScreenHolder();
         const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir, screen });

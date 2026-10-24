@@ -265,20 +265,22 @@ describe('DesktopPanel', () => {
             .toBe(false);
     });
 
-    it('keeps the screen when the panel is closed', async () => {
+    it('gives the screen back to the bot when the panel is closed', async () => {
         vi.mocked(apiClient.getScreenHolder)
             .mockResolvedValue('person');
+        vi.mocked(apiClient.releaseScreen)
+            .mockClear();
 
         const onClose = vi.fn();
 
         render(<DesktopPanel onClose={onClose} />);
-        fireEvent.click(await screen.findByRole('button', { name: 'Close' }));
+        await screen.findByText('You have the screen. The bot is paused.');
+        fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
         expect(onClose)
             .toHaveBeenCalled();
-        expect(apiClient.releaseScreen).not.toHaveBeenCalled();
-        expect(screen.queryByRole('button', { name: 'I will keep it' }))
-            .toBeNull();
+        expect(apiClient.releaseScreen)
+            .toHaveBeenCalledTimes(1);
     });
 
     it('expands to fill the window and shrinks back', async () => {

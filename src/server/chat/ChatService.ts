@@ -2475,6 +2475,11 @@ class ChatService {
             return this.saveAndPublish(botId, 'assistant', { kind: 'text', text: reminder });
         }
 
+        // A message from the owner asks the bot to act, so the owner no longer holds the screen. A routine or a hand-off does not.
+        if (source === 'chat') {
+            this.screen?.giveToBot();
+        }
+
         // A queued message waits for the work ahead of it. Its files are taken now, as for any message.
         const isQueued = this.isBusy(botId);
 

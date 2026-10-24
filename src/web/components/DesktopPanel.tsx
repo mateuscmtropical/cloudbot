@@ -99,6 +99,15 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
             });
     }
 
+    // Closing the panel ends the owner's turn on the screen. Otherwise the bot stays blocked with no sign of it on screen.
+    // The call also goes out when the last poll says the bot has the screen, since the bot may have handed it over since.
+    function handleClose(): void {
+        handoffCountRef.current += 1;
+        releaseScreen()
+            .catch(() => undefined);
+        onClose();
+    }
+
     useEffect(() => {
         const screenElement = screenRef.current;
 
@@ -187,7 +196,7 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
                     <button type="button" aria-pressed={isExpanded} onClick={() => { setIsExpanded(!isExpanded); }}>
                         {isExpanded ? 'Shrink' : 'Expand'}
                     </button>
-                    <button type="button" onClick={onClose}>Close</button>
+                    <button type="button" onClick={handleClose}>Close</button>
                 </div>
                 {handoffProblem === '' ? null : <p className="desktop-status" role="alert">{handoffProblem}</p>}
                 {connectionState === 'connecting' ? <p className="desktop-status">Connecting to the screen...</p> : null}

@@ -27,6 +27,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- Closing the Screen panel gives the screen back to the bot. Before, the owner kept it, and the bot told the owner that the browser was blocked with no sign of it on screen. A message the owner sends in the chat gives it back too.
 - Expanded, the Screen panel on a phone keeps its buttons on screen under the picture. They used to be pushed out of view.
 - After `cloudbot update` the hub could no longer reach any running instance, and every address showed "Starting your environment" without end. The hub now joins the network of every person again each time it starts.
 - On a phone, the bot pill and the menu button no longer mix with the messages under them. A fade, dark at the top and clear at the bottom, sits behind them.
