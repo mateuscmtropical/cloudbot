@@ -21,6 +21,7 @@ All notable changes to this project are listed here. The format follows
 - The app icon has a maskable version, so Android shows the whole mascot in a round or square icon.
 - A bot on ChatGPT that makes an image with Codex now shows the image in the chat.
 - When a bot opens a page in its browser, the Screen panel opens once in that turn, so you watch the live browser.
+- `sudo cloudbot update --all` also removes every instance container that uses an old image. Each person keeps the `cbi-*` volumes and the hub creates the container again on the next visit.
 
 ### Fixed
 

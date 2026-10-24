@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs CloudBot on this server. install.sh links it as /usr/local/bin/cloudbot.
 #
-# Usage: sudo cloudbot <status|logs|update|reset-password [name]|uninstall>
+# Usage: sudo cloudbot <status|logs|update [--all]|reset-password [name]|uninstall>
 
 set -euo pipefail
 
@@ -29,7 +29,8 @@ Usage: sudo cloudbot <command>
 Commands:
   status                 Show the hub, proxy, Caddy and instances with memory use
   logs                   Follow the hub logs (Ctrl+C to stop)
-  update                 Pull the latest code and rebuild the hub image
+  update [--all]         Pull the latest code and rebuild the hub image. --all also
+                         removes the instance containers that use an old image
   reset-password [name]  Print a new password for a person (default owner)
   uninstall [--keep-data] [--yes]
                          Remove CloudBot. --keep-data leaves the volumes and the install
@@ -58,18 +59,49 @@ command_logs() {
     compose logs --follow --tail=200 hub | sed -E 's/(Owner [^ ]+ password: ).*/\1[redacted]/'
 }
 
+# Removes every instance container that does not use the current image. The cbi-*
+# volumes stay and the hub creates each container again on the next request.
+remove_outdated_instances() {
+    local image_id
+    local container
+
+    image_id="$(docker image inspect --format '{{.Id}}' cloudbot:local)"
+
+    docker ps -a --filter name=^cloudbot-i- --format '{{.Names}}' | while read -r container; do
+        if [ "$(docker inspect --format '{{.Image}}' "$container")" != "$image_id" ]; then
+            docker rm -f "$container"
+        fi
+    done
+}
+
 command_update() {
+    local moves_instances="false"
+
+    if [ "${1:-}" = "--all" ]; then
+        moves_instances="true"
+    elif [ "$#" -gt 0 ]; then
+        usage >&2
+        exit 1
+    fi
+
     git -C "$CLOUDBOT_HOME" pull --ff-only
     compose pull docker-proxy caddy
     compose build hub
     compose up -d --force-recreate hub docker-proxy caddy
+
+    if [ "$moves_instances" = "true" ]; then
+        remove_outdated_instances
+        echo "Instances on an old image were removed. The hub creates each one from the new image on the next request."
+        return
+    fi
+
     cat <<'EOF'
-Running instances keep their old image until recreated. To move an instance to
-this image, remove its container with:
+Running instances keep their old image until recreated. To move all of them to
+this image, run:
 
-  docker rm -f cloudbot-i-<name>
+  sudo cloudbot update --all
 
-Its cbi-* volumes remain. The hub creates it from the new image on the next request.
+Their cbi-* volumes remain. The hub creates each one from the new image on the next request.
 EOF
 }
 
@@ -163,7 +195,8 @@ main() {
             ;;
         update)
             require_root "$command"
-            command_update
+            shift
+            command_update "$@"
             ;;
         reset-password)
             require_root "$command"
