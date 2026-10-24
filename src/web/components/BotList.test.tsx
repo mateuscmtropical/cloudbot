@@ -16,7 +16,7 @@ describe('BotList', () => {
         cleanup();
     });
 
-    it('orders the header buttons People, Search bots, New bot', () => {
+    it('keeps People and New bot in the header', () => {
         const { container } = render(
             <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} onPeople={vi.fn()} />,
         );
@@ -24,21 +24,38 @@ describe('BotList', () => {
             .map(button => button.getAttribute('aria-label'));
 
         expect(labels)
-            .toEqual(['People', 'Search bots', 'New bot']);
+            .toEqual(['People', 'New bot']);
     });
 
-    it('shows the Account button only when the CloudBot has an account to manage', () => {
+    it('opens People without a known name and opens Account from the named avatar', () => {
         const props = { bots: BOTS, selectedBotId: undefined, selectedMascotState: 'idle' as const, channels: [], selectedChannelId: undefined, isOpen: false, onSelectBot: vi.fn(), onSelectChannel: vi.fn(), onNewBot: vi.fn(), onConnectApps: vi.fn(), onPeople: vi.fn() };
         const onAccount = vi.fn();
         const { rerender } = render(<BotList {...props} />);
 
-        expect(screen.queryByRole('button', { name: 'Account' }))
-            .toBeNull();
-        rerender(<BotList {...props} onAccount={onAccount} />);
+        fireEvent.click(screen.getByRole('button', { name: 'People' }));
+        expect(props.onPeople)
+            .toHaveBeenCalledTimes(1);
+
+        rerender(<BotList {...props} personName="Maria Regina" onAccount={onAccount} />);
         fireEvent.click(screen.getByRole('button', { name: 'Account' }));
 
         expect(onAccount)
             .toHaveBeenCalledTimes(1);
+        expect(screen.getByText('MR'))
+            .toBeTruthy();
+    });
+
+    it('filters bots by name from the controlled search field', () => {
+        render(
+            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} onPeople={vi.fn()} />,
+        );
+
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Search bots' }), { target: { value: 'bia' } });
+
+        expect(screen.getByText('Bia'))
+            .toBeTruthy();
+        expect(screen.queryByText('Ana'))
+            .toBeNull();
     });
 
     it('shows a mascot in each bot, in the bot color and shape', () => {

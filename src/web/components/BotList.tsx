@@ -7,9 +7,12 @@ import type { MascotState } from '../mascotState.ts';
 import { nextTap } from '../doubleTap.ts';
 import type { Tap } from '../doubleTap.ts';
 import type { MascotHopPoint } from '../mascotHop.ts';
+import { AppsGridIcon, PeopleIcon, PlusIcon, SearchIcon } from './icons.tsx';
+import { BotListItem } from './BotListItem.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
-import { PlusIcon } from './PlusIcon.tsx';
+import { PillField } from './PillField.tsx';
 import { RenameField } from './RenameField.tsx';
+import { RoundButton } from './RoundButton.tsx';
 
 // Where the hop lands on the row, inside its rounded right end.
 const ROW_EDGE_INSET = 24;
@@ -26,6 +29,7 @@ interface BotListProps {
     onSelectChannel: (channelId: string) => void;
     onNewBot: () => void;
     onConnectApps: () => void;
+    personName?: string | undefined;
     // Only a CloudBot inside a hub has an account to manage.
     onAccount?: (() => void) | undefined;
     onPeople: () => void;
@@ -33,33 +37,42 @@ interface BotListProps {
     onRenameBot?: ((botId: string, name: string) => Promise<string | undefined>) | undefined;
 }
 
-function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, onSelectBot, onSelectChannel, onNewBot, onConnectApps, onAccount, onPeople, onRenameBot }: BotListProps): ReactElement {
+function initialsFromName(name: string): string {
+    const words = name.trim()
+        .split(/\s+/)
+        .filter(word => word.length > 0);
+    const initialLetters = words.slice(0, 2)
+        .map(word => Array.from(word)[0] ?? '');
+    const initials = initialLetters
+        .join('');
+
+    return initials.toLocaleUpperCase();
+}
+
+function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, onSelectBot, onSelectChannel, onNewBot, onConnectApps, personName, onAccount, onPeople, onRenameBot }: BotListProps): ReactElement {
     const [renamingBotId, setRenamingBotId] = useState<string | undefined>(undefined);
+    const [searchValue, setSearchValue] = useState('');
     const lastTapRef = useRef<Tap | undefined>(undefined);
     const className = isOpen ? 'bot-list is-open' : 'bot-list';
+    const initials = personName === undefined ? '' : initialsFromName(personName);
+    const canOpenAccount = initials.length > 0 && onAccount !== undefined;
+    const profileLabel = canOpenAccount ? 'Account' : 'People';
+    const onOpenProfile = canOpenAccount ? onAccount : onPeople;
+    const normalizedSearch = searchValue.trim()
+        .toLocaleLowerCase();
+    const visibleBots = bots.filter(bot => bot.name.toLocaleLowerCase()
+        .includes(normalizedSearch));
 
     return (
         <aside className={className} aria-label="Bots">
             <div className="bot-list-header">
-                <button type="button" className="icon-button" aria-label="People" onClick={onPeople}>
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <circle cx="9" cy="8" r="3" />
-                        <path d="M3.5 19v-1.5a5.5 5.5 0 0 1 11 0V19z" />
-                        <path d="M16 5.5a3 3 0 0 1 0 5.8M17 14a5 5 0 0 1 3.5 4.8V19h-4" />
-                    </svg>
-                </button>
-                <button type="button" className="icon-button" aria-label="Search bots">
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <circle cx="11" cy="11" r="6" />
-                        <path d="M20 20l-4.5-4.5" />
-                    </svg>
-                </button>
-                <button type="button" className="icon-button" aria-label="New bot" onClick={onNewBot}>
-                    <PlusIcon />
-                </button>
+                <RoundButton label={profileLabel} tone={initials.length > 0 ? 'avatar' : 'default'} onClick={onOpenProfile}>
+                    {initials.length > 0 ? initials : <PeopleIcon />}
+                </RoundButton>
+                <RoundButton label="New bot" onClick={onNewBot}><PlusIcon /></RoundButton>
             </div>
             <div className="bot-items">
-                {bots.map((bot) => {
+                {visibleBots.map((bot) => {
                     const isSelected = bot.id === selectedBotId;
                     const selectedClassName = isSelected ? 'bot-item is-selected' : 'bot-item';
                     const itemClassName = bot.hasUnread ? `${selectedClassName} is-unread` : selectedClassName;
@@ -70,14 +83,16 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
                             <div key={bot.id} className={`${itemClassName} is-renaming`}>
                                 <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={40} />
                                 <span className="bot-text">
-                                    <RenameField
-                                        name={bot.name}
-                                        label={`Name of ${bot.name}`}
-                                        onSubmit={newName => onRenameBot(bot.id, newName)}
-                                        onClose={() => {
-                                            setRenamingBotId(undefined);
-                                        }}
-                                    />
+                                    <span className="bot-name-line">
+                                        <RenameField
+                                            name={bot.name}
+                                            label={`Name of ${bot.name}`}
+                                            onSubmit={newName => onRenameBot(bot.id, newName)}
+                                            onClose={() => {
+                                                setRenamingBotId(undefined);
+                                            }}
+                                        />
+                                    </span>
                                     <span className="bot-preview">{bot.lastMessagePreview}</span>
                                 </span>
                             </div>
@@ -85,11 +100,11 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
                     }
 
                     return (
-                        <button
+                        <BotListItem
                             key={bot.id}
-                            type="button"
-                            className={itemClassName}
-                            aria-current={isSelected ? 'true' : undefined}
+                            bot={bot}
+                            isSelected={isSelected}
+                            mascotState={mascotState}
                             onPointerUp={(event) => {
                                 // A double tap on the row renames the bot. The first tap still selects it.
                                 const result = nextTap(lastTapRef.current, bot.id, event.timeStamp);
@@ -108,14 +123,7 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
 
                                 onSelectBot(bot.id, sourceMascot, rowEdge);
                             }}
-                        >
-                            <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={40} />
-                            <span className="bot-text">
-                                <span className="bot-name">{bot.name}</span>
-                                <span className="bot-preview">{bot.lastMessagePreview}</span>
-                            </span>
-                            {bot.hasUnread ? <span className="unread-dot" aria-label="Unread" /> : null}
-                        </button>
+                        />
                     );
                 })}
                 {channels.length === 0 ? null : <p className="channel-section-title">Channels</p>}
@@ -144,8 +152,19 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
                 })}
             </div>
             <div className="bot-list-footer">
-                <button type="button" className="connect-apps-button" onClick={onConnectApps}>Connect apps</button>
-                {onAccount === undefined ? null : <button type="button" className="connect-apps-button" onClick={onAccount}>Account</button>}
+                <RoundButton label="Connect apps" onClick={onConnectApps}><AppsGridIcon /></RoundButton>
+                <PillField leftIcon={<SearchIcon />} className="bot-list-search">
+                    <input
+                        type="search"
+                        className="bot-list-search-input"
+                        aria-label="Search bots"
+                        placeholder="Search"
+                        value={searchValue}
+                        onChange={(event) => {
+                            setSearchValue(event.currentTarget.value);
+                        }}
+                    />
+                </PillField>
             </div>
         </aside>
     );

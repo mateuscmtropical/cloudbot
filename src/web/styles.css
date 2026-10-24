@@ -1,12 +1,16 @@
 :root {
-    --color-background: #1b1b1f;
-    --color-sidebar: #17171b;
-    --color-surface: #2a2a30;
-    --color-surface-raised: #33333b;
-    --color-user-bubble: #3a3a44;
-    --color-text: #ececf1;
-    --color-text-muted: #9a9aa6;
+    --color-background: #121212;
+    --color-sidebar: #121212;
+    --color-surface: #1c1c1e;
+    --color-surface-raised: #2a2a2d;
+    --color-surface-control: #2a2a2d;
+    --color-surface-avatar: #3c3c3f;
+    --color-surface-border: #3b3b3e;
+    --color-user-bubble: #343438;
+    --color-text: #f5f5f7;
+    --color-text-muted: #8e8e93;
     --color-accent: #2f80ed;
+    --color-switch-on: #d51f78;
     --color-danger: #e5484d;
     --color-success: #3fb27f;
     /* A veil of the text color. It lightens a dark control and darkens a light one, on any background. */
@@ -17,7 +21,12 @@
     --space-3: 12px;
     --space-4: 16px;
     --radius-bubble: 18px;
+    --radius-card: 20px;
+    --radius-message: 28px;
     --radius-control: 999px;
+    --size-round-button: 44px;
+    --size-pill-field: 52px;
+    --size-bot-face: 44px;
     --sidebar-width: 320px;
     font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     color: var(--color-text);
@@ -96,53 +105,49 @@ svg {
     width: var(--sidebar-width);
     flex-shrink: 0;
     background: var(--color-sidebar);
-    border-right: 1px solid var(--color-surface);
+    border-right: 1px solid var(--color-surface-border);
 }
 
 .bot-list-header {
     display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    padding: 12px;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
 }
 
 .bot-items {
     flex: 1;
     overflow-y: auto;
-    padding: 0 8px;
+    min-height: 0;
+    padding: var(--space-2) var(--space-2) 0;
 }
 
 .bot-item {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
     width: 100%;
-    margin-bottom: 4px;
-    padding: 10px;
+    min-height: 77px;
+    margin: 0;
+    padding: var(--space-2);
     border: 0;
-    border-radius: var(--radius-bubble);
+    border-radius: 0;
     background: transparent;
     text-align: left;
     touch-action: manipulation;
 }
 
 .bot-item:hover {
-    background: var(--color-surface);
+    background: transparent;
 }
 
-.bot-item.is-selected {
-    background: var(--color-surface-raised);
-}
-
-/* A chat with a message the owner has not seen. The row has a blue tint and the name and the preview are stronger. */
-.bot-item.is-unread {
-    background: color-mix(in srgb, var(--color-accent) 22%, transparent);
-}
-
-.bot-item.is-unread .bot-name,
-.bot-item.is-unread .bot-preview {
-    color: var(--color-text);
-    font-weight: 600;
+.bot-name-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-width: 0;
 }
 
 .bot-text {
@@ -150,17 +155,30 @@ svg {
     flex-direction: column;
     min-width: 0;
     flex: 1;
+    gap: 2px;
 }
 
 .bot-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 1.0625rem;
     font-weight: 600;
+}
+
+.bot-time {
+    flex: none;
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+    white-space: nowrap;
 }
 
 .bot-preview {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     color: var(--color-text-muted);
 }
 
@@ -293,8 +311,8 @@ svg {
 }
 
 .unread-dot {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     flex-shrink: 0;
     border-radius: 50%;
     background: var(--color-accent);
@@ -302,17 +320,30 @@ svg {
 
 .bot-list-footer {
     display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding: 12px;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
 }
 
-.connect-apps-button {
+.bot-list-search {
+    flex: 1;
+    min-width: 0;
+}
+
+.bot-list-search-input {
     width: 100%;
-    padding: 10px;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
     border: 0;
-    border-radius: var(--radius-control);
-    background: var(--color-surface);
+    outline: 0;
+    background: transparent;
+    font-size: 1rem;
+}
+
+.bot-list-search-input::placeholder {
+    color: var(--color-text-muted);
+    opacity: 1;
 }
 
 .scrim {
@@ -431,14 +462,41 @@ svg {
 
 /* Buttons */
 
+.round-button,
 .icon-button {
     display: grid;
     place-items: center;
+    flex: none;
+    border: 1px solid var(--color-surface-border);
+    border-radius: 50%;
+    background: var(--color-surface-control);
+    color: var(--color-text);
+}
+
+.round-button {
+    width: var(--size-round-button);
+    height: var(--size-round-button);
+    padding: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.round-button-avatar {
+    border-color: var(--color-surface-border);
+    background: var(--color-surface-avatar);
+    color: var(--color-text-muted);
+}
+
+.round-button-accent {
+    background: var(--color-accent);
+    color: #fff;
+}
+
+.icon-button {
     width: 36px;
     height: 36px;
+    padding: 0;
     border: 0;
-    border-radius: 50%;
-    background: var(--color-surface);
     font-size: 1.25rem;
 }
 
@@ -447,17 +505,100 @@ svg {
     pointer-events: auto;
 }
 
-/* The sidebar buttons are the ones the owner taps most often to start a bot, so they are larger than the default. */
-.bot-list-header .icon-button {
-    width: 40px;
-    height: 40px;
+/* Fields shared by search and message entry. Children decide which input to render. */
+.pill-field {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: var(--size-pill-field);
+    padding: 0 var(--space-4);
+    border: 1px solid var(--color-surface-border);
+    border-radius: var(--radius-control);
+    background: var(--color-surface-control);
 }
 
-@media (max-width: 720px) {
-    .bot-list-header .icon-button {
-        width: 44px;
-        height: 44px;
-    }
+.pill-field-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    color: var(--color-text-muted);
+}
+
+/* Grouped cards and rows used by settings and profile screens. */
+.list-group {
+    min-width: 0;
+    overflow: hidden;
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+}
+
+.list-group-label {
+    margin: 0;
+    padding: var(--space-3) var(--space-4) var(--space-2);
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.list-group-rows > .list-row + .list-row {
+    border-top: 1px solid var(--color-surface-border);
+}
+
+.list-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    min-height: 68px;
+    padding: var(--space-3) var(--space-4);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    text-decoration: none;
+}
+
+button.list-row {
+    font: inherit;
+    cursor: pointer;
+}
+
+.list-row-leading,
+.list-row-chevron {
+    display: grid;
+    place-items: center;
+    flex: none;
+    color: var(--color-text-muted);
+}
+
+.list-row-copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    gap: var(--space-1);
+}
+
+.list-row-description,
+.list-row-value {
+    color: var(--color-text-muted);
+}
+
+.list-row-description {
+    font-size: 0.875rem;
+}
+
+.list-row-value {
+    flex: none;
+}
+
+.list-row-control {
+    flex: none;
+}
+
+.list-row-chevron {
+    font-size: 1.5rem;
+    line-height: 1;
 }
 
 /* Conversation */
@@ -922,7 +1063,8 @@ svg {
         z-index: 2;
         transform: translateX(-100%);
         transition: transform 0.2s ease;
-        width: min(85vw, var(--sidebar-width));
+        width: 100vw;
+        border-right: 0;
     }
 
     .bot-list.is-open {
@@ -1016,18 +1158,18 @@ svg {
 }
 
 /* A short press gives the tap some weight. */
+.round-button,
 .icon-button,
 .send-button,
 .choice-button,
-.connect-apps-button,
 .link-card {
     transition: transform 120ms ease-out, background-color 120ms ease-out;
 }
 
+.round-button:active,
 .icon-button:active,
 .send-button:active,
 .choice-button:active,
-.connect-apps-button:active,
 .link-card:active {
     transform: scale(0.95);
 }
@@ -1052,21 +1194,21 @@ svg {
         animation: none;
     }
 
+    .round-button,
     .icon-button,
     .send-button,
     .choice-button,
-    .connect-apps-button,
     .link-card,
     .bot-list,
-    .switch-row input,
-    .switch-row input::after {
+    .switch-track,
+    .switch-track::after {
         transition: none;
     }
 
+    .round-button:active,
     .icon-button:active,
     .send-button:active,
     .choice-button:active,
-    .connect-apps-button:active,
     .link-card:active {
         transform: none;
     }
@@ -1349,6 +1491,13 @@ svg {
     gap: var(--space-3);
 }
 
+.people-panel-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: none;
+}
+
 .people-panel-header {
     max-width: 48rem;
     margin: 0 auto var(--space-4);
@@ -1505,6 +1654,10 @@ svg {
     color: var(--color-text-muted);
 }
 
+.people-hint-card .switch-control {
+    margin-top: var(--space-3);
+}
+
 .people-hint-card .people-credential-row code {
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-control);
@@ -1526,54 +1679,67 @@ svg {
     color: var(--color-text);
 }
 
-/* The notification switch in the Account panel. A native checkbox keeps the keyboard and screen readers working. */
-.switch-row {
+/* The switch track is decorative. Its checkbox stays available to the keyboard and screen readers. */
+.switch-control {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: var(--space-3);
-    margin-top: var(--space-3);
     cursor: pointer;
 }
 
-/* A track with a round knob. The input stays a checkbox, so a screen reader and the keyboard still work. */
-.switch-row input {
-    appearance: none;
+.switch-label {
+    flex: 1;
+}
+
+.switch-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.switch-track {
     position: relative;
+    display: block;
     flex: none;
-    width: 44px;
-    height: 26px;
-    margin: 0;
+    width: 51px;
+    height: 31px;
     border-radius: var(--radius-control);
     background: var(--color-surface-raised);
-    cursor: inherit;
     transition: background-color 120ms ease-out;
 }
 
-.switch-row input::after {
+.switch-track::after {
     content: '';
     position: absolute;
     top: 3px;
     left: 3px;
-    width: 20px;
-    height: 20px;
+    width: 25px;
+    height: 25px;
     border-radius: 50%;
     background: var(--color-text);
     transition: transform 120ms ease-out;
 }
 
-.switch-row input:checked {
-    background: var(--color-accent);
+.switch-input:checked + .switch-track {
+    background: var(--color-switch-on);
 }
 
-.switch-row input:checked::after {
-    transform: translateX(18px);
+.switch-input:checked + .switch-track::after {
+    transform: translateX(20px);
 }
 
-.switch-row input:disabled {
+.switch-input:disabled + .switch-track {
     opacity: 0.5;
 }
 
-.switch-row input:focus-visible {
+.switch-input:focus-visible + .switch-track {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
 }

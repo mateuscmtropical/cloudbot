@@ -136,7 +136,7 @@ describe('createApp', () => {
 
     it('tells a CloudBot that runs on its own from one inside a hub', async () => {
         const standaloneApp = createApp({ version: '1.2.3', access });
-        const memberApp = createApp({ version: '1.2.3', access, hubRole: 'member' });
+        const memberApp = createApp({ version: '1.2.3', access, hubRole: 'member', personName: 'Maria Regina' });
         const standaloneToken = await signIn(standaloneApp, access);
         const standaloneResponse = await requestWithSession(standaloneApp, '/api/hub-role', standaloneToken);
         const memberResponse = await requestWithSession(memberApp, '/api/hub-role', standaloneToken);
@@ -144,7 +144,7 @@ describe('createApp', () => {
         expect(await standaloneResponse.json())
             .toEqual({ role: 'standalone' });
         expect(await memberResponse.json())
-            .toEqual({ role: 'member' });
+            .toEqual({ role: 'member', personName: 'Maria Regina' });
     });
 
     it('rejects an api request without the cookie', async () => {

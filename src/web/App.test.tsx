@@ -6,7 +6,7 @@ import type { BotSummary, ChatEvent, ChatMessage, PendingUpload } from '../share
 import { App } from './App.tsx';
 import { listBots, listMessages, listUploads, RequestFailedError, sendMessage, stopTurn, subscribeToEvents, uploadAttachments } from './apiClient.ts';
 import { MESSAGE_PAGE_SIZE } from './messageList.ts';
-import { getHubRole } from './peopleClient.ts';
+import { getHubContext } from './peopleClient.ts';
 
 // The waits below end when the state appears. The longer limit only covers slow runs with the whole suite in parallel.
 configure({ asyncUtilTimeout: 5000 });
@@ -45,7 +45,7 @@ vi.mock('./apiClient.ts', () => ({
 }));
 
 vi.mock('./peopleClient.ts', () => ({
-    getHubRole: vi.fn(() => Promise.resolve('standalone')),
+    getHubContext: vi.fn(() => Promise.resolve({ role: 'standalone' })),
     listPeople: vi.fn(() => Promise.resolve([])),
 }));
 
@@ -99,7 +99,7 @@ describe('App bot list', () => {
         render(<App />);
 
         await waitFor(() => {
-            expect(getHubRole)
+            expect(getHubContext)
                 .toHaveBeenCalledTimes(1);
         });
 
@@ -112,8 +112,8 @@ describe('App bot list', () => {
     });
 
     it('opens the account panel for a person of a hub and hides it elsewhere', async () => {
-        vi.mocked(getHubRole)
-            .mockResolvedValueOnce('member');
+        vi.mocked(getHubContext)
+            .mockResolvedValueOnce({ role: 'member', personName: 'Maria Regina' });
         vi.mocked(listBots)
             .mockResolvedValue([]);
         vi.mocked(listMessages)
@@ -128,8 +128,8 @@ describe('App bot list', () => {
     });
 
     it('replaces the chat while the account panel is open', async () => {
-        vi.mocked(getHubRole)
-            .mockResolvedValueOnce('member');
+        vi.mocked(getHubContext)
+            .mockResolvedValueOnce({ role: 'member', personName: 'Maria Regina' });
         vi.mocked(listBots)
             .mockResolvedValue([createBot('CloudBot')]);
         vi.mocked(listMessages)
@@ -159,10 +159,11 @@ describe('App bot list', () => {
         render(<App />);
 
         await waitFor(() => {
-            expect(getHubRole)
+            expect(getHubContext)
                 .toHaveBeenCalled();
         });
-        fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+        fireEvent.click(screen.getByRole('button', { name: 'People' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
 
         expect(await screen.findByRole('heading', { name: 'Notifications' }))
             .toBeTruthy();
@@ -171,8 +172,8 @@ describe('App bot list', () => {
     });
 
     it('tells a person of a hub to ask the owner', async () => {
-        vi.mocked(getHubRole)
-            .mockResolvedValueOnce('member');
+        vi.mocked(getHubContext)
+            .mockResolvedValueOnce({ role: 'member', personName: 'Maria Regina' });
         vi.mocked(listBots)
             .mockResolvedValue([]);
         vi.mocked(listMessages)
@@ -181,9 +182,10 @@ describe('App bot list', () => {
         render(<App />);
 
         await waitFor(() => {
-            expect(getHubRole)
+            expect(getHubContext)
                 .toHaveBeenCalled();
         });
+        fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
         fireEvent.click(screen.getByRole('button', { name: 'People' }));
 
         expect(await screen.findByText('Only the owner of the hub adds people'))
@@ -191,8 +193,8 @@ describe('App bot list', () => {
     });
 
     it('opens the people panel for the owner of a hub', async () => {
-        vi.mocked(getHubRole)
-            .mockResolvedValue('owner');
+        vi.mocked(getHubContext)
+            .mockResolvedValue({ role: 'owner', personName: 'Mateus Silva' });
         vi.mocked(listBots)
             .mockResolvedValue([]);
         vi.mocked(listMessages)
@@ -200,7 +202,8 @@ describe('App bot list', () => {
 
         render(<App />);
 
-        fireEvent.click(await screen.findByRole('button', { name: 'People' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
+        fireEvent.click(screen.getByRole('button', { name: 'People' }));
 
         expect(await screen.findByRole('heading', { name: 'People' }))
             .toBeTruthy();

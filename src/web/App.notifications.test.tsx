@@ -44,7 +44,7 @@ vi.mock('./apiClient.ts', () => ({
 }));
 
 vi.mock('./peopleClient.ts', () => ({
-    getHubRole: vi.fn(() => Promise.resolve('standalone')),
+    getHubContext: vi.fn(() => Promise.resolve({ role: 'standalone' })),
 }));
 
 // Only the permission and subscription step is replaced. The helpers of the module stay real.

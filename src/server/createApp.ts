@@ -65,6 +65,8 @@ interface AppOptions {
     hubSecret?: string | undefined;
     // The role of this instance inside a hub. Without it, the instance runs on its own.
     hubRole?: PersonRole | undefined;
+    // The signed-in person's configured display name, shown in the bot list when this instance belongs to a hub.
+    personName?: string | undefined;
     // Passkey sign-in. Without it only the setup link signs the owner in.
     passkeys?: PasskeyService | undefined;
     // Only on the owner's instance inside the hub. It adds and removes people through the hub.
@@ -205,7 +207,10 @@ function createApp(options: AppOptions): Hono {
     app.use('/api/*', sameOriginCheck);
     app.use('/api/*', sessionCheck);
 
-    app.get('/api/hub-role', context => context.json({ role: options.hubRole ?? 'standalone' }));
+    app.get('/api/hub-role', context => context.json({
+        role: options.hubRole ?? 'standalone',
+        ...(options.personName === undefined ? {} : { personName: options.personName }),
+    }));
 
     if (options.peopleAdmin !== undefined) {
         const peopleRoutes = createPeopleRoutes({ peopleAdmin: options.peopleAdmin });

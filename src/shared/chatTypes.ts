@@ -125,6 +125,7 @@ interface BotSummary {
     mascotColor: MascotColorName;
     mascotShape: MascotShape;
     lastMessagePreview: string;
+    lastActivityAt?: number;
     hasUnread: boolean;
     // The sequence of the latest message the owner can read, not counting the owner's own and tool lines. Zero when there is none.
     lastMessageSequence: number;

@@ -6,13 +6,14 @@ import type { HubRole } from '../peopleClient.ts';
 interface PeopleHubHintProps {
     role: Exclude<HubRole, 'owner'>;
     onClose: () => void;
+    onAccount?: (() => void) | undefined;
 }
 
 const INSTALL_COMMAND = 'curl -fsSL https://raw.githubusercontent.com/mateuscmtropical/cloudbot/main/docker/install.sh | sudo bash';
 const INSTALL_GUIDE_URL = 'https://github.com/mateuscmtropical/cloudbot/blob/main/docs/INSTALL.md';
 
 // Shown where people cannot be added: on a CloudBot that runs on its own, and on a person's CloudBot inside a hub.
-function PeopleHubHint({ role, onClose }: PeopleHubHintProps): ReactElement {
+function PeopleHubHint({ role, onClose, onAccount }: PeopleHubHintProps): ReactElement {
     const isMember = role === 'member';
     const [isCopied, setIsCopied] = useState(false);
     const [copyProblem, setCopyProblem] = useState<string | undefined>(undefined);
@@ -35,7 +36,10 @@ function PeopleHubHint({ role, onClose }: PeopleHubHintProps): ReactElement {
                     <h1 id="people-title">People</h1>
                     <p>{isMember ? 'You are a person on a CloudBot hub.' : 'Give other people their own CloudBot.'}</p>
                 </div>
-                <button type="button" className="choice-button" aria-label="Close people panel" onClick={onClose}>Close</button>
+                <div className="people-panel-actions">
+                    {onAccount === undefined ? null : <button type="button" className="choice-button" onClick={onAccount}>Account</button>}
+                    <button type="button" className="choice-button" aria-label="Close people panel" onClick={onClose}>Close</button>
+                </div>
             </header>
             <section className="setup-card people-hint-card" aria-label="Who adds people">
                 {isMember

@@ -88,5 +88,7 @@ describe('ChatService messages of every bot', () => {
             .toBeGreaterThan(0);
         expect(after.find(summary => summary.id === bot.id)?.lastMessageSequence)
             .toBe(reply?.sequence);
+        expect(after.find(summary => summary.id === bot.id)?.lastActivityAt)
+            .toBe(reply?.createdAt);
     });
 });

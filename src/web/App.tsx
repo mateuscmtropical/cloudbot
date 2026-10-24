@@ -30,7 +30,7 @@ import { SignInScreen } from './components/SignInScreen.tsx';
 import { AccountPanel } from './components/AccountPanel.tsx';
 import { PeopleHubHint } from './components/PeopleHubHint.tsx';
 import { PeoplePanel } from './components/PeoplePanel.tsx';
-import { getHubRole } from './peopleClient.ts';
+import { getHubContext } from './peopleClient.ts';
 import type { HubRole } from './peopleClient.ts';
 
 interface DraftState {
@@ -153,6 +153,7 @@ function App(): ReactElement {
     useSwipeMenu(isBotListOpen, setIsBotListOpen);
 
     const [hubRole, setHubRole] = useState<HubRole>('standalone');
+    const [personName, setPersonName] = useState<string | undefined>(undefined);
     const [isPeopleOpen, setIsPeopleOpen] = useState(false);
     const [isAccountOpen, setIsAccountOpen] = useState(false);
     // The connected remote MCP servers panel, opened from the sidebar.
@@ -703,15 +704,17 @@ function App(): ReactElement {
     useEffect(() => {
         let isCurrent = true;
 
-        getHubRole()
-            .then((role) => {
+        getHubContext()
+            .then((context) => {
                 if (isCurrent) {
-                    setHubRole(role);
+                    setHubRole(context.role);
+                    setPersonName(context.personName);
                 }
             })
             .catch(() => {
                 if (isCurrent) {
                     setHubRole('standalone');
+                    setPersonName(undefined);
                 }
             });
 
@@ -1193,17 +1196,21 @@ function App(): ReactElement {
                 onSelectChannel={handleSelectChannel}
                 onNewBot={handleNewBot}
                 onRenameBot={handleRenameBot}
+                personName={personName}
                 onConnectApps={() => {
+                    setIsBotListOpen(false);
                     setIsPeopleOpen(false);
                     setIsAccountOpen(false);
                     setIsConnectAppsOpen(true);
                 }}
                 onAccount={() => {
+                    setIsBotListOpen(false);
                     setIsConnectAppsOpen(false);
                     setIsPeopleOpen(false);
                     setIsAccountOpen(true);
                 }}
                 onPeople={() => {
+                    setIsBotListOpen(false);
                     setIsConnectAppsOpen(false);
                     setIsAccountOpen(false);
                     setIsPeopleOpen(true);
@@ -1253,6 +1260,11 @@ function App(): ReactElement {
                     ? (
                             <AccountPanel
                                 isHub={hubRole !== 'standalone'}
+                                onPeople={() => {
+                                    setIsBotListOpen(false);
+                                    setIsAccountOpen(false);
+                                    setIsPeopleOpen(true);
+                                }}
                                 onClose={() => {
                                     setIsAccountOpen(false);
                                 }}
@@ -1272,6 +1284,11 @@ function App(): ReactElement {
                     ? (
                             <PeopleHubHint
                                 role={hubRole}
+                                onAccount={() => {
+                                    setIsBotListOpen(false);
+                                    setIsPeopleOpen(false);
+                                    setIsAccountOpen(true);
+                                }}
                                 onClose={() => {
                                     setIsPeopleOpen(false);
                                 }}
