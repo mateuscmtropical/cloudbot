@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- `sudo cloudbot update` removes the old image and the build cache older than three days, so the disk does not fill up. The old image goes once no instance runs on it, which `--all` makes happen.
 - The bot list now uses a dark chat layout with bot activity times, name search, and shared controls.
 - A new hub no longer prints a generated owner password. The first person who opens the owner address chooses a password and becomes the owner. After that the page closes and only the owner adds people.
 - A CloudBot inside a hub has an Account button in the sidebar. It opens a panel to change the password, manage passkeys and sign out. A person can change the password at any time with the current one.
