@@ -317,7 +317,9 @@ function beginStart(name: string, options: FrontDoorRoutesOptions, pendingStarts
         }
 
         busyPeople.delete(name);
-    }, () => {
+    }, (error: unknown) => {
+        // Without this line a failed start only shows as a page that loads without end.
+        console.error(`Could not start the instance of ${name}:`, error);
         busyPeople.delete(name);
     });
 

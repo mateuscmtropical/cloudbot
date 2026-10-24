@@ -204,6 +204,31 @@ describe('DockerInstanceManager', () => {
             .toEqual(['missing', 'stopped', 'starting', 'running']);
     });
 
+    it('creates the container again when it was removed and then starts it', async () => {
+        const { manager, docker } = makeManager([makeRecord('maria')]);
+
+        const result = await manager.start('maria');
+
+        expect(result)
+            .toBe('running');
+        expect(docker.calls)
+            .toContain('createContainer:cloudbot-i-maria');
+        expect(docker.calls)
+            .not
+            .toContain('createNetwork:cloudbot-net-maria');
+        expect(docker.startCalls)
+            .toBe(1);
+    });
+
+    it('refuses to start a person who does not exist', async () => {
+        const { manager, docker } = makeManager();
+
+        await expect(manager.start('maria'))
+            .rejects.toThrow('Instance maria does not exist.');
+        expect(docker.startCalls)
+            .toBe(0);
+    });
+
     it('shares a concurrent start for the same person', async () => {
         const record = makeRecord('maria');
         const { manager, docker } = makeManager([record]);
