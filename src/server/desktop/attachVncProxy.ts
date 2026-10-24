@@ -11,6 +11,7 @@ import { isValidHubSecret } from '../access/hubSession.ts';
 import { SESSION_COOKIE_NAME } from '../access/requireSession.ts';
 import type { SetupAccess } from '../access/SetupAccess.ts';
 import { DesktopResizeCoordinator } from './DesktopResizeCoordinator.ts';
+import type { MobileSites } from './MobileSites.ts';
 import { RfbInputFilter } from './RfbInputFilter.ts';
 import type { ScreenHolder } from './ScreenHolder.ts';
 
@@ -22,6 +23,8 @@ interface VncProxyOptions {
     screen: ScreenHolder;
     vncPort?: number;
     publicUrl?: string | undefined;
+    // Asks sites for their mobile page while a phone holds the screen.
+    mobileSites?: MobileSites;
 }
 
 const VNC_PATH = '/api/desktop/vnc';
@@ -225,7 +228,9 @@ function attachSessionSocket(options: SessionSocketOptions): void {
 
 function attachVncProxy(options: VncProxyOptions): void {
     const vncPort = options.vncPort ?? DEFAULT_VNC_PORT;
-    const resizeCoordinator = new DesktopResizeCoordinator();
+    const resizeCoordinator = new DesktopResizeCoordinator((isPhoneHolding) => {
+        options.mobileSites?.setActive(isPhoneHolding);
+    });
 
     attachSessionSocket({
         server: options.server,

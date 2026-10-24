@@ -85,7 +85,8 @@ keeps the volumes and the install folder. Docker stays installed. Back up the
   local addresses unless you allow a host.
 - **Hand the screen to you.** When a site asks for something only a person can
   do, such as a CAPTCHA or a 2FA code, it opens the screen for you and takes
-  over again when you say so.
+  over again when you say so. On a phone, sites switch to their mobile version
+  while you hold the screen, and a drag scrolls the page.
 - **Keep secrets away from the bot.** Passwords and keys go through a secure
   form into a vault. The bot uses them without being able to read them.
 - **Fill logins from Bitwarden.** Connect your Bitwarden vault in Connect apps with an API key and your master password. The bot can then type a website login into the page that is open. It never sees the values, it can fill only the site that the login is saved for, and you approve each login in the chat.

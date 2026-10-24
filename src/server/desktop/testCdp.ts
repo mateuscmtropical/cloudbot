@@ -4,6 +4,7 @@ interface SentCall {
     id: number;
     method: string;
     params: Record<string, unknown>;
+    sessionId?: string;
 }
 
 type CdpAnswer = (call: SentCall) => { result?: unknown; error?: { message: string } } | undefined;
