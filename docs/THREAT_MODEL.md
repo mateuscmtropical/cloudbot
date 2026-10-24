@@ -117,6 +117,8 @@ the server user.
 | Google Cloud client of the owner | The vault, per bot, as `OAUTH_GOOGLE_CLIENT` | Used by `AppOAuth` for the Google sign-in | The client secret. `browser_type_secret` refuses `OAUTH_` names, and the panel never shows it again |
 | Integration secret | The vault, per bot | Through a script that runs as `cloudbot-integrations` | The value. It is removed from the output. |
 | Bot mailbox password | The vault, per bot | Used by the IMAP reader and SMTP sender over TLS | The value, in the model, chat, database or logs |
+| Bitwarden account of the owner (server, API key and master password) | The vault, per bot, as `BITWARDEN_ACCOUNT`, and the session key in the memory of the server | Used by `BitwardenCli`, which only the server process runs | The account and the session. `BITWARDEN_` and `OAUTH_` names are refused by `browser_type_secret`, `app_connect`, integrations and `request_secret`. The panel never shows them again |
+| A login of the owner's Bitwarden vault | Bitwarden. The server reads one value at a time | `browser_fill_login` types it after the owner approves | The value, in the chat, in a tool result or in a log. The list for the model holds names only |
 | Password, code or card the bot asked for | The vault, per bot and per site | `browser_type_secret` types it | The value, in the chat, in a tool result or in a log |
 
 How each one works is in [Secrets](ARCHITECTURE.md#secrets),
@@ -136,6 +138,28 @@ site. `browser_type_secret` types it only when the page origin is that site and
 the focused element is a password, one-time code or card field. A search box or
 a text field is refused. Names that start with `ANTHROPIC_` or `CLAUDE_` are
 refused, so a bot form cannot pass for the setup form.
+
+The master password of a Bitwarden account sits in the vault next to the other
+secrets, so anyone who gets `vault.json` and `vault.key` gets it, and with the API key
+that opens the whole Bitwarden vault. The owner should connect a separate Bitwarden
+account, or an organization collection, that holds only the logins the bot may use. The
+state folder of `bw` is under the data folder, mode 700, so the bot user cannot read it.
+No secret goes in a command line, only in the environment of the `bw` child process.
+
+A prompt injection can tell the bot to fill a login on another site, for example a look-alike
+page. `browser_fill_login` does not trust the model for the site. The server reads the real origin
+of the open page and offers only the logins whose address matches that origin, on https. Host
+look-alikes such as `github.com.evil.com` do not match. Then the owner reads the login and the site in the
+chat and approves. The approval lasts ten minutes for that login and that site only. A page the bot
+reached through a redirect is judged by where it really is. Accepted limit. A login whose address is
+a shared suffix such as `github.io` matches every page under it, so the owner should keep such
+addresses out of the collection that the bot may use.
+
+Accepted limit, shared with `browser_type_secret`. Once a value is typed, it sits in the field of
+the page. Chromium runs as `bot` and listens for DevTools on `127.0.0.1:9222`, so a shell command
+of the bot could read the field through that port. Such a command still goes through the tool call
+review, and the owner approved the login and the site first. The fill keeps the value out of the
+chat, the tool results and the logs. It does not hide it from a bot that sets out to read the page.
 
 The subscription login is not in the vault. Each provider's CLI keeps it in the
 home of the `bot` user. CloudBot never reads, copies or stores it. The bot

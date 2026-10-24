@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatMessage } from '../../shared/chatTypes.ts';
 import type { ConnectedAppSummary } from '../../shared/connectedApps.ts';
-import { getGoogleClient, listConnectedApps, removeConnectedApp, saveGoogleClient, startAppConnection, startAppSignIn } from '../apiClient.ts';
+import { getBitwardenStatus, getGoogleClient, listConnectedApps, removeConnectedApp, saveGoogleClient, startAppConnection, startAppSignIn } from '../apiClient.ts';
 import { APP_CATALOG, APP_CATEGORIES } from '../appCatalog.ts';
 import { APP_SIGN_IN_CHANNEL } from '../appReturn.ts';
 import { APP_LOGOS } from '../appLogos.ts';
@@ -18,6 +18,10 @@ vi.mock('../apiClient.ts', () => ({
     getGoogleClient: vi.fn(),
     saveGoogleClient: vi.fn(),
     forgetGoogleClient: vi.fn(),
+    getBitwardenStatus: vi.fn(),
+    saveBitwardenAccount: vi.fn(),
+    forgetBitwardenAccount: vi.fn(),
+    testBitwardenAccount: vi.fn(),
 }));
 
 const LINEAR: ConnectedAppSummary = { id: 'app-1', name: 'linear', url: 'https://mcp.linear.app/mcp', status: 'connected', toolCount: 4 };
@@ -669,6 +673,44 @@ describe('ConnectAppsPanel', () => {
 
         expect(screen.queryByRole('region', { name: 'Google setup' }))
             .toBeNull();
+    });
+
+    it('shows a Bitwarden card that opens the setup form instead of a connection', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        vi.mocked(getBitwardenStatus)
+            .mockResolvedValue({ configured: false, serverUrl: '' });
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+
+        expect(await screen.findByText('Bitwarden'))
+            .toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Connect Bitwarden' }))
+            .toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Set up Bitwarden' }));
+
+        expect(await screen.findByRole('region', { name: 'Bitwarden setup' }))
+            .toBeTruthy();
+        expect(startAppSignIn)
+            .not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Close Bitwarden setup' }));
+
+        expect(screen.queryByRole('region', { name: 'Bitwarden setup' }))
+            .toBeNull();
+    });
+
+    it('turns the Bitwarden button off until a bot is chosen', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+
+        render(<ConnectAppsPanel selectedBotId={undefined} onClose={() => {}} />);
+
+        const button = await screen.findByRole('button', { name: 'Set up Bitwarden' });
+
+        expect((button as HTMLButtonElement).disabled)
+            .toBe(true);
     });
 
     it('says why the sign-in could not start, and stays on the list', async () => {

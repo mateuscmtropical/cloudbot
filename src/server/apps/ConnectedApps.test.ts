@@ -142,6 +142,17 @@ describe('ConnectedApps', () => {
             .toEqual({ outcome: 'refused', problem: 'A token is sent only to an https address.' });
     });
 
+    it('never sends the Bitwarden account as a token, even to its own site', async () => {
+        const secrets = memorySecrets({ [`${BOT_ID}:BITWARDEN_ACCOUNT`]: { site: 'https://mcp.example.com', value: 'fake-account-json' } });
+        const server = fakeServer();
+        const apps = appsWith(secrets, server.fetch);
+
+        expect(await apps.connect(BOT_ID, connectInput({ tokenSecret: 'BITWARDEN_ACCOUNT' })))
+            .toEqual({ outcome: 'refused', problem: 'That secret belongs to CloudBot and cannot be used as a token.' });
+        expect(server.authSeen)
+            .toEqual([]);
+    });
+
     it('refuses a reserved name and a name with capital letters', async () => {
         const apps = appsWith(memorySecrets({}), fakeServer().fetch);
 

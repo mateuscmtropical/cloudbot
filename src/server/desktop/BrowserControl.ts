@@ -97,6 +97,42 @@ const ISOLATED_WORLD_NAME = 'cloudbot-secret-check';
 // Fields that are not password inputs but still take a secret. The last token of their autocomplete value says so,
 // as in "billing cc-number".
 const SECRET_AUTOCOMPLETE_VALUES = new Set(['current-password', 'new-password', 'one-time-code', 'cc-number', 'cc-csc']);
+const ORIGIN_EXPRESSION = 'location.origin';
+// A user name or a code in a plain field is not as risky as a password, but a search box or a checkbox is still refused.
+const USERNAME_INPUT_TYPES = new Set(['text', 'email', 'tel']);
+const CODE_INPUT_TYPES = new Set(['text', 'tel', 'number']);
+
+type LoginField = 'username' | 'password' | 'totp';
+
+// What the focused element must be for a value to go in. The tag, the input type and the last token of autocomplete.
+interface FieldRule {
+    isAllowed: (tag: string, type: string, autocomplete: string) => boolean;
+    refusal: string;
+}
+
+function isSecretField(tag: string, type: string, autocomplete: string): boolean {
+    return tag === 'INPUT' && (type === 'password' || SECRET_AUTOCOMPLETE_VALUES.has(autocomplete));
+}
+
+const SECRET_FIELD_RULE: FieldRule = {
+    isAllowed: isSecretField,
+    refusal: 'The focused field is not a password, one-time code or card field. Click that field first.',
+};
+
+const LOGIN_FIELD_RULES: Record<LoginField, FieldRule> = {
+    username: {
+        isAllowed: (tag, type) => tag === 'INPUT' && USERNAME_INPUT_TYPES.has(type),
+        refusal: 'The focused field is not a user name or email field. Click that field first.',
+    },
+    password: {
+        isAllowed: isSecretField,
+        refusal: 'The focused field is not a password field. Click that field first.',
+    },
+    totp: {
+        isAllowed: (tag, type, autocomplete) => isSecretField(tag, type, autocomplete) || (tag === 'INPUT' && CODE_INPUT_TYPES.has(type)),
+        refusal: 'The focused field is not a one-time code field. Click that field first.',
+    },
+};
 
 class BrowserError extends Error {
     constructor(message: string) {
@@ -286,33 +322,29 @@ class BrowserControl {
     // a search box would put the value in the address, on the screen or in a public post.
     // The value is never returned or logged.
     typeSecret(site: string, value: string): Promise<void> {
+        return this.typeIntoFocusedField(site, value, SECRET_FIELD_RULE);
+    }
+
+    // The origin of the page on the screen, read in an isolated world so page scripts cannot change it.
+    // The server decides from this origin, never from an address the model gives.
+    readPageOrigin(): Promise<string> {
         return this.withPage(async (page) => {
             const contextId = await createIsolatedContext(page);
-            const result = await page.call('Runtime.evaluate', { expression: FOCUS_CHECK_EXPRESSION, returnByValue: true, contextId });
-            const focus = readEvaluatedValue(result);
-            const pageOrigin = readStringField(focus, 'origin');
+            const result = await page.call('Runtime.evaluate', { expression: ORIGIN_EXPRESSION, returnByValue: true, contextId });
+            const origin = readEvaluatedValue(result);
 
-            if (pageOrigin !== site) {
-                throw new BrowserError(`This secret is only for ${site}, and the page is on ${pageOrigin || 'an unknown site'}. Open the right site first.`);
+            if (typeof origin !== 'string' || origin === '' || origin === 'null') {
+                throw new BrowserError('The page has no site of its own. Open a web page first.');
             }
 
-            const focusedTag = readStringField(focus, 'tag');
-
-            if (focusedTag === 'IFRAME') {
-                throw new BrowserError('The focused field is inside a frame, which can belong to another site. Click a field on the page itself.');
-            }
-
-            const fieldType = readStringField(focus, 'type');
-            const fieldAutocomplete = readStringField(focus, 'autocomplete');
-            const isSecretField = focusedTag === 'INPUT'
-                && (fieldType === 'password' || SECRET_AUTOCOMPLETE_VALUES.has(fieldAutocomplete));
-
-            if (!isSecretField) {
-                throw new BrowserError('The focused field is not a password, one-time code or card field. Click that field first.');
-            }
-
-            await page.call('Input.insertText', { text: value });
+            return origin;
         });
+    }
+
+    // Types one part of a saved login, but only when the page is still on the origin the server checked and the focused
+    // field fits the part. A user name goes into a plain text field, a password into a secret field.
+    typeLogin(site: string, field: LoginField, value: string): Promise<void> {
+        return this.typeIntoFocusedField(site, value, LOGIN_FIELD_RULES[field]);
     }
 
     pressKey(key: BrowserKey): Promise<void> {
@@ -345,6 +377,34 @@ class BrowserControl {
         } catch {
             throw new BrowserError('The browser is not running. Try again in a few seconds.');
         }
+    }
+
+    private typeIntoFocusedField(site: string, value: string, rule: FieldRule): Promise<void> {
+        return this.withPage(async (page) => {
+            const contextId = await createIsolatedContext(page);
+            const result = await page.call('Runtime.evaluate', { expression: FOCUS_CHECK_EXPRESSION, returnByValue: true, contextId });
+            const focus = readEvaluatedValue(result);
+            const pageOrigin = readStringField(focus, 'origin');
+
+            if (pageOrigin !== site) {
+                throw new BrowserError(`This secret is only for ${site}, and the page is on ${pageOrigin || 'an unknown site'}. Open the right site first.`);
+            }
+
+            const focusedTag = readStringField(focus, 'tag');
+
+            if (focusedTag === 'IFRAME') {
+                throw new BrowserError('The focused field is inside a frame, which can belong to another site. Click a field on the page itself.');
+            }
+
+            const fieldType = readStringField(focus, 'type');
+            const fieldAutocomplete = readStringField(focus, 'autocomplete');
+
+            if (!rule.isAllowed(focusedTag, fieldType, fieldAutocomplete)) {
+                throw new BrowserError(rule.refusal);
+            }
+
+            await page.call('Input.insertText', { text: value });
+        });
     }
 
     private async dispatchClick(page: CdpConnection, point: { x: number; y: number }): Promise<void> {
@@ -554,4 +614,4 @@ function checkedSocketUrl(raw: unknown, devtoolsPort: string): string {
 }
 
 export { BROWSER_KEYS, BrowserControl, BrowserError, DESKTOP_DEVTOOLS_URL, GATE_REFUSED_ERROR, KEY_DEFINITIONS, MAX_PAGE_TEXT_LENGTH, devtoolsSocketUrl, parseWebUrl };
-export type { BrowserControlOptions, BrowserKey, ClickResult, PageText };
+export type { BrowserControlOptions, BrowserKey, ClickResult, LoginField, PageText };

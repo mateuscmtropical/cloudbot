@@ -39,6 +39,8 @@ import { createAppOAuthCallbackRoutes } from './apps/createAppOAuthCallbackRoute
 import type { AppOAuth } from './apps/AppOAuth.ts';
 import { createGoogleClientRoutes } from './apps/createGoogleClientRoutes.ts';
 import type { GoogleClientStore } from './apps/googleClient.ts';
+import { createBitwardenRoutes } from './bitwarden/createBitwardenRoutes.ts';
+import type { BitwardenVault } from './bitwarden/BitwardenVault.ts';
 import type { ConnectedApps } from './apps/ConnectedApps.ts';
 import { createLimitRoutes } from './limits/createLimitRoutes.ts';
 import { createModelRoutes } from './models/createModelRoutes.ts';
@@ -105,6 +107,8 @@ interface AppOptions {
     appOAuth?: AppOAuth;
     // The Google Cloud client of each bot's owner. With the sign-in, the routes that save it are served.
     googleClient?: GoogleClientStore;
+    // The owner's Bitwarden account of each bot. With the chat service, the routes that save and test it are served.
+    bitwardenVault?: BitwardenVault;
     // The address new webhook URLs start with. Without it the server's own address is used.
     publicBaseUrl?: string;
     // CLOUDBOT_PUBLIC_URL. Requests that change state may also come from the host of this address.
@@ -297,6 +301,13 @@ function createApp(options: AppOptions): Hono {
 
             app.route('/', googleClientRoutes);
         }
+    }
+
+    if (options.bitwardenVault !== undefined && options.chatService !== undefined) {
+        const chatService = options.chatService;
+        const bitwardenRoutes = createBitwardenRoutes({ vault: options.bitwardenVault, hasBot: botId => chatService.hasBot(botId) });
+
+        app.route('/', bitwardenRoutes);
     }
 
     if (options.chatService !== undefined && options.routineStore !== undefined) {

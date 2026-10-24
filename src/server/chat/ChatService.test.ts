@@ -29,6 +29,8 @@ import { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
 import { BotSecrets } from '../secrets/BotSecrets.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME } from '../secrets/createSecretTools.ts';
 import { TYPE_SECRET_TOOL_FULL_NAME } from '../secrets/createTypeSecretTool.ts';
+import { FILL_LOGIN_TOOL_FULL_NAME } from '../bitwarden/createFillLoginTool.ts';
+import type { BitwardenVault } from '../bitwarden/BitwardenVault.ts';
 import { WHATSAPP_TOOL_FULL_NAMES } from '../whatsapp/createWhatsAppTools.ts';
 import type { WhatsAppConnector } from '../whatsapp/createWhatsAppTools.ts';
 import { PEOPLE_TOOL_FULL_NAMES } from '../people/createPeopleTools.ts';
@@ -1393,6 +1395,68 @@ describe('ChatService', () => {
         expect(withBoth.receivedRequests[0]?.allowedTools)
             .toContain(TYPE_SECRET_TOOL_FULL_NAME);
         expect(vaultOnly.receivedRequests[0]?.allowedTools).not.toContain(TYPE_SECRET_TOOL_FULL_NAME);
+    });
+
+    it('offers browser_fill_login only with a browser, Bitwarden and the approval gate', async () => {
+        const botSecrets = new BotSecrets(new Vault(join(dataDir, 'vault')));
+        const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:9' });
+        const bitwarden = { isConfigured: () => false } as unknown as BitwardenVault;
+        const allow = (): Promise<{ decision: 'allow' }> => Promise.resolve({ decision: 'allow' as const });
+        const complete = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const noBitwarden = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const noGate = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const services = [
+            { runner: complete, service: new ChatService({ botStore, messageStore, runner: complete, dataDir, botSecrets, browser, bitwarden, toolCallReviewer: allow }) },
+            { runner: noBitwarden, service: new ChatService({ botStore, messageStore, runner: noBitwarden, dataDir, botSecrets, browser, toolCallReviewer: allow }) },
+            { runner: noGate, service: new ChatService({ botStore, messageStore, runner: noGate, dataDir, botSecrets, browser, bitwarden }) },
+        ];
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        // Each turn finishes before the next service takes the same bot.
+        await services.reduce(async (previous, { service }) => {
+            await previous;
+
+            const finished = waitForTurnFinish(service, bot.id);
+
+            await service.sendMessage(bot.id, 'Hi');
+            await finished;
+        }, Promise.resolve());
+
+        const toolNames = (runner: FakeAgentRunner): string[] => (runner.receivedRequests[0]?.tools ?? []).map(item => item.name);
+
+        expect(complete.receivedRequests[0]?.allowedTools)
+            .toContain(FILL_LOGIN_TOOL_FULL_NAME);
+        expect(toolNames(complete))
+            .toContain('browser_fill_login');
+        expect(noBitwarden.receivedRequests[0]?.allowedTools).not.toContain(FILL_LOGIN_TOOL_FULL_NAME);
+        expect(toolNames(noBitwarden)).not.toContain('browser_fill_login');
+        expect(noGate.receivedRequests[0]?.allowedTools).not.toContain(FILL_LOGIN_TOOL_FULL_NAME);
+        expect(toolNames(noGate)).not.toContain('browser_fill_login');
+    });
+
+    it('never lets the model type, or ask a form to overwrite, the Bitwarden account or a sign-in grant', async () => {
+        const botSecrets = new BotSecrets(new Vault(join(dataDir, 'vault')));
+        const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:9' });
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, botSecrets, browser, toolCallReviewer: () => Promise.resolve({ decision: 'allow' as const }) });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        botSecrets.save(bot.id, 'BITWARDEN_ACCOUNT', 'https://vault.bitwarden.com', 'fake-account-json');
+        botSecrets.save(bot.id, 'OAUTH_GOOGLE_CLIENT', 'https://accounts.google.com', 'fake-google-client');
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const typeTool = runner.receivedRequests[0]?.tools?.find(item => item.name === 'browser_type_secret');
+        const bitwardenResult = await typeTool?.handler({ name: 'BITWARDEN_ACCOUNT' }, {});
+        const oauthResult = await typeTool?.handler({ name: 'OAUTH_GOOGLE_CLIENT' }, {});
+
+        expect(JSON.stringify(bitwardenResult))
+            .toContain('No saved secret is named BITWARDEN_ACCOUNT');
+        expect(JSON.stringify(oauthResult))
+            .toContain('No saved secret is named OAUTH_GOOGLE_CLIENT');
+        await expect(service.requestSecret(bot.id, 'BITWARDEN_ACCOUNT', 'Sign in', 'https://vault.bitwarden.com'))
+            .rejects.toThrow('belong to CloudBot');
     });
 
     it('gives the screen to the owner and posts a note when the bot asks for it', async () => {

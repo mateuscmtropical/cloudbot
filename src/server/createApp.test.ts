@@ -9,6 +9,8 @@ import { SetupAccess } from './access/SetupAccess.ts';
 import type { AppOAuth } from './apps/AppOAuth.ts';
 import type { ConnectedApps } from './apps/ConnectedApps.ts';
 import { GoogleClientStore } from './apps/googleClient.ts';
+import { BitwardenAccountStore } from './bitwarden/bitwardenAccount.ts';
+import { BitwardenVault } from './bitwarden/BitwardenVault.ts';
 import type { BotSecret } from './secrets/BotSecrets.ts';
 import { FakeAgentRunner } from './agent/FakeAgentRunner.ts';
 import { ChatService } from './chat/ChatService.ts';
@@ -215,6 +217,57 @@ describe('createApp', () => {
             .toEqual({ configured: true, redirectUri: 'https://bot.example.com/api/apps/oauth/callback' });
         expect(JSON.stringify([...saved.values()]))
             .toContain('GOCSPX-secret-value');
+    });
+
+    it('keeps the Bitwarden account of a bot behind the session and never sends a secret back', async () => {
+        const chatService = buildChatService(opened);
+        const bot = await new BotStore(opened.db)
+            .create({ name: 'Ana', title: 'Assistant', description: '' });
+        const saved = new Map<string, BotSecret>();
+        const bitwardenVault = new BitwardenVault({
+            accounts: new BitwardenAccountStore({
+                read: (_botId, name) => saved.get(name),
+                save: (_botId, name, site, value) => {
+                    saved.set(name, { site, value });
+                },
+                remove: (_botId, name) => {
+                    saved.delete(name);
+                },
+            }),
+            baseDir: join(tmpdir(), 'cloudbot-bw-createapp-test'),
+        });
+        // The app routes are mounted too, so a route of Bitwarden that looks like /api/apps/:id would be taken by them.
+        const app = createApp({ version: '1.2.3', access, chatService, connectedApps: {} as ConnectedApps, bitwardenVault });
+        const sessionToken = await signIn(app, access);
+        const cookie = `cloudbot_session=${sessionToken}`;
+        const path = `/api/apps/bitwarden/account?bot=${bot.id}`;
+        const body = JSON.stringify({ botId: bot.id, clientId: 'user.11111111-2222-3333-4444-555555555555', clientSecret: 'fakeclientsecret0123456789', masterPassword: 'fake master password' });
+        const withoutCookie = await app.request(path);
+        const putWithoutCookie = await app.request('/api/apps/bitwarden/account', { method: 'PUT', headers: { 'content-type': 'application/json', 'origin': OWN_ORIGIN }, body });
+        const testWithoutCookie = await app.request('/api/apps/bitwarden/test', { method: 'POST', headers: { 'content-type': 'application/json', 'origin': OWN_ORIGIN }, body });
+        const putWithCookie = await app.request('/api/apps/bitwarden/account', { method: 'PUT', headers: { 'content-type': 'application/json', cookie, 'origin': OWN_ORIGIN }, body });
+        const status = await requestWithSession(app, path, sessionToken);
+        const statusText = await status.text();
+        const savedText = JSON.stringify([...saved.values()]);
+        const deleted = await app.request(path, { method: 'DELETE', headers: { cookie, origin: OWN_ORIGIN } });
+
+        expect(withoutCookie.status)
+            .toBe(401);
+        expect(putWithoutCookie.status)
+            .toBe(401);
+        expect(testWithoutCookie.status)
+            .toBe(401);
+        expect(putWithCookie.status)
+            .toBe(200);
+        expect(JSON.parse(statusText))
+            .toEqual({ configured: true, serverUrl: 'https://vault.bitwarden.com' });
+        expect(statusText).not.toContain('fake master password');
+        expect(savedText)
+            .toContain('fake master password');
+        expect(deleted.status)
+            .toBe(204);
+        expect(saved.size)
+            .toBe(0);
     });
 
     it('lets the owner list and remove a bot\'s routines, and refuses them without the cookie', async () => {

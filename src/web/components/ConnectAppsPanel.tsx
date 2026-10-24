@@ -4,10 +4,11 @@ import type { CSSProperties, ReactElement, SyntheticEvent } from 'react';
 import type { ConnectedAppStatus, ConnectedAppSummary } from '../../shared/connectedApps.ts';
 import { GOOGLE_GROUP } from '../../shared/googleApps.ts';
 import { listConnectedApps, removeConnectedApp, startAppConnection, startAppSignIn } from '../apiClient.ts';
-import { APP_CATALOG, APP_CATEGORIES } from '../appCatalog.ts';
+import { APP_CATALOG, APP_CATEGORIES, BITWARDEN_SERVER_NAME } from '../appCatalog.ts';
 import type { AppCategory, CatalogApp } from '../appCatalog.ts';
 import { APP_SIGN_IN_CHANNEL, describeAppReturn, readAppReturnMessage } from '../appReturn.ts';
 import { APP_LOGOS, getLogoGlyphColor } from '../appLogos.ts';
+import { BitwardenSetupForm } from './BitwardenSetupForm.tsx';
 import { GoogleSetupForm } from './GoogleSetupForm.tsx';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
@@ -187,6 +188,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
     const [returnNotice, setReturnNotice] = useState<string | undefined>(undefined);
     const [isGoogleSetupOpen, setIsGoogleSetupOpen] = useState(false);
     const [pendingGoogleApp, setPendingGoogleApp] = useState<PendingGoogleApp | undefined>(undefined);
+    const [isBitwardenSetupOpen, setIsBitwardenSetupOpen] = useState(false);
 
     function stopWaiting(): void {
         setSignInLabel(undefined);
@@ -476,6 +478,9 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                         />
                     )
                 : null}
+            {selectedBotId !== undefined && isBitwardenSetupOpen
+                ? <BitwardenSetupForm botId={selectedBotId} onClose={() => { setIsBitwardenSetupOpen(false); }} />
+                : null}
             {selectedBotId === undefined ? <p className="connect-app-problem">Choose a bot before connecting an app.</p> : null}
             {loadState === 'loading' ? <p className="connect-app-message">Loading apps...</p> : null}
             {loadState === 'failed' ? <p className="connect-app-problem">The connected apps could not be loaded.</p> : null}
@@ -494,7 +499,20 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                 const cardIds = cardConnections.map(connection => connection.id);
                                 // A half-connected Google card offers Remove too, so it can start over.
                                 const isRemovable = isConnected || (catalogApp.serverName === GOOGLE_GROUP.serverName && cardIds.length > 0);
-                                const actionButton = !isRemovable
+                                const setUpButton = (
+                                    <button
+                                        type="button"
+                                        className="connect-app-action"
+                                        disabled={selectedBotId === undefined}
+                                        aria-label={`Set up ${catalogApp.displayName}`}
+                                        onClick={() => {
+                                            setIsBitwardenSetupOpen(true);
+                                        }}
+                                    >
+                                        Set up
+                                    </button>
+                                );
+                                const connectOrRemoveButton = !isRemovable
                                     ? (
                                             <button
                                                 type="button"
@@ -521,6 +539,8 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                                 Remove
                                             </button>
                                         );
+                                // Bitwarden is no connection. Its button opens the setup form, which also forgets the account.
+                                const actionButton = catalogApp.serverName === BITWARDEN_SERVER_NAME ? setUpButton : connectOrRemoveButton;
 
                                 return (
                                     <div key={catalogApp.serverName} className="connect-app-card">

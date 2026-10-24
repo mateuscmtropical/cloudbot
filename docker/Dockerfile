@@ -88,6 +88,13 @@ RUN npm install --global @openai/codex@0.163.0 \
     && npm cache clean --force \
     && /usr/local/bin/codex --version
 
+# The Bitwarden CLI for browser_fill_login. Only the server process runs it, with its state in a folder under
+# /var/lib/cloudbot that the bot cannot open. The version is more than two weeks old and is pinned exactly.
+# npm installs it as root, so the bot user cannot replace it.
+RUN npm install --global @bitwarden/cli@2026.9.1 \
+    && npm cache clean --force \
+    && /usr/local/bin/bw --version
+
 # The agent CLIs of the other providers, which CloudBot runs over the Agent Client Protocol, see
 # src/server/providers/acpProviders.ts. They are root-owned, so the bot user cannot replace them. The ones without an
 # npm package come from each vendor's own install script, installed under /opt and linked into /usr/local/bin.

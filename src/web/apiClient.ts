@@ -1,4 +1,5 @@
 import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName, ScreenViewName } from '../shared/chatTypes.ts';
+import type { BitwardenStatus, BitwardenTestResult } from '../shared/bitwarden.ts';
 import type { AppSignInStart, ConnectedAppSummary, GoogleClientStatus } from '../shared/connectedApps.ts';
 import type { BotRoutine } from '../shared/routineTypes.ts';
 import type { BotWatch } from '../shared/watchTypes.ts';
@@ -508,6 +509,45 @@ async function forgetGoogleClient(botId: string): Promise<void> {
     }
 }
 
+// Whether the owner saved a Bitwarden account for this bot, and for which server. No secret is sent back.
+function getBitwardenStatus(botId: string): Promise<BitwardenStatus> {
+    const path = `${API_ROOT}/apps/bitwarden/account?bot=${encodeURIComponent(botId)}`;
+
+    return requestJson<BitwardenStatus>(path, {});
+}
+
+interface BitwardenAccountFields {
+    serverUrl: string;
+    clientId: string;
+    clientSecret: string;
+    masterPassword: string;
+}
+
+function saveBitwardenAccount(botId: string, fields: BitwardenAccountFields): Promise<BitwardenStatus> {
+    const path = `${API_ROOT}/apps/bitwarden/account`;
+    const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId, ...fields }) };
+
+    return requestJson<BitwardenStatus>(path, init);
+}
+
+async function forgetBitwardenAccount(botId: string): Promise<void> {
+    const path = `${API_ROOT}/apps/bitwarden/account?bot=${encodeURIComponent(botId)}`;
+    const response = await fetch(path, { method: 'DELETE' });
+
+    if (!response.ok) {
+        const serverMessage = await readServerMessage(response);
+
+        throw new RequestFailedError(path, response.status, serverMessage);
+    }
+}
+
+// Signs in, unlocks and syncs on the server. The answer is ok, or one plain sentence.
+function testBitwardenAccount(botId: string): Promise<BitwardenTestResult> {
+    const path = `${API_ROOT}/apps/bitwarden/test`;
+
+    return postJson<BitwardenTestResult>(path, { botId });
+}
+
 function startAppConnection(botId: string, name: string, url: string): Promise<ChatMessage> {
     const path = `${API_ROOT}/apps/connect`;
 
@@ -562,6 +602,10 @@ export {
     getGoogleClient,
     saveGoogleClient,
     forgetGoogleClient,
+    getBitwardenStatus,
+    saveBitwardenAccount,
+    forgetBitwardenAccount,
+    testBitwardenAccount,
     startAppConnection,
     startAppSignIn,
     removeConnectedApp,
