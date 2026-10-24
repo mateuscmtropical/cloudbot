@@ -3307,6 +3307,7 @@ class ChatService {
             mascotColor: bot.mascotColor,
             mascotShape: bot.mascotShape,
             lastMessagePreview,
+            ...(latestMessage === undefined ? {} : { lastActivityAt: latestMessage.createdAt }),
             hasUnread: false,
             lastMessageSequence: lastReadableMessage?.sequence ?? 0,
         };

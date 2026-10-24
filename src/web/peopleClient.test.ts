@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Person } from '../shared/peopleTypes.ts';
-import { addPerson, deletePerson, listPeople, resetPersonPassword } from './peopleClient.ts';
+import { addPerson, deletePerson, getHubContext, listPeople, resetPersonPassword } from './peopleClient.ts';
 
 const MARIA: Person = {
     name: 'maria',
@@ -24,6 +24,20 @@ afterEach(() => {
 });
 
 describe('peopleClient', () => {
+    it('reads the hub role and configured person name', async () => {
+        const fetchFunction = vi.fn<typeof fetch>()
+            .mockResolvedValue(jsonResponse({ role: 'member', personName: 'Maria Regina' }, 200));
+
+        vi.stubGlobal('fetch', fetchFunction);
+
+        const context = await getHubContext();
+
+        expect(context)
+            .toEqual({ role: 'member', personName: 'Maria Regina' });
+        expect(fetchFunction)
+            .toHaveBeenCalledWith('/api/hub-role', { method: 'GET' });
+    });
+
     it('lists people from the owner API', async () => {
         const fetchFunction = vi.fn<typeof fetch>()
             .mockResolvedValue(jsonResponse([MARIA], 200));

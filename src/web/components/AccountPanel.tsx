@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 
 import { describePushResult, disablePushNotifications, enablePushNotifications, readPushState } from '../pushClient.ts';
 import type { PushEnableResult, PushSwitchState } from '../pushClient.ts';
+import { Switch } from './Switch.tsx';
 
 // The browser steps behind the notification switch. Tests replace them.
 interface PushControls {
@@ -13,6 +14,7 @@ interface PushControls {
 
 interface AccountPanelProps {
     onClose: () => void;
+    onPeople?: (() => void) | undefined;
     // Inside the hub the hub keeps the password, the passkeys and the sign-in. A CloudBot on its own has none of them.
     isHub?: boolean;
     pushControls?: PushControls;
@@ -94,17 +96,14 @@ function NotificationsSection({ pushControls }: NotificationsSectionProps): Reac
         <section className="setup-card people-hint-card" aria-label="Notifications">
             <h2>Notifications</h2>
             <p>{describeSwitchState(state)}</p>
-            <label className="switch-row">
-                <input type="checkbox" role="switch" checked={isOn} disabled={!canChange} onChange={handleChange} />
-                <span>Notifications on this device</span>
-            </label>
+            <Switch label="Notifications on this device" checked={isOn} disabled={!canChange} onChange={handleChange} />
             {problem === '' ? null : <p role="alert">{problem}</p>}
         </section>
     );
 }
 
 // The hub keeps the password, the passkeys and the sign-in of each person, so those parts only lead to its pages.
-function AccountPanel({ onClose, isHub = true, pushControls = BROWSER_PUSH_CONTROLS }: AccountPanelProps): ReactElement {
+function AccountPanel({ onClose, onPeople, isHub = true, pushControls = BROWSER_PUSH_CONTROLS }: AccountPanelProps): ReactElement {
     return (
         <section className="people-panel" aria-labelledby="account-title">
             <header className="people-panel-header">
@@ -112,7 +111,10 @@ function AccountPanel({ onClose, isHub = true, pushControls = BROWSER_PUSH_CONTR
                     <h1 id="account-title">Account</h1>
                     <p>{isHub ? 'How you sign in to this CloudBot and what it sends you.' : 'What this CloudBot sends you.'}</p>
                 </div>
-                <button type="button" className="choice-button" aria-label="Close account panel" onClick={onClose}>Close</button>
+                <div className="people-panel-actions">
+                    {onPeople === undefined ? null : <button type="button" className="choice-button" onClick={onPeople}>People</button>}
+                    <button type="button" className="choice-button" aria-label="Close account panel" onClick={onClose}>Close</button>
+                </div>
             </header>
             <NotificationsSection pushControls={pushControls} />
             {isHub

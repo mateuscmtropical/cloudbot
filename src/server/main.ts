@@ -614,7 +614,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

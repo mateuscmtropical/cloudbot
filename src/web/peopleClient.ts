@@ -58,10 +58,19 @@ function jsonRequest(method: string, payload: unknown): RequestInit {
 // How this CloudBot relates to a hub. A CloudBot that runs on its own is standalone.
 type HubRole = 'standalone' | 'member' | 'owner';
 
-async function getHubRole(): Promise<HubRole> {
-    const body = await requestPeopleJson<{ role: HubRole }>('/api/hub-role', { method: 'GET' }, 200);
+interface HubContext {
+    role: HubRole;
+    personName?: string;
+}
 
-    return body.role;
+async function getHubContext(): Promise<HubContext> {
+    return requestPeopleJson<HubContext>('/api/hub-role', { method: 'GET' }, 200);
+}
+
+async function getHubRole(): Promise<HubRole> {
+    const context = await getHubContext();
+
+    return context.role;
 }
 
 function listPeople(): Promise<Person[]> {
@@ -104,5 +113,5 @@ async function deletePerson(name: string): Promise<void> {
     await requestPeople(path, init, 204);
 }
 
-export { addPerson, deactivatePerson, deletePerson, getHubRole, listPeople, reactivatePerson, resetPersonPassword };
-export type { HubRole };
+export { addPerson, deactivatePerson, deletePerson, getHubContext, getHubRole, listPeople, reactivatePerson, resetPersonPassword };
+export type { HubContext, HubRole };
