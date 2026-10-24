@@ -592,16 +592,26 @@ that the server refuses fails the request, and the owner connects the app again.
 #### Google Workspace apps
 
 Gmail, Calendar, Drive, Docs and Sheets use Google's own remote servers, listed in `src/shared/googleApps.ts`.
+The catalog has one Google card, named `google`, that connects all five with one sign-in.
 Google offers no client registration, so the owner makes an OAuth client of type Web application in their own
 Google Cloud project and saves the client ID and secret once per bot. The pair is one vault secret,
 `OAUTH_GOOGLE_CLIENT`, for `https://accounts.google.com`. The routes `GET`, `PUT` and `DELETE /api/apps/google/client`
 answer only whether a client is saved. `AppOAuth.start` treats an app as Google only when both its name and its address
-match a preset. It skips discovery, because the metadata link of these servers does not work, and uses the fixed
+match a preset or the group. It skips discovery, because the metadata link of these servers does not work, and uses the fixed
 Google endpoints. Without a saved client it answers `needs_client`, and the panel opens the Google setup form.
 
 The authorization address asks for the preset scopes with `access_type=offline` and `prompt=consent`, since Google
 sends a refresh token only then. CloudBot sends no `resource` parameter to Google, in the address or in the token request.
 The token request carries the client secret in the form body. The refresh path is the same as for other servers.
+The group start asks once for the scopes of all five apps, deduplicated. The card's address is the one of its first
+member, and the name `google` together with that exact address is what marks the group, so a custom app that only
+borrows the name goes through normal discovery. `AppOAuth.finish` makes one token request and keeps the grant as one vault
+secret for each member, for that member's own origin, since the proxy sends a token only to the origin of its secret.
+Every copy holds the same client, token endpoint and refresh token, which stay valid because Google does not rotate
+refresh tokens. Then it connects the five members. The result is `connected` only when all five connect, and its app
+name is `google`. A member that does not connect lets go of its secret when no connection uses it, and the others stay.
+The panel shows Connected for the card when all five members are connected and Partly connected otherwise.
+Its Remove removes all five.
 While the Google Cloud app is in Testing, Google ends the refresh token after 7 days and the owner signs in again.
 The owner must also join the Google Workspace Developer Preview Program and turn on the MCP and product APIs.
 

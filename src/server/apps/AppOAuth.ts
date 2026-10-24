@@ -7,8 +7,9 @@ import type { AppOAuthTokens } from './AppOAuthTokens.ts';
 import { discoverOAuth, registerClient } from './oauthDiscovery.ts';
 import type { OAuthEndpoints, RegisteredClient } from './oauthDiscovery.ts';
 import { parseAppUrl } from './appAddress.ts';
-import { findGoogleApp } from '../../shared/googleApps.ts';
+import { findGoogleApp, findGoogleGroup } from '../../shared/googleApps.ts';
 import type { GoogleApp } from '../../shared/googleApps.ts';
+import type { TokenGrant } from './AppOAuthTokens.ts';
 import { googleEndpoints } from './googleClient.ts';
 import type { GoogleClientStore } from './googleClient.ts';
 import type { FetchFunction } from './probeAppServer.ts';
@@ -50,6 +51,22 @@ interface SignInPlan {
     endpoints: OAuthEndpoints;
     // Google gets fixed endpoints, an offline refresh token, and no resource parameter.
     isGoogle: boolean;
+    // The servers one Google sign-in connects. Empty for every other sign-in.
+    googleMembers: GoogleApp[];
+}
+
+// A server that one sign-in connects.
+interface ConnectTarget {
+    name: string;
+    url: string;
+}
+
+// What a Google sign-in is for, one app or the whole group.
+interface GoogleTarget {
+    serverName: string;
+    url: string;
+    scopes: string[];
+    members: GoogleApp[];
 }
 
 // A sign-in the owner has started and not yet finished. It lives in memory, so it ends with a restart.
@@ -101,10 +118,15 @@ class AppOAuth {
             return { status: 'unsupported' };
         }
 
+        const googleGroup = findGoogleGroup(appName, address.href);
         const googleApp = findGoogleApp(appName, address.href);
 
+        if (googleGroup !== undefined) {
+            return this.startGoogle(botId, googleGroup, redirectUri);
+        }
+
         if (googleApp !== undefined) {
-            return this.startGoogle(botId, googleApp, redirectUri);
+            return this.startGoogle(botId, { serverName: googleApp.serverName, url: googleApp.url, scopes: googleApp.scopes, members: [] }, redirectUri);
         }
 
         const endpoints = await discoverOAuth(address.href, this.deps.fetchFunction);
@@ -119,20 +141,20 @@ class AppOAuth {
             return { status: 'failed', problem: FAILED_START };
         }
 
-        return this.beginSignIn({ botId, appName, serverUrl: address.href, redirectUri, client, endpoints, isGoogle: false });
+        return this.beginSignIn({ botId, appName, serverUrl: address.href, redirectUri, client, endpoints, isGoogle: false, googleMembers: [] });
     }
 
     // Google has fixed endpoints and no registration, so the client the owner saved in the vault is used.
-    private startGoogle(botId: string, googleApp: GoogleApp, redirectUri: string): AppSignInStart {
+    private startGoogle(botId: string, target: GoogleTarget, redirectUri: string): AppSignInStart {
         const savedClient = this.deps.googleClient?.read(botId);
 
         if (savedClient === undefined) {
             return { status: 'needs_client' };
         }
 
-        const endpoints = googleEndpoints(googleApp);
+        const endpoints = googleEndpoints(target.scopes);
 
-        return this.beginSignIn({ botId, appName: googleApp.serverName, serverUrl: googleApp.url, redirectUri, client: savedClient, endpoints, isGoogle: true });
+        return this.beginSignIn({ botId, appName: target.serverName, serverUrl: target.url, redirectUri, client: savedClient, endpoints, isGoogle: true, googleMembers: target.members });
     }
 
     private beginSignIn(plan: SignInPlan): AppSignInStart {
@@ -212,16 +234,30 @@ class AppOAuth {
             return failed;
         }
 
-        const secretName = oauthSecretName(signIn.appName);
-        const site = new URL(signIn.serverUrl).origin;
+        // One Google sign-in gives one grant, and each member server gets its own copy, since a token is sent
+        // only to the origin of its secret. Google does not rotate refresh tokens, so every copy stays valid.
+        const targets: ConnectTarget[] = signIn.googleMembers.length === 0
+            ? [{ name: signIn.appName, url: signIn.serverUrl }]
+            : signIn.googleMembers.map(member => ({ name: member.serverName, url: member.url }));
+        const connections = targets.map(target => this.storeAndConnect(signIn, target, grant));
+        const results = await Promise.all(connections);
+        const isEveryoneConnected = results.every(isConnected => isConnected);
+
+        return isEveryoneConnected ? { ...failed, outcome: 'connected' } : failed;
+    }
+
+    // Keeps the grant for one server and connects it. A server that does not connect loses its secret again, and the others stay.
+    private async storeAndConnect(signIn: PendingSignIn, target: ConnectTarget, grant: TokenGrant): Promise<boolean> {
+        const secretName = oauthSecretName(target.name);
+        const site = new URL(target.url).origin;
 
         try {
             this.deps.tokens.store(signIn.botId, secretName, site, { grant, clientId: signIn.client.clientId, clientSecret: signIn.client.clientSecret, tokenEndpoint: signIn.endpoints.tokenEndpoint });
 
-            const connection = await this.deps.connectedApps.connect(signIn.botId, { name: signIn.appName, url: signIn.serverUrl, tokenSecret: secretName });
+            const connection = await this.deps.connectedApps.connect(signIn.botId, { name: target.name, url: target.url, tokenSecret: secretName });
 
             if (connection.outcome === 'connected') {
-                return { ...failed, outcome: 'connected' };
+                return true;
             }
         } catch {
             // The sign-in did not finish, and the token is dropped below like any other that no app uses.
@@ -229,7 +265,7 @@ class AppOAuth {
 
         await this.deps.connectedApps.dropUnusedSecret(signIn.botId, secretName);
 
-        return failed;
+        return false;
     }
 
     // True while a sign-in waits for the owner to come back. A hub instance stays awake for it, since the state lives in memory.

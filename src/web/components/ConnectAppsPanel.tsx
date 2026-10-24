@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactElement, SyntheticEvent } from 'react';
 
 import type { ConnectedAppStatus, ConnectedAppSummary } from '../../shared/connectedApps.ts';
+import { GOOGLE_GROUP } from '../../shared/googleApps.ts';
 import { listConnectedApps, removeConnectedApp, startAppConnection, startAppSignIn } from '../apiClient.ts';
 import { APP_CATALOG, APP_CATEGORIES } from '../appCatalog.ts';
 import type { AppCategory, CatalogApp } from '../appCatalog.ts';
@@ -39,7 +40,13 @@ interface AppIconStyle extends CSSProperties {
     '--app-hue': number;
 }
 
+interface CardState {
+    description: string;
+    isConnected: boolean;
+}
+
 const ALL_CATEGORIES: CategoryFilter = 'All';
+const GOOGLE_MEMBER_NAMES = GOOGLE_GROUP.members.map(member => member.serverName);
 const CATEGORY_FILTERS: CategoryFilter[] = [ALL_CATEGORIES, ...APP_CATEGORIES];
 // The server keeps a sign-in for ten minutes.
 const SIGN_IN_WAIT_LIMIT_MS = 10 * 60 * 1000;
@@ -57,6 +64,31 @@ function getStatusLabel(status: ConnectedAppStatus): string {
     }
 
     return 'Connected.';
+}
+
+// The connections that belong to a card. The Google card has one for each of its five apps, every other card has one at most.
+function findCardConnections(catalogApp: CatalogApp, apps: ConnectedAppSummary[]): ConnectedAppSummary[] {
+    if (catalogApp.serverName === GOOGLE_GROUP.serverName) {
+        return apps.filter(app => GOOGLE_MEMBER_NAMES.includes(app.name));
+    }
+
+    return apps.filter(app => app.name === catalogApp.serverName);
+}
+
+function describeCard(catalogApp: CatalogApp, connections: ConnectedAppSummary[]): CardState {
+    const [firstConnection] = connections;
+
+    if (catalogApp.serverName !== GOOGLE_GROUP.serverName) {
+        return { description: firstConnection === undefined ? catalogApp.description : getStatusLabel(firstConnection.status), isConnected: firstConnection?.status === 'connected' };
+    }
+
+    const connectedCount = connections.filter(connection => connection.status === 'connected').length;
+
+    if (connectedCount === GOOGLE_GROUP.members.length) {
+        return { description: getStatusLabel('connected'), isConnected: true };
+    }
+
+    return { description: connections.length === 0 ? catalogApp.description : 'Partly connected. Remove it to start over.', isConnected: false };
 }
 
 function getCustomAppName(address: string): string | undefined {
@@ -313,33 +345,46 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
         handleConnect(appName, address);
     }
 
-    function handleRemove(appId: string): void {
-        if (removingIds.includes(appId)) {
+    // One card can hold several connections, as the Google card does. The list changes once, for the ones that went.
+    function handleRemove(appIds: string[]): void {
+        const freshIds = appIds.filter(appId => !removingIds.includes(appId));
+
+        if (freshIds.length === 0) {
             return;
         }
 
         setProblem(undefined);
-        setRemovingIds(currentIds => [...currentIds, appId]);
+        setRemovingIds(currentIds => [...currentIds, ...freshIds]);
 
-        removeConnectedApp(appId)
-            .then(() => {
-                setApps(currentApps => currentApps.filter(app => app.id !== appId));
+        const removals = freshIds.map(appId => removeConnectedApp(appId)
+            .then(() => appId));
+
+        Promise.allSettled(removals)
+            .then((results) => {
+                const removedIds = results.flatMap(result => (result.status === 'fulfilled' ? [result.value] : []));
+
+                setApps(currentApps => currentApps.filter(app => !removedIds.includes(app.id)));
+
+                if (removedIds.length < freshIds.length) {
+                    setProblem('The app could not be removed.');
+                }
             })
             .catch(() => {
                 setProblem('The app could not be removed.');
             })
             .finally(() => {
-                setRemovingIds(currentIds => currentIds.filter(id => id !== appId));
+                setRemovingIds(currentIds => currentIds.filter(id => !freshIds.includes(id)));
             });
     }
 
     const searchTerm = searchQuery.trim()
         .toLowerCase();
-    const customApps = apps.filter(app => !APP_CATALOG.some(catalogApp => catalogApp.serverName === app.name));
+    // The five Google apps belong to the Google card, so an old row of one of them is not a custom app.
+    const customApps = apps.filter(app => !APP_CATALOG.some(catalogApp => catalogApp.serverName === app.name) && !GOOGLE_MEMBER_NAMES.includes(app.name));
     const filteredCatalogApps = SORTED_CATALOG.filter((catalogApp) => {
-        const connectedApp = apps.find(app => app.name === catalogApp.serverName);
+        const cardConnections = findCardConnections(catalogApp, apps);
         const matchesCategory = selectedCategory === ALL_CATEGORIES || catalogApp.category === selectedCategory;
-        const matchesInstalledFilter = !isShowingInstalledOnly || connectedApp !== undefined;
+        const matchesInstalledFilter = !isShowingInstalledOnly || cardConnections.length > 0;
         const searchableText = `${catalogApp.displayName} ${catalogApp.description} ${catalogApp.category}`.toLowerCase();
         const matchesSearch = searchTerm.length === 0 || searchableText.includes(searchTerm);
 
@@ -352,7 +397,8 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
         return searchTerm.length === 0 || normalizedDisplayName.includes(searchTerm);
     });
     const hasMatchingApps = filteredCatalogApps.length > 0 || filteredCustomApps.length > 0;
-    const installedCount = apps.length.toString();
+    const installedCards = SORTED_CATALOG.filter(catalogApp => findCardConnections(catalogApp, apps).length > 0);
+    const installedCount = (installedCards.length + customApps.length).toString();
     const installedCountAccessibleLabel = `${installedCount} installed apps`;
     const installedCountLabel = `${installedCount} installed`;
     const groupLabel = selectedCategory === ALL_CATEGORIES ? 'All apps' : selectedCategory;
@@ -442,10 +488,13 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                     <ListGroup label={groupLabel} className="connect-app-group">
                         <div className="connect-app-grid">
                             {filteredCatalogApps.map((catalogApp) => {
-                                const connectedApp = apps.find(app => app.name === catalogApp.serverName);
+                                const cardConnections = findCardConnections(catalogApp, apps);
                                 const isStarting = startingAppName === catalogApp.serverName;
-                                const description = connectedApp === undefined ? catalogApp.description : getStatusLabel(connectedApp.status);
-                                const actionButton = connectedApp?.status !== 'connected'
+                                const { description, isConnected } = describeCard(catalogApp, cardConnections);
+                                const cardIds = cardConnections.map(connection => connection.id);
+                                // A half-connected Google card offers Remove too, so it can start over.
+                                const isRemovable = isConnected || (catalogApp.serverName === GOOGLE_GROUP.serverName && cardIds.length > 0);
+                                const actionButton = !isRemovable
                                     ? (
                                             <button
                                                 type="button"
@@ -463,10 +512,10 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                             <button
                                                 type="button"
                                                 className="connect-app-action"
-                                                disabled={removingIds.includes(connectedApp.id)}
+                                                disabled={cardIds.some(cardId => removingIds.includes(cardId))}
                                                 aria-label={`Remove ${catalogApp.displayName}`}
                                                 onClick={() => {
-                                                    handleRemove(connectedApp.id);
+                                                    handleRemove(cardIds);
                                                 }}
                                             >
                                                 Remove
@@ -498,7 +547,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                     disabled={removingIds.includes(app.id)}
                                     aria-label={`Remove ${displayName}`}
                                     onClick={() => {
-                                        handleRemove(app.id);
+                                        handleRemove([app.id]);
                                     }}
                                 >
                                     Remove

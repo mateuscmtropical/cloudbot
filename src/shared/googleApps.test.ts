@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { GOOGLE_APPS, findGoogleApp } from './googleApps.ts';
+import { GOOGLE_APPS, GOOGLE_GROUP, findGoogleApp, findGoogleGroup } from './googleApps.ts';
 
 describe('GOOGLE_APPS', () => {
     it('gives every app a valid server name, a Google https address and full scope addresses', () => {
@@ -49,6 +49,30 @@ describe('findGoogleApp', () => {
 
     it('does not treat another name at a Google address as Google', () => {
         expect(findGoogleApp('my-mail', 'https://gmailmcp.googleapis.com/mcp/v1'))
+            .toBeUndefined();
+    });
+});
+
+describe('GOOGLE_GROUP', () => {
+    it('lists the five apps as members and asks for each scope once', () => {
+        expect(GOOGLE_GROUP.members.map(member => member.serverName))
+            .toEqual(['google-gmail', 'google-calendar', 'google-drive', 'google-docs', 'google-sheets']);
+        expect(new Set(GOOGLE_GROUP.scopes).size)
+            .toBe(GOOGLE_GROUP.scopes.length);
+        GOOGLE_APPS.forEach((app) => {
+            app.scopes.forEach((scope) => {
+                expect(GOOGLE_GROUP.scopes)
+                    .toContain(scope);
+            });
+        });
+    });
+
+    it('is found only by its name and its address together', () => {
+        expect(findGoogleGroup('google', GOOGLE_GROUP.url))
+            .toBe(GOOGLE_GROUP);
+        expect(findGoogleGroup('google', 'https://mcp.example.com/mcp'))
+            .toBeUndefined();
+        expect(findGoogleGroup('my-google', GOOGLE_GROUP.url))
             .toBeUndefined();
     });
 });

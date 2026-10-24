@@ -9,8 +9,8 @@ All notable changes to this project are listed here. The format follows
 ### Added
 
 - The Connect apps catalog is a grid of cards sorted by name, with three columns on a phone. Each app shows its logo when it has one, drawn from shapes bundled with CloudBot. The other apps keep a colored initial.
-- Gmail, Google Calendar, Google Drive, Google Docs and Google Sheets are in the Connect apps catalog. They connect through Google's own servers with a Google Cloud client that the owner creates once. The panel's Google setup lists the steps, shows the redirect address and saves the client ID and secret in the vault, where the bot cannot read them.
-- The Connect apps panel lists a catalog of 72 apps with category chips, such as Productivity, Code and Finance. Search also matches the description and the category.
+- One Google card in the Connect apps catalog connects Gmail, Google Calendar, Google Drive, Google Docs and Google Sheets with a single sign-in, and its Remove takes all five away. They connect through Google's own servers with a Google Cloud client that the owner creates once. The panel's Google setup lists the steps, shows the redirect address and saves the client ID and secret in the vault, where the bot cannot read them.
+- The Connect apps panel lists a catalog of 68 apps with category chips, such as Productivity, Code and Finance. Search also matches the description and the category.
 - Connect apps signs in on the app's own page. Connect on Linear, Notion or a custom app opens the sign-in and approval page of the app, with no token to paste, and brings the owner back to CloudBot. The token goes to the vault and is renewed by itself. A server without that sign-in still asks for a token in the chat.
 
 ### Changed

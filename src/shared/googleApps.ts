@@ -54,10 +54,37 @@ const GOOGLE_APPS: GoogleApp[] = [
     },
 ];
 
+// One sign-in connects all five apps. The group asks for every scope of its members once, deduplicated, and the
+// server then keeps one connection for each member. The group has no server of its own, so its address is the
+// one of its first member. Together with the name, it is what tells the group from a custom app.
+interface GoogleGroup {
+    serverName: string;
+    displayName: string;
+    description: string;
+    url: string;
+    scopes: string[];
+    members: GoogleApp[];
+}
+
+const GOOGLE_GROUP_SCOPES = GOOGLE_APPS.flatMap(app => app.scopes);
+
+const GOOGLE_GROUP: GoogleGroup = {
+    serverName: 'google',
+    displayName: 'Google',
+    description: 'Gmail, Calendar, Drive, Docs and Sheets in one sign-in.',
+    url: 'https://gmailmcp.googleapis.com/mcp/v1',
+    scopes: [...new Set(GOOGLE_GROUP_SCOPES)],
+    members: GOOGLE_APPS,
+};
+
+function findGoogleGroup(serverName: string, url: string): GoogleGroup | undefined {
+    return serverName === GOOGLE_GROUP.serverName && url === GOOGLE_GROUP.url ? GOOGLE_GROUP : undefined;
+}
+
 // Both the name and the address must match, so a custom app that only borrows the name is not treated as Google.
 function findGoogleApp(serverName: string, url: string): GoogleApp | undefined {
     return GOOGLE_APPS.find(app => app.serverName === serverName && app.url === url);
 }
 
-export { GOOGLE_APPS, findGoogleApp };
-export type { GoogleApp };
+export { GOOGLE_APPS, GOOGLE_GROUP, findGoogleApp, findGoogleGroup };
+export type { GoogleApp, GoogleGroup };
