@@ -47,6 +47,31 @@ describe('AccountPanel', () => {
             .toBeTruthy();
     });
 
+    it('shows the account name, role and People row for a hub owner', () => {
+        const onPeople = vi.fn();
+
+        render(
+            <AccountPanel
+                onClose={vi.fn()}
+                onPeople={onPeople}
+                personName="Mateus Rocha"
+                personRole="Owner"
+                pushControls={createPushControls('off')}
+            />,
+        );
+
+        expect(screen.getByText('MR'))
+            .toBeTruthy();
+        expect(screen.getByText('Mateus Rocha'))
+            .toBeTruthy();
+        expect(screen.getByText('Owner'))
+            .toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'People' }));
+
+        expect(onPeople)
+            .toHaveBeenCalledOnce();
+    });
+
     it('closes from the button', () => {
         const onClose = vi.fn();
 

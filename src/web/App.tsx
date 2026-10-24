@@ -28,6 +28,7 @@ import { ADD_PASSKEY_CHOICE_ID, REMOVE_PASSKEY_CHOICE_ID } from '../shared/passk
 import { addPasskey, describePasskeyResult, removePasskey } from './passkeyClient.ts';
 import { SignInScreen } from './components/SignInScreen.tsx';
 import { AccountPanel } from './components/AccountPanel.tsx';
+import { BotProfilePanel } from './components/BotProfilePanel.tsx';
 import { PeopleHubHint } from './components/PeopleHubHint.tsx';
 import { PeoplePanel } from './components/PeoplePanel.tsx';
 import { getHubContext } from './peopleClient.ts';
@@ -156,6 +157,7 @@ function App(): ReactElement {
     const [personName, setPersonName] = useState<string | undefined>(undefined);
     const [isPeopleOpen, setIsPeopleOpen] = useState(false);
     const [isAccountOpen, setIsAccountOpen] = useState(false);
+    const [isBotProfileOpen, setIsBotProfileOpen] = useState(false);
     // The connected remote MCP servers panel, opened from the sidebar.
     const [isConnectAppsOpen, setIsConnectAppsOpen] = useState(false);
     const [errorText, setErrorText] = useState<string | undefined>(undefined);
@@ -820,6 +822,7 @@ function App(): ReactElement {
         setSelectedBotId(botId);
         setIsPeopleOpen(false);
         setIsAccountOpen(false);
+        setIsBotProfileOpen(false);
         setIsBotListOpen(false);
     }
 
@@ -846,6 +849,7 @@ function App(): ReactElement {
         setSelectedChannelId(channelId);
         setIsPeopleOpen(false);
         setIsAccountOpen(false);
+        setIsBotProfileOpen(false);
         setIsBotListOpen(false);
     }
 
@@ -1201,18 +1205,21 @@ function App(): ReactElement {
                     setIsBotListOpen(false);
                     setIsPeopleOpen(false);
                     setIsAccountOpen(false);
+                    setIsBotProfileOpen(false);
                     setIsConnectAppsOpen(true);
                 }}
                 onAccount={() => {
                     setIsBotListOpen(false);
                     setIsConnectAppsOpen(false);
                     setIsPeopleOpen(false);
+                    setIsBotProfileOpen(false);
                     setIsAccountOpen(true);
                 }}
                 onPeople={() => {
                     setIsBotListOpen(false);
                     setIsConnectAppsOpen(false);
                     setIsAccountOpen(false);
+                    setIsBotProfileOpen(false);
                     setIsPeopleOpen(true);
                 }}
             />
@@ -1260,13 +1267,35 @@ function App(): ReactElement {
                     ? (
                             <AccountPanel
                                 isHub={hubRole !== 'standalone'}
+                                personName={personName}
+                                personRole={hubRole === 'member' ? 'Member' : 'Owner'}
                                 onPeople={() => {
                                     setIsBotListOpen(false);
                                     setIsAccountOpen(false);
+                                    setIsBotProfileOpen(false);
                                     setIsPeopleOpen(true);
                                 }}
                                 onClose={() => {
                                     setIsAccountOpen(false);
+                                }}
+                            />
+                        )
+                    : null}
+                {isBotProfileOpen && selectedBot !== undefined
+                    ? (
+                            <BotProfilePanel
+                                bot={selectedBot}
+                                onClose={() => {
+                                    setIsBotProfileOpen(false);
+                                }}
+                                onRenameBot={handleRenameBot}
+                                onOpenConnectApps={() => {
+                                    setIsBotProfileOpen(false);
+                                    setIsConnectAppsOpen(true);
+                                }}
+                                onOpenScreen={() => {
+                                    setIsBotProfileOpen(false);
+                                    setScreenRequestId(current => current + 1);
                                 }}
                             />
                         )
@@ -1309,47 +1338,55 @@ function App(): ReactElement {
                     : null}
                 {!isPeopleOpen && !isAccountOpen && selectedChannelId === undefined
                     ? (
-                            <ConversationView
-                                bot={selectedBot}
-                                bots={bots}
-                                mascotState={liveMascotState}
-                                onTypingChange={setIsOwnerTyping}
-                                messages={visibleMessages}
-                                draftText={draft.botId === selectedBotId ? draft.text : ''}
-                                isRunning={isRunning}
-                                activeToolName={activeToolName}
-                                attachments={botAttachments}
-                                isUploading={isUploading}
-                                onRemoveAttachment={handleRemoveAttachment}
-                                actions={messageActions}
-                                hasOlderMessages={hasOlderMessages}
-                                isLoadingOlder={isLoadingOlder}
-                                onLoadOlder={handleLoadOlder}
-                                onOpenBotList={() => {
-                                    setIsBotListOpen(true);
-                                }}
-                                onOpenProfile={() => undefined}
-                                onRenameBot={handleRenameBot}
-                                onOpenSetupChat={(setupBotId) => {
-                                    handleSelectBot(setupBotId);
-                                }}
-                                screenRequestId={screenRequestId}
-                                focusMessageId={focusMessageId}
-                                onFocusHandled={() => {
-                                    setFocusMessageId(undefined);
-                                }}
-                                webhookUrls={botWebhookUrls}
-                                onHideWebhookUrl={(hidden) => {
-                                    setWebhookUrls(current => current.filter(notice => notice !== hidden));
-                                }}
-                                personCredentials={botPersonCredentials}
-                                onHidePersonCredentials={(hidden) => {
-                                    setPersonCredentials(current => current.filter(notice => notice !== hidden));
-                                }}
-                                onSend={handleSend}
-                                onStop={handleStop}
-                                onAttach={handleAttach}
-                            />
+                            <div className="conversation-host" hidden={isBotProfileOpen}>
+                                <ConversationView
+                                    bot={selectedBot}
+                                    bots={bots}
+                                    mascotState={liveMascotState}
+                                    onTypingChange={setIsOwnerTyping}
+                                    messages={visibleMessages}
+                                    draftText={draft.botId === selectedBotId ? draft.text : ''}
+                                    isRunning={isRunning}
+                                    activeToolName={activeToolName}
+                                    attachments={botAttachments}
+                                    isUploading={isUploading}
+                                    onRemoveAttachment={handleRemoveAttachment}
+                                    actions={messageActions}
+                                    hasOlderMessages={hasOlderMessages}
+                                    isLoadingOlder={isLoadingOlder}
+                                    onLoadOlder={handleLoadOlder}
+                                    onOpenBotList={() => {
+                                        setIsBotListOpen(true);
+                                    }}
+                                    onRenameBot={handleRenameBot}
+                                    onOpenProfile={() => {
+                                        setIsBotListOpen(false);
+                                        setIsConnectAppsOpen(false);
+                                        setIsAccountOpen(false);
+                                        setIsPeopleOpen(false);
+                                        setIsBotProfileOpen(true);
+                                    }}
+                                    onOpenSetupChat={(setupBotId) => {
+                                        handleSelectBot(setupBotId);
+                                    }}
+                                    screenRequestId={screenRequestId}
+                                    focusMessageId={focusMessageId}
+                                    onFocusHandled={() => {
+                                        setFocusMessageId(undefined);
+                                    }}
+                                    webhookUrls={botWebhookUrls}
+                                    onHideWebhookUrl={(hidden) => {
+                                        setWebhookUrls(current => current.filter(notice => notice !== hidden));
+                                    }}
+                                    personCredentials={botPersonCredentials}
+                                    onHidePersonCredentials={(hidden) => {
+                                        setPersonCredentials(current => current.filter(notice => notice !== hidden));
+                                    }}
+                                    onSend={handleSend}
+                                    onStop={handleStop}
+                                    onAttach={handleAttach}
+                                />
+                            </div>
                         )
                     : null}
             </main>

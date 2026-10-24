@@ -57,7 +57,7 @@ interface ConversationViewProps {
     isLoadingOlder?: boolean;
     onLoadOlder?: () => void;
     onOpenBotList: () => void;
-    // Opens this bot's profile. The profile route is wired in a later phase.
+    // Opens this bot's profile.
     onOpenProfile?: (() => void) | undefined;
     // Opens the chat of the bot that holds a provider sign-in. Without it the header shows no provider picker.
     onOpenSetupChat?: ((setupBotId: string) => void) | undefined;

@@ -4,13 +4,14 @@ import type { ReactElement } from 'react';
 interface ListRowProps {
     title: string;
     description?: string;
-    value?: string;
+    value?: string | undefined;
     leadingIcon?: ReactNode;
     trailingControl?: ReactNode;
     chevron?: boolean;
-    href?: string;
-    onClick?: MouseEventHandler<HTMLButtonElement>;
-    className?: string;
+    href?: string | undefined;
+    ariaLabel?: string | undefined;
+    onClick?: MouseEventHandler<HTMLButtonElement> | undefined;
+    className?: string | undefined;
 }
 
 function ListRowContent({ title, description, value, leadingIcon, trailingControl, chevron }: ListRowProps): ReactElement {
@@ -34,11 +35,11 @@ function ListRow(props: ListRowProps): ReactElement {
     const content = <ListRowContent {...props} />;
 
     if (href !== undefined) {
-        return <a className={rootClassName} href={href}>{content}</a>;
+        return <a className={rootClassName} href={href} aria-label={props.ariaLabel}>{content}</a>;
     }
 
     if (onClick !== undefined) {
-        return <button type="button" className={rootClassName} onClick={onClick}>{content}</button>;
+        return <button type="button" className={rootClassName} onClick={onClick} aria-label={props.ariaLabel}>{content}</button>;
     }
 
     return <div className={rootClassName}>{content}</div>;

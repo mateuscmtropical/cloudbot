@@ -796,6 +796,17 @@ button.list-row {
     flex: none;
 }
 
+.bot-profile-name-button {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
 .bot-pill-name {
     min-width: 0;
     overflow: hidden;
@@ -1672,6 +1683,194 @@ button.list-row {
 .people-panel-header {
     max-width: 48rem;
     margin: 0 auto var(--space-4);
+}
+
+.settings-page-header {
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--space-3);
+}
+
+.settings-page-title {
+    min-width: 0;
+}
+
+.settings-page-title h1,
+.settings-page-title p {
+    margin: 0;
+}
+
+.settings-page-title p {
+    margin-top: var(--space-1);
+    color: var(--color-text-muted);
+}
+
+.account-panel-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    width: min(32rem, 100%);
+    margin: 0 auto;
+}
+
+.account-person-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 68px;
+    padding: var(--space-3) var(--space-4);
+}
+
+.account-person-row + .list-row {
+    border-top: 1px solid var(--color-surface-border);
+}
+
+.account-avatar {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: var(--size-round-button);
+    height: var(--size-round-button);
+    border: 1px solid var(--color-surface-border);
+    border-radius: 50%;
+    background: var(--color-surface-avatar);
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.account-sign-out-form {
+    display: flex;
+}
+
+.account-sign-out-button {
+    width: 100%;
+    min-height: 68px;
+    padding: var(--space-3) var(--space-4);
+    border: 0;
+    background: transparent;
+    color: var(--color-danger);
+    text-align: left;
+    font-weight: 500;
+}
+
+.notification-setting-row .switch-control {
+    width: 51px;
+}
+
+.notification-setting-row .switch-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
+
+.settings-help-text,
+.settings-error {
+    width: min(48rem, 100%);
+    margin: calc(var(--space-2) * -1) auto 0;
+    padding: 0 var(--space-3);
+    color: var(--color-text-muted);
+}
+
+.settings-error {
+    color: var(--color-danger);
+}
+
+.bot-profile-panel {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--space-4);
+}
+
+.bot-profile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: min(38rem, 100%);
+    margin: 0 auto var(--space-4);
+}
+
+.bot-profile-more-wrap {
+    position: relative;
+}
+
+.bot-profile-more-menu {
+    position: absolute;
+    z-index: 2;
+    top: calc(100% + var(--space-2));
+    right: 0;
+    min-width: 10rem;
+    overflow: hidden;
+    border: 1px solid var(--color-surface-border);
+    border-radius: var(--radius-bubble);
+    background: var(--color-surface-raised);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
+}
+
+.bot-profile-more-menu button {
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
+    border: 0;
+    background: transparent;
+    color: var(--color-text);
+    text-align: left;
+}
+
+.bot-profile-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    width: min(30rem, 100%);
+    margin: 0 auto;
+}
+
+.bot-profile-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) 0 var(--space-2);
+    text-align: center;
+}
+
+.bot-profile-hero h1 {
+    max-width: 100%;
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.bot-profile-name-input {
+    width: min(100%, 24rem);
+}
+
+.bot-profile-edit {
+    padding: var(--space-2) var(--space-4);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+}
+
+.bot-profile-notifications .settings-help-text {
+    width: 100%;
+}
+
+.conversation-host {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+}
+
+.conversation-host[hidden] {
+    display: none;
 }
 
 .people-panel-header h1,
