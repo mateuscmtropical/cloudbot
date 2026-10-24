@@ -170,6 +170,11 @@ async function main(): Promise<void> {
         hubPort: settings.port,
     };
     const app = createHubApp(appOptions);
+    const unreachablePeople = await instances.reconnectHub();
+
+    unreachablePeople.forEach((name) => {
+        console.error(`The hub could not join the network of ${name}.`);
+    });
 
     const closeDatabase = (): void => {
         database.close();

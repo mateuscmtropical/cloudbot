@@ -202,6 +202,22 @@ class DockerInstanceManager implements InstanceManager {
         await Promise.all(volumeRemovalRequests);
     }
 
+    // A hub container that was recreated is on none of the networks of the people, so it joins them again.
+    // Returns the people whose network it could not join.
+    async reconnectHub(): Promise<string[]> {
+        const names = this.people.list()
+            .map(record => record.name)
+            .filter(personName => checkPersonName(personName) === undefined);
+        const requests = names.map((personName) => {
+            const personNetworkName = networkName(personName);
+
+            return this.docker.connectContainerToNetwork(personNetworkName, this.settings.containerId, ['hub']);
+        });
+        const results = await Promise.allSettled(requests);
+
+        return names.filter((_personName, index) => results[index]?.status === 'rejected');
+    }
+
     // The hub is on the network of each person, so it leaves before the network is removed.
     private async removeNetworkOfPerson(personNetworkName: string): Promise<void> {
         await this.docker.disconnectContainerFromNetwork(personNetworkName, this.settings.containerId);

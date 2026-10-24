@@ -137,6 +137,14 @@ describe('DockerApi', () => {
             .toBeUndefined();
     });
 
+    it('accepts a connection to a network the container is already on', async () => {
+        const { fetchFunction } = createFetch(() => new Response(null, { status: 403 }));
+        const docker = new DockerApi('http://docker-proxy:2375', fetchFunction);
+
+        await expect(docker.connectContainerToNetwork('cloudbot-net-maria', 'hub-id', ['hub']))
+            .resolves.toBeUndefined();
+    });
+
     it('rejects unsuccessful Docker responses with status and endpoint', async () => {
         const { fetchFunction } = createFetch(() => new Response(null, { status: 500 }));
         const docker = new DockerApi('http://docker-proxy:2375', fetchFunction);

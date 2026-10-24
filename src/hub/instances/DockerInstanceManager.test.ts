@@ -41,6 +41,7 @@ class FakeDockerApi implements DockerApiClient {
     readonly calls: string[] = [];
     readonly inspections: Map<string, DockerContainerInspection> = new Map();
     readonly createdContainers: Map<string, DockerContainerOptions> = new Map();
+    readonly missingNetworks: Set<string> = new Set();
     startCalls = 0;
 
     createNetwork(name: string): Promise<void> {
@@ -57,6 +58,10 @@ class FakeDockerApi implements DockerApiClient {
 
     connectContainerToNetwork(networkName: string, containerName: string, aliases: string[]): Promise<void> {
         this.calls.push(`connect:${networkName}:${containerName}:${aliases.join(',')}`);
+
+        if (this.missingNetworks.has(networkName)) {
+            return Promise.reject(new Error(`Network ${networkName} does not exist.`));
+        }
 
         return Promise.resolve();
     }
@@ -218,6 +223,19 @@ describe('DockerInstanceManager', () => {
             .toContain('createNetwork:cloudbot-net-maria');
         expect(docker.startCalls)
             .toBe(1);
+    });
+
+    it('joins the network of every person again and reports the ones it could not join', async () => {
+        const { manager, docker } = makeManager([makeRecord('maria'), makeRecord('joao')]);
+
+        docker.missingNetworks.add('cloudbot-net-joao');
+
+        const failed = await manager.reconnectHub();
+
+        expect(docker.calls)
+            .toContain('connect:cloudbot-net-maria:hub-id:hub');
+        expect(failed)
+            .toEqual(['joao']);
     });
 
     it('refuses to start a person who does not exist', async () => {
