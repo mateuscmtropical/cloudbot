@@ -74,6 +74,13 @@ remove_outdated_instances() {
     done
 }
 
+# Frees the disk after an update. Images no tag points to are removed, and so is build cache older than three days.
+# An image that a running instance still uses stays, so run it after remove_outdated_instances.
+prune_old_images() {
+    docker image prune -f
+    docker builder prune -f --filter until=72h
+}
+
 command_update() {
     local moves_instances="false"
 
@@ -91,9 +98,12 @@ command_update() {
 
     if [ "$moves_instances" = "true" ]; then
         remove_outdated_instances
+        prune_old_images
         echo "Instances on an old image were removed. The hub creates each one from the new image on the next request."
         return
     fi
+
+    prune_old_images
 
     cat <<'EOF'
 Running instances keep their old image until recreated. To move all of them to
