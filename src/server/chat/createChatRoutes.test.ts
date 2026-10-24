@@ -504,6 +504,15 @@ describe('chat routes', () => {
     it('lists the waiting files, removes one with 204, and answers 404 for an unknown file or bot', async () => {
         const app = buildApp([]);
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const uploadFolder = join(dataDir, 'uploads', bot.id);
+        const emptyListResponse = await app.request(`/api/bots/${bot.id}/uploads`);
+
+        await expect(readdir(uploadFolder))
+            .rejects.toThrow();
+        expect(emptyListResponse.status)
+            .toBe(200);
+        expect(await emptyListResponse.json())
+            .toEqual([]);
 
         await postUpload(app, bot.id, [{ name: 'notes.txt', bytes: Buffer.from('hello') }]);
 

@@ -73,6 +73,7 @@ interface MascotHopRequest {
 const emptyDraft: DraftState = { botId: '', text: '', afterSequence: 0 };
 const emptyChatState: ChatState = { messages: [], olderPaging: {} };
 const OLDER_ERROR_TEXT = 'Could not load older messages.';
+const UPLOADS_LOAD_ERROR_TEXT = 'Could not load the attached files.';
 // How long the done face shows after a turn ends, before the bot shows its normal face again.
 const DONE_FACE_DURATION_MS = 2000;
 
@@ -226,9 +227,14 @@ function App(): ReactElement {
 
                 appliedListRequest.current[botId] = requestNumber;
                 setAttachmentsByBot(previous => ({ ...previous, [botId]: mergeLoadedUploads(previous[botId] ?? [], uploads) }));
+                setErrorText(currentError => currentError === UPLOADS_LOAD_ERROR_TEXT ? undefined : currentError);
             })
             .catch(() => {
-                setErrorText('Could not load the attached files.');
+                if (requestNumber < (appliedListRequest.current[botId] ?? 0)) {
+                    return;
+                }
+
+                setErrorText(UPLOADS_LOAD_ERROR_TEXT);
             });
     }, []);
 
@@ -1229,7 +1235,19 @@ function App(): ReactElement {
                 {errorText === undefined
                     ? null
                     : (
-                            <p className="error-banner" role="alert">{errorText}</p>
+                            <div className="error-banner" role="alert">
+                                <span>{errorText}</span>
+                                <button
+                                    type="button"
+                                    className="error-banner-dismiss"
+                                    aria-label="Dismiss error"
+                                    onClick={() => {
+                                        setErrorText(undefined);
+                                    }}
+                                >
+                                    ×
+                                </button>
+                            </div>
                         )}
                 {isAccountOpen
                     ? (

@@ -348,6 +348,56 @@ describe('App quiet check-ins', () => {
 });
 
 describe('App pending files', () => {
+    it('clears the attached files error after a later list succeeds', async () => {
+        const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
+
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(listUploads)
+            .mockRejectedValueOnce(new Error('instance is starting'))
+            .mockResolvedValue([]);
+        vi.mocked(subscribeToEvents)
+            .mockImplementation((_botId, onEvent) => {
+                emitEvent.current = onEvent;
+
+                return () => {};
+            });
+
+        render(<App />);
+
+        expect(await screen.findByText('Could not load the attached files.'))
+            .toBeTruthy();
+
+        act(() => {
+            emitEvent.current?.({ type: 'turn', botId: 'bot-1', isRunning: false });
+        });
+
+        await waitFor(() => {
+            expect(screen.queryByText('Could not load the attached files.'))
+                .toBeNull();
+        });
+    });
+
+    it('lets the owner dismiss the attached files error', async () => {
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(listUploads)
+            .mockRejectedValueOnce(new Error('instance is starting'));
+
+        render(<App />);
+
+        expect(await screen.findByText('Could not load the attached files.'))
+            .toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Dismiss error' }));
+
+        expect(screen.queryByText('Could not load the attached files.'))
+            .toBeNull();
+    });
+
     it('keeps a restored file when the send response arrives after the turn-end list', async () => {
         const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
         const notes: PendingUpload = { id: 'server-1', name: 'notes.txt', sizeBytes: 5 };
