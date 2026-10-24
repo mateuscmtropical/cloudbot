@@ -7,12 +7,27 @@ interface RoundButtonProps {
     label: string;
     onClick: () => void;
     children: ReactNode;
+    id?: string;
     tone?: RoundButtonTone;
+    disabled?: boolean;
+    ariaExpanded?: boolean;
+    ariaHaspopup?: 'dialog' | 'menu' | boolean;
+    ariaControls?: string;
 }
 
-function RoundButton({ label, onClick, children, tone = 'default' }: RoundButtonProps): ReactElement {
+function RoundButton({ label, onClick, children, id, tone = 'default', disabled = false, ariaExpanded, ariaHaspopup, ariaControls }: RoundButtonProps): ReactElement {
     return (
-        <button type="button" className={`round-button round-button-${tone}`} aria-label={label} onClick={onClick}>
+        <button
+            type="button"
+            id={id}
+            className={`round-button round-button-${tone}`}
+            aria-label={label}
+            aria-expanded={ariaExpanded}
+            aria-haspopup={ariaHaspopup}
+            aria-controls={ariaControls}
+            disabled={disabled}
+            onClick={onClick}
+        >
             {children}
         </button>
     );

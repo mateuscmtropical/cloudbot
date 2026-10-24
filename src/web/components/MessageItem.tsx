@@ -6,10 +6,8 @@ import { TASK_LABELS, TASK_STATUSES } from '../../shared/taskTypes.ts';
 import { parseBotHandoffText } from '../../shared/botHandoffText.ts';
 import type { ParsedBotHandoff } from '../../shared/botHandoffText.ts';
 import { formatFileSize } from '../formatFileSize.ts';
-import { MESSAGE_MASCOT_SIZE } from '../messageMascot.ts';
 import { getRoutineSystemText } from '../messageList.ts';
 import { renderMarkdown } from '../markdown.ts';
-import type { MascotState } from '../mascotState.ts';
 import { ChoiceButtons } from './ChoiceButtons.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
 import { ChatCard } from './ChatCard.tsx';
@@ -21,6 +19,7 @@ import { SecureForm } from './SecureForm.tsx';
 const PREVIEW_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 // Larger images keep only the download link, so opening the chat does not fetch big files.
 const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
+const HANDOFF_MASCOT_SIZE = 28;
 
 interface MessageActions {
     // Settles when the server answered.
@@ -34,12 +33,6 @@ interface MessageActions {
 interface MessageItemProps {
     message: ChatMessage;
     actions: MessageActions;
-    // The bot whose mascot is shown beside an assistant message. Other messages show none.
-    mascot?: Pick<BotSummary, 'mascotColor' | 'mascotShape'> | undefined;
-    // Only the last bot message of a run draws the mascot. The others keep the space, so the text lines up.
-    isMascotShown?: boolean | undefined;
-    // The face of the mascot when it is shown. The typing face while the owner types.
-    mascotState?: MascotState | undefined;
     // The bot that sent a hand-off. Its mascot shows beside the message, and the default mascot when it is gone.
     handoffSender?: Pick<BotSummary, 'mascotColor' | 'mascotShape'> | undefined;
 }
@@ -176,8 +169,8 @@ function renderHandoff(sender: ParsedBotHandoff, handoffSender: MessageItemProps
     return (
         <div className="message message-handoff has-mascot">
             {handoffSender === undefined
-                ? <span className="mascot-gap" style={{ width: MESSAGE_MASCOT_SIZE }} aria-hidden="true" />
-                : <CloudMascot color={handoffSender.mascotColor} shape={handoffSender.mascotShape} state="idle" size={MESSAGE_MASCOT_SIZE} />}
+                ? <span className="mascot-gap" style={{ width: HANDOFF_MASCOT_SIZE }} aria-hidden="true" />
+                : <CloudMascot color={handoffSender.mascotColor} shape={handoffSender.mascotShape} state="idle" size={HANDOFF_MASCOT_SIZE} />}
             <div className="text-message">
                 <div className="handoff-sender">{sender.senderName}</div>
                 <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(sender.text) }} />
@@ -186,7 +179,7 @@ function renderHandoff(sender: ParsedBotHandoff, handoffSender: MessageItemProps
     );
 }
 
-function MessageItemView({ message, actions, mascot, isMascotShown = false, mascotState = 'idle', handoffSender }: MessageItemProps): ReactElement {
+function MessageItemView({ message, actions, handoffSender }: MessageItemProps): ReactElement {
     const className = `message message-${message.role}`;
     const routineSystemText = getRoutineSystemText(message);
     const handoff = message.role === 'user' && message.body.kind === 'text' ? parseBotHandoffText(message.body.text) : undefined;
@@ -199,18 +192,7 @@ function MessageItemView({ message, actions, mascot, isMascotShown = false, masc
         return <div className="message message-system">{routineSystemText}</div>;
     }
 
-    if (mascot === undefined) {
-        return <div className={className}>{renderBody(message, actions)}</div>;
-    }
-
-    return (
-        <div className={`${className} has-mascot`} data-message-mascot={isMascotShown ? 'true' : undefined}>
-            {isMascotShown
-                ? <CloudMascot color={mascot.mascotColor} shape={mascot.mascotShape} state={mascotState} size={MESSAGE_MASCOT_SIZE} />
-                : <span className="mascot-gap" style={{ width: MESSAGE_MASCOT_SIZE }} aria-hidden="true" />}
-            {renderBody(message, actions)}
-        </div>
-    );
+    return <div className={className}>{renderBody(message, actions)}</div>;
 }
 
 // A streamed reply renders the list on every delta. Memo keeps the stored messages from parsing their markdown again.

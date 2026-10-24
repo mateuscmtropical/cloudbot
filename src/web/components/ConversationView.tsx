@@ -7,7 +7,6 @@ import type { Tap } from '../doubleTap.ts';
 import { findHandoffSender } from '../botHandoff.ts';
 import { renderMarkdown } from '../markdown.ts';
 import type { MascotState } from '../mascotState.ts';
-import { MESSAGE_MASCOT_SIZE, showsMessageMascot } from '../messageMascot.ts';
 import { countProviderChanges } from '../providerChanges.ts';
 import { sentMessageTexts } from '../sentHistory.ts';
 import { BUBBLE_DELAY_MS, isThinkingBubbleShown } from '../thinkingBubble.ts';
@@ -16,11 +15,14 @@ import { CloudMascot } from './CloudMascot.tsx';
 import { Composer } from './Composer.tsx';
 import type { DraftAttachment } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
+import { PopoverMenu } from './PopoverMenu.tsx';
 import { ProviderPicker } from './ProviderPicker.tsx';
+import { RoundButton } from './RoundButton.tsx';
 import { RenameField } from './RenameField.tsx';
 import { ThinkingBubble } from './ThinkingBubble.tsx';
 import { WebhookUrlNotice } from './WebhookUrlNotice.tsx';
 import { PersonCredentialsNotice } from './PersonCredentialsNotice.tsx';
+import { BackIcon, CodeIcon, MoreIcon } from './icons.tsx';
 import type { MessageActions } from './MessageItem.tsx';
 
 // Within this many pixels of the top, the view asks for the page of older messages.
@@ -55,6 +57,8 @@ interface ConversationViewProps {
     isLoadingOlder?: boolean;
     onLoadOlder?: () => void;
     onOpenBotList: () => void;
+    // Opens this bot's profile. The profile route is wired in a later phase.
+    onOpenProfile?: (() => void) | undefined;
     // Opens the chat of the bot that holds a provider sign-in. Without it the header shows no provider picker.
     onOpenSetupChat?: ((setupBotId: string) => void) | undefined;
     // Saves a new name for the bot, after a double tap on its name. It answers why the name was refused, or nothing. Without it the name cannot be changed here.
@@ -118,6 +122,7 @@ function ConversationView({
     isLoadingOlder = false,
     onLoadOlder,
     onOpenBotList,
+    onOpenProfile,
     onOpenSetupChat,
     onRenameBot,
     screenRequestId,
@@ -274,13 +279,11 @@ function ConversationView({
     return (
         <section className="conversation">
             <header className="conversation-header">
-                <button type="button" className="icon-button menu-button" aria-label="Show bots" onClick={onOpenBotList}>
-                    &#9776;
-                </button>
-                <div className="bot-pill">
-                    {bot === undefined ? null : <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={28} />}
-                    {isRenaming && bot !== undefined && onRenameBot !== undefined
-                        ? (
+                <RoundButton label="Show bots" onClick={onOpenBotList}><BackIcon /></RoundButton>
+                {isRenaming && bot !== undefined && onRenameBot !== undefined
+                    ? (
+                            <div className="bot-pill">
+                                <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={28} />
                                 <RenameField
                                     name={bot.name}
                                     label={`Name of ${bot.name}`}
@@ -290,8 +293,16 @@ function ConversationView({
                                         setIsRenaming(false);
                                     }}
                                 />
-                            )
-                        : (
+                            </div>
+                        )
+                    : (
+                            <button
+                                type="button"
+                                className="bot-pill"
+                                aria-label="Open bot profile"
+                                onClick={onOpenProfile}
+                            >
+                                {bot === undefined ? null : <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={28} />}
                                 <span
                                     className="bot-pill-name"
                                     onPointerUp={(event) => {
@@ -307,9 +318,21 @@ function ConversationView({
                                 >
                                     {botName}
                                 </span>
+                            </button>
+                        )}
+                <PopoverMenu label="Conversation options" triggerLabel="More options" triggerIcon={<MoreIcon />} placement="below-end">
+                    {() => bot === undefined || onOpenSetupChat === undefined
+                        ? null
+                        : (
+                                <div className="popover-provider-entry">
+                                    <span className="popover-provider-label">
+                                        <CodeIcon />
+                                        <span>Model and provider</span>
+                                    </span>
+                                    <ProviderPicker botId={bot.id} changeCount={providerChangeCount} refreshCount={messages.length} onOpenSetupChat={onOpenSetupChat} />
+                                </div>
                             )}
-                    {bot === undefined || onOpenSetupChat === undefined ? null : <ProviderPicker botId={bot.id} changeCount={providerChangeCount} refreshCount={messages.length} onOpenSetupChat={onOpenSetupChat} />}
-                </div>
+                </PopoverMenu>
             </header>
             {/* Notices and the Screen panel sit below the pill, so their title and Close stay clear of it. Empty when none show. */}
             <div className="conversation-top">
@@ -354,28 +377,22 @@ function ConversationView({
                             </button>
                         )
                     : null}
-                {messages.map((message, index) => (
+                {messages.map(message => (
                     <div key={message.id} data-message-id={message.id}>
                         <MessageItem
                             message={message}
                             actions={actions}
-                            mascot={message.role === 'assistant' ? bot : undefined}
                             handoffSender={findHandoffSender(bots ?? [], message)}
-                            isMascotShown={showsMessageMascot(messages, index, { isShown: draftText !== '' || isThinkingShown, botId: bot?.id })}
-                            mascotState={mascotState === 'typing' ? 'typing' : 'idle'}
                         />
                     </div>
                 ))}
                 {isThinkingShown && bot !== undefined
-                    ? <ThinkingBubble color={bot.mascotColor} shape={bot.mascotShape} activeToolName={activeToolName} />
+                    ? <ThinkingBubble activeToolName={activeToolName} />
                     : null}
                 {draftText === ''
                     ? null
                     : (
-                            <div className="message message-assistant is-draft has-mascot">
-                                {bot === undefined
-                                    ? <span className="mascot-gap" style={{ width: MESSAGE_MASCOT_SIZE }} aria-hidden="true" />
-                                    : <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState === 'typing' ? 'typing' : 'idle'} size={MESSAGE_MASCOT_SIZE} />}
+                            <div className="message message-assistant is-draft">
                                 <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(draftText) }} />
                             </div>
                         )}

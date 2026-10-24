@@ -39,7 +39,7 @@
 
 /* The page itself never scrolls. Only the panels inside the app do. A page taller than the screen (100vh is the
    height without the phone toolbar) scrolled the whole app up when a drag reached the end of the chat. That moved the
-   menu button and the bot pill off the top and showed an empty strip under the composer. See issue #340. */
+   chat header controls off the top and showed an empty strip under the composer. See issue #340. */
 html,
 body {
     height: 100%;
@@ -492,6 +492,97 @@ svg {
     color: #fff;
 }
 
+.round-button:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
+.popover-menu-anchor {
+    position: relative;
+    flex: none;
+    pointer-events: auto;
+}
+
+.popover-menu-popover {
+    position: absolute;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 200px;
+    max-width: min(280px, calc(100vw - 24px));
+    padding: var(--space-2);
+    border-radius: var(--radius-card);
+    background: var(--color-surface-raised);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+}
+
+.popover-menu-popover[hidden] {
+    display: none;
+}
+
+.popover-menu-anchor.is-above-start .popover-menu-popover {
+    bottom: calc(100% + var(--space-2));
+    left: 0;
+}
+
+.popover-menu-anchor.is-above-end .popover-menu-popover {
+    right: 0;
+    bottom: calc(100% + var(--space-2));
+}
+
+.popover-menu-anchor.is-below-start .popover-menu-popover {
+    top: calc(100% + var(--space-2));
+    left: 0;
+}
+
+.popover-menu-anchor.is-below-end .popover-menu-popover {
+    top: calc(100% + var(--space-2));
+    right: 0;
+}
+
+.popover-menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    padding: var(--space-3);
+    border: 0;
+    border-radius: var(--radius-bubble);
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.popover-menu-item-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    color: var(--color-text-muted);
+}
+
+.popover-provider-entry {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.popover-provider-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+}
+
+.popover-provider-entry .provider-picker-button {
+    justify-content: space-between;
+    width: 100%;
+}
+
 .icon-button {
     width: 36px;
     height: 36px;
@@ -649,21 +740,23 @@ button.list-row {
     min-height: 0;
 }
 
-/* No bar: the header floats over the top of the messages. Only the pill and the menu button take clicks. */
+/* No bar: the header floats over the top of the messages. */
 .conversation-header {
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     z-index: 1;
-    display: flex;
-    justify-content: center;
+    display: grid;
+    grid-template-columns: var(--size-round-button) minmax(0, 1fr) var(--size-round-button);
+    gap: var(--space-3);
+    justify-items: center;
     align-items: center;
     padding: 12px 16px;
     pointer-events: none;
 }
 
-/* A fade behind the pill and the menu button, dark at the top and clear at the bottom. Messages that scroll under them
+/* A fade behind the controls, dark at the top and clear at the bottom. Messages that scroll under them
    stay readable, and no bar shows. */
 .conversation-header::before {
     content: '';
@@ -674,17 +767,28 @@ button.list-row {
     pointer-events: none;
 }
 
+.conversation-header > .round-button {
+    pointer-events: auto;
+}
+
 /* One floating pill with the mascot and the name. No bar sits behind it. */
 .bot-pill {
     pointer-events: auto;
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    justify-self: center;
+    gap: var(--space-2);
+    min-width: 0;
     max-width: 100%;
     padding: 6px 16px 6px 10px;
+    border: 0;
     border-radius: 999px;
     background: var(--color-surface-raised);
     box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+    color: var(--color-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
 }
 
 /* The mascot keeps its size when the name is long, so the ellipsis takes the space. */
@@ -884,6 +988,10 @@ button.list-row {
     justify-content: flex-end;
 }
 
+.message-assistant {
+    justify-content: flex-start;
+}
+
 /* A hand-off from another bot sits on the bot side. The name of the sender is above the text. */
 .handoff-sender {
     margin: 0 0 2px 4px;
@@ -911,11 +1019,33 @@ button.list-row {
     max-width: min(640px, 80%);
 }
 
+.message-assistant .text-message {
+    width: min(800px, 100%);
+    max-width: 100%;
+}
+
 .text-message .bubble {
     max-width: none;
 }
 
+.message-assistant .bubble,
+.message-assistant .setup-card {
+    max-width: 100%;
+    border-radius: var(--radius-message);
+}
+
+.message-assistant .bubble {
+    width: 100%;
+    padding: var(--space-4);
+}
+
+.message-assistant .setup-card {
+    width: min(800px, 100%);
+    padding: var(--space-4);
+}
+
 .message-user .bubble {
+    border-radius: var(--radius-message);
     background: var(--color-user-bubble);
 }
 
@@ -1019,39 +1149,73 @@ button.list-row {
 
 .composer {
     display: flex;
-    align-items: flex-end;
-    gap: 8px;
+    align-items: center;
+    gap: var(--space-2);
     margin: 12px 24px 20px;
-    padding: 8px 10px;
-    border-radius: 28px;
-    background: var(--color-surface);
+    padding: 0;
+}
+
+.composer-field {
+    flex: 1;
+    align-items: center;
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2);
+}
+
+.composer-field:focus-within {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
 }
 
 .composer-input {
     flex: 1;
     min-width: 0;
-    max-height: 160px;
-    padding: 8px 4px;
+    min-height: 24px;
+    max-height: 120px;
+    padding: 0;
     border: 0;
     outline: none;
     background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: 1.4;
     resize: none;
+    overflow-y: auto;
+}
+
+.composer-mic {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+}
+
+.composer-mic.is-listening {
+    color: var(--color-accent);
 }
 
 .send-button {
     display: grid;
     place-items: center;
-    width: 36px;
-    height: 36px;
+    width: var(--size-round-button);
+    height: var(--size-round-button);
     flex-shrink: 0;
     border: 0;
     border-radius: 50%;
-    background: var(--color-accent);
-    color: #fff;
+    background: var(--color-text);
+    color: var(--color-background);
 }
 
-.send-button.is-stop {
-    background: var(--color-danger);
+.send-button.is-listening {
+    color: var(--color-accent);
 }
 
 /* Narrow screens: the bot list becomes a slide-over */
@@ -1086,14 +1250,13 @@ button.list-row {
         left: 12px;
     }
 
-    /* The menu button floats at the left edge, over the messages, not in a bar. The pill stays centered. */
+    /* The channel menu button floats at the left edge, over the messages, not in a bar. */
     .menu-button {
         top: 12px;
     }
 
-    /* Keeps the pill clear of the menu button on the left and of the page edge on the right. Long names end in an ellipsis. */
     .bot-pill {
-        max-width: calc(100% - 96px);
+        max-width: 100%;
     }
 
     .message-list {
@@ -1104,10 +1267,18 @@ button.list-row {
         margin: 8px 12px 12px;
     }
 
-    .bubble,
-    .setup-card,
-    .text-message {
-        max-width: 92%;
+    .message-user .text-message {
+        max-width: 82%;
+    }
+
+    .message-user .bubble {
+        max-width: 100%;
+    }
+
+    .message-assistant .text-message,
+    .message-assistant .bubble,
+    .message-assistant .setup-card {
+        max-width: 100%;
     }
 }
 
@@ -1967,24 +2138,8 @@ button.list-row {
     opacity: 0.8;
 }
 
-/* Voice input (#122). The mic shows only where the browser has speech recognition. Listening is a steady fill, with no animation. */
-.voice-button svg {
-    width: 20px;
-    height: 20px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2;
-    stroke-linecap: round;
-}
-
-.voice-button.is-listening {
-    background: var(--color-accent);
-    color: var(--color-text);
-}
-
 .voice-status {
     margin: 4px 0 0;
-    min-height: 1.2em;
     color: var(--color-text);
     font-size: 0.85rem;
 }

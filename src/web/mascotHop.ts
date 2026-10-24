@@ -42,12 +42,8 @@ function isSideBySide(sourceMascot: HTMLElement, targetMascot: HTMLElement): boo
         && sourceRect.right <= sidebarRect.right;
 }
 
-function findLatestMessageMascot(conversationElement: ParentNode): HTMLElement | null {
-    const mascotMessageNodes = conversationElement.querySelectorAll<HTMLElement>('[data-message-mascot="true"]');
-    const mascotMessages = Array.from(mascotMessageNodes);
-    const latestMascotMessage = mascotMessages.at(-1);
-
-    return latestMascotMessage?.querySelector<HTMLElement>('.cloud-mascot') ?? null;
+function findConversationMascot(conversationElement: ParentNode): HTMLElement | null {
+    return conversationElement.querySelector<HTMLElement>('.bot-pill .cloud-mascot');
 }
 
 function setOffsetStyles(element: HTMLElement, name: string, offset: MascotHopOffset): void {
@@ -180,5 +176,5 @@ function startMascotHop(
     return { cancel: finishFlight };
 }
 
-export { findLatestMessageMascot, startMascotHop };
+export { findConversationMascot, startMascotHop };
 export type { MascotHop, MascotHopPoint };

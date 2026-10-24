@@ -16,14 +16,14 @@ describe('ThinkingBubble', () => {
     });
 
     it('shows the first thinking line and a status role', () => {
-        render(<ThinkingBubble color="blue" shape="puff" />);
+        render(<ThinkingBubble />);
 
         expect(screen.getByRole('status').textContent)
             .toContain(THINKING_LINES[0]);
     });
 
     it('changes the thinking line every interval without a tool', () => {
-        render(<ThinkingBubble color="blue" shape="puff" />);
+        render(<ThinkingBubble />);
 
         act(() => {
             vi.advanceTimersByTime(LINE_INTERVAL_MS);
@@ -34,7 +34,7 @@ describe('ThinkingBubble', () => {
     });
 
     it('names the active tool in plain words and does not cycle', () => {
-        render(<ThinkingBubble color="blue" shape="puff" activeToolName="WebSearch" />);
+        render(<ThinkingBubble activeToolName="WebSearch" />);
 
         act(() => {
             vi.advanceTimersByTime(LINE_INTERVAL_MS * 2);
@@ -45,7 +45,7 @@ describe('ThinkingBubble', () => {
     });
 
     it('renders three dots that are hidden from assistive tech', () => {
-        const { container } = render(<ThinkingBubble color="blue" shape="puff" />);
+        const { container } = render(<ThinkingBubble />);
         const dots = container.querySelectorAll('.thinking-dots i');
 
         expect(dots.length)
@@ -56,15 +56,17 @@ describe('ThinkingBubble', () => {
             .toBe('true');
     });
 
-    it('marks the bubble and the mascot as the thinking state', () => {
-        const { container } = render(<ThinkingBubble color="blue" shape="puff" />);
+    it('keeps the thinking bubble in the assistant message flow without an avatar column', () => {
+        const { container } = render(<ThinkingBubble />);
 
-        expect(container.querySelector('.message.is-thinking.has-mascot'))
+        expect(container.querySelector('.message.is-thinking'))
             .not.toBeNull();
+        expect(container.querySelector('.message.is-thinking .cloud-mascot'))
+            .toBeNull();
     });
 
     it('keeps the changing line silent for screen readers and labels the bubble', () => {
-        const { container } = render(<ThinkingBubble color="blue" shape="puff" />);
+        const { container } = render(<ThinkingBubble />);
 
         const liveLine = container.querySelector('.thinking-line');
 

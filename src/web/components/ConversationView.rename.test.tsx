@@ -14,8 +14,8 @@ const NOOP_ACTIONS = {
     onOpenScreen: vi.fn(),
 };
 
-function renderConversation(onRenameBot?: (botId: string, name: string) => Promise<string | undefined>): void {
-    render(
+function renderConversation(onRenameBot?: (botId: string, name: string) => Promise<string | undefined>): ReturnType<typeof render> {
+    return render(
         <ConversationView
             bot={BOT}
             messages={[]}
@@ -36,6 +36,16 @@ function renderConversation(onRenameBot?: (botId: string, name: string) => Promi
 
 function tapName(): void {
     fireEvent.pointerUp(screen.getByText('Ana'));
+}
+
+function tapMascot(container: HTMLElement): void {
+    const mascot = container.querySelector('.bot-pill .cloud-mascot');
+
+    if (mascot === null) {
+        throw new Error('The bot mascot is missing');
+    }
+
+    fireEvent.pointerUp(mascot);
 }
 
 describe('ConversationView rename', () => {
@@ -82,6 +92,16 @@ describe('ConversationView rename', () => {
 
         tapName();
         tapName();
+
+        expect(screen.queryByRole('textbox', { name: 'Name of Ana' }))
+            .toBeNull();
+    });
+
+    it('does not rename when the mascot is double tapped', () => {
+        const view = renderConversation(() => Promise.resolve(undefined));
+
+        tapMascot(view.container);
+        tapMascot(view.container);
 
         expect(screen.queryByRole('textbox', { name: 'Name of Ana' }))
             .toBeNull();

@@ -441,7 +441,7 @@ describe('App pending files', () => {
                 .toBeTruthy();
         });
 
-        const textarea = screen.getByPlaceholderText('Message CloudBot');
+        const textarea = screen.getByPlaceholderText('Ask CloudBot...');
 
         fireEvent.change(textarea, { target: { value: 'Read this' } });
         fireEvent.keyDown(textarea, { key: 'Enter' });

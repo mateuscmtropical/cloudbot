@@ -8,7 +8,7 @@ import { ChannelView } from './components/ChannelView.tsx';
 import type { MessageActions } from './components/MessageItem.tsx';
 import { deriveMascotState } from './mascotState.ts';
 import { useSwipeMenu } from './useSwipeMenu.ts';
-import { findLatestMessageMascot, startMascotHop } from './mascotHop.ts';
+import { findConversationMascot, startMascotHop } from './mascotHop.ts';
 import type { MascotHop, MascotHopPoint } from './mascotHop.ts';
 import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
@@ -251,7 +251,7 @@ function App(): ReactElement {
         }
 
         const conversationElement = document.querySelector<HTMLElement>('.conversation');
-        const targetMascot = conversationElement === null ? null : findLatestMessageMascot(conversationElement);
+        const targetMascot = conversationElement === null ? null : findConversationMascot(conversationElement);
 
         if (targetMascot === null) {
             return;
@@ -1328,6 +1328,7 @@ function App(): ReactElement {
                                 onOpenBotList={() => {
                                     setIsBotListOpen(true);
                                 }}
+                                onOpenProfile={() => undefined}
                                 onRenameBot={handleRenameBot}
                                 onOpenSetupChat={(setupBotId) => {
                                     handleSelectBot(setupBotId);
