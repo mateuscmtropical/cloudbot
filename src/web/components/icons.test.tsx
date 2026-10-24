@@ -10,6 +10,7 @@ import {
     ClockIcon,
     CloseIcon,
     CodeIcon,
+    EditIcon,
     FilterIcon,
     FolderIcon,
     ImageIcon,
@@ -22,6 +23,7 @@ import {
     SearchIcon,
     SendArrowIcon,
     ShareIcon,
+    TrashIcon,
     WaveformIcon,
 } from './icons.tsx';
 
@@ -45,15 +47,17 @@ describe('icons', () => {
             <CameraIcon key="camera" />,
             <ImageIcon key="image" />,
             <CodeIcon key="code" />,
+            <EditIcon key="edit" />,
             <ClockIcon key="clock" />,
             <LibraryIcon key="library" />,
             <MonitorIcon key="monitor" />,
             <FilterIcon key="filter" />,
             <PeopleIcon key="people" />,
+            <TrashIcon key="trash" />,
         ];
         const { container } = render(<>{icons}</>);
 
         expect(container.querySelectorAll('svg[aria-hidden="true"]'))
-            .toHaveLength(20);
+            .toHaveLength(22);
     });
 });

@@ -12,20 +12,27 @@ interface PopoverMenuProps {
     children: (close: () => void) => ReactNode;
     placement?: PopoverMenuPlacement;
     disabled?: boolean;
+    isOpen?: boolean;
+    onOpenChange?: (isOpen: boolean) => void;
 }
+
+type PopoverMenuItemTone = 'default' | 'danger';
 
 interface PopoverMenuItemProps {
     label: string;
     icon: ReactNode;
     onSelect: () => void;
     close: () => void;
+    tone?: PopoverMenuItemTone;
 }
 
-function PopoverMenuItem({ label, icon, onSelect, close }: PopoverMenuItemProps): ReactElement {
+function PopoverMenuItem({ label, icon, onSelect, close, tone = 'default' }: PopoverMenuItemProps): ReactElement {
+    const className = tone === 'danger' ? 'popover-menu-item is-danger' : 'popover-menu-item';
+
     return (
         <button
             type="button"
-            className="popover-menu-item"
+            className={className}
             onClick={() => {
                 close();
                 onSelect();
@@ -37,20 +44,20 @@ function PopoverMenuItem({ label, icon, onSelect, close }: PopoverMenuItemProps)
     );
 }
 
-function PopoverMenu({ label, triggerLabel, triggerIcon, children, placement = 'below-end', disabled = false }: PopoverMenuProps): ReactElement {
-    const [isOpen, setIsOpen] = useState(false);
+function PopoverMenu({ label, triggerLabel, triggerIcon, children, placement = 'below-end', disabled = false, isOpen: controlledIsOpen, onOpenChange }: PopoverMenuProps): ReactElement {
+    const [localIsOpen, setLocalIsOpen] = useState(false);
+    const isOpen = !disabled && (controlledIsOpen ?? localIsOpen);
     const menuId = useId();
     const triggerId = useId();
     const containerRef = useRef<HTMLDivElement>(null);
-    const [previousDisabled, setPreviousDisabled] = useState(disabled);
 
-    if (previousDisabled !== disabled) {
-        setPreviousDisabled(disabled);
-
-        if (disabled) {
-            setIsOpen(false);
+    const updateIsOpen = useCallback((nextIsOpen: boolean): void => {
+        if (controlledIsOpen === undefined) {
+            setLocalIsOpen(nextIsOpen);
         }
-    }
+
+        onOpenChange?.(nextIsOpen);
+    }, [controlledIsOpen, onOpenChange]);
 
     const focusTrigger = useCallback((): void => {
         document.getElementById(triggerId)
@@ -59,17 +66,17 @@ function PopoverMenu({ label, triggerLabel, triggerIcon, children, placement = '
 
     const close = useCallback((): void => {
         focusTrigger();
-        setIsOpen(false);
-    }, [focusTrigger]);
+        updateIsOpen(false);
+    }, [focusTrigger, updateIsOpen]);
 
     useEffect(() => {
-        if (!isOpen || disabled) {
+        if (!isOpen) {
             return undefined;
         }
 
         function closeOnOutsidePointer(event: PointerEvent): void {
             if (event.target instanceof Node && containerRef.current?.contains(event.target) !== true) {
-                setIsOpen(false);
+                updateIsOpen(false);
             }
         }
 
@@ -86,7 +93,7 @@ function PopoverMenu({ label, triggerLabel, triggerIcon, children, placement = '
             document.removeEventListener('pointerdown', closeOnOutsidePointer);
             document.removeEventListener('keydown', closeOnEscape);
         };
-    }, [close, disabled, isOpen]);
+    }, [close, disabled, isOpen, updateIsOpen]);
 
     return (
         <div className={`popover-menu-anchor is-${placement}`} ref={containerRef}>
@@ -98,12 +105,12 @@ function PopoverMenu({ label, triggerLabel, triggerIcon, children, placement = '
                 ariaControls={menuId}
                 disabled={disabled}
                 onClick={() => {
-                    setIsOpen(current => !current);
+                    updateIsOpen(!isOpen);
                 }}
             >
                 {triggerIcon}
             </RoundButton>
-            <div id={menuId} className="popover-menu-popover" role="dialog" aria-label={label} hidden={!isOpen || disabled}>
+            <div id={menuId} className="popover-menu-popover" role="dialog" aria-label={label} hidden={!isOpen}>
                 {children(close)}
             </div>
         </div>
@@ -111,4 +118,4 @@ function PopoverMenu({ label, triggerLabel, triggerIcon, children, placement = '
 }
 
 export { PopoverMenu, PopoverMenuItem };
-export type { PopoverMenuItemProps, PopoverMenuPlacement, PopoverMenuProps };
+export type { PopoverMenuItemProps, PopoverMenuItemTone, PopoverMenuPlacement, PopoverMenuProps };
