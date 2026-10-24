@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatMessage } from '../../shared/chatTypes.ts';
 import type { ConnectedAppSummary } from '../../shared/connectedApps.ts';
-import { listConnectedApps, removeConnectedApp, startAppConnection, startAppSignIn } from '../apiClient.ts';
+import { getGoogleClient, listConnectedApps, removeConnectedApp, saveGoogleClient, startAppConnection, startAppSignIn } from '../apiClient.ts';
 import { APP_CATALOG, APP_CATEGORIES } from '../appCatalog.ts';
 import { APP_SIGN_IN_CHANNEL } from '../appReturn.ts';
 import { APP_LOGOS } from '../appLogos.ts';
@@ -15,6 +15,9 @@ vi.mock('../apiClient.ts', () => ({
     removeConnectedApp: vi.fn(),
     startAppConnection: vi.fn(),
     startAppSignIn: vi.fn(),
+    getGoogleClient: vi.fn(),
+    saveGoogleClient: vi.fn(),
+    forgetGoogleClient: vi.fn(),
 }));
 
 const LINEAR: ConnectedAppSummary = { id: 'app-1', name: 'linear', url: 'https://mcp.linear.app/mcp', status: 'connected', toolCount: 4 };
@@ -506,6 +509,82 @@ describe('ConnectAppsPanel', () => {
             .toBeNull();
         expect(listConnectedApps)
             .toHaveBeenCalledTimes(1);
+    });
+
+    it('lists the five Google apps in Productivity', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Productivity' }));
+
+        ['Gmail', 'Google Calendar', 'Google Drive', 'Google Docs', 'Google Sheets'].forEach((displayName) => {
+            expect(screen.getByRole('button', { name: `Connect ${displayName}` }))
+                .toBeTruthy();
+        });
+    });
+
+    it('opens the Google setup when a Google app needs the owner client, and goes on after the save', async () => {
+        const signInWindow = createSignInWindow();
+
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        openWindow
+            .mockReturnValue(signInWindow as unknown as Window);
+        vi.mocked(startAppSignIn)
+            .mockResolvedValueOnce({ status: 'needs_client' })
+            .mockResolvedValue({ status: 'redirect', authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?state=s1' });
+        vi.mocked(getGoogleClient)
+            .mockResolvedValue({ configured: false, redirectUri: 'https://bot.example.com/api/apps/oauth/callback' });
+        vi.mocked(saveGoogleClient)
+            .mockResolvedValue({ configured: true, redirectUri: 'https://bot.example.com/api/apps/oauth/callback' });
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
+
+        expect(await screen.findByRole('region', { name: 'Google setup' }))
+            .toBeTruthy();
+        expect(signInWindow.close)
+            .toHaveBeenCalledTimes(1);
+        expect(startAppConnection)
+            .not.toHaveBeenCalled();
+
+        fireEvent.change(await screen.findByLabelText('Client ID'), { target: { value: '123-abc.apps.googleusercontent.com' } });
+        fireEvent.change(screen.getByLabelText('Client secret'), { target: { value: 'GOCSPX-very-secret-value' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        await waitFor(() => {
+            expect(startAppSignIn)
+                .toHaveBeenCalledTimes(2);
+        });
+        expect(startAppSignIn)
+            .toHaveBeenLastCalledWith('bot-1', 'google-gmail', 'https://gmailmcp.googleapis.com/mcp/v1');
+        await waitFor(() => {
+            expect(signInWindow.location.href)
+                .toBe('https://accounts.google.com/o/oauth2/v2/auth?state=s1');
+        });
+        expect(screen.queryByRole('region', { name: 'Google setup' }))
+            .toBeNull();
+    });
+
+    it('opens the Google setup from its own button, without a sign-in to continue', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        vi.mocked(getGoogleClient)
+            .mockResolvedValue({ configured: true, redirectUri: 'https://bot.example.com/api/apps/oauth/callback' });
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Google setup' }));
+
+        expect(await screen.findByText(/Client saved/))
+            .toBeTruthy();
+        expect(startAppSignIn)
+            .not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Close Google setup' }));
+
+        expect(screen.queryByRole('region', { name: 'Google setup' }))
+            .toBeNull();
     });
 
     it('says why the sign-in could not start, and stays on the list', async () => {

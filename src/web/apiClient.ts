@@ -1,5 +1,5 @@
 import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName, ScreenViewName } from '../shared/chatTypes.ts';
-import type { AppSignInStart, ConnectedAppSummary } from '../shared/connectedApps.ts';
+import type { AppSignInStart, ConnectedAppSummary, GoogleClientStatus } from '../shared/connectedApps.ts';
 import type { BotRoutine } from '../shared/routineTypes.ts';
 import type { BotWatch } from '../shared/watchTypes.ts';
 import type { BotWebhook, CreatedBotWebhook } from '../shared/webhookTypes.ts';
@@ -483,6 +483,31 @@ function startAppSignIn(botId: string, name: string, url: string): Promise<AppSi
     return postJson<AppSignInStart>(path, { botId, name, url });
 }
 
+// Whether the owner saved a Google Cloud client for this bot, and the address to register on it. The secret is never sent back.
+function getGoogleClient(botId: string): Promise<GoogleClientStatus> {
+    const path = `${API_ROOT}/apps/google/client?bot=${encodeURIComponent(botId)}`;
+
+    return requestJson<GoogleClientStatus>(path, {});
+}
+
+function saveGoogleClient(botId: string, clientId: string, clientSecret: string): Promise<GoogleClientStatus> {
+    const path = `${API_ROOT}/apps/google/client`;
+    const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ botId, clientId, clientSecret }) };
+
+    return requestJson<GoogleClientStatus>(path, init);
+}
+
+async function forgetGoogleClient(botId: string): Promise<void> {
+    const path = `${API_ROOT}/apps/google/client?bot=${encodeURIComponent(botId)}`;
+    const response = await fetch(path, { method: 'DELETE' });
+
+    if (!response.ok) {
+        const serverMessage = await readServerMessage(response);
+
+        throw new RequestFailedError(path, response.status, serverMessage);
+    }
+}
+
 function startAppConnection(botId: string, name: string, url: string): Promise<ChatMessage> {
     const path = `${API_ROOT}/apps/connect`;
 
@@ -534,6 +559,9 @@ export type { EffortLevel, LimitBound, LimitsResponse, MessagePageRequest, Model
 export {
     RequestFailedError,
     listConnectedApps,
+    getGoogleClient,
+    saveGoogleClient,
+    forgetGoogleClient,
     startAppConnection,
     startAppSignIn,
     removeConnectedApp,

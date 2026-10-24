@@ -114,6 +114,7 @@ the server user.
 | API key of an AI provider | The vault | Through a key proxy per provider | The key. It gets the proxy address and a dummy key. |
 | GitHub token | The vault, per bot | Through `GithubProxy` for `git` and `gh` | The token. A token saved for another site is never sent. |
 | Token of a connected app | The vault, per bot. A sign-in on the app's own page keeps the access and refresh tokens here too | Through `AppProxy`, which renews an old access token | The token and the server address |
+| Google Cloud client of the owner | The vault, per bot, as `OAUTH_GOOGLE_CLIENT` | Used by `AppOAuth` for the Google sign-in | The client secret. `browser_type_secret` refuses `OAUTH_` names, and the panel never shows it again |
 | Integration secret | The vault, per bot | Through a script that runs as `cloudbot-integrations` | The value. It is removed from the output. |
 | Bot mailbox password | The vault, per bot | Used by the IMAP reader and SMTP sender over TLS | The value, in the model, chat, database or logs |
 | Password, code or card the bot asked for | The vault, per bot and per site | `browser_type_secret` types it | The value, in the chat, in a tool result or in a log |
