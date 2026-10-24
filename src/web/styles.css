@@ -2899,25 +2899,11 @@ button.list-row {
     margin: 0;
 }
 
-.google-setup-steps {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    margin: 0;
-    padding-left: var(--space-4);
-}
-
-.google-setup-address,
 .google-setup-saved {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
-}
-
-.google-setup-address code {
-    min-width: 0;
-    overflow-wrap: anywhere;
 }
 
 .google-setup-fields {
@@ -2943,11 +2929,6 @@ button.list-row {
 }
 
 .google-setup-fields > .connect-app-action,
-.google-setup > .connect-app-action,
-.google-setup-open {
+.google-setup > .connect-app-action {
     align-self: flex-start;
-}
-
-.google-setup-open {
-    margin: var(--space-3) var(--space-1) 0;
 }

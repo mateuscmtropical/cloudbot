@@ -81,7 +81,8 @@ import type { KeyProxy } from './vault/KeyProxy.ts';
 import { AppProxy } from './apps/AppProxy.ts';
 import { AppOAuth } from './apps/AppOAuth.ts';
 import { AppOAuthTokens } from './apps/AppOAuthTokens.ts';
-import { GoogleClientStore } from './apps/googleClient.ts';
+import { readGoogleHubRoute } from './apps/googleEndpoints.ts';
+import { readGoogleClientEnv } from '../shared/googleClientEnv.ts';
 import { BitwardenAccountStore } from './bitwarden/bitwardenAccount.ts';
 import { BitwardenVault } from './bitwarden/BitwardenVault.ts';
 import { ConnectedApps } from './apps/ConnectedApps.ts';
@@ -248,10 +249,12 @@ const appProxy = new AppProxy({
 const appOAuthFetch = createGuardedFetch(allowedPrivateHosts);
 const appOAuthTokens = new AppOAuthTokens({ secrets: botSecrets, fetchFunction: appOAuthFetch });
 const connectedApps = new ConnectedApps({ store: connectedAppStore, secrets: botSecrets, proxy: appProxy, allowedHosts: allowedPrivateHosts, oauthTokens: appOAuthTokens });
-const googleClient = new GoogleClientStore(botSecrets);
+// The Google client comes from the install .env, never from the bot. On a hub, Google sends the owner back to the apex.
+const googleClient = readGoogleClientEnv(process.env);
+const googleHub = hubConfig === undefined ? undefined : readGoogleHubRoute(process.env.CLOUDBOT_PUBLIC_URL, hubConfig.personName);
 // The Bitwarden CLI runs only in this process. Its state lives in a folder inside the data folder, which the bot cannot open.
 const bitwardenVault = new BitwardenVault({ accounts: new BitwardenAccountStore(botSecrets), baseDir: join(dataDir, 'bitwarden') });
-const appOAuth = new AppOAuth({ connectedApps, tokens: appOAuthTokens, fetchFunction: appOAuthFetch, googleClient });
+const appOAuth = new AppOAuth({ connectedApps, tokens: appOAuthTokens, fetchFunction: appOAuthFetch, googleClient: googleClient === undefined ? undefined : { clientId: googleClient.clientId, clientSecret: googleClient.clientSecret }, googleHub });
 
 // The gate is the browser's only way out. It starts before the browser, so Chromium never runs without it.
 function createBrowserGate(gatePort: number | undefined): BrowserGate {
@@ -629,7 +632,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, googleClient, bitwardenVault, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, bitwardenVault, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

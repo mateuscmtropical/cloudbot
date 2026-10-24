@@ -1,15 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement, SyntheticEvent } from 'react';
 
 import type { ConnectedAppStatus, ConnectedAppSummary } from '../../shared/connectedApps.ts';
-import { GOOGLE_GROUP } from '../../shared/googleApps.ts';
+import { GOOGLE_GUIDE_URL } from '../../shared/googleApps.ts';
 import { listConnectedApps, removeConnectedApp, startAppConnection, startAppSignIn } from '../apiClient.ts';
 import { APP_CATALOG, APP_CATEGORIES, BITWARDEN_SERVER_NAME } from '../appCatalog.ts';
 import type { AppCategory, CatalogApp } from '../appCatalog.ts';
 import { APP_SIGN_IN_CHANNEL, describeAppReturn, readAppReturnMessage } from '../appReturn.ts';
 import { APP_LOGOS, getLogoGlyphColor } from '../appLogos.ts';
 import { BitwardenSetupForm } from './BitwardenSetupForm.tsx';
-import { GoogleSetupForm } from './GoogleSetupForm.tsx';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
 import { CloseIcon, FilterIcon, SearchIcon } from './icons.tsx';
@@ -26,12 +25,6 @@ interface ConnectAppsPanelProps {
 type LoadState = 'loading' | 'ready' | 'failed';
 type CategoryFilter = AppCategory | 'All';
 
-// The Google app the owner clicked before the Google client was saved, so the sign-in goes on after the save.
-interface PendingGoogleApp {
-    name: string;
-    url: string;
-}
-
 interface AppIconProps {
     app: CatalogApp;
 }
@@ -47,7 +40,6 @@ interface CardState {
 }
 
 const ALL_CATEGORIES: CategoryFilter = 'All';
-const GOOGLE_MEMBER_NAMES = GOOGLE_GROUP.members.map(member => member.serverName);
 const CATEGORY_FILTERS: CategoryFilter[] = [ALL_CATEGORIES, ...APP_CATEGORIES];
 // The server keeps a sign-in for ten minutes.
 const SIGN_IN_WAIT_LIMIT_MS = 10 * 60 * 1000;
@@ -67,29 +59,15 @@ function getStatusLabel(status: ConnectedAppStatus): string {
     return 'Connected.';
 }
 
-// The connections that belong to a card. The Google card has one for each of its five apps, every other card has one at most.
+// The connection that belongs to a card. A card has one at most.
 function findCardConnections(catalogApp: CatalogApp, apps: ConnectedAppSummary[]): ConnectedAppSummary[] {
-    if (catalogApp.serverName === GOOGLE_GROUP.serverName) {
-        return apps.filter(app => GOOGLE_MEMBER_NAMES.includes(app.name));
-    }
-
     return apps.filter(app => app.name === catalogApp.serverName);
 }
 
 function describeCard(catalogApp: CatalogApp, connections: ConnectedAppSummary[]): CardState {
     const [firstConnection] = connections;
 
-    if (catalogApp.serverName !== GOOGLE_GROUP.serverName) {
-        return { description: firstConnection === undefined ? catalogApp.description : getStatusLabel(firstConnection.status), isConnected: firstConnection?.status === 'connected' };
-    }
-
-    const connectedCount = connections.filter(connection => connection.status === 'connected').length;
-
-    if (connectedCount === GOOGLE_GROUP.members.length) {
-        return { description: getStatusLabel('connected'), isConnected: true };
-    }
-
-    return { description: connections.length === 0 ? catalogApp.description : 'Partly connected. Remove it to start over.', isConnected: false };
+    return { description: firstConnection === undefined ? catalogApp.description : getStatusLabel(firstConnection.status), isConnected: firstConnection?.status === 'connected' };
 }
 
 function getCustomAppName(address: string): string | undefined {
@@ -186,9 +164,17 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
     // The name of the app whose sign-in window is open, and what the window held back from this one.
     const [signInLabel, setSignInLabel] = useState<string | undefined>(undefined);
     const [returnNotice, setReturnNotice] = useState<string | undefined>(undefined);
-    const [isGoogleSetupOpen, setIsGoogleSetupOpen] = useState(false);
-    const [pendingGoogleApp, setPendingGoogleApp] = useState<PendingGoogleApp | undefined>(undefined);
+    // True after a Google card was clicked on a server where the admin has not set the Google client yet.
+    const [isGoogleMissing, setIsGoogleMissing] = useState(false);
     const [isBitwardenSetupOpen, setIsBitwardenSetupOpen] = useState(false);
+    const googleMissingRef = useRef<HTMLParagraphElement>(null);
+
+    // The line sits above the grid, so a click on a card further down brings it into view.
+    useEffect(() => {
+        if (isGoogleMissing) {
+            googleMissingRef.current?.scrollIntoView({ block: 'nearest' });
+        }
+    }, [isGoogleMissing]);
 
     function stopWaiting(): void {
         setSignInLabel(undefined);
@@ -272,6 +258,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
 
         setReturnNotice(undefined);
         setProblem(undefined);
+        setIsGoogleMissing(false);
         setStartingAppName(appName);
 
         startAppSignIn(selectedBotId, appName, appUrl)
@@ -289,9 +276,8 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
 
                 signInWindow?.close();
 
-                if (signIn.status === 'needs_client') {
-                    setPendingGoogleApp({ name: appName, url: appUrl });
-                    setIsGoogleSetupOpen(true);
+                if (signIn.status === 'google_not_configured') {
+                    setIsGoogleMissing(true);
                     setStartingAppName(undefined);
 
                     return undefined;
@@ -319,19 +305,6 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
             });
     }
 
-    // The Google client was saved. The sign-in the owner started goes on, if there was one.
-    function handleGoogleSaved(): void {
-        const googleApp = pendingGoogleApp;
-
-        if (googleApp === undefined) {
-            return;
-        }
-
-        setPendingGoogleApp(undefined);
-        setIsGoogleSetupOpen(false);
-        handleConnect(googleApp.name, googleApp.url);
-    }
-
     function handleCustomSubmit(event: SyntheticEvent<HTMLFormElement>): void {
         event.preventDefault();
 
@@ -347,7 +320,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
         handleConnect(appName, address);
     }
 
-    // One card can hold several connections, as the Google card does. The list changes once, for the ones that went.
+    // The list changes once, for the ones that went.
     function handleRemove(appIds: string[]): void {
         const freshIds = appIds.filter(appId => !removingIds.includes(appId));
 
@@ -381,8 +354,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
 
     const searchTerm = searchQuery.trim()
         .toLowerCase();
-    // The five Google apps belong to the Google card, so an old row of one of them is not a custom app.
-    const customApps = apps.filter(app => !APP_CATALOG.some(catalogApp => catalogApp.serverName === app.name) && !GOOGLE_MEMBER_NAMES.includes(app.name));
+    const customApps = apps.filter(app => !APP_CATALOG.some(catalogApp => catalogApp.serverName === app.name));
     const filteredCatalogApps = SORTED_CATALOG.filter((catalogApp) => {
         const cardConnections = findCardConnections(catalogApp, apps);
         const matchesCategory = selectedCategory === ALL_CATEGORIES || catalogApp.category === selectedCategory;
@@ -461,21 +433,13 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                             <button type="button" className="connect-app-action" aria-label="Cancel sign-in" onClick={stopWaiting}>Cancel</button>
                         </p>
                     )}
-            {selectedBotId === undefined || isGoogleSetupOpen
-                ? null
-                : (
-                        <button type="button" className="connect-app-action google-setup-open" onClick={() => { setIsGoogleSetupOpen(true); }}>Google setup</button>
-                    )}
-            {selectedBotId !== undefined && isGoogleSetupOpen
+            {isGoogleMissing
                 ? (
-                        <GoogleSetupForm
-                            botId={selectedBotId}
-                            onSaved={handleGoogleSaved}
-                            onClose={() => {
-                                setIsGoogleSetupOpen(false);
-                                setPendingGoogleApp(undefined);
-                            }}
-                        />
+                        <p ref={googleMissingRef} className="connect-app-message" role="status">
+                            {'Google is not set up on this server yet. The admin adds a Google client once, see the '}
+                            <a href={GOOGLE_GUIDE_URL} target="_blank" rel="noopener noreferrer">Google guide</a>
+                            .
+                        </p>
                     )
                 : null}
             {selectedBotId !== undefined && isBitwardenSetupOpen
@@ -497,8 +461,6 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                 const isStarting = startingAppName === catalogApp.serverName;
                                 const { description, isConnected } = describeCard(catalogApp, cardConnections);
                                 const cardIds = cardConnections.map(connection => connection.id);
-                                // A half-connected Google card offers Remove too, so it can start over.
-                                const isRemovable = isConnected || (catalogApp.serverName === GOOGLE_GROUP.serverName && cardIds.length > 0);
                                 const setUpButton = (
                                     <button
                                         type="button"
@@ -512,7 +474,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                         Set up
                                     </button>
                                 );
-                                const connectOrRemoveButton = !isRemovable
+                                const connectOrRemoveButton = !isConnected
                                     ? (
                                             <button
                                                 type="button"

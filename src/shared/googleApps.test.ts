@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { GOOGLE_APPS, GOOGLE_GROUP, findGoogleApp, findGoogleGroup } from './googleApps.ts';
+import { GOOGLE_APPS, findGoogleApp } from './googleApps.ts';
 
 describe('GOOGLE_APPS', () => {
     it('gives every app a valid server name, a Google https address and full scope addresses', () => {
@@ -53,26 +53,34 @@ describe('findGoogleApp', () => {
     });
 });
 
-describe('GOOGLE_GROUP', () => {
-    it('lists the five apps as members and asks for each scope once', () => {
-        expect(GOOGLE_GROUP.members.map(member => member.serverName))
-            .toEqual(['google-gmail', 'google-calendar', 'google-drive', 'google-docs', 'google-sheets']);
-        expect(new Set(GOOGLE_GROUP.scopes).size)
-            .toBe(GOOGLE_GROUP.scopes.length);
+describe('the scopes of each Google card', () => {
+    const base = 'https://www.googleapis.com/auth/';
+    const expectedScopes: Record<string, string[]> = {
+        'google-gmail': ['gmail.readonly', 'gmail.compose'],
+        'google-calendar': ['calendar.calendarlist.readonly', 'calendar.events.freebusy', 'calendar.events.readonly', 'calendar.events'],
+        'google-drive': ['drive.readonly', 'drive.file'],
+        'google-docs': ['drive.readonly', 'drive.file', 'documents.readonly', 'documents'],
+        'google-sheets': ['drive.readonly', 'drive.file', 'spreadsheets.readonly', 'spreadsheets'],
+    };
+
+    it('lists the five apps in the order of the cards', () => {
+        expect(GOOGLE_APPS.map(app => app.serverName))
+            .toEqual(Object.keys(expectedScopes));
+    });
+
+    it('asks each app only for its own scopes', () => {
         GOOGLE_APPS.forEach((app) => {
-            app.scopes.forEach((scope) => {
-                expect(GOOGLE_GROUP.scopes)
-                    .toContain(scope);
-            });
+            const expected = (expectedScopes[app.serverName] ?? []).map(name => `${base}${name}`);
+
+            expect(app.scopes)
+                .toEqual(expected);
         });
     });
 
-    it('is found only by its name and its address together', () => {
-        expect(findGoogleGroup('google', GOOGLE_GROUP.url))
-            .toBe(GOOGLE_GROUP);
-        expect(findGoogleGroup('google', 'https://mcp.example.com/mcp'))
-            .toBeUndefined();
-        expect(findGoogleGroup('my-google', GOOGLE_GROUP.url))
-            .toBeUndefined();
+    it('does not ask Gmail for Drive or Calendar scopes', () => {
+        const gmail = findGoogleApp('google-gmail', 'https://gmailmcp.googleapis.com/mcp/v1');
+
+        expect(gmail?.scopes.some(scope => scope.includes('drive') || scope.includes('calendar')))
+            .toBe(false);
     });
 });

@@ -758,6 +758,60 @@ describe('createFrontDoorRoutes', () => {
             .toBe('/');
     });
 
+    it('sends the Google return on the apex to the person named in the state, with the query unchanged', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        const query = 'state=maria.AbC-_123&code=4%2F0Ab%2Bcd&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.readonly+x&authuser=0&prompt=consent';
+        const response = await harness.app.request(`https://example.test/api/apps/oauth/callback?${query}`);
+
+        expect(response.status)
+            .toBe(303);
+        expect(response.headers.get('location'))
+            .toBe(`https://maria.example.test/api/apps/oauth/callback?${query}`);
+    });
+
+    it('keeps the local port when the Google return arrives on the localhost apex', async () => {
+        const harness = await createHarness({ domain: 'localhost', secure: false });
+
+        harnesses.push(harness);
+        const response = await harness.app.request('http://localhost:3200/api/apps/oauth/callback?state=maria.abc&code=c1');
+
+        expect(response.headers.get('location'))
+            .toBe('http://maria.localhost:3200/api/apps/oauth/callback?state=maria.abc&code=c1');
+    });
+
+    it('gives the not available page for a Google return of an unknown or inactive person or a bad state', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        harness.people.update(PERSON_NAME, { state: 'inactive' });
+        const states = ['nobody.abc', 'maria.abc', 'maria', '.abc', '', 'Maria.abc', 'ma.ria.abc%2Fx', 'www.abc'];
+        const responses = await Promise.all(states.map(async state => await harness.app.request(`https://example.test/api/apps/oauth/callback?state=${state}&code=c1`)));
+        const missingState = await harness.app.request('https://example.test/api/apps/oauth/callback?code=c1');
+        const unavailable = await harness.app.request('https://nobody.nowhere.test/');
+
+        responses.forEach((response) => {
+            expect(response.status)
+                .toBe(unavailable.status);
+            expect(response.headers.get('location'))
+                .toBeNull();
+        });
+        expect(missingState.status)
+            .toBe(unavailable.status);
+        expect(missingState.headers.get('location'))
+            .toBeNull();
+    });
+
+    it('answers only GET for the Google return on the apex', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        const postResponse = await harness.app.request('https://example.test/api/apps/oauth/callback?state=maria.abc&code=c1', { method: 'POST', headers: { origin: 'https://example.test' } });
+
+        expect(postResponse.headers.get('location'))
+            .toBeNull();
+    });
     it('streams server events and tracks the long-lived response', async () => {
         let releaseStream: (() => void) | undefined;
         const streamReady = new Promise<void>((resolve) => {

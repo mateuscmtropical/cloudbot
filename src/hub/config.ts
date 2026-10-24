@@ -1,5 +1,7 @@
 import { BlockList, isIP } from 'node:net';
 
+import { readGoogleClientEnv } from '../shared/googleClientEnv.ts';
+import type { GoogleClientEnv } from '../shared/googleClientEnv.ts';
 import { checkPersonName } from '../shared/peopleTypes.ts';
 
 interface HubSettings {
@@ -15,6 +17,8 @@ interface HubSettings {
     ownerName: string;
     containerId: string;
     loginAllowedIps?: BlockList;
+    // The Google Cloud client the admin set in the install .env. The hub gives it to each instance it starts.
+    googleClient?: GoogleClientEnv;
 }
 
 function readRequiredText(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
@@ -101,6 +105,7 @@ function readHubSettings(env: NodeJS.ProcessEnv): HubSettings {
 
     const containerId = readRequiredText(env, 'HUB_CONTAINER_ID', env.HOSTNAME);
     const loginAllowedIps = readLoginAllowedIps(env);
+    const googleClient = readGoogleClientEnv(env);
     const settings: HubSettings = {
         domain,
         port: readPositiveNumber(env, 'HUB_PORT', 3001, true),
@@ -114,6 +119,7 @@ function readHubSettings(env: NodeJS.ProcessEnv): HubSettings {
         ownerName,
         containerId,
         ...(loginAllowedIps === undefined ? {} : { loginAllowedIps }),
+        ...(googleClient === undefined ? {} : { googleClient }),
     };
 
     if (settings.port > 65535) {

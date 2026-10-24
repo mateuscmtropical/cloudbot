@@ -22,6 +22,21 @@ describe('readHubSettings', () => {
             });
     });
 
+    it('reads the Google client of the install .env and leaves it out when it is empty', () => {
+        const withClient = readHubSettings({ CLOUDBOT_DOMAIN: 'example.com', HUB_CONTAINER_ID: 'hub-id', CLOUDBOT_GOOGLE_CLIENT_ID: ' id.apps.googleusercontent.com ', CLOUDBOT_GOOGLE_CLIENT_SECRET: 'secret-1' });
+        const withEmpty = readHubSettings({ CLOUDBOT_DOMAIN: 'example.com', HUB_CONTAINER_ID: 'hub-id', CLOUDBOT_GOOGLE_CLIENT_ID: '', CLOUDBOT_GOOGLE_CLIENT_SECRET: '' });
+
+        expect(withClient.googleClient)
+            .toEqual({ clientId: 'id.apps.googleusercontent.com', clientSecret: 'secret-1' });
+        expect(withEmpty)
+            .not.toHaveProperty('googleClient');
+    });
+
+    it('stops with a clear error when only one Google line is set', () => {
+        expect(() => readHubSettings({ CLOUDBOT_DOMAIN: 'example.com', HUB_CONTAINER_ID: 'hub-id', CLOUDBOT_GOOGLE_CLIENT_ID: 'id' }))
+            .toThrow('go together');
+    });
+
     it('accepts localhost and configured values', () => {
         const settings = readHubSettings({
             CLOUDBOT_DOMAIN: 'localhost',

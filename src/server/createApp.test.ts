@@ -6,9 +6,7 @@ import type { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { SetupAccess } from './access/SetupAccess.ts';
-import type { AppOAuth } from './apps/AppOAuth.ts';
 import type { ConnectedApps } from './apps/ConnectedApps.ts';
-import { GoogleClientStore } from './apps/googleClient.ts';
 import { BitwardenAccountStore } from './bitwarden/bitwardenAccount.ts';
 import { BitwardenVault } from './bitwarden/BitwardenVault.ts';
 import type { BotSecret } from './secrets/BotSecrets.ts';
@@ -181,42 +179,6 @@ describe('createApp', () => {
 
         expect(response.status)
             .toBe(200);
-    });
-
-    it('keeps the Google client of a bot behind the session and never sends the secret back', async () => {
-        const chatService = buildChatService(opened);
-        const bot = await new BotStore(opened.db)
-            .create({ name: 'Ana', title: 'Assistant', description: '' });
-        const saved = new Map<string, BotSecret>();
-        const googleClient = new GoogleClientStore({
-            read: (_botId, name) => saved.get(name),
-            save: (_botId, name, site, value) => {
-                saved.set(name, { site, value });
-            },
-            remove: (_botId, name) => {
-                saved.delete(name);
-            },
-        });
-        const app = createApp({ version: '1.2.3', access, chatService, connectedApps: {} as ConnectedApps, appOAuth: {} as AppOAuth, googleClient, publicBaseUrl: 'https://bot.example.com' });
-        const sessionToken = await signIn(app, access);
-        const cookie = `cloudbot_session=${sessionToken}`;
-        const path = `/api/apps/google/client?bot=${bot.id}`;
-        const body = JSON.stringify({ botId: bot.id, clientId: '123-abc.apps.googleusercontent.com', clientSecret: 'GOCSPX-secret-value' });
-        const withoutCookie = await app.request(path);
-        const putWithoutCookie = await app.request('/api/apps/google/client', { method: 'PUT', headers: { 'content-type': 'application/json', 'origin': OWN_ORIGIN }, body });
-        const putWithCookie = await app.request('/api/apps/google/client', { method: 'PUT', headers: { 'content-type': 'application/json', cookie, 'origin': OWN_ORIGIN }, body });
-        const status = await requestWithSession(app, path, sessionToken);
-
-        expect(withoutCookie.status)
-            .toBe(401);
-        expect(putWithoutCookie.status)
-            .toBe(401);
-        expect(putWithCookie.status)
-            .toBe(200);
-        expect(await status.json())
-            .toEqual({ configured: true, redirectUri: 'https://bot.example.com/api/apps/oauth/callback' });
-        expect(JSON.stringify([...saved.values()]))
-            .toContain('GOCSPX-secret-value');
     });
 
     it('keeps the Bitwarden account of a bot behind the session and never sends a secret back', async () => {

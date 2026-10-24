@@ -47,6 +47,11 @@ page that asks for the name and sends the person to their address. Every
 subdomain is its own origin, so cookies and local storage are never shared. The
 hub session cookie is bound to the host, without a `Domain` attribute.
 
+Google takes one redirect address per client, so Google sign-ins come back to
+`https://<domain>/api/apps/oauth/callback`. The state starts with the person
+name and a dot. The apex sends an active person's browser on to the same path on
+their own address, with the query unchanged. See [GOOGLE.md](GOOGLE.md).
+
 ## The request path
 
 1. The browser asks `maria.example.com`. Caddy sends it to the hub.

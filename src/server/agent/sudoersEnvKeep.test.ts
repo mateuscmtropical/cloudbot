@@ -73,6 +73,13 @@ describe('sudoers env_keep for the agent user', () => {
             .toContain('GH_ENTERPRISE_TOKEN');
     });
 
+    it('does not pass the Google client of the server to the agent user', () => {
+        const kept = keptNames();
+
+        expect(kept.filter(name => name.startsWith('CLOUDBOT_GOOGLE')))
+            .toEqual([]);
+    });
+
     it('allows the agent user only the signal wrapper for process groups, not kill itself', () => {
         const sudoers = readFileSync(SUDOERS_PATH, 'utf8');
 

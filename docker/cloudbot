@@ -59,16 +59,26 @@ command_logs() {
     compose logs --follow --tail=200 hub | sed -E 's/(Owner [^ ]+ password: ).*/\1[redacted]/'
 }
 
-# Removes every instance container that does not use the current image. The cbi-*
-# volumes stay and the hub creates each container again on the next request.
+# The Google client lines of an environment, sorted, so two environments can be compared. Empty lines are left out.
+google_client_lines() {
+    grep -E '^CLOUDBOT_GOOGLE_CLIENT_(ID|SECRET)=.+' | sort || true
+}
+
+# Removes every instance container that does not use the current image or the Google client that the hub
+# has now. The cbi-* volumes stay and the hub creates each container again on the next request.
 remove_outdated_instances() {
     local image_id
+    local hub_client
     local container
 
     image_id="$(docker image inspect --format '{{.Id}}' cloudbot:local)"
+    hub_client="$(compose exec -T hub env | google_client_lines)"
 
     docker ps -a --filter name=^cloudbot-i- --format '{{.Names}}' | while read -r container; do
-        if [ "$(docker inspect --format '{{.Image}}' "$container")" != "$image_id" ]; then
+        local container_client
+        container_client="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" | google_client_lines)"
+
+        if [ "$(docker inspect --format '{{.Image}}' "$container")" != "$image_id" ] || [ "$container_client" != "$hub_client" ]; then
             docker rm -f "$container"
         fi
     done

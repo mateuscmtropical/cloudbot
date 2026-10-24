@@ -23,20 +23,13 @@ const APP_OAUTH_CALLBACK_PATH = '/api/apps/oauth/callback';
 // The answer to starting a sign-in from the Connect apps panel.
 // redirect: open the address, the server's own sign-in page.
 // unsupported: the server has no sign-in page for apps, so the bot asks for a token in the chat instead.
-// needs_client: a Google app, and the owner has not saved a Google Cloud client yet.
+// google_not_configured: a Google app, and the admin has not set the Google client of this server yet.
 // failed: the sign-in could not start.
 type AppSignInStart
     = | { status: 'redirect'; authorizationUrl: string }
         | { status: 'unsupported' }
-        | { status: 'needs_client' }
+        | { status: 'google_not_configured' }
         | { status: 'failed'; problem: string };
 
-// What the owner's page may know about the saved Google client. The secret never leaves the vault.
-interface GoogleClientStatus {
-    configured: boolean;
-    // The address the owner registers on the Google client.
-    redirectUri: string;
-}
-
 export { APP_OAUTH_CALLBACK_PATH, CONNECTED_APP_STATUSES };
-export type { AppSignInStart, ConnectedAppStatus, GoogleClientStatus, ConnectedAppSummary };
+export type { AppSignInStart, ConnectedAppStatus, ConnectedAppSummary };
