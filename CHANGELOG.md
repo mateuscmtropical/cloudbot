@@ -19,6 +19,10 @@ All notable changes to this project are listed here. The format follows
 - The chat header uses a bot profile pill and a More menu for model and provider settings. Assistant replies use full-width cards, and the composer has attachment and voice controls.
 - The attachment menu offers file, photo and photo or video picker modes.
 
+### Fixed
+
+- The sign-in of an app opens in a new window. The CloudBot page stays where it is, and the new window tells it when the sign-in ends and closes itself.
+
 ### Security
 
 - The Claude CLI and every helper agent now disallow built-in tools for CLI schedules, cloud triggers, notifications, messaging, workflows, worktrees, design sync and other CLI-only services.

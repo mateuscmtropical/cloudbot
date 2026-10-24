@@ -12,7 +12,7 @@ import { findConversationMascot, startMascotHop } from './mascotHop.ts';
 import type { MascotHop, MascotHopPoint } from './mascotHop.ts';
 import { useAppUpdate } from './useAppUpdate.ts';
 import { usePullToRefresh } from './usePullToRefresh.ts';
-import { describeAppReturn, readAppReturn } from './appReturn.ts';
+import { announceAppReturn, describeAppReturn, readAppReturn } from './appReturn.ts';
 import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
@@ -165,8 +165,20 @@ function App(): ReactElement {
     const [isBotProfileOpen, setIsBotProfileOpen] = useState(false);
     // The connected remote MCP servers panel, opened from the sidebar.
     // It opens by itself when the owner comes back from an app's sign-in page.
-    const [appReturn] = useState(() => readAppReturn(window.location.search));
+    const [initialSearch] = useState(() => window.location.search);
+    const [appReturn] = useState(() => readAppReturn(initialSearch));
     const [isConnectAppsOpen, setIsConnectAppsOpen] = useState(appReturn !== undefined);
+
+    // The sign-in opened in a new window. That window tells the first one and closes itself.
+    // If the browser keeps it open, it stays as it is, with the panel and the notice.
+    useEffect(() => {
+        if (appReturn === undefined) {
+            return;
+        }
+
+        announceAppReturn(initialSearch);
+        window.close();
+    }, [appReturn, initialSearch]);
     const [errorText, setErrorText] = useState<string | undefined>(undefined);
     const [needsSignIn, setNeedsSignIn] = useState(false);
     // Chips per bot: files still uploading, and the files the server holds for the next message.

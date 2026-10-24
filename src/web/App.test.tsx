@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BotSummary, ChatEvent, ChatMessage, PendingUpload } from '../shared/chatTypes.ts';
 import { App } from './App.tsx';
 import { listBots, listMessages, listUploads, RequestFailedError, sendMessage, stopTurn, subscribeToEvents, uploadAttachments } from './apiClient.ts';
+import { APP_SIGN_IN_CHANNEL } from './appReturn.ts';
 import { MESSAGE_PAGE_SIZE } from './messageList.ts';
 import { getHubContext } from './peopleClient.ts';
 
@@ -94,6 +95,37 @@ describe('App sign-in', () => {
             expect(screen.getByRole('button', { name: 'Sign in with a passkey' }))
                 .toBeDefined();
         });
+    });
+});
+
+describe('App return from an app sign-in', () => {
+    it('tells the first window and closes itself, and keeps the notice when it stays open', async () => {
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(subscribeToEvents)
+            .mockReturnValue(() => undefined);
+        const close = vi.spyOn(window, 'close')
+            .mockImplementation(() => undefined);
+        const listener = new BroadcastChannel(APP_SIGN_IN_CHANNEL);
+        const received = new Promise((resolve) => {
+            listener.onmessage = (event: MessageEvent<unknown>) => {
+                resolve(event.data);
+            };
+        });
+
+        window.history.replaceState(null, '', '/?apps=connected&app=notion&bot=bot-1');
+        render(<App />);
+
+        await expect(received)
+            .resolves.toEqual({ apps: 'connected', app: 'notion', bot: 'bot-1' });
+        expect(close)
+            .toHaveBeenCalledTimes(1);
+        expect(await screen.findByText('Notion is connected.'))
+            .toBeTruthy();
+        listener.close();
+        window.history.replaceState(null, '', '/');
     });
 });
 
