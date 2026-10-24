@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LINE_INTERVAL_MS, THINKING_LINES } from '../thinkingBubble.ts';
 import { ThinkingBubble } from './ThinkingBubble.tsx';
 
+const MASCOT = { mascotColor: 'blue', mascotShape: 'puff' } as const;
+
 describe('ThinkingBubble', () => {
     beforeEach(() => {
         vi.useFakeTimers();
@@ -16,14 +18,14 @@ describe('ThinkingBubble', () => {
     });
 
     it('shows the first thinking line and a status role', () => {
-        render(<ThinkingBubble />);
+        render(<ThinkingBubble {...MASCOT} />);
 
         expect(screen.getByRole('status').textContent)
             .toContain(THINKING_LINES[0]);
     });
 
     it('changes the thinking line every interval without a tool', () => {
-        render(<ThinkingBubble />);
+        render(<ThinkingBubble {...MASCOT} />);
 
         act(() => {
             vi.advanceTimersByTime(LINE_INTERVAL_MS);
@@ -34,7 +36,7 @@ describe('ThinkingBubble', () => {
     });
 
     it('names the active tool in plain words and does not cycle', () => {
-        render(<ThinkingBubble activeToolName="WebSearch" />);
+        render(<ThinkingBubble {...MASCOT} activeToolName="WebSearch" />);
 
         act(() => {
             vi.advanceTimersByTime(LINE_INTERVAL_MS * 2);
@@ -44,29 +46,17 @@ describe('ThinkingBubble', () => {
             .toContain('Searching the web');
     });
 
-    it('renders three dots that are hidden from assistive tech', () => {
-        const { container } = render(<ThinkingBubble />);
-        const dots = container.querySelectorAll('.thinking-dots i');
+    it('shows the bot mascot with eyes that look around, outside a bubble', () => {
+        const { container } = render(<ThinkingBubble {...MASCOT} />);
 
-        expect(dots.length)
-            .toBe(3);
-        const dotsRow = container.querySelector('.thinking-dots');
-
-        expect(dotsRow?.getAttribute('aria-hidden'))
-            .toBe('true');
-    });
-
-    it('keeps the thinking bubble in the assistant message flow without an avatar column', () => {
-        const { container } = render(<ThinkingBubble />);
-
-        expect(container.querySelector('.message.is-thinking'))
-            .not.toBeNull();
-        expect(container.querySelector('.message.is-thinking .cloud-mascot'))
+        expect(container.querySelector('.message.is-thinking .thinking-status .cloud-mascot')
+            ?.getAttribute('data-state'))
+            .toBe('working');
+        expect(container.querySelector('.message.is-thinking .bubble'))
             .toBeNull();
     });
-
     it('keeps the changing line silent for screen readers and labels the bubble', () => {
-        const { container } = render(<ThinkingBubble />);
+        const { container } = render(<ThinkingBubble {...MASCOT} />);
 
         const liveLine = container.querySelector('.thinking-line');
 

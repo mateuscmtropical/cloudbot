@@ -111,7 +111,9 @@ function renderFace(state: MascotState): ReactElement {
                     <path d={smileArc(RIGHT_EYE_X)} />
                 </g>
             );
+        // The working eyes look around through the stylesheet, not the pointer.
         case 'typing':
+        case 'working':
             return (
                 <g fill={WHITE} stroke="none">
                     <circle cx={LEFT_EYE_X} cy={EYE_Y} r={EYE_RADIUS} />
