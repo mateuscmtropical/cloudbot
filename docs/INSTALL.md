@@ -132,19 +132,25 @@ starts a hibernated instance again.
 |---|---|
 | `sudo cloudbot status` | Shows the hub, Docker socket proxy, Caddy, instances and instance memory use |
 | `sudo cloudbot logs` | Follows hub logs. Press Ctrl+C to stop. |
-| `sudo cloudbot update` | Pulls code and service images, rebuilds the CloudBot image and recreates the hub |
+| `sudo cloudbot update [--all]` | Pulls code and service images, rebuilds the CloudBot image and recreates the hub. `--all` also removes every instance container that uses an old image. |
 | `sudo cloudbot reset-password [name]` | Prints a new one-time password. The default name is `owner`. |
 | `sudo cloudbot uninstall [--keep-data] [--yes]` | Asks you to type `uninstall`, then removes the containers, networks, image, volumes and `/opt/cloudbot`. `--keep-data` keeps the volumes and the folder. `--yes` skips the question. Docker stays installed. |
 
 After an update, instances that are already running continue on their existing
-image. To recreate one on the new image, remove its container:
+image. To move everyone to the new image, run the update with `--all`:
+
+```sh
+sudo cloudbot update --all
+```
+
+To move one person only, remove that container:
 
 ```sh
 sudo docker rm -f cloudbot-i-maria
 ```
 
-The person's `cbi-*` volumes stay in place. The hub creates the container from
-the new image on the person's next request.
+The `cbi-*` volumes stay in place. The hub creates each container from the new
+image on the person's next request.
 
 ## Back up data
 

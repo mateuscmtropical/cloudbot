@@ -213,4 +213,4 @@ The socket proxy is reachable only from the hub on the internal `hubctl` network
 
 The installer writes the domain, owner name, memory budget and per-instance limits to `.env`. The defaults are a 10240 MB running-instance budget, 2560 MB per instance and 2 CPUs per instance. Idle instances hibernate after five minutes by default.
 
-`cloudbot update` pulls code and service images, rebuilds the shared image and recreates the hub. Existing instance containers keep the image they were created from. Removing an instance container leaves its `cbi-*` volumes in place, and the hub recreates it on the next request. Back up `hub-data` and all `cbi-*` volumes together.
+`cloudbot update` pulls code and service images, rebuilds the shared image and recreates the hub. Existing instance containers keep the image they were created from, and `cloudbot update --all` removes the ones on an old image. Removing an instance container leaves its `cbi-*` volumes in place, and the hub recreates it on the next request. Back up `hub-data` and all `cbi-*` volumes together.

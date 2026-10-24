@@ -59,12 +59,12 @@ Run these on the server:
 
 ```sh
 sudo cloudbot update       # pull the latest code and recreate the hub
+sudo cloudbot update --all # same, and move every person's instance to the new image
 sudo cloudbot status       # show the hub, Caddy and every person's instance
 sudo cloudbot uninstall    # remove CloudBot and all its data, after a question
 ```
 
-After an update, remove an instance container to move that person to the new
-image. Their data stays:
+To move one person to the new image, remove that container. Their data stays:
 
 ```sh
 sudo docker rm -f cloudbot-i-maria
