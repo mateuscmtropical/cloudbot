@@ -120,7 +120,7 @@ function GoogleSetupForm({ botId, onSaved, onClose }: GoogleSetupFormProps): Rea
     return (
         <section ref={formRef} className="google-setup" aria-label="Google setup">
             <h2>Google setup</h2>
-            <p>Gmail, Calendar, Drive, Docs and Sheets sign in with a Google Cloud client that you create once.</p>
+            <p>One Google sign-in connects Gmail, Calendar, Drive, Docs and Sheets. It uses a Google Cloud client that you create once.</p>
             <ol className="google-setup-steps">
                 <li>Join the Google Workspace Developer Preview Program with your Google account.</li>
                 <li>In Google Cloud, turn on the MCP API and the product API of each app you want. For Gmail these are the Gmail MCP API and the Gmail API.</li>

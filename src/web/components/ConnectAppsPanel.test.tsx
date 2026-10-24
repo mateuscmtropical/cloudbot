@@ -23,6 +23,13 @@ vi.mock('../apiClient.ts', () => ({
 const LINEAR: ConnectedAppSummary = { id: 'app-1', name: 'linear', url: 'https://mcp.linear.app/mcp', status: 'connected', toolCount: 4 };
 const NOTION: ConnectedAppSummary = { id: 'app-2', name: 'notion', url: 'https://mcp.notion.com/mcp', status: 'needs_token', toolCount: 0 };
 const CUSTOM: ConnectedAppSummary = { id: 'app-3', name: 'custom-example-com', url: 'https://mcp.example.com/mcp', status: 'failed', toolCount: 0, problem: 'Private details from the server.' };
+const GOOGLE_MEMBERS_CONNECTED: ConnectedAppSummary[] = ['gmail', 'calendar', 'drive', 'docs', 'sheets'].map(product => ({
+    id: `google-${product}-id`,
+    name: `google-${product}`,
+    url: `https://${product}mcp.googleapis.com/mcp/v1`,
+    status: 'connected',
+    toolCount: 3,
+}));
 const NOTION_CONNECTED: ConnectedAppSummary = { ...NOTION, status: 'connected', toolCount: 3 };
 const STARTED_MESSAGE: ChatMessage = {
     id: 'message-1',
@@ -511,17 +518,94 @@ describe('ConnectAppsPanel', () => {
             .toHaveBeenCalledTimes(1);
     });
 
-    it('lists the five Google apps in Productivity', async () => {
+    it('shows one Google card and no card for the five apps', async () => {
         vi.mocked(listConnectedApps)
             .mockResolvedValue([]);
 
         render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
         fireEvent.click(await screen.findByRole('button', { name: 'Productivity' }));
 
+        expect(screen.getByRole('button', { name: 'Connect Google' }))
+            .toBeTruthy();
+        expect(screen.getByText('Gmail, Calendar, Drive, Docs and Sheets in one sign-in.'))
+            .toBeTruthy();
         ['Gmail', 'Google Calendar', 'Google Drive', 'Google Docs', 'Google Sheets'].forEach((displayName) => {
-            expect(screen.getByRole('button', { name: `Connect ${displayName}` }))
+            expect(screen.queryByRole('button', { name: `Connect ${displayName}` }))
+                .toBeNull();
+        });
+    });
+
+    it('shows Connected and one Remove when all five Google apps are connected, and removes all of them', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue(GOOGLE_MEMBERS_CONNECTED);
+        vi.mocked(removeConnectedApp)
+            .mockResolvedValue(undefined);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+
+        expect(await screen.findByText('1 installed'))
+            .toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Connect Google' }))
+            .toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Remove Google' }));
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Connect Google' }))
                 .toBeTruthy();
         });
+        expect(removeConnectedApp)
+            .toHaveBeenCalledTimes(5);
+        GOOGLE_MEMBERS_CONNECTED.forEach((member) => {
+            expect(removeConnectedApp)
+                .toHaveBeenCalledWith(member.id);
+        });
+        expect(screen.getByText('0 installed'))
+            .toBeTruthy();
+    });
+
+    it('says Partly connected and offers Remove, which removes the rows that are there', async () => {
+        const [firstMember, secondMember] = GOOGLE_MEMBERS_CONNECTED;
+
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([firstMember as ConnectedAppSummary, secondMember as ConnectedAppSummary]);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+
+        vi.mocked(removeConnectedApp)
+            .mockResolvedValue(undefined);
+
+        expect(await screen.findByText('Partly connected. Remove it to start over.'))
+            .toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Connect Google' }))
+            .toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Remove Google' }));
+
+        expect(await screen.findByRole('button', { name: 'Connect Google' }))
+            .toBeTruthy();
+        expect(removeConnectedApp)
+            .toHaveBeenCalledTimes(2);
+        expect(removeConnectedApp)
+            .toHaveBeenCalledWith('google-gmail-id');
+        expect(removeConnectedApp)
+            .toHaveBeenCalledWith('google-calendar-id');
+    });
+
+    it('keeps the rows of the five Google apps out of the Custom list', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([...GOOGLE_MEMBERS_CONNECTED, CUSTOM]);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+
+        expect(await screen.findByRole('button', { name: 'Remove example.com' }))
+            .toBeTruthy();
+        expect(screen.getByText('2 installed'))
+            .toBeTruthy();
+        expect(screen.queryByRole('button', { name: /Remove gmailmcp/ }))
+            .toBeNull();
+        expect(screen.queryByRole('button', { name: /Remove (calendar|drive|docs|sheets)mcp/ }))
+            .toBeNull();
     });
 
     it('opens the Google setup when a Google app needs the owner client, and goes on after the save', async () => {
@@ -540,7 +624,7 @@ describe('ConnectAppsPanel', () => {
             .mockResolvedValue({ configured: true, redirectUri: 'https://bot.example.com/api/apps/oauth/callback' });
 
         render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
-        fireEvent.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Google' }));
 
         expect(await screen.findByRole('region', { name: 'Google setup' }))
             .toBeTruthy();
@@ -558,7 +642,7 @@ describe('ConnectAppsPanel', () => {
                 .toHaveBeenCalledTimes(2);
         });
         expect(startAppSignIn)
-            .toHaveBeenLastCalledWith('bot-1', 'google-gmail', 'https://gmailmcp.googleapis.com/mcp/v1');
+            .toHaveBeenLastCalledWith('bot-1', 'google', 'https://gmailmcp.googleapis.com/mcp/v1');
         await waitFor(() => {
             expect(signInWindow.location.href)
                 .toBe('https://accounts.google.com/o/oauth2/v2/auth?state=s1');

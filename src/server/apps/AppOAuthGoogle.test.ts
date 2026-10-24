@@ -10,6 +10,7 @@ import { AppOAuth } from './AppOAuth.ts';
 import { AppOAuthTokens, oauthSecretName } from './AppOAuthTokens.ts';
 import { AppProxy } from './AppProxy.ts';
 import { ConnectedApps } from './ConnectedApps.ts';
+import { GOOGLE_GROUP } from '../../shared/googleApps.ts';
 import { GoogleClientStore } from './googleClient.ts';
 import type { FetchFunction } from './probeAppServer.ts';
 
@@ -32,7 +33,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 // Google's token endpoint and the Gmail server, plus an ordinary server with discovery for the custom app case.
-function fakeNetwork(requests: FakeRequest[]): FetchFunction {
+function fakeNetwork(requests: FakeRequest[], failingHost: { value: string | undefined }): FetchFunction {
     const respond = (url: string, init: RequestInit): Response => {
         const body = typeof init.body === 'string' ? init.body : '';
 
@@ -60,8 +61,12 @@ function fakeNetwork(requests: FakeRequest[]): FetchFunction {
             return jsonResponse({ client_id: 'client-1' }, 201);
         }
 
-        if (!url.startsWith('https://gmailmcp.googleapis.com/mcp')) {
+        if (!/^https:\/\/(gmail|calendar|drive|docs|sheets)mcp\.googleapis\.com\/mcp\/v1/.test(url)) {
             return new Response('no', { status: 404 });
+        }
+
+        if (failingHost.value !== undefined && url.startsWith(failingHost.value)) {
+            return new Response('down', { status: 500 });
         }
 
         const headers = init.headers as Record<string, string>;
@@ -90,6 +95,7 @@ describe('AppOAuth with Google apps', () => {
     let opened: OpenedDatabase;
     let proxy: AppProxy;
     let requests: FakeRequest[];
+    let failingHost: { value: string | undefined };
     let saved: Map<string, BotSecret>;
     let googleClient: GoogleClientStore;
     let tokens: AppOAuthTokens;
@@ -102,6 +108,7 @@ describe('AppOAuth with Google apps', () => {
         await proxy.start();
         store = new ConnectedAppStore(opened.db, { now: () => 1000 });
         requests = [];
+        failingHost = { value: undefined };
         saved = new Map<string, BotSecret>();
 
         const secrets = {
@@ -113,7 +120,7 @@ describe('AppOAuth with Google apps', () => {
                 saved.delete(`${botId}:${name}`);
             },
         };
-        const fetchFunction = fakeNetwork(requests);
+        const fetchFunction = fakeNetwork(requests, failingHost);
 
         googleClient = new GoogleClientStore(secrets);
         tokens = new AppOAuthTokens({ secrets, fetchFunction, now: () => 1_000_000 });
@@ -319,5 +326,126 @@ describe('AppOAuth with Google apps', () => {
             .toEqual({ status: 'unsupported' });
         expect(requests.every(request => request.url.includes('/.well-known/')))
             .toBe(true);
+    });
+
+    async function startGroup(): Promise<URL> {
+        const start = await oauth.start(BOT_ID, 'google', GOOGLE_GROUP.url, REDIRECT_URI);
+
+        if (start.status !== 'redirect') {
+            throw new Error(`Expected a redirect, got ${start.status}`);
+        }
+
+        return new URL(start.authorizationUrl);
+    }
+
+    it('asks for the Google client for the group too, with no request', async () => {
+        const start = await oauth.start(BOT_ID, 'google', GOOGLE_GROUP.url, REDIRECT_URI);
+
+        expect(start)
+            .toEqual({ status: 'needs_client' });
+        expect(requests)
+            .toHaveLength(0);
+    });
+
+    it('starts one authorization for the group with the scopes of all five apps once', async () => {
+        saveClient();
+
+        const authorizationUrl = await startGroup();
+        const scopes = (authorizationUrl.searchParams.get('scope') ?? '').split(' ');
+
+        expect(scopes)
+            .toEqual(GOOGLE_GROUP.scopes);
+        expect(new Set(scopes).size)
+            .toBe(scopes.length);
+        expect(scopes)
+            .toContain('https://www.googleapis.com/auth/gmail.compose');
+        expect(scopes)
+            .toContain('https://www.googleapis.com/auth/spreadsheets');
+        expect(authorizationUrl.searchParams.get('access_type'))
+            .toBe('offline');
+        expect(authorizationUrl.searchParams.get('prompt'))
+            .toBe('consent');
+        expect(authorizationUrl.searchParams.has('resource'))
+            .toBe(false);
+        expect(authorizationUrl.searchParams.get('code_challenge_method'))
+            .toBe('S256');
+        expect(requests)
+            .toHaveLength(0);
+    });
+
+    it('trades the code once, keeps a secret for each app at its own origin and connects all five', async () => {
+        saveClient();
+
+        const authorizationUrl = await startGroup();
+        const state = authorizationUrl.searchParams.get('state') ?? '';
+        const finished = await oauth.finish({ state, code: 'code-1', error: undefined, issuer: 'https://accounts.google.com' });
+
+        expect(finished)
+            .toEqual({ outcome: 'connected', botId: BOT_ID, appName: 'google' });
+        expect(requests.filter(request => request.url === GOOGLE_TOKEN_URL))
+            .toHaveLength(1);
+
+        GOOGLE_GROUP.members.forEach((member) => {
+            const secret = saved.get(`${BOT_ID}:${oauthSecretName(member.serverName)}`);
+            const stored = JSON.parse(secret?.value ?? '{}') as Record<string, unknown>;
+
+            expect(secret?.site)
+                .toBe(new URL(member.url).origin);
+            expect(stored['refreshToken'])
+                .toBe('g-rt-1');
+            expect(stored['clientId'])
+                .toBe(CLIENT_ID);
+            expect(stored['clientSecret'])
+                .toBe(CLIENT_SECRET);
+            expect(stored['tokenEndpoint'])
+                .toBe(GOOGLE_TOKEN_URL);
+        });
+
+        const records = await store.list();
+
+        expect(records.map(record => record.name)
+            .sort())
+            .toEqual(['google-calendar', 'google-docs', 'google-drive', 'google-gmail', 'google-sheets']);
+        expect(records.every(record => record.status === 'connected'))
+            .toBe(true);
+    });
+
+    it('reports failed when one app does not connect, keeps the four that connected', async () => {
+        saveClient();
+        failingHost.value = 'https://sheetsmcp.googleapis.com';
+
+        const authorizationUrl = await startGroup();
+        const state = authorizationUrl.searchParams.get('state') ?? '';
+        const finished = await oauth.finish({ state, code: 'code-1', error: undefined, issuer: undefined });
+
+        expect(finished)
+            .toEqual({ outcome: 'failed', botId: BOT_ID, appName: 'google' });
+        expect(saved.has(`${BOT_ID}:${oauthSecretName('google-gmail')}`))
+            .toBe(true);
+
+        const connected = (await store.list()).filter(record => record.status === 'connected');
+
+        expect(connected)
+            .toHaveLength(4);
+        expect((await store.list()).find(record => record.name === 'google-sheets')?.status)
+            .toBe('failed');
+    });
+
+    it('treats a custom app named google at another address like any other server', async () => {
+        saveClient();
+
+        const start = await oauth.start(BOT_ID, 'google', 'https://mcp.example.com/mcp', REDIRECT_URI);
+
+        expect(start.status)
+            .toBe('redirect');
+
+        const authorizationUrl = new URL(start.status === 'redirect' ? start.authorizationUrl : 'https://invalid.example');
+
+        expect(authorizationUrl.origin)
+            .toBe(OTHER_AUTH);
+        expect(authorizationUrl.searchParams.get('resource'))
+            .toBe('https://mcp.example.com/mcp');
+        expect(authorizationUrl.searchParams.has('access_type'))
+            .toBe(false);
     });
 });
