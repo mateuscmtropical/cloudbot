@@ -25,6 +25,8 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__webhook_list',
     'mcp__cloudbot__watch_list',
     'mcp__cloudbot__request_secret',
+    // It asks the owner by itself for each login, with the name of the login and the page. A second card from the review would only repeat it.
+    'mcp__cloudbot__browser_fill_login',
     'mcp__cloudbot__share_file',
     'mcp__cloudbot__update_profile',
     'mcp__cloudbot__profile_set_mascot',

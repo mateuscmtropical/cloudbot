@@ -65,6 +65,13 @@ describe('page watch tools', () => {
     });
 });
 
+describe('browser_fill_login', () => {
+    it('skips the review, since the tool asks the owner by itself for each login', () => {
+        expect(classify('mcp__cloudbot__browser_fill_login'))
+            .toBe('skip');
+    });
+});
+
 describe('notifications_enable', () => {
     it('skips the review, since it only posts a card that the owner taps', () => {
         expect(classify('mcp__cloudbot__notifications_enable'))

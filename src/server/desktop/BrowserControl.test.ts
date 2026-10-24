@@ -496,4 +496,81 @@ describe('BrowserControl', () => {
                 .toBe(false);
         }));
     });
+
+    it('reads the origin of the page in an isolated world and refuses a page without a site', async () => {
+        const originAnswer = (origin: unknown): CdpAnswer => (call) => {
+            if (call.method === 'Page.getFrameTree') {
+                return { result: { frameTree: { frame: { id: 'main' } } } };
+            }
+
+            if (call.method === 'Page.createIsolatedWorld') {
+                return { result: { executionContextId: 9 } };
+            }
+
+            if (call.method === 'Runtime.evaluate') {
+                return { result: { result: { value: origin } } };
+            }
+
+            return { result: {} };
+        };
+        const real = createBrowser(originAnswer('https://github.com'));
+        const blank = createBrowser(originAnswer('null'));
+
+        await expect(real.browser.readPageOrigin())
+            .resolves.toBe('https://github.com');
+        expect(actionCalls(real.sockets.sockets[0])
+            .find(call => call.method === 'Runtime.evaluate')?.params)
+            .toMatchObject({ expression: 'location.origin', contextId: 9 });
+        await expect(blank.browser.readPageOrigin())
+            .rejects.toThrow('no site of its own');
+    });
+
+    it('types a login part only into a fitting field of the page the server checked', async () => {
+        const focusAnswer = (focus: unknown): CdpAnswer => (call) => {
+            if (call.method === 'Page.getFrameTree') {
+                return { result: { frameTree: { frame: { id: 'main' } } } };
+            }
+
+            if (call.method === 'Page.createIsolatedWorld') {
+                return { result: { executionContextId: 7 } };
+            }
+
+            if (call.method === 'Runtime.evaluate') {
+                return { result: { result: { value: focus } } };
+            }
+
+            return { result: {} };
+        };
+        const emailField = createBrowser(focusAnswer({ origin: 'https://github.com', tag: 'INPUT', type: 'email', autocomplete: 'username' }));
+        const passwordField = createBrowser(focusAnswer({ origin: 'https://github.com', tag: 'INPUT', type: 'password', autocomplete: '' }));
+        const codeField = createBrowser(focusAnswer({ origin: 'https://github.com', tag: 'INPUT', type: 'text', autocomplete: '' }));
+        const refused = [
+            [createBrowser(focusAnswer({ origin: 'https://evil.example', tag: 'INPUT', type: 'email', autocomplete: '' })), 'username', 'only for https://github.com, and the page is on https://evil.example'],
+            [createBrowser(focusAnswer({ origin: 'https://github.com', tag: 'INPUT', type: 'password', autocomplete: '' })), 'username', 'not a user name or email field'],
+            [createBrowser(focusAnswer({ origin: 'https://github.com', tag: 'INPUT', type: 'text', autocomplete: '' })), 'password', 'not a password field'],
+            [createBrowser(focusAnswer({ origin: 'https://github.com', tag: 'INPUT', type: 'search', autocomplete: '' })), 'totp', 'not a one-time code field'],
+            [createBrowser(focusAnswer({ origin: 'https://github.com', tag: 'IFRAME', type: '', autocomplete: '' })), 'password', 'inside a frame'],
+        ] as const;
+
+        await emailField.browser.typeLogin('https://github.com', 'username', 'ana@example.com');
+        await passwordField.browser.typeLogin('https://github.com', 'password', 'fake-password-1');
+        await codeField.browser.typeLogin('https://github.com', 'totp', '123456');
+
+        expect(actionCalls(emailField.sockets.sockets[0])
+            .at(-1))
+            .toMatchObject({ method: 'Input.insertText', params: { text: 'ana@example.com' } });
+        expect(actionCalls(passwordField.sockets.sockets[0])
+            .at(-1))
+            .toMatchObject({ method: 'Input.insertText', params: { text: 'fake-password-1' } });
+        expect(actionCalls(codeField.sockets.sockets[0])
+            .at(-1))
+            .toMatchObject({ method: 'Input.insertText', params: { text: '123456' } });
+        await Promise.all(refused.map(async ([harness, part, message]) => {
+            await expect(harness.browser.typeLogin('https://github.com', part, 'value'))
+                .rejects.toThrow(message);
+            expect(actionCalls(harness.sockets.sockets[0])
+                .some(call => call.method === 'Input.insertText'))
+                .toBe(false);
+        }));
+    });
 });

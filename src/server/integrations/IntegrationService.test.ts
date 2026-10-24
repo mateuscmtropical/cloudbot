@@ -233,6 +233,17 @@ describe('IntegrationService card and rules', () => {
         }, Promise.resolve());
     });
 
+    it('refuses the secrets that belong to CloudBot, so a script never reads them', async () => {
+        const hash = hashContent(Buffer.from(POSTED));
+        const names = ['BITWARDEN_ACCOUNT', 'OAUTH_GOOGLE_CLIENT'];
+
+        await names.reduce(async (previous, name) => {
+            await previous;
+            await expect(service.register(botId, { name: 'store', entryPath: 'post.js', command: 'node', secretName: name, sha256: hash }))
+                .rejects.toThrow('belongs to CloudBot');
+        }, Promise.resolve());
+    });
+
     it('clears the secret when an update gives an empty name or null', async () => {
         const hash = hashContent(Buffer.from(POSTED));
 

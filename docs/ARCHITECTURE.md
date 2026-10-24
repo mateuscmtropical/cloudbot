@@ -724,6 +724,65 @@ does it type the value with `Input.insertText`. A search box or a text field is
 refused, so a page cannot get the value into an address, onto the screen or
 into a post. The tool result never holds the value.
 
+### Bitwarden logins
+
+`browser_fill_login` types a login from the owner's Bitwarden vault. The model
+passes `field` (`username`, `password` or `totp`) and may pass `item`, the name of a login.
+It clicks the field first. The model never names a site and never sees a value.
+
+The owner saves the account once in the Bitwarden card of Connect apps. The routes
+`GET`, `PUT` and `DELETE /api/apps/bitwarden/account` and `POST /api/apps/bitwarden/test` sit behind
+the session. They check the fields and answer only whether an account is saved and for
+which server. The server address, the API client ID, the API client secret and the master
+password are one vault secret per bot, `BITWARDEN_ACCOUNT`, with the origin of the server
+as its site. `isServerOnlySecretName` reserves the prefixes `OAUTH_` and `BITWARDEN_`.
+`browser_type_secret` and integration secrets refuse them, `app_connect` refuses
+`BITWARDEN_` names as a token, and `request_secret` cannot make a form with one.
+
+Where `bw` runs. Only the server process starts the official Bitwarden CLI, through
+`BitwardenCli` (`src/server/bitwarden/`). The bot's shell has no account, no session and
+no state folder. Each bot gets its own state folder, `$CLOUDBOT_DATA_DIR/bitwarden/<hash of the bot id>`.
+It is mode 700 inside the data folder, which the `bot` user cannot open. The Docker image installs the
+CLI as root with an exact version, and `docker/check-container.sh` checks that the server user can run it
+and that the bot user cannot read a state folder.
+
+Why not argv. A command line shows in `ps` to every process of the container. So no secret is
+ever an argument. The API key goes in `BW_CLIENTID` and `BW_CLIENTSECRET`, the master password in
+`BW_PASSWORD` (`bw unlock --passwordenv BW_PASSWORD --raw`), and the session key in `BW_SESSION`.
+The child process gets a small environment (`PATH`, its own `HOME`, `BITWARDENCLI_APPDATA_DIR` and
+`BW_NOINTERACTION`), not the environment of the server. Each command has a timeout of 60 seconds
+and an output limit of 16 MB. A failure becomes one plain sentence, plus the first line of the
+CLI's error with the master password, the API secret, the client ID and the session key masked.
+
+Session. The first use runs `bw config server <address>` (the default is
+`https://vault.bitwarden.com`, and the owner may give the EU cloud or a self-hosted Vaultwarden),
+`bw login --apikey`, `bw unlock` and `bw sync`. The session key stays in the memory of the server,
+one per bot. Each use moves a ten minute timer. When it runs out the server runs `bw lock` and drops the key.
+The next use unlocks again. Commands of one bot run one at a time. Saving a new account or forgetting
+one signs out of `bw` and deletes the state folder. Deleting a bot does the same.
+
+What the model sees. The server reads the origin of the page that is really open in the browser,
+in an isolated world, never an address from the model. Only an https page can match. It lists the login items
+and keeps those with a URI on the same host, or a URI whose host is a parent of the page host. A URI over
+http, with another scheme or with another port never matches. A bare suffix such as `com` or an IP address matches
+only itself. So `github.com.evil.com` and `evilgithub.com` do not match `github.com`. Items without a URI are ignored.
+With no match the answer says so. With several matches and no `item`, the answer lists only the names,
+cleaned and cut, and the model calls again with one of them. A list holds no user name, password or code.
+
+Approval. Before the first value of a login, the server asks the owner in the chat with the approval
+gate: "Fill the password of 'GitHub' on https://github.com?". The card says that approving also covers
+the user name, the password and the one-time code of that login on that site for ten minutes. The approval
+is kept in memory by bot, login and origin, so the three parts need one answer. The review skips this tool,
+because it asks by itself. Without the approval gate the tool is not offered.
+
+Typing. The value comes from `bw get username|password|totp <id>` and goes from the server to the browser
+only. `BrowserControl.typeLogin` repeats the origin check in an isolated world right before it
+types, since the owner may take long to answer. It refuses a frame and refuses a field that does not fit: a user
+name goes into a text, email or tel input, a password into a password input, and a code into a password, one-time
+code, text, tel or number input. The tool result says only what was typed, such as "Typed the password
+of 'GitHub'." If the owner holds the screen, the tool refuses like `browser_type_secret`. If Bitwarden is not
+set up, it tells the model to ask the owner to connect Bitwarden in Connect apps.
+
 ## Sensitive data
 
 `src/server/sensitive/` finds three kinds of number. A payment card number has 13 to 19 digits, has a known brand prefix and length (Visa 16 or 19 digits, Mastercard 16, Amex 15, UnionPay 16 to 19, Maestro 12 to 19, and the others in `sensitiveNumbers.ts`), passes the Luhn check, and may have up to two spaces, dots, dashes, underscores, slashes or non-breaking spaces between groups. A run right after `+`, `tel:` or `wa.me/` is not a card. A run inside a hex id of 32 characters or more, such as a git sha, is not a card. Zero-width characters are removed before matching. A CPF has valid check digits and is either in the dotted form (ddd.ddd.ddd-dd) or 11 plain digits right after the word CPF, so phone numbers are not taken for one. A US Social Security number has the dashed form, and areas that are never issued are not matched.

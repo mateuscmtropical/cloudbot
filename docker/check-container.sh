@@ -81,6 +81,22 @@ case "$LIST_OUTPUT" in
 esac
 echo "ok: bot user cannot read or list the data folder"
 
+# The server runs the Bitwarden CLI. Its state folder is made by the server user inside the private data folder.
+BW_PROBE_DIR="$DATA_DIR/bitwarden-probe"
+docker exec --user cloudbot "$CONTAINER_NAME" bw --version > /dev/null \
+    || fail "cloudbot cannot run the Bitwarden CLI"
+docker exec --user cloudbot "$CONTAINER_NAME" sh -c "mkdir -m 0700 '$BW_PROBE_DIR' && printf state > '$BW_PROBE_DIR/data.json'" \
+    || fail "cloudbot cannot make a Bitwarden state folder"
+if BW_OUTPUT="$(docker exec --user bot "$CONTAINER_NAME" cat "$BW_PROBE_DIR/data.json" 2>&1)"; then
+    fail "bot user can read a Bitwarden state folder"
+fi
+case "$BW_OUTPUT" in
+    *"Permission denied"*) ;;
+    *) fail "unexpected error reading the Bitwarden state folder: $BW_OUTPUT" ;;
+esac
+docker exec --user cloudbot "$CONTAINER_NAME" rm -rf "$BW_PROBE_DIR"
+echo "ok: cloudbot runs the Bitwarden CLI and the bot cannot read its state folder"
+
 # The bot builds spreadsheets, documents, PDFs, slides and charts with these libraries.
 docker exec --user bot "$CONTAINER_NAME" python3 -c "import docx, matplotlib, openpyxl, pptx, pypdf, reportlab" \
     || fail "bot cannot import the document libraries"

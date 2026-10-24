@@ -30,7 +30,7 @@ import type { BrowserControl } from '../desktop/BrowserControl.ts';
 import { BROWSER_TOOL_FULL_NAMES, createBrowserTools } from '../desktop/createBrowserTools.ts';
 import { BROWSER_ALLOW_TOOL_FULL_NAMES, createBrowserAllowTools } from '../desktop/createBrowserAllowTools.ts';
 import type { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
-import { assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
+import { BotSecretError, assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import { isQuietReply } from '../routines/checkin.ts';
 import { EMAIL_PASSWORD_SECRET_NAME } from '../email/EmailPasswordStore.ts';
@@ -71,7 +71,6 @@ import { PEOPLE_TOOL_FULL_NAMES, createPeopleTools } from '../people/createPeopl
 import type { PeopleAdmin } from '../people/PeopleAdmin.ts';
 import type { PushNoticeKind } from '../../shared/pushTypes.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
-import { isOAuthSecretName } from '../apps/AppOAuthTokens.ts';
 import type { ConnectedApps } from '../apps/ConnectedApps.ts';
 import { APP_TOOL_FULL_NAMES, createAppTools } from '../apps/createAppTools.ts';
 import {
@@ -90,6 +89,9 @@ import type { ScreenHolder } from '../desktop/ScreenHolder.ts';
 import { WHATSAPP_TOOL_FULL_NAMES, createWhatsAppTools } from '../whatsapp/createWhatsAppTools.ts';
 import type { WhatsAppConnector } from '../whatsapp/createWhatsAppTools.ts';
 import { TYPE_SECRET_TOOL_FULL_NAME, createTypeSecretTool } from '../secrets/createTypeSecretTool.ts';
+import { isBitwardenSecretName, isServerOnlySecretName } from '../secrets/serverOnlySecretNames.ts';
+import { FILL_LOGIN_TOOL_FULL_NAME, createFillLoginTool } from '../bitwarden/createFillLoginTool.ts';
+import type { BitwardenVault } from '../bitwarden/BitwardenVault.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
 import type { ChannelStore } from '../store/ChannelStore.ts';
@@ -221,6 +223,8 @@ interface ChatServiceOptions {
     browser?: BrowserControl | undefined;
     // Where the secrets the bot asks for are kept. Without it the bot cannot ask for one.
     botSecrets?: BotSecrets | undefined;
+    // The owner's Bitwarden accounts. With the browser and the approval gate it gives the bot browser_fill_login.
+    bitwarden?: BitwardenVault | undefined;
     templateGallery?: TemplateGallery | undefined;
     // Lets a bot list the AI providers, connect one and switch its own. Unset leaves the tools out.
     providerTools?: ProviderToolDependencies | undefined;
@@ -700,6 +704,7 @@ class ChatService {
     private readonly maxShareBytes: number;
     private readonly browser: BrowserControl | undefined;
     private readonly botSecrets: BotSecrets | undefined;
+    private readonly bitwarden: BitwardenVault | undefined;
     private readonly templateGallery: TemplateGallery | undefined;
     private readonly providerTools: ProviderToolDependencies | undefined;
     private readonly providerModelCatalogs: ProviderModelCatalogs | undefined;
@@ -788,6 +793,7 @@ class ChatService {
         this.maxShareBytes = options.maxShareBytes ?? readMaxShareBytes();
         this.browser = options.browser;
         this.botSecrets = options.botSecrets;
+        this.bitwarden = options.bitwarden;
         this.templateGallery = options.templateGallery;
         this.providerTools = options.providerTools;
         this.providerModelCatalogs = options.providerModelCatalogs;
@@ -1822,6 +1828,7 @@ class ChatService {
     // shared files are written by the server, so the server removes them.
     private async removeSavedState(botId: string): Promise<void> {
         await this.connectedApps?.removeSavedBy(botId);
+        await this.bitwarden?.forget(botId);
         this.botSecrets?.removeAll(botId);
 
         if (this.agentUser === undefined) {
@@ -2269,6 +2276,11 @@ class ChatService {
     // Posts a secure form the bot asked for. Throws BotSecretError with a message for the model.
     async requestSecret(botId: string, name: string, purpose: string, site: string): Promise<{ site: string }> {
         assertSecretName(name);
+
+        // The form would replace the Bitwarden account of the owner with a value the bot picked.
+        if (isBitwardenSecretName(name)) {
+            throw new BotSecretError('Names that start with BITWARDEN_ belong to CloudBot. Pick another name.');
+        }
 
         const origin = parseSecretSite(site);
         const body: SecureFormBody = { kind: 'secureForm', prompt: purpose, secretName: name, site: origin, submitted: false };
@@ -3906,9 +3918,20 @@ class ChatService {
         const requestTool = createRequestSecretTool((name, purpose, site) => this.requestSecret(botId, name, purpose, site));
         const typeTools = this.browser === undefined
             ? []
-            : [createTypeSecretTool(this.browser, name => (isOAuthSecretName(name) ? undefined : botSecrets.read(botId, name)), this.screen)];
+            : [createTypeSecretTool(this.browser, name => (isServerOnlySecretName(name) ? undefined : botSecrets.read(botId, name)), this.screen)];
 
-        return [requestTool, ...typeTools];
+        return [requestTool, ...typeTools, ...this.createFillLoginTools(botId)];
+    }
+
+    // browser_fill_login needs the browser, the owner's Bitwarden and the approval gate, since each login waits for the owner.
+    private createFillLoginTools(botId: string): CloudbotTool[] {
+        if (this.browser === undefined || this.bitwarden === undefined || this.approvals === undefined) {
+            return [];
+        }
+
+        const askOwner = (summary: string, detail: string | undefined): Promise<boolean> => this.requestOwnerApproval(botId, summary, detail);
+
+        return [createFillLoginTool({ botId, browser: this.browser, vault: this.bitwarden, askOwner, screen: this.screen })];
     }
 
     // request_screen needs the browser and the screen state.
@@ -3957,7 +3980,8 @@ class ChatService {
         const browserToolNames = this.browser === undefined ? [] : BROWSER_TOOL_FULL_NAMES;
         const browserAllowToolNames = this.browserAllowStore === undefined || this.browser === undefined ? [] : BROWSER_ALLOW_TOOL_FULL_NAMES;
         const typeSecretToolNames = this.browser === undefined ? [] : [TYPE_SECRET_TOOL_FULL_NAME];
-        const secretToolNames = this.botSecrets === undefined ? [] : [REQUEST_SECRET_TOOL_FULL_NAME, ...typeSecretToolNames];
+        const fillLoginToolNames = this.browser === undefined || this.bitwarden === undefined ? [] : [FILL_LOGIN_TOOL_FULL_NAME];
+        const secretToolNames = this.botSecrets === undefined ? [] : [REQUEST_SECRET_TOOL_FULL_NAME, ...typeSecretToolNames, ...fillLoginToolNames];
 
         const screenToolNames = this.browser === undefined || this.screen === undefined ? [] : [REQUEST_SCREEN_TOOL_FULL_NAME, SCREEN_SHOW_TOOL_FULL_NAME, SCREEN_RECORD_TOOL_FULL_NAME, SCREEN_RECORDING_TOOL_FULL_NAME];
 

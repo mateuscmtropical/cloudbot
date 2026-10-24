@@ -4,6 +4,7 @@ import type { ConnectedAppRecord, ConnectedAppStore } from '../store/ConnectedAp
 import type { McpServerConfig } from '../agent/AgentRunner.ts';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
 import type { AppProxy } from './AppProxy.ts';
+import { isBitwardenSecretName } from '../secrets/serverOnlySecretNames.ts';
 import { isOAuthSecretName } from './AppOAuthTokens.ts';
 import type { AppOAuthTokens } from './AppOAuthTokens.ts';
 import { AppAddressError, checkAppUrl, defaultAppAddressDeps } from './appAddress.ts';
@@ -184,6 +185,11 @@ class ConnectedApps {
 
         if (url.protocol !== HTTPS_PROTOCOL) {
             return { value: undefined, problem: 'A token is sent only to an https address.' };
+        }
+
+        // The Bitwarden account is not a token. The server uses it alone, so no app address can ever receive it.
+        if (isBitwardenSecretName(tokenSecret)) {
+            return { value: undefined, problem: 'That secret belongs to CloudBot and cannot be used as a token.' };
         }
 
         const secret = this.deps.secrets.read(botId, tokenSecret);

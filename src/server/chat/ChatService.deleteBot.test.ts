@@ -10,6 +10,7 @@ import type { ConnectedApps } from '../apps/ConnectedApps.ts';
 import { FakeAgentRunner } from '../agent/FakeAgentRunner.ts';
 import type { ScriptedAgentStep } from '../agent/FakeAgentRunner.ts';
 import { BotDeletingError } from '../bots/BotDeletingError.ts';
+import type { BitwardenVault } from '../bitwarden/BitwardenVault.ts';
 import { encodeProjectPath } from '../bots/claudeProjectFolder.ts';
 import { BotSecrets } from '../secrets/BotSecrets.ts';
 import { BotStore } from '../store/BotStore.ts';
@@ -148,6 +149,27 @@ describe('ChatService.deleteBot', () => {
 
         expect(await pathExists(projectFolder))
             .toBe(false);
+    });
+
+    it('signs the bot out of Bitwarden before its secrets go', async () => {
+        const forget = vi.fn(() => Promise.resolve());
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+
+        await botStore.create({ name: 'Ben', title: 'Assistant', description: '' });
+        const service = new ChatService({
+            botStore,
+            messageStore,
+            runner: new FakeAgentRunner([]),
+            dataDir,
+            botSecrets: secrets,
+            bitwarden: { forget } as unknown as BitwardenVault,
+            ruleStore: new RuleStore(opened.db),
+        });
+
+        await service.deleteBot(bot.id);
+
+        expect(forget)
+            .toHaveBeenCalledWith(bot.id);
     });
 
     it('removes every row, folder and secret of the bot, and keeps the other bot', async () => {

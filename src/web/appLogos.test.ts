@@ -14,6 +14,13 @@ describe('APP_LOGOS', () => {
             });
     });
 
+    it('has the Bitwarden logo in its brand color', () => {
+        expect(APP_LOGOS.bitwarden?.color)
+            .toBe('#175DDC');
+        expect(APP_LOGOS.bitwarden?.path.startsWith('M21.722.296'))
+            .toBe(true);
+    });
+
     it('has a path and a hex color for every logo', () => {
         Object.values(APP_LOGOS)
             .forEach((logo) => {

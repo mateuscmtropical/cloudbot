@@ -1,3 +1,4 @@
+import { DEFAULT_BITWARDEN_SERVER_URL } from '../shared/bitwarden.ts';
 import { GOOGLE_GROUP } from '../shared/googleApps.ts';
 
 type AppCategory = 'Productivity' | 'Communication' | 'Code' | 'Data' | 'Design' | 'Finance' | 'Other';
@@ -20,6 +21,16 @@ const GOOGLE_CATALOG_APP: CatalogApp = {
     description: GOOGLE_GROUP.description,
     url: GOOGLE_GROUP.url,
     category: 'Productivity',
+};
+
+// Not a connected app. The card opens a setup form, since the server runs the Bitwarden CLI itself and the bot gets one tool.
+const BITWARDEN_SERVER_NAME = 'bitwarden';
+const BITWARDEN_CATALOG_APP: CatalogApp = {
+    serverName: BITWARDEN_SERVER_NAME,
+    displayName: 'Bitwarden',
+    description: 'Fill website logins from your vault. The bot never sees them.',
+    url: DEFAULT_BITWARDEN_SERVER_URL,
+    category: 'Other',
 };
 
 const APP_CATALOG: CatalogApp[] = [
@@ -493,7 +504,8 @@ const APP_CATALOG: CatalogApp[] = [
         category: 'Other',
     },
     GOOGLE_CATALOG_APP,
+    BITWARDEN_CATALOG_APP,
 ];
 
-export { APP_CATALOG, APP_CATEGORIES };
+export { APP_CATALOG, APP_CATEGORIES, BITWARDEN_SERVER_NAME };
 export type { AppCategory, CatalogApp };

@@ -2,6 +2,7 @@ import { INTEGRATION_COMMANDS } from '../../shared/integrations.ts';
 import type { IntegrationCommand } from '../../shared/integrations.ts';
 import type { BotSecret, BotSecrets } from '../secrets/BotSecrets.ts';
 import { assertSecretName } from '../secrets/BotSecrets.ts';
+import { isServerOnlySecretName } from '../secrets/serverOnlySecretNames.ts';
 import type { IntegrationRecord, IntegrationStore } from '../store/IntegrationStore.ts';
 import { IntegrationError, hashContent, readEntryFile } from './integrationFiles.ts';
 import { hasHiddenCode } from '../text/isHiddenCode.ts';
@@ -445,6 +446,11 @@ class IntegrationService {
             assertSecretName(secretName);
         } catch (error: unknown) {
             throw new IntegrationError(error instanceof Error ? error.message : 'That secret name is not valid.');
+        }
+
+        // A script would read it from its environment. Sign-in grants and the Bitwarden account stay with the server.
+        if (isServerOnlySecretName(secretName)) {
+            throw new IntegrationError('That secret belongs to CloudBot and cannot be given to a script. Pick another secret name.');
         }
 
         if (isReservedSecretName(secretName)) {

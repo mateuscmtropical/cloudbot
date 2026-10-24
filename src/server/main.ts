@@ -80,6 +80,8 @@ import { AppProxy } from './apps/AppProxy.ts';
 import { AppOAuth } from './apps/AppOAuth.ts';
 import { AppOAuthTokens } from './apps/AppOAuthTokens.ts';
 import { GoogleClientStore } from './apps/googleClient.ts';
+import { BitwardenAccountStore } from './bitwarden/bitwardenAccount.ts';
+import { BitwardenVault } from './bitwarden/BitwardenVault.ts';
 import { ConnectedApps } from './apps/ConnectedApps.ts';
 import { createGuardedFetch } from './apps/guardedFetch.ts';
 import { GithubProxy } from './github/GithubProxy.ts';
@@ -245,6 +247,8 @@ const appOAuthFetch = createGuardedFetch(allowedPrivateHosts);
 const appOAuthTokens = new AppOAuthTokens({ secrets: botSecrets, fetchFunction: appOAuthFetch });
 const connectedApps = new ConnectedApps({ store: connectedAppStore, secrets: botSecrets, proxy: appProxy, allowedHosts: allowedPrivateHosts, oauthTokens: appOAuthTokens });
 const googleClient = new GoogleClientStore(botSecrets);
+// The Bitwarden CLI runs only in this process. Its state lives in a folder inside the data folder, which the bot cannot open.
+const bitwardenVault = new BitwardenVault({ accounts: new BitwardenAccountStore(botSecrets), baseDir: join(dataDir, 'bitwarden') });
 const appOAuth = new AppOAuth({ connectedApps, tokens: appOAuthTokens, fetchFunction: appOAuthFetch, googleClient });
 
 // The gate is the browser's only way out. It starts before the browser, so Chromium never runs without it.
@@ -479,7 +483,7 @@ const chatService: ChatService = new ChatService({
     passkeys,
     peopleAdmin,
     telegram: telegramBridge,
-    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, skillStore, routineStore, taskStore, modelStore, limitStore, screen,
+    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, bitwarden: bitwardenVault, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, skillStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     templateGallery,
     providerTools,
@@ -623,7 +627,7 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, googleClient, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, googleClient, bitwardenVault, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

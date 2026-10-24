@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { APP_CATALOG, APP_CATEGORIES } from './appCatalog.ts';
+import { APP_CATALOG, APP_CATEGORIES, BITWARDEN_SERVER_NAME } from './appCatalog.ts';
 
 const SERVER_NAME_PATTERN = /^[a-z][a-z0-9-]{1,30}$/;
 
@@ -27,6 +27,13 @@ describe('APP_CATALOG', () => {
             expect(app.url.startsWith('https://'))
                 .toBe(true);
         });
+    });
+
+    it('lists Bitwarden in the Other category with the address of its cloud', () => {
+        const bitwarden = APP_CATALOG.find(app => app.serverName === BITWARDEN_SERVER_NAME);
+
+        expect(bitwarden)
+            .toMatchObject({ displayName: 'Bitwarden', category: 'Other', url: 'https://vault.bitwarden.com' });
     });
 
     it('puts every app in a listed category and fills every category', () => {
