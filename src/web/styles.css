@@ -1250,7 +1250,22 @@ button.list-row {
 
 /* The mascot keeps its size when the name is long, so the ellipsis takes the space. */
 .bot-pill .cloud-mascot {
+    position: relative;
     flex: none;
+}
+
+/* A green dot on the mascot while the bot works. */
+.bot-pill[data-working='true'] .cloud-mascot::after {
+    content: '';
+    position: absolute;
+    right: -1px;
+    bottom: 1px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-success);
+    box-shadow: 0 0 0 2px var(--color-surface-raised);
+    animation: fade-in 200ms ease-out;
 }
 
 .bot-profile-name-button {
@@ -1794,6 +1809,19 @@ button.list-row {
     animation: rise-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* A sent message comes up from the text box and grows into place. */
+@keyframes send-rise {
+    from {
+        opacity: 0.4;
+        transform: translateY(32px) scale(0.92);
+    }
+}
+
+.message-list > .is-entering:has(> .message-user) {
+    transform-origin: bottom right;
+    animation: send-rise 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 .desktop-panel,
 .webhook-created {
     animation: drop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -1838,6 +1866,7 @@ button.list-row {
 
 @media (prefers-reduced-motion: reduce) {
     .message-list > .is-entering,
+    .message-list > .is-entering:has(> .message-user),
     .message.is-draft,
     .desktop-panel,
     .webhook-created,
@@ -2631,57 +2660,94 @@ button.list-row {
         align-self: flex-start;
     }
 }
-/* Thinking bubble (#130). Shown while a turn runs and no reply is streaming.
-   The dots step on and off with steps(1, end), so there is no easing and no
-   gliding. This keeps them moving when the OS asks for reduced motion. The
-   global reduced-motion rule only stops the mascot svg, so it does not reach
-   these rules. The line changes from a timer in ThinkingBubble.tsx. */
-.thinking-bubble {
+/* Status line (#130, #403). Shown under the last message while a turn runs.
+   The small mascot spins in, then its eyes look around and blink. A shine
+   sweeps the text. The line changes from a timer in ThinkingBubble.tsx, so it
+   still changes under reduced motion, which stops the movement. */
+.thinking-status {
     display: inline-flex;
     align-items: center;
     gap: 8px;
     min-height: 1.5em;
+    padding: 2px 4px;
     color: var(--color-text-muted);
 }
 
-.thinking-dots {
-    display: inline-flex;
-    gap: 4px;
+.thinking-status .cloud-mascot {
+    animation: status-spin-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.thinking-dots i {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    animation: thinking-dot 1.2s steps(1, end) infinite;
-    /* A delayed dot takes the dim value from the first frame, so only the first dot is bright at the start. */
-    animation-fill-mode: backwards;
+.cloud-mascot.is-working .cloud-eyes {
+    animation: eyes-look-around 3.2s ease-in-out infinite;
 }
 
-.thinking-dots i:nth-child(2) {
-    animation-delay: 0.4s;
+.thinking-line {
+    background: linear-gradient(90deg, var(--color-text-muted) 0%, var(--color-text-muted) 40%, var(--color-text) 50%, var(--color-text-muted) 60%, var(--color-text-muted) 100%);
+    background-size: 250% 100%;
+    background-clip: text;
+    color: transparent;
+    animation: text-shine 1.8s linear infinite;
 }
 
-.thinking-dots i:nth-child(3) {
-    animation-delay: 0.8s;
+@keyframes status-spin-in {
+    from {
+        opacity: 0;
+        transform: rotate(-120deg) scale(0.4);
+    }
 }
 
-@keyframes thinking-dot {
+@keyframes eyes-look-around {
     0%,
     100% {
-        opacity: 0.25;
+        transform: translate(0, 0);
     }
 
-    1% {
-        opacity: 1;
+    15%,
+    30% {
+        transform: translate(-6px, 0);
     }
 
-    33% {
-        opacity: 0.25;
+    42%,
+    58% {
+        transform: translate(6px, -3px);
+    }
+
+    62% {
+        transform: translate(6px, -3px) scaleY(0.1);
+    }
+
+    66% {
+        transform: translate(6px, -3px);
+    }
+
+    80% {
+        transform: translate(0, 2px);
     }
 }
-/* End of thinking bubble (#130). */
+
+@keyframes text-shine {
+    from {
+        background-position: 100% 0;
+    }
+
+    to {
+        background-position: 0 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .thinking-status .cloud-mascot,
+    .cloud-mascot.is-working .cloud-eyes {
+        animation: none;
+    }
+
+    .thinking-line {
+        background: none;
+        color: inherit;
+        animation: none;
+    }
+}
+/* End of status line (#130, #403). */
 
 /* Channel list heading in the sidebar. */
 .channel-section-title {

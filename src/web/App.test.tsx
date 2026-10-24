@@ -1694,7 +1694,7 @@ describe('App thinking bubble', () => {
             .toBe('Thinking');
     });
 
-    it('hides the bubble once the reply starts streaming', async () => {
+    it('keeps the status line under the reply while it streams', async () => {
         const { container, emit } = await renderApp();
 
         emit({ type: 'turn', botId: 'bot-1', isRunning: true });
@@ -1706,10 +1706,10 @@ describe('App thinking bubble', () => {
 
         emit({ type: 'textDelta', botId: 'bot-1', text: 'Hel' });
 
-        // Deltas are batched into one frame, so the draft, and with it the hidden bubble, lands on the next frame.
+        // Deltas are batched into one frame, so the draft lands on the next frame, above the status line.
         await waitFor(() => {
-            expect(container.querySelector('.message.is-thinking'))
-                .toBeNull();
+            expect(container.querySelector('.message.is-draft + .message.is-thinking'))
+                .not.toBeNull();
         });
     });
 

@@ -1,7 +1,8 @@
 import type { ChatMessage } from '../shared/chatTypes.ts';
 
 // The faces a mascot can show. Idle is the calm face. The others follow what the bot is doing.
-type MascotState = 'idle' | 'typing' | 'thinking' | 'done' | 'waiting' | 'sleepy' | 'error';
+// Working is only the small mascot of the status line, whose eyes look around while a turn runs.
+type MascotState = 'idle' | 'typing' | 'thinking' | 'working' | 'done' | 'waiting' | 'sleepy' | 'error';
 
 interface MascotStateInput {
     // A turn of this bot is running or streaming.

@@ -69,56 +69,56 @@ describe('toolPhrase', () => {
 });
 
 describe('isThinkingBubbleShown', () => {
-    it('shows while a turn runs and no reply is streaming', () => {
-        expect(isThinkingBubbleShown({ isRunning: true, draftText: '', messages: [makeTextMessage('u1')] }))
+    it('shows while a turn runs', () => {
+        expect(isThinkingBubbleShown({ isRunning: true, messages: [makeTextMessage('u1')] }))
             .toBe(true);
     });
 
     it('hides when no turn runs', () => {
-        expect(isThinkingBubbleShown({ isRunning: false, draftText: '', messages: [] }))
+        expect(isThinkingBubbleShown({ isRunning: false, messages: [] }))
             .toBe(false);
     });
 
-    it('hides once the reply starts streaming', () => {
-        expect(isThinkingBubbleShown({ isRunning: true, draftText: 'Hi', messages: [] }))
-            .toBe(false);
+    it('stays under a reply that is still streaming', () => {
+        expect(isThinkingBubbleShown({ isRunning: true, messages: [] }))
+            .toBe(true);
     });
 
     it('hides while an approval question waits for the owner', () => {
-        expect(isThinkingBubbleShown({ isRunning: true, draftText: '', messages: [makeApprovalMessage('c1')] }))
+        expect(isThinkingBubbleShown({ isRunning: true, messages: [makeApprovalMessage('c1')] }))
             .toBe(false);
     });
 
     it('shows again after the owner answers an approval question', () => {
-        expect(isThinkingBubbleShown({ isRunning: true, draftText: '', messages: [makeApprovalMessage('c1', 'yes')] }))
+        expect(isThinkingBubbleShown({ isRunning: true, messages: [makeApprovalMessage('c1', 'yes')] }))
             .toBe(true);
     });
 
     it('hides while a field the owner has not sent is open after the last message', () => {
         const messages = [makeUserMessage('u1'), makeFormMessage('f1', false)];
 
-        expect(isThinkingBubbleShown({ isRunning: true, draftText: '', messages }))
+        expect(isThinkingBubbleShown({ isRunning: true, messages }))
             .toBe(false);
     });
 
     it('ignores a field from before the owner last wrote, such as one left by a restart', () => {
         const messages = [makeFormMessage('f1', false), makeUserMessage('u1')];
 
-        expect(isThinkingBubbleShown({ isRunning: true, draftText: '', messages }))
+        expect(isThinkingBubbleShown({ isRunning: true, messages }))
             .toBe(true);
     });
 
     it('hides during a usage limit wait after the last message', () => {
         const messages = [makeUserMessage('u1'), makeSystemMessage('s1', 'The usage limit was reached. CloudBot continues at 10:00.')];
 
-        expect(isThinkingBubbleShown({ isRunning: true, draftText: '', messages }))
+        expect(isThinkingBubbleShown({ isRunning: true, messages }))
             .toBe(false);
     });
 
     it('shows for a note that is not a usage limit wait', () => {
         const messages = [makeUserMessage('u1'), makeSystemMessage('s1', 'Something else happened.')];
 
-        expect(isThinkingBubbleShown({ isRunning: true, draftText: '', messages }))
+        expect(isThinkingBubbleShown({ isRunning: true, messages }))
             .toBe(true);
     });
 });

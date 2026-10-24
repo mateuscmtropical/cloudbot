@@ -61,6 +61,16 @@ describe('CloudMascot', () => {
             .toBe(ALL_STATES.length);
     });
 
+    it('gives the working face round eyes that do not follow the pointer', () => {
+        const { container } = renderMascot('working');
+
+        expect(container.querySelectorAll('.cloud-eyes circle'))
+            .toHaveLength(2);
+        expect(container.querySelector('.cloud-face')
+            ?.getAttribute('data-tracks-pointer'))
+            .toBeNull();
+    });
+
     it.each(ALL_SHAPES)('draws the %s body from circles and a flat base', (shape) => {
         const { container } = renderMascot('idle', shape);
         const body = container.querySelector('.cloud-body');

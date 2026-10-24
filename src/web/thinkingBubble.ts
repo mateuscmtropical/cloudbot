@@ -59,11 +59,10 @@ function isWaitingOnOwnerField(messages: ChatMessage[]): boolean {
     return laterMessages.some(isUnsubmittedField);
 }
 
-// The bubble shows while a turn runs and no reply is streaming. It hides when the chat shows a question for the owner,
-// a field the owner must fill, or a usage limit wait.
-function isThinkingBubbleShown(input: { isRunning: boolean; draftText: string; messages: ChatMessage[] }): boolean {
+// The status line shows while a turn runs, under a reply that is still streaming too. It hides when the chat shows a
+// question for the owner, a field the owner must fill, or a usage limit wait.
+function isThinkingBubbleShown(input: { isRunning: boolean; messages: ChatMessage[] }): boolean {
     return input.isRunning
-        && input.draftText === ''
         && !input.messages.some(isPendingApproval)
         && !isWaitingOnOwnerField(input.messages)
         && findFailureState(input.messages) !== 'sleepy';

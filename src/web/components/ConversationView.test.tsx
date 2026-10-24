@@ -645,11 +645,15 @@ describe('ConversationView thinking bubble', () => {
         return rendered;
     }
 
-    it('shows the avatar-free bubble while a turn runs and no reply streams', () => {
+    it('shows the status line with a working mascot and a green dot on the header while a turn runs', () => {
         const { container } = renderShown(viewWith({ isRunning: true, draftText: '' }));
 
-        expect(container.querySelector('.message.is-thinking .cloud-mascot'))
-            .toBeNull();
+        expect(container.querySelector('.message.is-thinking .cloud-mascot')
+            ?.getAttribute('data-state'))
+            .toBe('working');
+        expect(container.querySelector('.bot-pill')
+            ?.getAttribute('data-working'))
+            .toBe('true');
     });
 
     it('scrolls the bubble into view when it shows up after the delay', () => {
@@ -672,11 +676,11 @@ describe('ConversationView thinking bubble', () => {
             .toBeNull();
     });
 
-    it('hides the bubble once a draft reply shows', () => {
+    it('keeps the status line under a draft reply', () => {
         const { container } = renderShown(viewWith({ isRunning: true, draftText: 'Hello' }));
 
-        expect(container.querySelector('.message.is-thinking'))
-            .toBeNull();
+        expect(container.querySelector('.message.is-draft + .message.is-thinking'))
+            .not.toBeNull();
     });
 
     it('hides the bubble while a field the owner has not sent is open', () => {

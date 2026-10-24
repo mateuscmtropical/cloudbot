@@ -147,7 +147,7 @@ function ConversationView({
     const botName = bot?.name ?? 'CloudBot';
     const sentHistory = useMemo(() => sentMessageTexts(messages), [messages]);
     const providerChangeCount = useMemo(() => countProviderChanges(messages), [messages]);
-    const isBubbleDue = isThinkingBubbleShown({ isRunning, draftText, messages });
+    const isBubbleDue = isThinkingBubbleShown({ isRunning, messages });
     const isThinkingShown = useDelayedFlag(isBubbleDue, BUBBLE_DELAY_MS);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
     const [isRenaming, setIsRenaming] = useState(false);
@@ -299,6 +299,7 @@ function ConversationView({
                             <button
                                 type="button"
                                 className="bot-pill"
+                                data-working={isRunning ? 'true' : undefined}
                                 aria-label="Open bot profile"
                                 onClick={onOpenProfile}
                             >
@@ -386,9 +387,6 @@ function ConversationView({
                         />
                     </div>
                 ))}
-                {isThinkingShown && bot !== undefined
-                    ? <ThinkingBubble activeToolName={activeToolName} />
-                    : null}
                 {draftText === ''
                     ? null
                     : (
@@ -396,6 +394,9 @@ function ConversationView({
                                 <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(draftText) }} />
                             </div>
                         )}
+                {isThinkingShown && bot !== undefined
+                    ? <ThinkingBubble activeToolName={activeToolName} mascotColor={bot.mascotColor} mascotShape={bot.mascotShape} />
+                    : null}
             </div>
             <Composer
                 botName={botName}

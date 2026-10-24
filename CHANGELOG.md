@@ -17,6 +17,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- The chat feels more alive while the bot works. The thinking bubble is now a status line under the last message, with the bot's small mascot looking around and a shine that sweeps the current step. It stays under a reply that is still streaming. A sent message slides up from the text box, and the mascot in the header shows a green dot while the bot works. Reduced motion turns the movement off.
 - The image no longer carries gcc, g++ and scipy. matplotlib comes from pip wheels, so the image is smaller. The bot can install a compiler or scipy itself when asked.
 - `sudo cloudbot update` removes build cache older than one day instead of three days, so the disk of a server that builds the image does not keep several GB of fresh cache.
 - The CloudBot image is smaller. It keeps one copy of the Claude CLI and one OpenCode binary, and it drops the npm, uv and installer caches. The install guide says which `docker image ls` number to read for the image size.
