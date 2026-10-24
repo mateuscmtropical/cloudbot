@@ -309,6 +309,29 @@ describe('DesktopPanel', () => {
             .toBe(true);
     });
 
+    it('tries again on its own after a disconnect while the desktop starts', async () => {
+        render(<DesktopPanel onClose={() => undefined} />);
+        await waitFor(() => {
+            expect(clients)
+                .toHaveLength(1);
+        });
+        vi.useFakeTimers();
+
+        try {
+            act(() => {
+                fireClientEvent(0, 'disconnect');
+            });
+            act(() => {
+                vi.advanceTimersByTime(3000);
+            });
+
+            expect(clients)
+                .toHaveLength(2);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('takes the screen, allows input and gives it back', async () => {
         render(<DesktopPanel onClose={() => undefined} />);
 

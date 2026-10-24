@@ -1429,6 +1429,13 @@ button.list-row {
     padding-top: 64px;
 }
 
+/* The notices and the Screen panel give way before the composer does. On a short window they scroll inside. */
+.conversation-top {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
 /* The top padding starts the messages under the pill. They scroll beneath it, with no strip reserved. */
 .message-list {
     position: relative;
@@ -2118,12 +2125,12 @@ button.list-row {
         flex-wrap: wrap;
     }
 
-    .desktop-screen {
-        height: 50vh;
-    }
-
+    /* The picture takes what is left after the pill, the controls and the composer, so all of them stay in view.
+       On a phone vh counts the space under the browser bars too, so dvh is used where the browser has it. */
+    .desktop-screen,
     .desktop-screen.is-resizing {
-        height: 65vh;
+        height: max(240px, calc(100vh - 500px));
+        height: max(240px, calc(100dvh - 500px));
     }
 
     .desktop-panel.is-expanded .desktop-screen.is-resizing {
