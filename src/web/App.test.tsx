@@ -101,7 +101,7 @@ describe('App bot list', () => {
         render(<App />);
 
         await screen.findByRole('textbox');
-        fireEvent.click(screen.getByRole('button', { name: 'Open CloudBot profile' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Open bot profile' }));
 
         expect(await screen.findByRole('heading', { name: 'CloudBot' }))
             .toBeTruthy();
