@@ -213,6 +213,24 @@ describe('buildSystemPrompt', () => {
             .not.toContain('browser_');
     });
 
+    // A provider without its own web search said it could not search until the owner pushed it. See issue #340.
+    it('tells every bot with a browser to search the web at once, with the browser when it has no search tool', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+        const withBrowser = buildSystemPrompt(profile, { hasBrowser: true });
+
+        expect(withBrowser)
+            .toContain('never tell the owner you cannot search or browse');
+        expect(withBrowser)
+            .toContain('browser_open on https://duckduckgo.com/html/?q=');
+    });
+
+    it('tells the bot that its cloudbot tools are in its tool list from the start', () => {
+        const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' });
+
+        expect(prompt)
+            .toContain('They are in your tool list from the start, on the cloudbot tool server');
+    });
+
     it('tells the bot not to open the host browser when it has none', () => {
         const profile = { name: 'Ana', title: 'Assistant', description: '' };
 

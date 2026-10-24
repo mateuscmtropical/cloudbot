@@ -98,6 +98,25 @@ describe('createBrowserTools', () => {
             .toEqual({ content: [{ type: 'text', text: 'Only http and https addresses can be opened.' }], isError: true });
     });
 
+    it('tells the chat when a page opened, and not when the address was refused', async () => {
+        const { browser } = createFakeBrowser();
+        let openedCount = 0;
+        const tools = createBrowserTools(browser, undefined, undefined, () => {
+            openedCount += 1;
+        });
+        const openHandler = tools.find(candidate => candidate.name === 'browser_open')?.handler as unknown as ToolHandler;
+
+        await openHandler({ url: 'file:///etc/passwd' }, {});
+
+        expect(openedCount)
+            .toBe(0);
+
+        await openHandler({ url: 'https://example.com' }, {});
+
+        expect(openedCount)
+            .toBe(1);
+    });
+
     it('refuses every browser tool while the owner holds the screen', async () => {
         const { browser, calls } = createFakeBrowser();
         const screen = new ScreenHolder();

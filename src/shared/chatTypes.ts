@@ -174,7 +174,8 @@ interface ChatPersonCredentialsEvent {
     password: string;
 }
 
-// The bot asked for the screen. The open web app shows the Screen panel for this bot, so the owner sees it at once.
+// The bot asked for the screen, or opened a page in its browser for the first time in a turn. The open web app shows
+// the Screen panel for this bot, so the owner sees it at once.
 interface ChatScreenEvent {
     type: 'screen';
     botId: string;

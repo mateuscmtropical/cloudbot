@@ -565,7 +565,7 @@ function App(): ReactElement {
                 return;
             }
 
-            // The bot asked for the screen, so the Screen panel opens for the owner.
+            // The bot asked for the screen or opened its browser, so the Screen panel opens for the owner.
             if (event.type === 'screen') {
                 setScreenRequestId(current => current + 1);
 
@@ -1186,15 +1186,11 @@ function App(): ReactElement {
                     setIsAccountOpen(false);
                     setIsConnectAppsOpen(true);
                 }}
-                {...(hubRole === 'standalone'
-                    ? {}
-                    : {
-                            onAccount: () => {
-                                setIsConnectAppsOpen(false);
-                                setIsPeopleOpen(false);
-                                setIsAccountOpen(true);
-                            },
-                        })}
+                onAccount={() => {
+                    setIsConnectAppsOpen(false);
+                    setIsPeopleOpen(false);
+                    setIsAccountOpen(true);
+                }}
                 onPeople={() => {
                     setIsConnectAppsOpen(false);
                     setIsAccountOpen(false);
@@ -1232,6 +1228,7 @@ function App(): ReactElement {
                 {isAccountOpen
                     ? (
                             <AccountPanel
+                                isHub={hubRole !== 'standalone'}
                                 onClose={() => {
                                     setIsAccountOpen(false);
                                 }}

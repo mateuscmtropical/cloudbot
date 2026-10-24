@@ -28,9 +28,18 @@
     box-sizing: border-box;
 }
 
+/* The page itself never scrolls. Only the panels inside the app do. A page taller than the screen (100vh is the
+   height without the phone toolbar) scrolled the whole app up when a drag reached the end of the chat. That moved the
+   menu button and the bot pill off the top and showed an empty strip under the composer. See issue #340. */
+html,
+body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
 body {
     margin: 0;
-    min-height: 100vh;
     background: var(--color-background);
     color: var(--color-text);
 }
@@ -676,6 +685,7 @@ svg {
     flex: 1;
     overflow-y: auto;
     overflow-anchor: none;
+    overscroll-behavior: contain;
     padding: 72px 24px 16px;
     scroll-padding-top: 72px;
 }
@@ -1442,6 +1452,22 @@ svg {
 .people-hint-card a {
     color: var(--color-accent);
 }
+
+/* The notification switch in the Account panel. A native checkbox keeps the keyboard and screen readers working. */
+.switch-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    cursor: pointer;
+}
+
+.switch-row input {
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    accent-color: var(--color-accent);
+}
+
 .people-problem {
     width: min(48rem, 100%);
     margin: 0 auto var(--space-3);
@@ -1692,8 +1718,9 @@ svg {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 100vh;
-    min-height: 100dvh;
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
     padding: var(--space-4);
 }
 

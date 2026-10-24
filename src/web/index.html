@@ -2,16 +2,24 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <!-- resizes-content shrinks the page above the phone keyboard, so the composer and the pill stay in view. -->
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
         <meta name="color-scheme" content="dark" />
         <meta name="theme-color" content="#1b1b1f" />
+        <meta name="description" content="Your own always-on AI coworker." />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content="CloudBot" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black" />
         <title>CloudBot</title>
         <!-- The tab icon is the cloud mascot. The app swaps the svg link for the working and unread faces.
              The svg link comes last with sizes="any", so browsers that support svg icons pick it. -->
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
         <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg" data-tab-icon />
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-        <link rel="manifest" href="/manifest.webmanifest" />
+        <!-- Behind the hub every path needs the sign-in cookie. Chrome fetches a manifest without cookies unless it is
+             told to send them, and then gets the hub sign-in page, so the app could not be installed. -->
+        <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
     </head>
     <body>
         <div id="root"></div>

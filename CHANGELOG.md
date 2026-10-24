@@ -17,6 +17,10 @@ All notable changes to this project are listed here. The format follows
 - The name form of the hub address accepts a capitalized name and shows a wrong name on the same screen. It also works in Chrome and Opera, where the page policy blocked the redirect to the person.
 - The hub can limit password and passkey sign-in to configured IP addresses and CIDR ranges.
 - `sudo cloudbot uninstall` removes CloudBot from the server, and the README lists how to update and remove it.
+- The Account panel has a Notifications switch that turns push notifications on or off for this device. A CloudBot without a hub shows the Account button too, with only this switch.
+- The app icon has a maskable version, so Android shows the whole mascot in a round or square icon.
+- A bot on ChatGPT that makes an image with Codex now shows the image in the chat.
+- When a bot opens a page in its browser, the Screen panel opens once in that turn, so you watch the live browser.
 
 ### Changed
 
@@ -95,6 +99,9 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- On a phone, dragging past the end of the chat no longer shows a dark strip under the composer, and the menu button and the bot pill no longer slide off the top. The page itself no longer scrolls, and the layout stays above the keyboard.
+- The web app installs behind the hub. The browser now sends the sign-in cookie when it loads the app manifest, so it no longer gets the sign-in page instead.
+- Every bot knows from the start that its CloudBot tools are in its tool list. A bot with a browser searches the web at once for news and other facts that change, with its browser when its provider has no search tool, instead of saying it cannot search.
 - The buttons of the screen panel (Close, Done take over, I will keep it, Take the screen) have the same style as the other buttons. The close button of the Connect apps window is drawn as a cross that sits in the center of its circle.
 - The owner can control the bot's screen again in Docker. The screen filter read the extended clipboard message of the viewer as a message of almost 4 GB and held back every click, key and screen update that came after it. The screen looked like a still picture.
 - A routine run shows as a quiet system note, such as `Routine: Reminder`, and not as a message from the owner. The bot still gets the full prompt.
