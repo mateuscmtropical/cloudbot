@@ -810,6 +810,7 @@ function App(): ReactElement {
         setSelectedChannelId(undefined);
         setSelectedBotId(botId);
         setIsPeopleOpen(false);
+        setIsAccountOpen(false);
         setIsBotListOpen(false);
     }
 
@@ -835,6 +836,7 @@ function App(): ReactElement {
         setChannelDetail(undefined);
         setSelectedChannelId(channelId);
         setIsPeopleOpen(false);
+        setIsAccountOpen(false);
         setIsBotListOpen(false);
     }
 
@@ -1258,7 +1260,7 @@ function App(): ReactElement {
                             />
                         )
                     : null}
-                {!isPeopleOpen && selectedChannelId !== undefined
+                {!isPeopleOpen && !isAccountOpen && selectedChannelId !== undefined
                     ? (
                             <ChannelView
                                 channel={channelDetail?.id === selectedChannelId ? channelDetail : undefined}
@@ -1270,7 +1272,7 @@ function App(): ReactElement {
                             />
                         )
                     : null}
-                {!isPeopleOpen && selectedChannelId === undefined
+                {!isPeopleOpen && !isAccountOpen && selectedChannelId === undefined
                     ? (
                             <ConversationView
                                 bot={selectedBot}

@@ -127,6 +127,29 @@ describe('App bot list', () => {
             .toBeTruthy();
     });
 
+    it('replaces the chat while the account panel is open', async () => {
+        vi.mocked(getHubRole)
+            .mockResolvedValueOnce('member');
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(subscribeToEvents)
+            .mockReturnValue(() => undefined);
+
+        render(<App />);
+
+        expect(await screen.findByRole('textbox'))
+            .toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+
+        expect(await screen.findByRole('heading', { name: 'Account' }))
+            .toBeTruthy();
+        expect(screen.queryByRole('textbox'))
+            .toBeNull();
+    });
+
     it('offers only the notifications in the account panel of a CloudBot that runs without a hub', async () => {
         vi.mocked(listBots)
             .mockResolvedValue([]);
