@@ -137,7 +137,8 @@ async function shareIfAsked(data: string, showOwner: boolean | undefined, shareS
 }
 
 // shareScreenshot is given when the chat can show screenshots, so browser_screenshot can post one.
-function createBrowserTools(browser: BrowserControl, shareScreenshot?: ScreenshotShareHandler, screen?: ScreenHolder): CloudbotTool[] {
+// onPageOpened runs after browser_open loaded a page, so the owner can be shown the live screen.
+function createBrowserTools(browser: BrowserControl, shareScreenshot?: ScreenshotShareHandler, screen?: ScreenHolder, onPageOpened?: () => void): CloudbotTool[] {
     const openTool = tool(
         `${BROWSER_TOOL_PREFIX}open`,
         'Open a web page in your browser, on your screen. Returns the page title, its address and its visible text.',
@@ -145,6 +146,7 @@ function createBrowserTools(browser: BrowserControl, shareScreenshot?: Screensho
         args => runBrowserAction(browser, screen, async () => {
             const page = await browser.open(args.url);
 
+            onPageOpened?.();
             const description = describePage(page);
 
             return textResult(description);

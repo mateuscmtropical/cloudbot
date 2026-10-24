@@ -37,6 +37,20 @@ describe('mapCodexNotification', () => {
             .toEqual([{ type: 'tool_started', toolUseId: 'p', toolName: 'Edit', input: { files: ['/w/a.txt'] } }]);
     });
 
+    // The generated image lives only in this item, so dropping it left the owner with the text and no image. See issue #340.
+    it('passes on an image that Codex generated, and nothing for one that has no image yet', () => {
+        const generated = mapCodexNotification('item/completed', { item: { type: 'imageGeneration', id: 'ig_1', status: 'completed', revisedPrompt: 'a crochet square', result: 'iVBORw0KGgo=', savedPath: '/home/bot/.codex/generated_images/ig_1.png' } });
+        const started = mapCodexNotification('item/started', { item: { type: 'imageGeneration', id: 'ig_1', status: 'generating', revisedPrompt: null, result: '' } });
+        const empty = mapCodexNotification('item/completed', { item: { type: 'imageGeneration', id: 'ig_2', status: 'failed', revisedPrompt: null, result: '' } });
+
+        expect(generated)
+            .toEqual([{ type: 'image', data: 'iVBORw0KGgo=' }]);
+        expect(started)
+            .toEqual([{ type: 'activity' }]);
+        expect(empty)
+            .toEqual([{ type: 'activity' }]);
+    });
+
     it('reads any other notification as activity only', () => {
         expect(mapCodexNotification('thread/tokenUsage/updated', {}))
             .toEqual([{ type: 'activity' }]);

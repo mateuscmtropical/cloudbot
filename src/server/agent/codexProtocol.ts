@@ -64,13 +64,22 @@ interface CodexMcpToolCallItem {
     arguments: unknown;
 }
 
+// An image made by the image generation of Codex. result is the PNG as base64. Codex also saves a copy under its
+// own home folder, which the server user may not read, so only result is used.
+interface CodexImageGenerationItem {
+    type: 'imageGeneration';
+    id: string;
+    status: string;
+    result?: string;
+}
+
 // Any other kind of item, such as reasoning. It is kept by id but not shown.
 interface CodexOtherItem {
     type: string;
     id?: string;
 }
 
-type CodexThreadItem = CodexAgentMessageItem | CodexCommandItem | CodexFileChangeItem | CodexMcpToolCallItem | CodexOtherItem;
+type CodexThreadItem = CodexAgentMessageItem | CodexCommandItem | CodexFileChangeItem | CodexMcpToolCallItem | CodexImageGenerationItem | CodexOtherItem;
 
 function isAgentMessageItem(item: CodexThreadItem): item is CodexAgentMessageItem {
     return item.type === 'agentMessage' && typeof (item as Partial<CodexAgentMessageItem>).text === 'string';
@@ -86,6 +95,10 @@ function isFileChangeItem(item: CodexThreadItem): item is CodexFileChangeItem {
 
 function isMcpToolCallItem(item: CodexThreadItem): item is CodexMcpToolCallItem {
     return item.type === 'mcpToolCall' && typeof (item as Partial<CodexMcpToolCallItem>).server === 'string';
+}
+
+function isImageGenerationItem(item: CodexThreadItem): item is CodexImageGenerationItem {
+    return item.type === 'imageGeneration' && typeof (item as Partial<CodexImageGenerationItem>).result === 'string';
 }
 
 interface CodexTurnError {
@@ -109,5 +122,5 @@ interface CodexMessage {
     error?: { code: number; message: string };
 }
 
-export { CODEX_APPROVAL_POLICY, CODEX_LOCKED_CONFIG, CODEX_PROTOCOL_VERSION, CODEX_SANDBOX_MODE, CODEX_TOOL_TOKEN_VARIABLE, isAgentMessageItem, isCommandItem, isFileChangeItem, isMcpToolCallItem };
-export type { CodexCommandItem, CodexFileChange, CodexFileChangeItem, CodexMcpToolCallItem, CodexMessage, CodexRequestId, CodexThreadItem, CodexTurn, CodexTurnError };
+export { CODEX_APPROVAL_POLICY, CODEX_LOCKED_CONFIG, CODEX_PROTOCOL_VERSION, CODEX_SANDBOX_MODE, CODEX_TOOL_TOKEN_VARIABLE, isAgentMessageItem, isCommandItem, isFileChangeItem, isImageGenerationItem, isMcpToolCallItem };
+export type { CodexCommandItem, CodexFileChange, CodexFileChangeItem, CodexImageGenerationItem, CodexMcpToolCallItem, CodexMessage, CodexRequestId, CodexThreadItem, CodexTurn, CodexTurnError };

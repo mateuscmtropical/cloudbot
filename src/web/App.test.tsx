@@ -127,7 +127,7 @@ describe('App bot list', () => {
             .toBeTruthy();
     });
 
-    it('does not offer an account on a CloudBot that runs without a hub', async () => {
+    it('offers only the notifications in the account panel of a CloudBot that runs without a hub', async () => {
         vi.mocked(listBots)
             .mockResolvedValue([]);
         vi.mocked(listMessages)
@@ -139,7 +139,11 @@ describe('App bot list', () => {
             expect(getHubRole)
                 .toHaveBeenCalled();
         });
-        expect(screen.queryByRole('button', { name: 'Account' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+
+        expect(await screen.findByRole('heading', { name: 'Notifications' }))
+            .toBeTruthy();
+        expect(screen.queryByRole('link', { name: 'Change password' }))
             .toBeNull();
     });
 

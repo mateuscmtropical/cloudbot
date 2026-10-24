@@ -2,7 +2,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { describePushResult, disablePushNotifications, enablePushNotifications, readNotificationTarget, registerServiceWorker, urlBase64ToBytes, useNotificationOpen } from './pushClient.ts';
+import { describePushResult, disablePushNotifications, enablePushNotifications, readNotificationTarget, readPushState, registerServiceWorker, urlBase64ToBytes, useNotificationOpen } from './pushClient.ts';
 import type { PushBrowserRegistration, PushBrowserSubscription, PushClientDeps } from './pushClient.ts';
 
 const SERVER_KEY_TEXT = 'BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8';
@@ -26,7 +26,7 @@ function createSubscription(key: Uint8Array | null, endpoint = 'https://fcm.goog
     };
 }
 
-function createFakeBrowser(options: { permission?: NotificationPermission; existing?: PushBrowserSubscription | null; isSupported?: boolean } = {}): FakeBrowser {
+function createFakeBrowser(options: { permission?: NotificationPermission; currentPermission?: NotificationPermission; existing?: PushBrowserSubscription | null; isSupported?: boolean } = {}): FakeBrowser {
     const requestPermission = vi.fn<() => Promise<NotificationPermission>>(() => Promise.resolve(options.permission ?? 'granted'));
     const saveSubscription = vi.fn<PushClientDeps['saveSubscription']>(() => Promise.resolve());
     const removeSubscription = vi.fn<PushClientDeps['removeSubscription']>(() => Promise.resolve());
@@ -39,6 +39,7 @@ function createFakeBrowser(options: { permission?: NotificationPermission; exist
     const deps: PushClientDeps = {
         isSupported: () => options.isSupported ?? true,
         requestPermission,
+        readPermission: () => options.currentPermission ?? 'default',
         getRegistration: () => Promise.resolve(registration),
         fetchPublicKey: () => Promise.resolve(SERVER_KEY_TEXT),
         saveSubscription,
@@ -63,6 +64,31 @@ describe('urlBase64ToBytes', () => {
             .toBe(4);
         expect(Array.from(urlBase64ToBytes('-_-_')))
             .toEqual([251, 255, 191]);
+    });
+});
+
+describe('readPushState', () => {
+    it('is on only when the browser may notify and holds a subscription', async () => {
+        const subscribed = createFakeBrowser({ currentPermission: 'granted', existing: createSubscription(null) });
+        const allowedButNotSubscribed = createFakeBrowser({ currentPermission: 'granted' });
+        const neverAsked = createFakeBrowser({ existing: createSubscription(null) });
+
+        expect(await readPushState(subscribed.deps))
+            .toBe('on');
+        expect(await readPushState(allowedButNotSubscribed.deps))
+            .toBe('off');
+        expect(await readPushState(neverAsked.deps))
+            .toBe('off');
+    });
+
+    it('says when the site is blocked or the browser has no push', async () => {
+        const blocked = createFakeBrowser({ currentPermission: 'denied' });
+        const unsupported = createFakeBrowser({ isSupported: false });
+
+        expect(await readPushState(blocked.deps))
+            .toBe('blocked');
+        expect(await readPushState(unsupported.deps))
+            .toBe('unsupported');
     });
 });
 

@@ -11,6 +11,9 @@ const CONFIRMATION_TEXT = 'Notifications are on.';
 // How the attempt ended. Anything but 'enabled' leaves the card open, so the owner can try again.
 type PushEnableResult = 'enabled' | 'blocked' | 'unsupported';
 
+// What the switch in the Account panel shows for this browser.
+type PushSwitchState = 'on' | 'off' | 'blocked' | 'unsupported';
+
 // The bot a notification opened, and the message it was about.
 interface NotificationTarget {
     botId: string;
@@ -35,6 +38,7 @@ interface PushBrowserRegistration {
 interface PushClientDeps {
     isSupported: () => boolean;
     requestPermission: () => Promise<NotificationPermission>;
+    readPermission: () => NotificationPermission;
     getRegistration: () => Promise<PushBrowserRegistration>;
     fetchPublicKey: () => Promise<string>;
     saveSubscription: (subscription: PushSubscriptionInput) => Promise<void>;
@@ -83,6 +87,7 @@ function browserDeps(): PushClientDeps {
     return {
         isSupported: () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window,
         requestPermission: () => Notification.requestPermission(),
+        readPermission: () => Notification.permission,
         getRegistration: async () => {
             const registration = await navigator.serviceWorker.ready;
 
@@ -161,6 +166,25 @@ async function disablePushNotifications(deps: PushClientDeps = browserDeps()): P
     await subscription.unsubscribe();
 }
 
+// Notifications are on in this browser when it may show them and holds a subscription. The server may have dropped an
+// expired one, so turning the switch on again always saves the subscription anew.
+async function readPushState(deps: PushClientDeps = browserDeps()): Promise<PushSwitchState> {
+    if (!deps.isSupported()) {
+        return 'unsupported';
+    }
+
+    const permission = deps.readPermission();
+
+    if (permission === 'denied') {
+        return 'blocked';
+    }
+
+    const registration = await deps.getRegistration();
+    const subscription = await registration.pushManager.getSubscription();
+
+    return permission === 'granted' && subscription !== null ? 'on' : 'off';
+}
+
 // The words for the owner when the card could not turn notifications on.
 function describePushResult(result: Exclude<PushEnableResult, 'enabled'>): string {
     if (result === 'blocked') {
@@ -228,5 +252,5 @@ function useNotificationOpen(onOpen: (target: NotificationTarget) => void): void
     }, []);
 }
 
-export { describePushResult, disablePushNotifications, enablePushNotifications, readNotificationTarget, registerServiceWorker, urlBase64ToBytes, useNotificationOpen };
-export type { NotificationTarget, PushBrowserRegistration, PushBrowserSubscription, PushClientDeps, PushEnableResult };
+export { describePushResult, disablePushNotifications, enablePushNotifications, readNotificationTarget, readPushState, registerServiceWorker, urlBase64ToBytes, useNotificationOpen };
+export type { NotificationTarget, PushBrowserRegistration, PushBrowserSubscription, PushClientDeps, PushEnableResult, PushSwitchState };

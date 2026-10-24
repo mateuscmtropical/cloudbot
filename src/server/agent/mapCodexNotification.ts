@@ -1,6 +1,6 @@
 import type { AgentEvent } from './AgentEvent.ts';
 import { unwrapShellCommand } from './answerCodexRequest.ts';
-import { isAgentMessageItem, isCommandItem, isFileChangeItem, isMcpToolCallItem } from './codexProtocol.ts';
+import { isAgentMessageItem, isCommandItem, isFileChangeItem, isImageGenerationItem, isMcpToolCallItem } from './codexProtocol.ts';
 import type { CodexThreadItem, CodexTurn } from './codexProtocol.ts';
 
 const USAGE_LIMIT_INFO = 'usageLimitExceeded';
@@ -51,6 +51,11 @@ function completedEvents(item: CodexThreadItem): AgentEvent[] {
 
     if (isFileChangeItem(item) || isMcpToolCallItem(item)) {
         return [{ type: 'tool_finished', toolUseId: item.id, isError: item.status !== 'completed', output: item.status }];
+    }
+
+    // The image is only in this item. Without it the model says it made an image and the owner sees none.
+    if (isImageGenerationItem(item) && item.result !== undefined && item.result !== '') {
+        return [{ type: 'image', data: item.result }];
     }
 
     return [{ type: 'activity' }];

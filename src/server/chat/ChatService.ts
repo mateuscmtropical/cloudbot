@@ -23,6 +23,7 @@ import type { CloudbotTool } from '../agent/createProfileToolServer.ts';
 import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from '../agent/prepareAgentWorkspace.ts';
 import { UNSENT_UPLOAD_MAX_AGE_MS, readUploadRetentionMs, removeOldUploads } from '../attachments/cleanUploads.ts';
 import { describeAttachments, readTurnImages } from '../attachments/attachmentPrompt.ts';
+import { readImageSize } from '../attachments/readImageSize.ts';
 import { readMaxUploadBytes, removeFiles, saveFiles } from '../attachments/saveUpload.ts';
 import { readMaxShareBytes, shareWorkspaceFile } from '../files/shareFile.ts';
 import type { BrowserControl } from '../desktop/BrowserControl.ts';
@@ -654,13 +655,29 @@ function formatResumeTime(resumeAt: number): string {
 }
 
 // For example screenshot-2026-10-21-03-15-42.png, in UTC.
-function buildScreenshotName(takenAt: Date): string {
+function buildTimestampName(prefix: string, takenAt: Date, extension: string): string {
     const isoText = takenAt.toISOString();
     const stamp = isoText.slice(0, 19)
         .replaceAll(/[T:]/g, '-');
 
-    return `screenshot-${stamp}.png`;
+    return `${prefix}-${stamp}.${extension}`;
 }
+
+function buildScreenshotName(takenAt: Date): string {
+    return buildTimestampName('screenshot', takenAt, 'png');
+}
+
+interface GeneratedImageType {
+    mimeType: string;
+    extension: string;
+}
+
+// The image types the chat shows inline. A model's image is checked against each, so broken bytes are never posted.
+const GENERATED_IMAGE_TYPES: GeneratedImageType[] = [
+    { mimeType: 'image/png', extension: 'png' },
+    { mimeType: 'image/jpeg', extension: 'jpg' },
+    { mimeType: 'image/webp', extension: 'webp' },
+];
 
 function reportBackgroundError(error: unknown): void {
     console.error('The chat queue failed outside a request', error);
@@ -739,6 +756,8 @@ class ChatService {
     private readonly reviewSpend = new Map<string, number>();
     // Bots whose screen is held by the owner for a request of theirs. Their clock waits until the screen is back.
     private readonly screenWaitBots = new Set<string>();
+    // Bots whose open web app was already shown the browser in the running turn. A closed panel stays closed until the next turn.
+    private readonly browserShownBots = new Set<string>();
     // The one recording of the shared screen, and the bot that asked for it. It ends when the owner gives the screen back.
     // The slot is taken before the recorder starts, so two recordings can never start at once. recorder is unset meanwhile.
     private activeRecording: { botId: string; recorder: ScreenRecorder | undefined } | undefined;
@@ -914,6 +933,21 @@ class ChatService {
         const screenshotName = buildScreenshotName(new Date());
 
         await this.storeSharedBytes(botId, screenshotName, 'image/png', image);
+    }
+
+    // Posts an image the model made, such as with the image generation of Codex, to the chat like a shared file.
+    async shareGeneratedImage(botId: string, imageBase64: string): Promise<void> {
+        const image = Buffer.from(imageBase64, 'base64');
+        const imageType = GENERATED_IMAGE_TYPES.find(candidate => readImageSize(image, candidate.mimeType) !== undefined);
+
+        if (imageType === undefined || image.length > this.maxShareBytes) {
+            throw new Error('The generated image is not a PNG, JPEG or WebP image, or it is too large.');
+        }
+
+        const createdAt = new Date();
+        const imageName = buildTimestampName('image', createdAt, imageType.extension);
+
+        await this.storeSharedBytes(botId, imageName, imageType.mimeType, image);
     }
 
     // Exports the bot as a template file, shared in the chat. Only the template's fields go into it.
@@ -2099,6 +2133,17 @@ class ChatService {
             .catch(() => {
                 console.error('Could not send a notification.');
             });
+    }
+
+    // The bot opened a page, so the open web app shows the Screen panel once in this turn. Without it the owner reads
+    // that the browser is open and sees nothing. See issue #340.
+    private showOpenedBrowser(botId: string): void {
+        if (this.browserShownBots.has(botId)) {
+            return;
+        }
+
+        this.browserShownBots.add(botId);
+        this.publish(botId, { type: 'screen', botId });
     }
 
     // Gives the screen to the owner and posts a note in the chat. The browser tools stop until the owner gives it back.
@@ -3288,6 +3333,7 @@ class ChatService {
         this.runningLimits.delete(botId);
         this.reviewSpend.delete(botId);
         this.screenWaitBots.delete(botId);
+        this.browserShownBots.delete(botId);
         this.runningTurns.delete(botId);
         this.activeTurnMessageIds.delete(botId);
         this.releaseChannelRound(botId);
@@ -3559,6 +3605,9 @@ class ChatService {
                         this.browser,
                         pngBase64 => this.shareScreenshot(botId, pngBase64),
                         this.screen,
+                        () => {
+                            this.showOpenedBrowser(botId);
+                        },
                     );
             const screenTools = this.createScreenTools(botId);
             const secretTools = this.createSecretTools(botId);
@@ -4140,6 +4189,15 @@ class ChatService {
 
                 return;
             }
+            case 'image':
+                // A broken image is logged and the turn goes on, since the model's text still reaches the owner.
+                await this.shareGeneratedImage(botId, agentEvent.data)
+                    .catch((error: unknown) => {
+                        console.error('Could not post a generated image to the chat:', error);
+                    });
+                turnState.endsQuiet = false;
+
+                return;
             case 'activity':
             case 'rate_limit':
             case 'turn_finished':
