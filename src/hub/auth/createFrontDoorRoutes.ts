@@ -59,6 +59,10 @@ interface HubStatusResponse {
     status: 'running' | 'starting' | 'busy' | 'stopped' | 'missing';
 }
 
+interface InstanceStartingResponse {
+    error: string;
+}
+
 interface ParsedFormFields {
     [fieldName: string]: unknown;
 }
@@ -72,6 +76,7 @@ const LOCKOUT_MS = 15 * 60 * 1000;
 const UPSTREAM_PORT = 3000;
 const UPSTREAM_CONNECT_FAILURE_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT']);
 const HOP_BY_HOP_HEADERS = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
+const INSTANCE_STARTING_MESSAGE = 'The instance is starting.';
 const LOGIN_FAILURE_MESSAGE = 'Sign-in failed. Check your password and try again.';
 const TOO_MANY_TRIES_MESSAGE = 'Too many wrong tries. Try again in a few minutes.';
 
@@ -233,6 +238,19 @@ function isUpstreamConnectionFailure(error: unknown): boolean {
     const code = error.code;
 
     return typeof code === 'string' && UPSTREAM_CONNECT_FAILURE_CODES.has(code);
+}
+
+// A fetch cannot run the loading page's script to retry its request.
+function renderStartupResponse(context: Context, isBusy: boolean): Response {
+    if (context.req.path.startsWith('/api/')) {
+        const response: InstanceStartingResponse = { error: INSTANCE_STARTING_MESSAGE };
+
+        return context.json(response, 503);
+    }
+
+    const page = isBusy ? renderBusyPage() : renderLoadingPage();
+
+    return renderResponse(context, page);
 }
 
 function proxyRequest(context: Context, person: PersonRecord, options: FrontDoorRoutesOptions): Promise<Response> {
@@ -637,9 +655,9 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
 
         if (instanceStatus !== 'running') {
             beginStart(name, options, pendingStarts, busyPeople);
-            const startupPage = busyPeople.has(name) ? renderBusyPage() : renderLoadingPage();
+            const isBusy = busyPeople.has(name);
 
-            return renderResponse(context, startupPage);
+            return renderStartupResponse(context, isBusy);
         }
 
         busyPeople.delete(name);
@@ -662,9 +680,9 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
             }
 
             if (isUpstreamConnectionFailure(proxyError) || latestStatus !== 'running') {
-                const startupPage = busyPeople.has(name) ? renderBusyPage() : renderLoadingPage();
+                const isBusy = busyPeople.has(name);
 
-                return renderResponse(context, startupPage);
+                return renderStartupResponse(context, isBusy);
             }
 
             const errorPage = renderUpstreamErrorPage();

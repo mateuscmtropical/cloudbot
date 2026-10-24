@@ -773,7 +773,7 @@ describe('createFrontDoorRoutes', () => {
             .toEqual([PERSON_NAME]);
     });
 
-    it('shows the loading page when an instance refuses a connection while it is starting', async () => {
+    it('shows a loading page for navigation and JSON for API requests while the instance starts', async () => {
         const unavailable = await startLocalServer((_request, response) => {
             response.end();
         });
@@ -790,6 +790,15 @@ describe('createFrontDoorRoutes', () => {
             .toBe(200);
         expect(await response.text())
             .toContain('This takes about a minute.');
+
+        const apiResponse = await harness.app.request(`https://${PERSON_NAME}.example.test/api/bots/bot-1/uploads`, { headers: { cookie } });
+
+        expect(apiResponse.status)
+            .toBe(503);
+        expect(apiResponse.headers.get('content-type'))
+            .toContain('application/json');
+        expect(await apiResponse.json())
+            .toEqual({ error: 'The instance is starting.' });
     });
 });
 
