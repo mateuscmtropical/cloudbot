@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Starts the bot's desktop as the bot user: a virtual screen, a window manager,
-# a terminal, Chromium and a VNC server. Everything listens on localhost only.
+# a terminal, Chromium and TigerVNC. Everything listens on localhost only.
 # The script exits when one part exits, and the server starts it again.
 #
 # The server runs it through sudo, which allows no arguments.
@@ -58,13 +58,19 @@ trap 'exit 0' TERM INT
 # A crash can leave parts of an old desktop running, plus the X lock and
 # Chromium's profile locks. The flock above proves that no other desktop
 # script is running, so all of them are stale.
-pkill -u "$(id -u)" -f "^Xvfb :$DISPLAY_NUMBER " || true
-pkill -u "$(id -u)" -f "^x11vnc -display :$DISPLAY_NUMBER " || true
+pkill -u "$(id -u)" -f "^Xtigervnc :$DISPLAY_NUMBER " || true
 pkill -u "$(id -u)" -f -- "--user-data-dir=$PROFILE_DIR" || true
 rm -f "$X_LOCK" "$X_SOCKET"
 rm -f "$PROFILE_DIR/SingletonLock" "$PROFILE_DIR/SingletonSocket" "$PROFILE_DIR/SingletonCookie"
 
-Xvfb ":$DISPLAY_NUMBER" -screen 0 "${SCREEN_WIDTH}x${SCREEN_HEIGHT}x${SCREEN_DEPTH}" -nolisten tcp >> "$LOG_FILE" 2>&1 9>&- &
+Xtigervnc ":$DISPLAY_NUMBER" \
+    -geometry "${SCREEN_WIDTH}x${SCREEN_HEIGHT}" \
+    -depth "$SCREEN_DEPTH" \
+    -localhost \
+    -SecurityTypes None \
+    -rfbport "$VNC_PORT" \
+    -AlwaysShared=1 \
+    -AcceptSetDesktopSize=1 >> "$LOG_FILE" 2>&1 9>&- &
 CHILD_PIDS+=("$!")
 
 for _attempt in $(seq 50); do
@@ -82,15 +88,27 @@ CHILD_PIDS+=("$!")
 # The empty desktop has the dark color of the app, not black.
 xsetroot -solid '#1b1b1f' || true
 
-x11vnc -display "$DISPLAY" -localhost -rfbport "$VNC_PORT" -forever -shared -nopw -quiet >> "$LOG_FILE" 2>&1 9>&- &
-CHILD_PIDS+=("$!")
-
 xterm -geometry 100x30+40+40 >> "$LOG_FILE" 2>&1 9>&- &
 CHILD_PIDS+=("$!")
 
 # Docker's default seccomp profile blocks the namespaces Chromium's sandbox needs,
 # so the container is the sandbox. See docs/OWNER_QUESTIONS.md.
 # Chromium starts again a second after it closes, so closing its window never leaves an empty desktop.
+maximize_browser() {
+    local window_id
+
+    for _attempt in $(seq 50); do
+        window_id="$(wmctrl -l -x | awk 'tolower($0) ~ /chromium/ { print $1; exit }')"
+
+        if [ -n "$window_id" ] && wmctrl -i -r "$window_id" -b add,maximized_vert,maximized_horz; then
+            return 0
+        fi
+        sleep 0.1
+    done
+
+    return 1
+}
+
 run_browser() {
     while :; do
         chromium \
@@ -101,12 +119,19 @@ run_browser() {
             --no-default-browser-check \
             --disable-dev-shm-usage \
             --window-position=0,0 \
-            --window-size="$SCREEN_WIDTH,$SCREEN_HEIGHT" \
+            --start-maximized \
             --proxy-server="socks5://127.0.0.1:$GATE_PORT" \
             --proxy-bypass-list="<-loopback>" \
             --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
             --webrtc-ip-handling-policy=disable_non_proxied_udp \
-            https://www.google.com/ >> "$LOG_FILE" 2>&1 9>&- || true
+            https://www.google.com/ >> "$LOG_FILE" 2>&1 9>&- &
+        local browser_pid=$!
+
+        if ! maximize_browser; then
+            echo "The Chromium window could not be maximized." >> "$LOG_FILE"
+        fi
+
+        wait "$browser_pid" || true
         sleep 1
     done
 }

@@ -134,19 +134,35 @@ Rules between folders:
 
 ## Desktop
 
-The image installs Xvfb, openbox, xterm, Chromium and x11vnc. The script
+The image installs TigerVNC, openbox, wmctrl, xterm and Chromium. The script
 `docker/cloudbot-desktop`, installed as `/usr/local/bin/cloudbot-desktop`,
-starts them as `bot` on display `:1` with a 1280 by 800 screen. Chromium keeps
-its profile in `/home/bot/.config/cloudbot-chromium`, so sign-ins survive a
-restart. It listens for the DevTools protocol on `127.0.0.1:9222`. x11vnc
-listens on `127.0.0.1:5900` without a password. Neither port leaves the
-container, because compose exposes only the server port.
+starts TigerVNC as `bot` on display `:1` with a 1280 by 800 screen. TigerVNC
+provides both the X server and the VNC server. Chromium keeps its profile in
+`/home/bot/.config/cloudbot-chromium`, so sign-ins survive a restart. The
+script maximizes Chromium with wmctrl so openbox resizes it with the virtual
+screen. Chromium listens for
+the DevTools protocol on `127.0.0.1:9222`. TigerVNC listens on
+`127.0.0.1:5900` without a password. Neither port leaves the container,
+because compose exposes only the server port. A real Xvfb and x11vnc probe did
+not resize the screen after a SetDesktopSize request, even with x11vnc's
+`-xrandr` option, so TigerVNC replaces both programs.
 
 The live view of the screen is a WebSocket at `/api/desktop/vnc`.
 `attachVncProxy` in `src/server/desktop/` answers the HTTP upgrade, checks the
-session cookie, and pipes the frames to x11vnc on `127.0.0.1:5900` as raw
+session cookie, and pipes the frames to TigerVNC on `127.0.0.1:5900` as raw
 bytes. Without a valid cookie the upgrade gets a 401. The web app loads noVNC
-only when the owner opens the Screen panel, and sets it to view only.
+only when the owner opens the Screen panel, and sets it to view only. On a
+touch screen in portrait at 720 pixels wide or less, noVNC asks TigerVNC to
+resize the desktop while the owner holds the screen. Chromium keeps a normal
+window at least 500 pixels wide, so a phone may need to scroll the 1:1 canvas
+to reach its edges. This keeps the text readable and pointer input aligned.
+`RfbInputFilter` forwards RFB SetDesktopSize messages only while the owner
+holds the screen, and only for one screen between 240 and 1920 pixels wide and
+high. `DesktopResizeCoordinator` tracks resize requests across owner tabs. The
+newest request takes effect, closing a tab restores the latest remaining size,
+and giving up the screen or closing the last resized panel restores 1280 by 800.
+A change to a wide viewport reconnects noVNC, which restores the same default
+size.
 
 ### Local browser
 
@@ -192,13 +208,17 @@ the owner to close that CloudBot browser window.
 
 The live view is a WebSocket at `/api/desktop/screencast`. `attachScreencast`
 streams the page's JPEG frames from `Page.startScreencast`, and the owner's
-mouse and keys reach the page only while the owner holds the screen. Pointer
-positions up to 10000 pixels pass, so a page larger than the frame still takes
-clicks. Queued moves keep only the latest. A button still down is released when
-the screen goes to the bot or the panel closes. Both desktop sockets refuse an
-`Origin` that is not this server's own host or the host of `CLOUDBOT_PUBLIC_URL`,
-since the session cookie does not tell localhost ports apart. The panel asks
-`/api/desktop/view` which view to use.
+mouse, keys and bounded viewport changes reach the page only while the owner
+holds the screen. The server changes the local browser's page viewport through
+CDP. `ScreencastViewportCoordinator` keeps the latest size across owner tabs,
+restores the prior size when one closes, and clears the override when the owner
+gives up the screen or closes the last resized panel. Pointer positions up to
+10000 pixels pass, so a page larger than the
+frame still takes clicks. Queued moves keep only the latest. A button still
+down is released when the screen goes to the bot or the panel closes. Both
+desktop sockets refuse an `Origin` that is not this server's own host or the
+host of `CLOUDBOT_PUBLIC_URL`, since the session cookie does not tell localhost
+ports apart. The panel asks `/api/desktop/view` which view to use.
 
 The image sets `CLOUDBOT_DESKTOP_COMMAND` to the script path. The server runs
 `sudo -n -u bot -- /usr/local/bin/cloudbot-desktop`, and sudoers allows that

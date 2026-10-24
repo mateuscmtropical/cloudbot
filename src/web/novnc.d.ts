@@ -9,6 +9,7 @@ declare module '@novnc/novnc' {
         public constructor(target: HTMLElement, urlOrChannel: string);
         public viewOnly: boolean;
         public scaleViewport: boolean;
+        public resizeSession: boolean;
         public addEventListener<K extends keyof RfbEvents>(type: K, listener: (event: RfbEvents[K]) => void): void;
         public disconnect(): void;
         public sendKey(keysym: number, code: string | null, down?: boolean): void;

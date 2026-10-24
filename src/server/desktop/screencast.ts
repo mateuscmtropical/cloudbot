@@ -1,5 +1,7 @@
 import { z } from 'zod/v4';
 
+import type { DesktopSize } from '../../shared/desktopSize.ts';
+import { MAX_DESKTOP_DIMENSION, MIN_DESKTOP_DIMENSION, isValidDesktopSize } from '../../shared/desktopSize.ts';
 import type { CdpConnection } from './CdpConnection.ts';
 import { BROWSER_KEYS, KEY_DEFINITIONS } from './BrowserControl.ts';
 
@@ -14,6 +16,9 @@ interface ScreencastSessionOptions {
     isPersonHolding: () => boolean;
     // Bytes the socket has not sent yet. Frames are dropped above a limit, so a slow panel cannot grow the queue.
     bufferedAmount: () => number;
+    requestViewport?: (size: DesktopSize) => Promise<void>;
+    restoreAllViewports?: () => Promise<void>;
+    releaseViewport?: () => Promise<void>;
 }
 
 interface ScreencastFrameMessage {
@@ -23,8 +28,6 @@ interface ScreencastFrameMessage {
     height: number;
 }
 
-const SCREEN_WIDTH = 1280;
-const SCREEN_HEIGHT = 800;
 const JPEG_QUALITY = 60;
 const MAX_BUFFERED_BYTES = 2 * 1024 * 1024;
 const MAX_TEXT_LENGTH = 1000;
@@ -64,7 +67,19 @@ const keyInputSchema = z.object({
     type: z.literal('key'),
     key: z.enum(BROWSER_KEYS),
 });
-const inputSchema = z.discriminatedUnion('type', [mouseInputSchema, wheelInputSchema, textInputSchema, keyInputSchema]);
+const resizeInputSchema = z.object({
+    type: z.literal('resize'),
+    width: z.number()
+        .int()
+        .min(MIN_DESKTOP_DIMENSION)
+        .max(MAX_DESKTOP_DIMENSION),
+    height: z.number()
+        .int()
+        .min(MIN_DESKTOP_DIMENSION)
+        .max(MAX_DESKTOP_DIMENSION),
+})
+    .refine(size => isValidDesktopSize(size.width, size.height));
+const inputSchema = z.discriminatedUnion('type', [mouseInputSchema, wheelInputSchema, textInputSchema, keyInputSchema, resizeInputSchema]);
 const frameSchema = z.object({
     data: z.string(),
     sessionId: z.number(),
@@ -98,7 +113,7 @@ function parseScreencastInput(text: string): ScreencastInput | undefined {
 }
 
 // Maps one owner input to DevTools input events of the page.
-async function dispatchScreencastInput(page: ScreencastPage, input: ScreencastInput): Promise<void> {
+async function dispatchScreencastInput(page: ScreencastPage, input: Exclude<ScreencastInput, { type: 'resize' }>): Promise<void> {
     if (input.type === 'mouse') {
         const point = { x: input.x, y: input.y };
         const isMove = input.kind === 'move';
@@ -157,7 +172,7 @@ class ScreencastSession {
             this.handleEvent(method, params);
         });
         await this.options.page.call('Page.enable');
-        await this.options.page.call('Page.startScreencast', { format: 'jpeg', quality: JPEG_QUALITY, maxWidth: SCREEN_WIDTH, maxHeight: SCREEN_HEIGHT, everyNthFrame: 1 });
+        await this.options.page.call('Page.startScreencast', { format: 'jpeg', quality: JPEG_QUALITY, maxWidth: MAX_DESKTOP_DIMENSION, maxHeight: MAX_DESKTOP_DIMENSION, everyNthFrame: 1 });
     }
 
     // Inputs from the panel. They reach the page only while the owner holds the screen.
@@ -187,6 +202,12 @@ class ScreencastSession {
         this.enqueue(() => this.releaseIfHeld());
     }
 
+    restoreViewport(): void {
+        this.enqueue(async () => {
+            await this.restoreAllViewports();
+        });
+    }
+
     stop(): void {
         this.isStopped = true;
         // The release goes first, so the page does not keep the button down after the panel closes.
@@ -194,6 +215,10 @@ class ScreencastSession {
             .then(() => this.releaseIfHeld())
             .catch(() => {
                 // A failed release is not retried. The page closes below.
+            })
+            .then(() => this.releaseViewport())
+            .catch(() => {
+                // The page may be gone already. Closing the connection stops the frames anyway.
             })
             .then(() => this.options.page.call('Page.stopScreencast'))
             .catch(() => {
@@ -257,6 +282,10 @@ class ScreencastSession {
     }
 
     private dispatch(input: ScreencastInput): Promise<void> {
+        if (input.type === 'resize') {
+            return this.requestViewport({ width: input.width, height: input.height });
+        }
+
         if (input.type === 'mouse') {
             this.lastPoint = { x: input.x, y: input.y };
         }
@@ -270,6 +299,35 @@ class ScreencastSession {
         }
 
         return dispatchScreencastInput(this.options.page, input);
+    }
+
+    private requestViewport(size: DesktopSize): Promise<void> {
+        if (this.options.requestViewport !== undefined) {
+            return this.options.requestViewport(size);
+        }
+
+        return this.options.page.call('Emulation.setDeviceMetricsOverride', { ...size, deviceScaleFactor: 1, mobile: false })
+            .then(() => undefined);
+    }
+
+    private restoreAllViewports(): Promise<void> {
+        if (this.options.restoreAllViewports !== undefined) {
+            return this.options.restoreAllViewports();
+        }
+
+        return this.clearViewportOverride();
+    }
+
+    private releaseViewport(): Promise<void> {
+        if (this.options.releaseViewport !== undefined) {
+            return this.options.releaseViewport();
+        }
+
+        return this.clearViewportOverride();
+    }
+
+    private async clearViewportOverride(): Promise<void> {
+        await this.options.page.call('Emulation.clearDeviceMetricsOverride');
     }
 
     private handleEvent(method: string, params: unknown): void {

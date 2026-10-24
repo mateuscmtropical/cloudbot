@@ -68,6 +68,18 @@ describe('parseScreencastInput', () => {
             .toEqual({ type: 'mouse', kind: 'down', x: 10, y: 20 });
     });
 
+    it('accepts bounded integer viewport sizes', () => {
+        expect(parseScreencastInput(JSON.stringify({ type: 'resize', width: 400, height: 800 })))
+            .toEqual({ type: 'resize', width: 400, height: 800 });
+    });
+
+    it('drops a viewport size outside the allowed bounds', () => {
+        expect(parseScreencastInput(JSON.stringify({ type: 'resize', width: 400, height: 1921 })))
+            .toBeUndefined();
+        expect(parseScreencastInput(JSON.stringify({ type: 'resize', width: 400.5, height: 800 })))
+            .toBeUndefined();
+    });
+
     it('accepts a click on a page larger than the 1280 by 800 frame', () => {
         expect(parseScreencastInput(JSON.stringify({ type: 'mouse', kind: 'down', x: 1900, y: 1200 })))
             .toEqual({ type: 'mouse', kind: 'down', x: 1900, y: 1200 });
@@ -88,7 +100,7 @@ describe('parseScreencastInput', () => {
 });
 
 describe('ScreencastSession', () => {
-    it('starts the screencast in JPEG frames of the screen size', async () => {
+    it('starts the screencast with room for the largest allowed viewport', async () => {
         const page = createFakePage();
         const { session } = createSession(page);
 
@@ -97,7 +109,7 @@ describe('ScreencastSession', () => {
         expect(page.calls.map(call => call.method))
             .toEqual(['Page.enable', 'Page.startScreencast']);
         expect(page.calls[1]?.params)
-            .toMatchObject({ format: 'jpeg', maxWidth: 1280, maxHeight: 800 });
+            .toMatchObject({ format: 'jpeg', maxWidth: 1920, maxHeight: 1920 });
     });
 
     it('sends each frame to the panel and acknowledges it', async () => {
@@ -151,6 +163,43 @@ describe('ScreencastSession', () => {
                 'Input.dispatchMouseEvent:mouseReleased',
                 'Input.insertText:',
             ]);
+    });
+
+    it('resizes the browser page only while the owner holds the screen', async () => {
+        const page = createFakePage();
+        const { session } = createSession(page);
+
+        await session.start();
+        session.handleInput(JSON.stringify({ type: 'resize', width: 400, height: 800 }));
+        await settle();
+
+        expect(page.calls.at(-1))
+            .toEqual({
+                method: 'Emulation.setDeviceMetricsOverride',
+                params: { width: 400, height: 800, deviceScaleFactor: 1, mobile: false },
+            });
+
+        const botPage = createFakePage();
+        const botSession = createSession(botPage, { isPersonHolding: false }).session;
+
+        await botSession.start();
+        botSession.handleInput(JSON.stringify({ type: 'resize', width: 400, height: 800 }));
+        await settle();
+
+        expect(botPage.calls.map(call => call.method))
+            .toEqual(['Page.enable', 'Page.startScreencast']);
+    });
+
+    it('clears the viewport override when the owner gives the screen back', async () => {
+        const page = createFakePage();
+        const { session } = createSession(page);
+
+        await session.start();
+        session.restoreViewport();
+        await settle();
+
+        expect(page.calls.at(-1))
+            .toEqual({ method: 'Emulation.clearDeviceMetricsOverride', params: {} });
     });
 
     it('drops input while the bot holds the screen', async () => {
@@ -244,7 +293,12 @@ describe('ScreencastSession', () => {
             });
 
         expect(methods)
-            .toEqual(['Input.dispatchMouseEvent:mousePressed', 'Input.dispatchMouseEvent:mouseReleased', 'Page.stopScreencast:']);
+            .toEqual([
+                'Input.dispatchMouseEvent:mousePressed',
+                'Input.dispatchMouseEvent:mouseReleased',
+                'Emulation.clearDeviceMetricsOverride:',
+                'Page.stopScreencast:',
+            ]);
         expect(page.isClosed())
             .toBe(true);
     });

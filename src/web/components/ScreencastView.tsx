@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { KeyboardEvent, MouseEvent, ReactElement, RefObject, WheelEvent } from 'react';
 
+import { DEFAULT_DESKTOP_SIZE, MAX_DESKTOP_DIMENSION, MIN_DESKTOP_DIMENSION } from '../../shared/desktopSize.ts';
 import type { ScreenHolderName } from '../../shared/chatTypes.ts';
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected';
@@ -9,6 +10,7 @@ interface ScreencastViewProps {
     holder: ScreenHolderName;
     // Bumped by the panel's retry button, so the socket opens again.
     attempt: number;
+    resizeToViewport: boolean;
     onStateChange: (state: ConnectionState) => void;
     // The panel types on the screen through this, for the keyboard of a phone. The view fills it while it is shown.
     inputSenderRef: RefObject<((input: ScreencastInputMessage) => void) | undefined>;
@@ -59,7 +61,13 @@ interface KeyInputMessage {
     key: KeyName;
 }
 
-type ScreencastInputMessage = MouseInputMessage | WheelInputMessage | TextInputMessage | KeyInputMessage;
+interface ResizeInputMessage {
+    type: 'resize';
+    width: number;
+    height: number;
+}
+
+type ScreencastInputMessage = MouseInputMessage | WheelInputMessage | TextInputMessage | KeyInputMessage | ResizeInputMessage;
 type KeyName = 'Enter' | 'Tab' | 'Escape' | 'Backspace' | 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'PageUp' | 'PageDown';
 type PointerKind = MouseInputMessage['kind'];
 
@@ -189,27 +197,88 @@ function clamp(value: number, lowest: number, highest: number): number {
     return Math.min(atLeastLowest, highest);
 }
 
+function buildResizeInput(width: number, height: number, resizeToViewport: boolean): ResizeInputMessage | undefined {
+    if (!resizeToViewport) {
+        return { type: 'resize', width: DEFAULT_DESKTOP_SIZE.width, height: DEFAULT_DESKTOP_SIZE.height };
+    }
+
+    if (width <= 0 || height <= 0) {
+        return undefined;
+    }
+
+    const roundedWidth = Math.round(width);
+    const roundedHeight = Math.round(height);
+
+    return {
+        type: 'resize',
+        width: clamp(roundedWidth, MIN_DESKTOP_DIMENSION, MAX_DESKTOP_DIMENSION),
+        height: clamp(roundedHeight, MIN_DESKTOP_DIMENSION, MAX_DESKTOP_DIMENSION),
+    };
+}
+
 // The live view of the bot's browser in local mode. Frames come as pictures, and the owner's input goes back
 // only while the owner holds the screen. The server drops input otherwise.
-function ScreencastView({ holder, attempt, onStateChange, inputSenderRef }: ScreencastViewProps): ReactElement {
+function ScreencastView({ holder, attempt, resizeToViewport, onStateChange, inputSenderRef }: ScreencastViewProps): ReactElement {
     const imageRef = useRef<HTMLImageElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const socketRef = useRef<WebSocket | null>(null);
     const holderRef = useRef<ScreenHolderName>(holder);
     const frameRef = useRef<ScreencastFrame>({ data: '', width: DEFAULT_FRAME_WIDTH, height: DEFAULT_FRAME_HEIGHT });
+    const lastSentResizeRef = useRef('');
 
     useEffect(() => {
         holderRef.current = holder;
     }, [holder]);
 
+    const send = useCallback((input: ScreencastInputMessage): void => {
+        const socket = socketRef.current;
+
+        if (holderRef.current !== 'person' || socket === null || socket.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        const message = JSON.stringify(input);
+
+        socket.send(message);
+    }, []);
+
+    const sendResize = useCallback((): void => {
+        const wrapper = wrapperRef.current;
+        const socket = socketRef.current;
+
+        if (holderRef.current !== 'person' || wrapper === null || socket === null || socket.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        const bounds = wrapper.getBoundingClientRect();
+        const input = buildResizeInput(bounds.width, bounds.height, resizeToViewport);
+
+        if (input === undefined) {
+            return;
+        }
+
+        const resizeKey = `${String(input.width)}x${String(input.height)}`;
+
+        if (lastSentResizeRef.current === resizeKey) {
+            return;
+        }
+
+        send(input);
+        lastSentResizeRef.current = resizeKey;
+    }, [resizeToViewport, send]);
+
     useEffect(() => {
+        lastSentResizeRef.current = '';
         const socketUrl = buildSocketUrl(window.location);
         const socket = new WebSocket(socketUrl);
 
         socketRef.current = socket;
-        socket.addEventListener('open', () => {
+        function handleOpen(): void {
             onStateChange('connected');
-        });
+            sendResize();
+        }
+
+        socket.addEventListener('open', handleOpen);
         socket.addEventListener('message', (event: MessageEvent<unknown>) => {
             const frame = parseFrame(event.data);
 
@@ -233,19 +302,33 @@ function ScreencastView({ holder, attempt, onStateChange, inputSenderRef }: Scre
             socketRef.current = null;
             socket.close();
         };
-    }, [attempt, onStateChange]);
+    }, [attempt, onStateChange, sendResize]);
 
-    function send(input: ScreencastInputMessage): void {
-        const socket = socketRef.current;
+    useEffect(() => {
+        if (holder === 'person') {
+            sendResize();
 
-        if (holderRef.current !== 'person' || socket === null || socket.readyState !== WebSocket.OPEN) {
             return;
         }
 
-        const message = JSON.stringify(input);
+        lastSentResizeRef.current = '';
+    }, [holder, resizeToViewport, sendResize]);
 
-        socket.send(message);
-    }
+    useEffect(() => {
+        const wrapper = wrapperRef.current;
+
+        if (!resizeToViewport || holder !== 'person' || wrapper === null || typeof ResizeObserver === 'undefined') {
+            return;
+        }
+
+        const observer = new ResizeObserver(sendResize);
+
+        observer.observe(wrapper);
+
+        return () => {
+            observer.disconnect();
+        };
+    }, [holder, resizeToViewport, sendResize]);
 
     useEffect(() => {
         inputSenderRef.current = send;
@@ -315,8 +398,10 @@ function ScreencastView({ holder, attempt, onStateChange, inputSenderRef }: Scre
         send(input);
     }
 
+    const wrapperClassName = resizeToViewport ? 'desktop-screen screencast is-resizing' : 'desktop-screen screencast';
+
     return (
-        <div className="desktop-screen screencast" ref={wrapperRef} tabIndex={0} onKeyDown={handleKeyDown}>
+        <div className={wrapperClassName} ref={wrapperRef} tabIndex={0} onKeyDown={handleKeyDown}>
             <img
                 ref={imageRef}
                 alt="The bot's browser"
@@ -330,5 +415,5 @@ function ScreencastView({ holder, attempt, onStateChange, inputSenderRef }: Scre
     );
 }
 
-export { ScreencastView, buildKeyInput, buildPointerInput, buildSocketUrl, buildWheelInput, isShortcutHeld, parseFrame, pictureRect };
+export { ScreencastView, buildKeyInput, buildPointerInput, buildResizeInput, buildSocketUrl, buildWheelInput, isShortcutHeld, parseFrame, pictureRect };
 export type { ConnectionState, ScreencastFrame, ScreencastInputMessage };

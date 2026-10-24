@@ -7,7 +7,7 @@ interface ListeningProgramOptions {
 
 const LISTEN_STATE = '0A';
 const SOCKET_TABLES = ['/proc/net/tcp', '/proc/net/tcp6'];
-// The desktop's own listeners, x11vnc and the Chromium DevTools port. They run as the bot user too.
+// The desktop's own listeners, TigerVNC and the Chromium DevTools port. They run as the bot user too.
 const DESKTOP_PORTS = new Set([5900, 9222]);
 const PORT_RADIX = 16;
 const SOCKET_STATE_COLUMN = 3;

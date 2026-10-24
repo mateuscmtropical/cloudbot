@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as apiClient from '../apiClient.ts';
-import { DesktopPanel, buildVncUrl } from './DesktopPanel.tsx';
+import { DesktopPanel, buildVncUrl, buildVncViewportSize, shouldResizeDesktop } from './DesktopPanel.tsx';
 
 vi.mock('../apiClient.ts', () => ({
     getScreenHolder: vi.fn(() => Promise.resolve('bot')),
@@ -16,6 +16,8 @@ interface FakeClient {
     target: HTMLElement;
     url: string;
     viewOnly: boolean;
+    resizeSession: boolean;
+    scaleViewport: boolean;
     disconnected: boolean;
     listeners: Record<string, () => void>;
     keys: number[];
@@ -47,6 +49,7 @@ vi.mock('@novnc/novnc', () => ({
     default: class FakeRfb {
         public viewOnly = false;
         public scaleViewport = false;
+        public resizeSession = false;
         public disconnected = false;
         public listeners: Record<string, () => void> = {};
         public keys: number[] = [];
@@ -75,37 +78,90 @@ describe('DesktopPanel in local mode', () => {
         vi.unstubAllGlobals();
     });
 
-    it('shows the browser frames over the screencast socket instead of VNC', async () => {
-        const socketUrls: string[] = [];
+    it('restores the phone viewport after the screencast reconnects', async () => {
+        const sockets: Array<{ sent: string[]; open: () => void; disconnect: () => void; url: string }> = [];
 
         class FakeSocket {
-            public constructor(url: string) {
-                socketUrls.push(url);
+            public readyState = 0;
+            public sent: string[] = [];
+            private readonly listeners: Record<string, Array<() => void>> = {};
+
+            public constructor(public url: string) {
+                sockets.push(this);
             }
 
-            public addEventListener(): void {
-                // The frames are not needed for this check.
+            public addEventListener(type: string, listener: () => void): void {
+                this.listeners[type] ??= [];
+                this.listeners[type].push(listener);
             }
 
             public close(): void {
-                // Nothing to close in the fake.
+                this.readyState = 3;
+            }
+
+            public send(message: string): void {
+                this.sent.push(message);
+            }
+
+            public open(): void {
+                this.readyState = 1;
+                this.listeners.open?.forEach((listener) => {
+                    listener();
+                });
+            }
+
+            public disconnect(): void {
+                this.readyState = 3;
+                this.listeners.close?.forEach((listener) => {
+                    listener();
+                });
             }
         }
 
-        vi.stubGlobal('WebSocket', FakeSocket);
+        vi.stubGlobal('WebSocket', Object.assign(FakeSocket, { OPEN: 1 }));
         vi.mocked(apiClient.getScreenView)
             .mockResolvedValueOnce('screencast');
+        vi.mocked(apiClient.getScreenHolder)
+            .mockResolvedValueOnce('person');
         clients.length = 0;
         render(<DesktopPanel onClose={() => undefined} />);
         await waitFor(() => {
-            expect(socketUrls)
+            expect(sockets)
                 .toHaveLength(1);
         });
+        await screen.findByText('You have the screen. The bot is paused.');
 
-        expect(socketUrls[0]?.endsWith('/api/desktop/screencast'))
+        expect(sockets[0]?.url.endsWith('/api/desktop/screencast'))
             .toBe(true);
         expect(clients)
             .toHaveLength(0);
+
+        const firstSocket = sockets[0];
+
+        if (firstSocket === undefined) {
+            throw new Error('No screencast socket was opened.');
+        }
+
+        firstSocket.open();
+        expect(firstSocket.sent)
+            .toEqual([JSON.stringify({ type: 'resize', width: 1280, height: 800 })]);
+        firstSocket.disconnect();
+        fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+        await waitFor(() => {
+            expect(sockets)
+                .toHaveLength(2);
+        });
+
+        const secondSocket = sockets[1];
+
+        if (secondSocket === undefined) {
+            throw new Error('The screencast socket did not reconnect.');
+        }
+
+        secondSocket.open();
+
+        expect(secondSocket.sent)
+            .toEqual([JSON.stringify({ type: 'resize', width: 1280, height: 800 })]);
     });
 });
 
@@ -115,6 +171,38 @@ describe('buildVncUrl', () => {
             .toBe('wss://bot.example/api/desktop/vnc');
         expect(buildVncUrl({ protocol: 'http:', host: 'localhost:3000' } as Location))
             .toBe('ws://localhost:3000/api/desktop/vnc');
+    });
+});
+
+describe('shouldResizeDesktop', () => {
+    it('resizes only on a touch screen in a narrow portrait viewport', () => {
+        expect(shouldResizeDesktop(390, true, true))
+            .toBe(true);
+        expect(shouldResizeDesktop(800, true, true))
+            .toBe(false);
+        expect(shouldResizeDesktop(390, true, false))
+            .toBe(false);
+        expect(shouldResizeDesktop(390, false, true))
+            .toBe(false);
+    });
+});
+
+describe('buildVncViewportSize', () => {
+    it('keeps a phone viewport portrait while meeting Chromium minimum window width', () => {
+        expect(buildVncViewportSize(390, 590, true))
+            .toEqual({ width: 500, height: 756 });
+    });
+
+    it('leaves wide and view-only viewport sizes unchanged', () => {
+        expect(buildVncViewportSize(720, 590, true))
+            .toEqual({ width: 720, height: 590 });
+        expect(buildVncViewportSize(390, 590, false))
+            .toEqual({ width: 390, height: 590 });
+    });
+
+    it('uses the default size before the panel has layout dimensions', () => {
+        expect(buildVncViewportSize(0, 0, true))
+            .toEqual({ width: 1280, height: 800 });
     });
 });
 
@@ -131,7 +219,11 @@ describe('DesktopPanel', () => {
     });
 
     it('opens the keyboard of a phone and types on the screen with it', async () => {
-        vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(pointer: coarse)' }));
+        vi.stubGlobal('matchMedia', (query: string) => ({
+            matches: query === '(pointer: coarse)',
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+        }));
         vi.mocked(apiClient.getScreenHolder)
             .mockResolvedValue('person');
         render(<DesktopPanel onClose={() => undefined} />);
@@ -226,7 +318,11 @@ describe('DesktopPanel', () => {
 
         expect(await screen.findByText('The bot has the screen. You can watch.'))
             .toBeTruthy();
-        expect(clientAt(0).viewOnly)
+        await waitFor(() => {
+            expect(clientAt(0).viewOnly)
+                .toBe(true);
+        });
+        expect(clientAt(0).scaleViewport)
             .toBe(true);
         expect(apiClient.takeScreen)
             .toHaveBeenCalled();
@@ -243,6 +339,43 @@ describe('DesktopPanel', () => {
             .toBeTruthy();
         expect(clientAt(0).viewOnly)
             .toBe(false);
+    });
+
+    it('resizes the VNC desktop to a phone portrait viewport while the owner holds it', async () => {
+        vi.stubGlobal('matchMedia', (query: string) => ({
+            matches: query === '(pointer: coarse)' || query === '(orientation: portrait)',
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+        }));
+        vi.stubGlobal('innerWidth', 390);
+        vi.mocked(apiClient.getScreenHolder)
+            .mockResolvedValue('person');
+
+        const { container } = render(<DesktopPanel onClose={() => undefined} />);
+        const viewportElement = container.querySelector('.desktop-screen');
+
+        if (viewportElement === null) {
+            throw new Error('The VNC viewport was not rendered.');
+        }
+
+        vi.spyOn(viewportElement, 'getBoundingClientRect')
+            .mockReturnValue(new DOMRect(0, 0, 390, 590));
+
+        await waitFor(() => {
+            expect(clientAt(0).resizeSession)
+                .toBe(true);
+        });
+
+        const targetElement = container.querySelector<HTMLDivElement>('.desktop-vnc-target');
+
+        expect(targetElement?.style.width)
+            .toBe('500px');
+        expect(targetElement?.style.height)
+            .toBe('756px');
+        expect(clientAt(0).scaleViewport)
+            .toBe(false);
+        expect(container.querySelector('.desktop-screen.is-resizing'))
+            .not.toBeNull();
     });
 
     it('connects again with input enabled when the owner holds the screen', async () => {
