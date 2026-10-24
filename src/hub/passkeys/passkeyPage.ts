@@ -72,6 +72,8 @@ const BROWSER_WEBAUTHN_HELPERS = [
     '};',
 ].join('\n');
 
+const PASSKEY_NOT_SET_UP_MESSAGE = 'Fingerprint or face sign-in was canceled or is not set up on this device. Sign in with your password, then turn it on from Account.';
+
 const LOGIN_SCRIPT = BROWSER_WEBAUTHN_HELPERS + '\n' + [
     '(function () {',
     '    const button = document.getElementById("hub-passkey-login");',
@@ -90,7 +92,9 @@ const LOGIN_SCRIPT = BROWSER_WEBAUTHN_HELPERS + '\n' + [
     '            await postJson("/__hub/passkey/login/verify", serializeCredential(credential, false));',
     '            window.location.assign("/");',
     '        } catch (error) {',
-    '            problem.textContent = error instanceof Error ? error.message : "The passkey could not be checked. Try again.";',
+    // The browser gives NotAllowedError both when the person cancels and when this device has no passkey for the site.
+    '            const notSetUp = error instanceof Error && error.name === "NotAllowedError";',
+    '            problem.textContent = notSetUp ? "' + PASSKEY_NOT_SET_UP_MESSAGE + '" : error instanceof Error ? error.message : "The passkey could not be checked. Try again.";',
     '            button.disabled = false;',
     '        }',
     '    });',

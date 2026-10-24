@@ -552,7 +552,7 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
             return context.redirect(redirectPath, 303);
         }
 
-        // A connected app's sign-in page sends the owner back from another site, so the strict hub cookie is not sent.
+        // A connected app's sign-in page sends the owner back from another site, which may arrive without the hub cookie.
         // This one path goes to the instance without a session. The instance checks the one-time state of the sign-in.
         // An instance that is not running has lost that state, so the owner goes to the page instead.
         if (context.req.method === 'GET' && context.req.path === APP_OAUTH_CALLBACK_PATH) {

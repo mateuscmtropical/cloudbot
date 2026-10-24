@@ -17,7 +17,18 @@ describe('SqliteLoginSessions', () => {
         database.close();
     });
 
-    it('stores only a hash and expires a random 256 bit token after thirty days', () => {
+    it('ends sessions from a longer lifetime within one lifetime of the next start', () => {
+        database.prepare('INSERT INTO login_sessions (token_hash, name, expires_at) VALUES (?, ?, ?), (?, ?, ?)')
+            .run('old', 'maria', 5000 + 30 * SESSION_LIFETIME_MS, 'new', 'maria', 4000);
+        createLoginSessionTables(database, 5000);
+        const rows = database.prepare('SELECT token_hash, expires_at FROM login_sessions ORDER BY token_hash')
+            .all();
+
+        expect(rows)
+            .toEqual([{ token_hash: 'new', expires_at: 4000 }, { token_hash: 'old', expires_at: 5000 + SESSION_LIFETIME_MS }]);
+    });
+
+    it('stores only a hash and expires a random 256 bit token after seven days', () => {
         const token = sessions.create('maria', 1000);
         const rows = database.prepare('SELECT token_hash, expires_at FROM login_sessions')
             .all();

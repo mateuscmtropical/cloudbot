@@ -329,7 +329,7 @@ describe('createFrontDoorRoutes', () => {
         expect(setCookie)
             .toContain('HttpOnly');
         expect(setCookie)
-            .toContain('SameSite=Strict');
+            .toContain('SameSite=Lax');
         expect(setCookie)
             .toContain('Secure');
         expect(setCookie)
@@ -337,7 +337,7 @@ describe('createFrontDoorRoutes', () => {
         expect(setCookie)
             .not.toContain('Domain=');
         expect(setCookie)
-            .toContain('Max-Age=2592000');
+            .toContain('Max-Age=604800');
     });
 
     it('allows the sign-in page and password login from an allowed address', async () => {

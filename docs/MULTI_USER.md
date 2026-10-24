@@ -191,7 +191,7 @@ A new hub has no owner. The first person who opens the address of the owner choo
 
 The routes under `/__hub/` on a person's address are the hub's own: `login`, `password`, `logout` and `status`. Everything else goes to the instance through `cloudbot-i-<name>:3000`. The hub removes the session cookie and the trust header from the browser request, then sets the trust header with the secret of the instance. `attachUpgradeProxy` does the same for WebSockets and checks the session and the origin before it connects.
 
-Sessions live in the hub database as hashes of random tokens. The cookie is host only, `HttpOnly`, `SameSite=Strict`, and `Secure` when the domain is not `localhost`. A person with a new password can only reach the change password page. A change signs out the other sessions of that person.
+Sessions live in the hub database as hashes of random tokens. A session ends after 7 days, so each person signs in again once a week. The cookie is host only, `HttpOnly`, `SameSite=Lax`, and `Secure` when the domain is not `localhost`. Lax keeps the person signed in when the app opens from its icon, a notification or another app. Requests that change state still need the same origin. A person with a new password can only reach the change password page. A change signs out the other sessions of that person.
 
 When `CLOUDBOT_LOGIN_ALLOWED_IPS` is set, the hub checks the client address from Caddy before serving the sign-in page or accepting password and passkey sign-ins. It also checks password changes. Existing sessions can still use the site. Keep the hub behind Caddy so the forwarded client address is trusted.
 
