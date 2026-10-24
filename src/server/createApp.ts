@@ -37,8 +37,6 @@ import type { AppSignInOptions } from './apps/createAppRoutes.ts';
 import { APP_OAUTH_CALLBACK_PATH } from '../shared/connectedApps.ts';
 import { createAppOAuthCallbackRoutes } from './apps/createAppOAuthCallbackRoutes.ts';
 import type { AppOAuth } from './apps/AppOAuth.ts';
-import { createGoogleClientRoutes } from './apps/createGoogleClientRoutes.ts';
-import type { GoogleClientStore } from './apps/googleClient.ts';
 import { createBitwardenRoutes } from './bitwarden/createBitwardenRoutes.ts';
 import type { BitwardenVault } from './bitwarden/BitwardenVault.ts';
 import type { ConnectedApps } from './apps/ConnectedApps.ts';
@@ -105,8 +103,6 @@ interface AppOptions {
     connectedApps?: ConnectedApps;
     // The sign-in through the server's own page. The redirect address is the one the server sends the owner back to.
     appOAuth?: AppOAuth;
-    // The Google Cloud client of each bot's owner. With the sign-in, the routes that save it are served.
-    googleClient?: GoogleClientStore;
     // The owner's Bitwarden account of each bot. With the chat service, the routes that save and test it are served.
     bitwardenVault?: BitwardenVault;
     // The address new webhook URLs start with. Without it the server's own address is used.
@@ -293,14 +289,6 @@ function createApp(options: AppOptions): Hono {
         });
 
         app.route('/', connectedAppRoutes);
-
-        if (options.appOAuth !== undefined && options.googleClient !== undefined && options.chatService !== undefined) {
-            const chatService = options.chatService;
-            const signInOptions = createSignInOptions(options.appOAuth, chatService, options.publicBaseUrl);
-            const googleClientRoutes = createGoogleClientRoutes({ client: options.googleClient, redirectUri: signInOptions.redirectUri, hasBot: botId => chatService.hasBot(botId) });
-
-            app.route('/', googleClientRoutes);
-        }
     }
 
     if (options.bitwardenVault !== undefined && options.chatService !== undefined) {

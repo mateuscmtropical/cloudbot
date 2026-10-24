@@ -1,5 +1,5 @@
 import { DEFAULT_BITWARDEN_SERVER_URL } from '../shared/bitwarden.ts';
-import { GOOGLE_GROUP } from '../shared/googleApps.ts';
+import { GOOGLE_APPS } from '../shared/googleApps.ts';
 
 type AppCategory = 'Productivity' | 'Communication' | 'Code' | 'Data' | 'Design' | 'Finance' | 'Other';
 
@@ -14,14 +14,14 @@ interface CatalogApp {
 // Display order of the category chips.
 const APP_CATEGORIES: AppCategory[] = ['Productivity', 'Communication', 'Code', 'Data', 'Design', 'Finance', 'Other'];
 
-// One card connects all five Google apps. Its address and text live in the shared table the server signs in with.
-const GOOGLE_CATALOG_APP: CatalogApp = {
-    serverName: GOOGLE_GROUP.serverName,
-    displayName: GOOGLE_GROUP.displayName,
-    description: GOOGLE_GROUP.description,
-    url: GOOGLE_GROUP.url,
+// Each Google app has its own card. Its address and text live in the shared table the server signs in with.
+const GOOGLE_CATALOG_APPS: CatalogApp[] = GOOGLE_APPS.map(app => ({
+    serverName: app.serverName,
+    displayName: app.displayName,
+    description: app.description,
+    url: app.url,
     category: 'Productivity',
-};
+}));
 
 // Not a connected app. The card opens a setup form, since the server runs the Bitwarden CLI itself and the bot gets one tool.
 const BITWARDEN_SERVER_NAME = 'bitwarden';
@@ -503,7 +503,7 @@ const APP_CATALOG: CatalogApp[] = [
         url: 'https://mcp.semrush.com/v1/mcp',
         category: 'Other',
     },
-    GOOGLE_CATALOG_APP,
+    ...GOOGLE_CATALOG_APPS,
     BITWARDEN_CATALOG_APP,
 ];
 

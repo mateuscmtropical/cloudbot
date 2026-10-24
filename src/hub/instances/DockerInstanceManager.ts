@@ -1,3 +1,4 @@
+import { GOOGLE_CLIENT_ID_ENV, GOOGLE_CLIENT_SECRET_ENV } from '../../shared/googleClientEnv.ts';
 import { checkPersonName } from '../../shared/peopleTypes.ts';
 import type { InstanceStatus } from '../../shared/peopleTypes.ts';
 import type { InstanceManager, PersonRecord, PeopleStore, StartResult } from '../contract.ts';
@@ -63,12 +64,17 @@ function toContainerOptions(record: PersonRecord, settings: HubSettings): Docker
         source: `${VOLUME_PREFIX}${record.name}-${volume.suffix}`,
         target: volume.target,
     }));
+    // The Google client goes to the server process of the instance only. The bot user cannot read that environment.
+    const googleEnvironment = settings.googleClient === undefined
+        ? []
+        : [`${GOOGLE_CLIENT_ID_ENV}=${settings.googleClient.clientId}`, `${GOOGLE_CLIENT_SECRET_ENV}=${settings.googleClient.clientSecret}`];
     const environment = [
         `CLOUDBOT_HUB_SECRET=${record.instanceSecret}`,
         'CLOUDBOT_HUB_URL=http://hub:3001',
         `CLOUDBOT_PERSON_NAME=${record.name}`,
         `CLOUDBOT_PERSON_ROLE=${record.role}`,
         `CLOUDBOT_PUBLIC_URL=${publicUrl(record.name, settings)}`,
+        ...googleEnvironment,
     ];
 
     return {

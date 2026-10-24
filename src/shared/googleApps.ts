@@ -1,6 +1,7 @@
 // The Google Workspace apps that connect through Google's own remote MCP servers. They are fixed: the sign-in
-// endpoints are known in advance, since the servers do not publish working discovery, and the owner brings
-// a Google Cloud OAuth client of their own. Shared by the server, which signs in, and the app catalog.
+// endpoints are known in advance, since the servers do not publish working discovery, and the admin brings
+// a Google Cloud OAuth client once, for the whole server. Each app has its own card and asks only for its own scopes.
+// Shared by the server, which signs in, and the app catalog.
 
 interface GoogleApp {
     serverName: string;
@@ -10,6 +11,8 @@ interface GoogleApp {
     scopes: string[];
 }
 
+// Where the admin learns to set the Google client up. The panel links here when the server has none.
+const GOOGLE_GUIDE_URL = 'https://github.com/mateuscmtropical/cloudbot/blob/main/docs/GOOGLE.md';
 const GOOGLE_SCOPE_BASE = 'https://www.googleapis.com/auth/';
 
 function googleScopes(names: string[]): string[] {
@@ -54,37 +57,10 @@ const GOOGLE_APPS: GoogleApp[] = [
     },
 ];
 
-// One sign-in connects all five apps. The group asks for every scope of its members once, deduplicated, and the
-// server then keeps one connection for each member. The group has no server of its own, so its address is the
-// one of its first member. Together with the name, it is what tells the group from a custom app.
-interface GoogleGroup {
-    serverName: string;
-    displayName: string;
-    description: string;
-    url: string;
-    scopes: string[];
-    members: GoogleApp[];
-}
-
-const GOOGLE_GROUP_SCOPES = GOOGLE_APPS.flatMap(app => app.scopes);
-
-const GOOGLE_GROUP: GoogleGroup = {
-    serverName: 'google',
-    displayName: 'Google',
-    description: 'Gmail, Calendar, Drive, Docs and Sheets in one sign-in.',
-    url: 'https://gmailmcp.googleapis.com/mcp/v1',
-    scopes: [...new Set(GOOGLE_GROUP_SCOPES)],
-    members: GOOGLE_APPS,
-};
-
-function findGoogleGroup(serverName: string, url: string): GoogleGroup | undefined {
-    return serverName === GOOGLE_GROUP.serverName && url === GOOGLE_GROUP.url ? GOOGLE_GROUP : undefined;
-}
-
 // Both the name and the address must match, so a custom app that only borrows the name is not treated as Google.
 function findGoogleApp(serverName: string, url: string): GoogleApp | undefined {
     return GOOGLE_APPS.find(app => app.serverName === serverName && app.url === url);
 }
 
-export { GOOGLE_APPS, GOOGLE_GROUP, findGoogleApp, findGoogleGroup };
-export type { GoogleApp, GoogleGroup };
+export { GOOGLE_APPS, GOOGLE_GUIDE_URL, findGoogleApp };
+export type { GoogleApp };

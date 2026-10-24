@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatMessage } from '../../shared/chatTypes.ts';
 import type { ConnectedAppSummary } from '../../shared/connectedApps.ts';
-import { getBitwardenStatus, getGoogleClient, listConnectedApps, removeConnectedApp, saveGoogleClient, startAppConnection, startAppSignIn } from '../apiClient.ts';
+import { GOOGLE_APPS, GOOGLE_GUIDE_URL } from '../../shared/googleApps.ts';
+import { getBitwardenStatus, listConnectedApps, removeConnectedApp, startAppConnection, startAppSignIn } from '../apiClient.ts';
 import { APP_CATALOG, APP_CATEGORIES } from '../appCatalog.ts';
 import { APP_SIGN_IN_CHANNEL } from '../appReturn.ts';
 import { APP_LOGOS } from '../appLogos.ts';
@@ -15,9 +16,6 @@ vi.mock('../apiClient.ts', () => ({
     removeConnectedApp: vi.fn(),
     startAppConnection: vi.fn(),
     startAppSignIn: vi.fn(),
-    getGoogleClient: vi.fn(),
-    saveGoogleClient: vi.fn(),
-    forgetGoogleClient: vi.fn(),
     getBitwardenStatus: vi.fn(),
     saveBitwardenAccount: vi.fn(),
     forgetBitwardenAccount: vi.fn(),
@@ -27,13 +25,8 @@ vi.mock('../apiClient.ts', () => ({
 const LINEAR: ConnectedAppSummary = { id: 'app-1', name: 'linear', url: 'https://mcp.linear.app/mcp', status: 'connected', toolCount: 4 };
 const NOTION: ConnectedAppSummary = { id: 'app-2', name: 'notion', url: 'https://mcp.notion.com/mcp', status: 'needs_token', toolCount: 0 };
 const CUSTOM: ConnectedAppSummary = { id: 'app-3', name: 'custom-example-com', url: 'https://mcp.example.com/mcp', status: 'failed', toolCount: 0, problem: 'Private details from the server.' };
-const GOOGLE_MEMBERS_CONNECTED: ConnectedAppSummary[] = ['gmail', 'calendar', 'drive', 'docs', 'sheets'].map(product => ({
-    id: `google-${product}-id`,
-    name: `google-${product}`,
-    url: `https://${product}mcp.googleapis.com/mcp/v1`,
-    status: 'connected',
-    toolCount: 3,
-}));
+const GOOGLE_CARD_NAMES = ['Gmail', 'Google Calendar', 'Google Drive', 'Google Docs', 'Google Sheets'];
+const GMAIL_CONNECTED: ConnectedAppSummary = { id: 'google-gmail-id', name: 'google-gmail', url: 'https://gmailmcp.googleapis.com/mcp/v1', status: 'connected', toolCount: 3 };
 const NOTION_CONNECTED: ConnectedAppSummary = { ...NOTION, status: 'connected', toolCount: 3 };
 const STARTED_MESSAGE: ChatMessage = {
     id: 'message-1',
@@ -522,26 +515,113 @@ describe('ConnectAppsPanel', () => {
             .toHaveBeenCalledTimes(1);
     });
 
-    it('shows one Google card and no card for the five apps', async () => {
+    it('shows a separate card for each Google app and no single Google card', async () => {
         vi.mocked(listConnectedApps)
             .mockResolvedValue([]);
 
         render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
         fireEvent.click(await screen.findByRole('button', { name: 'Productivity' }));
 
-        expect(screen.getByRole('button', { name: 'Connect Google' }))
-            .toBeTruthy();
-        expect(screen.getByText('Gmail, Calendar, Drive, Docs and Sheets in one sign-in.'))
-            .toBeTruthy();
-        ['Gmail', 'Google Calendar', 'Google Drive', 'Google Docs', 'Google Sheets'].forEach((displayName) => {
-            expect(screen.queryByRole('button', { name: `Connect ${displayName}` }))
+        GOOGLE_CARD_NAMES.forEach((displayName) => {
+            expect(screen.getByRole('button', { name: `Connect ${displayName}` }))
+                .toBeTruthy();
+        });
+        GOOGLE_APPS.forEach((app) => {
+            expect(screen.getByText(app.description))
+                .toBeTruthy();
+        });
+        expect(screen.queryByRole('button', { name: 'Connect Google' }))
+            .toBeNull();
+        expect(screen.queryByRole('button', { name: 'Google setup' }))
+            .toBeNull();
+    });
+
+    it('gives every Google card a logo', () => {
+        GOOGLE_APPS.forEach((app) => {
+            expect(APP_LOGOS[app.serverName]?.path.length)
+                .toBeGreaterThan(0);
+        });
+    });
+
+    it('opens the sign-in page right away for the Google card that was clicked, with no form', async () => {
+        const signInWindow = createSignInWindow();
+
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        openWindow
+            .mockReturnValue(signInWindow as unknown as Window);
+        vi.mocked(startAppSignIn)
+            .mockResolvedValue({ status: 'redirect', authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?state=s1' });
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Google Calendar' }));
+
+        await waitFor(() => {
+            expect(signInWindow.location.href)
+                .toBe('https://accounts.google.com/o/oauth2/v2/auth?state=s1');
+        });
+        expect(startAppSignIn)
+            .toHaveBeenCalledWith('bot-1', 'google-calendar', 'https://calendarmcp.googleapis.com/mcp/v1');
+        expect(screen.queryByRole('region', { name: 'Google setup' }))
+            .toBeNull();
+        expect(screen.queryByText(/Google is not set up/))
+            .toBeNull();
+    });
+
+    it('says Google is not set up, with the guide link, and closes the window when the server has no client', async () => {
+        const signInWindow = createSignInWindow();
+
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        openWindow
+            .mockReturnValue(signInWindow as unknown as Window);
+        vi.mocked(startAppSignIn)
+            .mockResolvedValue({ status: 'google_not_configured' });
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
+
+        const message = await screen.findByText(/Google is not set up on this server yet\. The admin adds a Google client once, see the/);
+        const link = screen.getByRole('link', { name: 'Google guide' });
+
+        expect(message.textContent)
+            .toBe('Google is not set up on this server yet. The admin adds a Google client once, see the Google guide.');
+        expect(link.getAttribute('href'))
+            .toBe(GOOGLE_GUIDE_URL);
+        expect(GOOGLE_GUIDE_URL)
+            .toBe('https://github.com/mateuscmtropical/cloudbot/blob/main/docs/GOOGLE.md');
+        expect(signInWindow.close)
+            .toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole('region', { name: 'Google setup' }))
+            .toBeNull();
+        expect(startAppConnection)
+            .not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: 'Connect Gmail' })
+            .hasAttribute('disabled'))
+            .toBe(false);
+    });
+
+    it('hides the not set up line again on the next attempt', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+        vi.mocked(startAppSignIn)
+            .mockResolvedValueOnce({ status: 'google_not_configured' })
+            .mockResolvedValue({ status: 'redirect', authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?state=s1' });
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
+        await screen.findByText(/Google is not set up/);
+        fireEvent.click(screen.getByRole('button', { name: 'Connect Gmail' }));
+
+        await waitFor(() => {
+            expect(screen.queryByText(/Google is not set up/))
                 .toBeNull();
         });
     });
 
-    it('shows Connected and one Remove when all five Google apps are connected, and removes all of them', async () => {
+    it('shows Connected and Remove on the Google card that is connected, and removes only that one', async () => {
         vi.mocked(listConnectedApps)
-            .mockResolvedValue(GOOGLE_MEMBERS_CONNECTED);
+            .mockResolvedValue([GMAIL_CONNECTED]);
         vi.mocked(removeConnectedApp)
             .mockResolvedValue(undefined);
 
@@ -549,56 +629,26 @@ describe('ConnectAppsPanel', () => {
 
         expect(await screen.findByText('1 installed'))
             .toBeTruthy();
-        expect(screen.queryByRole('button', { name: 'Connect Google' }))
+        expect(screen.queryByRole('button', { name: 'Connect Gmail' }))
             .toBeNull();
+        expect(screen.getByRole('button', { name: 'Connect Google Drive' }))
+            .toBeTruthy();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Remove Google' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Remove Gmail' }));
 
-        await waitFor(() => {
-            expect(screen.getByRole('button', { name: 'Connect Google' }))
-                .toBeTruthy();
-        });
+        expect(await screen.findByRole('button', { name: 'Connect Gmail' }))
+            .toBeTruthy();
         expect(removeConnectedApp)
-            .toHaveBeenCalledTimes(5);
-        GOOGLE_MEMBERS_CONNECTED.forEach((member) => {
-            expect(removeConnectedApp)
-                .toHaveBeenCalledWith(member.id);
-        });
+            .toHaveBeenCalledTimes(1);
+        expect(removeConnectedApp)
+            .toHaveBeenCalledWith('google-gmail-id');
         expect(screen.getByText('0 installed'))
             .toBeTruthy();
     });
 
-    it('says Partly connected and offers Remove, which removes the rows that are there', async () => {
-        const [firstMember, secondMember] = GOOGLE_MEMBERS_CONNECTED;
-
+    it('keeps the rows of the Google apps out of the Custom list', async () => {
         vi.mocked(listConnectedApps)
-            .mockResolvedValue([firstMember as ConnectedAppSummary, secondMember as ConnectedAppSummary]);
-
-        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
-
-        vi.mocked(removeConnectedApp)
-            .mockResolvedValue(undefined);
-
-        expect(await screen.findByText('Partly connected. Remove it to start over.'))
-            .toBeTruthy();
-        expect(screen.queryByRole('button', { name: 'Connect Google' }))
-            .toBeNull();
-
-        fireEvent.click(screen.getByRole('button', { name: 'Remove Google' }));
-
-        expect(await screen.findByRole('button', { name: 'Connect Google' }))
-            .toBeTruthy();
-        expect(removeConnectedApp)
-            .toHaveBeenCalledTimes(2);
-        expect(removeConnectedApp)
-            .toHaveBeenCalledWith('google-gmail-id');
-        expect(removeConnectedApp)
-            .toHaveBeenCalledWith('google-calendar-id');
-    });
-
-    it('keeps the rows of the five Google apps out of the Custom list', async () => {
-        vi.mocked(listConnectedApps)
-            .mockResolvedValue([...GOOGLE_MEMBERS_CONNECTED, CUSTOM]);
+            .mockResolvedValue([GMAIL_CONNECTED, CUSTOM]);
 
         render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
 
@@ -608,73 +658,7 @@ describe('ConnectAppsPanel', () => {
             .toBeTruthy();
         expect(screen.queryByRole('button', { name: /Remove gmailmcp/ }))
             .toBeNull();
-        expect(screen.queryByRole('button', { name: /Remove (calendar|drive|docs|sheets)mcp/ }))
-            .toBeNull();
     });
-
-    it('opens the Google setup when a Google app needs the owner client, and goes on after the save', async () => {
-        const signInWindow = createSignInWindow();
-
-        vi.mocked(listConnectedApps)
-            .mockResolvedValue([]);
-        openWindow
-            .mockReturnValue(signInWindow as unknown as Window);
-        vi.mocked(startAppSignIn)
-            .mockResolvedValueOnce({ status: 'needs_client' })
-            .mockResolvedValue({ status: 'redirect', authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?state=s1' });
-        vi.mocked(getGoogleClient)
-            .mockResolvedValue({ configured: false, redirectUri: 'https://bot.example.com/api/apps/oauth/callback' });
-        vi.mocked(saveGoogleClient)
-            .mockResolvedValue({ configured: true, redirectUri: 'https://bot.example.com/api/apps/oauth/callback' });
-
-        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
-        fireEvent.click(await screen.findByRole('button', { name: 'Connect Google' }));
-
-        expect(await screen.findByRole('region', { name: 'Google setup' }))
-            .toBeTruthy();
-        expect(signInWindow.close)
-            .toHaveBeenCalledTimes(1);
-        expect(startAppConnection)
-            .not.toHaveBeenCalled();
-
-        fireEvent.change(await screen.findByLabelText('Client ID'), { target: { value: '123-abc.apps.googleusercontent.com' } });
-        fireEvent.change(screen.getByLabelText('Client secret'), { target: { value: 'GOCSPX-very-secret-value' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-
-        await waitFor(() => {
-            expect(startAppSignIn)
-                .toHaveBeenCalledTimes(2);
-        });
-        expect(startAppSignIn)
-            .toHaveBeenLastCalledWith('bot-1', 'google', 'https://gmailmcp.googleapis.com/mcp/v1');
-        await waitFor(() => {
-            expect(signInWindow.location.href)
-                .toBe('https://accounts.google.com/o/oauth2/v2/auth?state=s1');
-        });
-        expect(screen.queryByRole('region', { name: 'Google setup' }))
-            .toBeNull();
-    });
-
-    it('opens the Google setup from its own button, without a sign-in to continue', async () => {
-        vi.mocked(listConnectedApps)
-            .mockResolvedValue([]);
-        vi.mocked(getGoogleClient)
-            .mockResolvedValue({ configured: true, redirectUri: 'https://bot.example.com/api/apps/oauth/callback' });
-
-        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
-        fireEvent.click(await screen.findByRole('button', { name: 'Google setup' }));
-
-        expect(await screen.findByText(/Client saved/))
-            .toBeTruthy();
-        expect(startAppSignIn)
-            .not.toHaveBeenCalled();
-
-        fireEvent.click(screen.getByRole('button', { name: 'Close Google setup' }));
-
-        expect(screen.queryByRole('region', { name: 'Google setup' }))
-            .toBeNull();
-    });
-
     it('shows a Bitwarden card that opens the setup form instead of a connection', async () => {
         vi.mocked(listConnectedApps)
             .mockResolvedValue([]);

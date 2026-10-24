@@ -135,12 +135,35 @@ function personOriginPattern(hostHeader: string, domain: string, secure: boolean
     return `${scheme}://*.${domain}${localPort}`;
 }
 
-function redirectForLocalHost(name: string, hostHeader: string, domain: string, secure: boolean): string {
+function personOrigin(name: string, hostHeader: string, domain: string, secure: boolean): string {
     const hostUrl = new URL(`http://${hostHeader}`);
     const localPort = domain.toLowerCase() === 'localhost' && hostUrl.port !== '' ? `:${hostUrl.port}` : '';
     const scheme = secure ? 'https' : 'http';
 
-    return `${scheme}://${name}.${domain}${localPort}/`;
+    return `${scheme}://${name}.${domain}${localPort}`;
+}
+
+function redirectForLocalHost(name: string, hostHeader: string, domain: string, secure: boolean): string {
+    return `${personOrigin(name, hostHeader, domain, secure)}/`;
+}
+
+// Google takes one redirect address per client, so every Google sign-in comes back to the apex. The instance made the
+// state start with the person name and a dot. The browser goes on to that person's callback with the query unchanged.
+// Anything else, such as an unknown name or a state without a name, gets no redirect.
+function readGoogleReturnLocation(context: Context, options: FrontDoorRoutesOptions, hostHeader: string | undefined): string | undefined {
+    const state = context.req.query('state') ?? '';
+    const separatorIndex = state.indexOf('.');
+    const name = separatorIndex < 1 ? '' : state.slice(0, separatorIndex);
+    const person = checkPersonName(name) === undefined ? options.people.find(name) : undefined;
+
+    if (person === undefined || person.state !== 'active' || hostHeader === undefined) {
+        return undefined;
+    }
+
+    const origin = personOrigin(name, hostHeader, options.domain, options.secure);
+    const requestAddress = new URL(context.req.url);
+
+    return `${origin}${APP_OAUTH_CALLBACK_PATH}${requestAddress.search}`;
 }
 
 function removeSessionCookie(cookieHeader: string | undefined): string | undefined {
@@ -487,6 +510,12 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
                 const location = redirectForLocalHost(name, hostHeader, options.domain, options.secure);
 
                 return context.redirect(location, 303);
+            }
+
+            if (context.req.method === 'GET' && context.req.path === APP_OAUTH_CALLBACK_PATH) {
+                const returnLocation = readGoogleReturnLocation(context, options, hostHeader);
+
+                return returnLocation === undefined ? renderUnavailable(context) : context.redirect(returnLocation, 303);
             }
 
             return renderUnavailable(context);

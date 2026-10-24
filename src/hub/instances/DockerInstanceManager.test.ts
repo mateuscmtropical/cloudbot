@@ -191,6 +191,24 @@ describe('DockerInstanceManager', () => {
             });
     });
 
+    it('gives the Google client to the instance only when the admin set one', async () => {
+        const withClient = makeManager([], { ...SETTINGS, googleClient: { clientId: 'id.apps.googleusercontent.com', clientSecret: 'secret-1' } });
+        const withoutClient = makeManager();
+
+        await withClient.manager.create(makeRecord('maria'));
+        await withoutClient.manager.create(makeRecord('maria'));
+
+        const withEnvironment = withClient.docker.createdContainers.get('cloudbot-i-maria')?.environment ?? [];
+        const withoutEnvironment = withoutClient.docker.createdContainers.get('cloudbot-i-maria')?.environment ?? [];
+
+        expect(withEnvironment)
+            .toContain('CLOUDBOT_GOOGLE_CLIENT_ID=id.apps.googleusercontent.com');
+        expect(withEnvironment)
+            .toContain('CLOUDBOT_GOOGLE_CLIENT_SECRET=secret-1');
+        expect(withoutEnvironment.some(line => line.includes('GOOGLE')))
+            .toBe(false);
+    });
+
     it('maps missing, stopped, starting and healthy containers to their statuses', async () => {
         const { manager, docker } = makeManager();
 
