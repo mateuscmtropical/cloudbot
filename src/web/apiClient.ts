@@ -1,5 +1,5 @@
 import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName, ScreenViewName } from '../shared/chatTypes.ts';
-import type { ConnectedAppSummary } from '../shared/connectedApps.ts';
+import type { AppSignInStart, ConnectedAppSummary } from '../shared/connectedApps.ts';
 import type { BotRoutine } from '../shared/routineTypes.ts';
 import type { BotWatch } from '../shared/watchTypes.ts';
 import type { BotWebhook, CreatedBotWebhook } from '../shared/webhookTypes.ts';
@@ -476,6 +476,13 @@ function listConnectedApps(): Promise<ConnectedAppSummary[]> {
     return requestJson<ConnectedAppSummary[]>('/api/apps', {});
 }
 
+// Asks where the server's own sign-in page is. The answer is an address to open, or that the server has none.
+function startAppSignIn(botId: string, name: string, url: string): Promise<AppSignInStart> {
+    const path = `${API_ROOT}/apps/oauth/start`;
+
+    return postJson<AppSignInStart>(path, { botId, name, url });
+}
+
 function startAppConnection(botId: string, name: string, url: string): Promise<ChatMessage> {
     const path = `${API_ROOT}/apps/connect`;
 
@@ -528,6 +535,7 @@ export {
     RequestFailedError,
     listConnectedApps,
     startAppConnection,
+    startAppSignIn,
     removeConnectedApp,
     createBot,
     deleteBot,

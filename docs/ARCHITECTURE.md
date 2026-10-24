@@ -560,10 +560,33 @@ changes cannot reach a private host. The address of a connected server is kept i
 
 The tools of a connected server are named `mcp__<name>__<tool>`, so they go through the approval
 path like other outside connectors. `app_connect` always asks the owner. The Connect apps panel
-offers the known Linear and Notion addresses plus a custom address. `POST /api/apps/connect` sends
-the request to the selected bot as a normal chat message, so it uses the same `app_connect` approval,
+offers the known Linear and Notion addresses plus a custom address. Connect first asks `POST /api/apps/oauth/start`
+for the sign-in page of the server. When the server has none, the panel falls back to `POST /api/apps/connect`,
+which sends the request to the selected bot as a normal chat message, so it uses the same `app_connect` approval,
 address check and secure token form as a request typed in chat. Both paths save into the same list.
 The panel lists and removes connections through `GET /api/apps` and `DELETE /api/apps/:id`.
+
+### Sign-in through the server's own page
+
+A server that follows the MCP authorization rules connects without a pasted token. `discoverOAuth` reads
+`/.well-known/oauth-protected-resource` of the server and the metadata of the authorization server it names.
+It needs an authorization endpoint, a token endpoint, a registration endpoint and the S256 code challenge. Every
+request goes through `createGuardedFetch`, which runs `checkAppUrl` and pins the connection, so a server cannot
+point the sign-in at a private host. `registerClient` registers CloudBot as a public client for one redirect
+address, `CLOUDBOT_PUBLIC_URL` plus `/api/apps/oauth/callback`.
+
+`AppOAuth.start` keeps the code verifier and a random state in memory for ten minutes and answers with the
+authorization address. The panel opens it in the same tab. The server sends the owner back to the callback with a
+code. The callback route sits outside the session check, because the session cookie is `SameSite=Strict` and the
+browser does not send it on a return from another site. The state, which works once, ties the request to the owner
+who started it. The callback trades the code for tokens and then answers with a page that moves on by itself, since
+a redirect would drop the cookie too. The hub lets this one GET path through to a running instance without a hub
+session, for the same reason.
+
+`AppOAuthTokens` keeps the access token, the refresh token and the client in one vault secret named `OAUTH_<APP>`,
+for the origin of the server. `AppProxy` reads the access token for each request, and `AppOAuthTokens` renews it
+first when it ends within a minute, one refresh at a time. The token never reaches the page or the bot. A refresh
+that the server refuses fails the request, and the owner connects the app again.
 
 ## API integrations
 

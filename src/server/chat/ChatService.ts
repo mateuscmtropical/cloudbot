@@ -71,6 +71,7 @@ import { PEOPLE_TOOL_FULL_NAMES, createPeopleTools } from '../people/createPeopl
 import type { PeopleAdmin } from '../people/PeopleAdmin.ts';
 import type { PushNoticeKind } from '../../shared/pushTypes.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
+import { isOAuthSecretName } from '../apps/AppOAuthTokens.ts';
 import type { ConnectedApps } from '../apps/ConnectedApps.ts';
 import { APP_TOOL_FULL_NAMES, createAppTools } from '../apps/createAppTools.ts';
 import {
@@ -3905,7 +3906,7 @@ class ChatService {
         const requestTool = createRequestSecretTool((name, purpose, site) => this.requestSecret(botId, name, purpose, site));
         const typeTools = this.browser === undefined
             ? []
-            : [createTypeSecretTool(this.browser, name => botSecrets.read(botId, name), this.screen)];
+            : [createTypeSecretTool(this.browser, name => (isOAuthSecretName(name) ? undefined : botSecrets.read(botId, name)), this.screen)];
 
         return [requestTool, ...typeTools];
     }

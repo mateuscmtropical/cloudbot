@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createWebhook, getLimits, getModelSettings, listBots, listMessages, listRoutines, listWebhooks, removeRoutine, removeWebhook, RequestFailedError, saveLimits, saveModelSettings, startAppConnection, stopTurn, uploadAttachments } from './apiClient.ts';
+import { createWebhook, getLimits, getModelSettings, listBots, listMessages, listRoutines, listWebhooks, removeRoutine, removeWebhook, RequestFailedError, saveLimits, saveModelSettings, startAppConnection, startAppSignIn, stopTurn, uploadAttachments } from './apiClient.ts';
 import type { ChatMessage } from '../shared/chatTypes.ts';
 
 const NO_SETTINGS = {
@@ -142,6 +142,21 @@ describe('apiClient', () => {
             });
         expect(startedMessage)
             .toEqual(message);
+    });
+
+    it('asks for the sign-in page of an app', async () => {
+        const fetchMock = stubFetch(Response.json({ status: 'redirect', authorizationUrl: 'https://mcp.notion.com/authorize?state=s1' }));
+
+        const start = await startAppSignIn('bot-1', 'notion', 'https://mcp.notion.com/mcp');
+
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/apps/oauth/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ botId: 'bot-1', name: 'notion', url: 'https://mcp.notion.com/mcp' }),
+            });
+        expect(start)
+            .toEqual({ status: 'redirect', authorizationUrl: 'https://mcp.notion.com/authorize?state=s1' });
     });
 
     it('asks for the page before a sequence with a limit', async () => {

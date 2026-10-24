@@ -33,6 +33,10 @@ import { createPushRoutes } from './push/createPushRoutes.ts';
 import type { PushRoutesOptions } from './push/createPushRoutes.ts';
 import { createRuleRoutes } from './rules/createRuleRoutes.ts';
 import { createAppRoutes } from './apps/createAppRoutes.ts';
+import type { AppSignInOptions } from './apps/createAppRoutes.ts';
+import { APP_OAUTH_CALLBACK_PATH } from '../shared/connectedApps.ts';
+import { createAppOAuthCallbackRoutes } from './apps/createAppOAuthCallbackRoutes.ts';
+import type { AppOAuth } from './apps/AppOAuth.ts';
 import type { ConnectedApps } from './apps/ConnectedApps.ts';
 import { createLimitRoutes } from './limits/createLimitRoutes.ts';
 import { createModelRoutes } from './models/createModelRoutes.ts';
@@ -95,6 +99,8 @@ interface AppOptions {
     watchStore?: WatchStore;
     // The remote MCP servers the owner connected. Without it the owner's app routes are not served.
     connectedApps?: ConnectedApps;
+    // The sign-in through the server's own page. The redirect address is the one the server sends the owner back to.
+    appOAuth?: AppOAuth;
     // The address new webhook URLs start with. Without it the server's own address is used.
     publicBaseUrl?: string;
     // CLOUDBOT_PUBLIC_URL. Requests that change state may also come from the host of this address.
@@ -151,6 +157,13 @@ function skipApiRoutes(serve: MiddlewareHandler): MiddlewareHandler {
     };
 }
 
+// The server sends the owner back to the address the owner opens CloudBot at.
+function createSignInOptions(oauth: AppOAuth, chatService: Pick<ChatService, 'hasBot'>, publicBaseUrl: string | undefined): AppSignInOptions {
+    const baseUrl = publicBaseUrl ?? readPublicBaseUrl(process.env);
+
+    return { oauth, redirectUri: `${baseUrl}${APP_OAUTH_CALLBACK_PATH}`, hasBot: botId => chatService.hasBot(botId) };
+}
+
 function createApp(options: AppOptions): Hono {
     const app = new Hono();
     const webRoot = options.webRoot ?? DEFAULT_WEB_ROOT;
@@ -200,6 +213,14 @@ function createApp(options: AppOptions): Hono {
         app.route('/', whatsappRoutes);
     }
 
+    // The server's sign-in page sends the owner back here from another site, so the strict cookie is not sent.
+    // The state of the sign-in, which only works once, checks the request instead.
+    if (options.appOAuth !== undefined) {
+        const callbackRoutes = createAppOAuthCallbackRoutes({ oauth: options.appOAuth });
+
+        app.route('/', callbackRoutes);
+    }
+
     const sessionCheck = requireSession(options.access, options.hubSecret);
     const sameOriginCheck = requireSameOrigin({ publicHost });
 
@@ -229,6 +250,7 @@ function createApp(options: AppOptions): Hono {
                 ...(options.whatsappStore === undefined ? {} : { whatsappStore: options.whatsappStore }),
                 hasAgentProgram: () => hasAgentProgramListening({ agentUser: process.env.CLOUDBOT_AGENT_USER }),
                 isReady: options.isReady ?? (() => true),
+                ...(options.appOAuth === undefined ? {} : { hasAppSignIn: () => options.appOAuth?.hasPending() ?? false }),
             }),
         });
 
@@ -259,6 +281,7 @@ function createApp(options: AppOptions): Hono {
         const connectedAppRoutes = createAppRoutes({
             connectedApps: options.connectedApps,
             ...(options.chatService === undefined ? {} : { chatService: options.chatService }),
+            ...(options.appOAuth === undefined || options.chatService === undefined ? {} : { signIn: createSignInOptions(options.appOAuth, options.chatService, options.publicBaseUrl) }),
         });
 
         app.route('/', connectedAppRoutes);

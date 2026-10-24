@@ -41,6 +41,7 @@ describe('readHubActivitySources', () => {
                 hasEmailAccount: true,
                 hasAgentProgram: false,
                 isLoginOrSetupInProgress: false,
+                hasAppSignIn: false,
             });
     });
 
@@ -68,6 +69,7 @@ describe('readHubActivitySources', () => {
                 hasEmailAccount: false,
                 hasAgentProgram: false,
                 isLoginOrSetupInProgress: true,
+                hasAppSignIn: false,
             });
     });
 });

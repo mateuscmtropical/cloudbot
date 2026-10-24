@@ -10,6 +10,8 @@ interface ActivitySources {
     hasEmailAccount: boolean;
     hasAgentProgram: boolean;
     isLoginOrSetupInProgress: boolean;
+    // The owner went to the sign-in page of an app and has not come back yet.
+    hasAppSignIn?: boolean | undefined;
 }
 
 function computeActivity(sources: ActivitySources): InstanceActivity {
@@ -49,6 +51,10 @@ function computeActivity(sources: ActivitySources): InstanceActivity {
 
     if (sources.isLoginOrSetupInProgress) {
         reasons.push('login or setup in progress');
+    }
+
+    if (sources.hasAppSignIn === true) {
+        reasons.push('app sign-in in progress');
     }
 
     return { isBusy: reasons.length > 0, reasons };

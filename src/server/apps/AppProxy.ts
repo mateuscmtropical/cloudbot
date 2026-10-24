@@ -11,7 +11,7 @@ import { BodyTooLargeError, readCapped } from './readCapped.ts';
 // A remote MCP server behind the proxy. The token is read from the vault for each request, so it is held only while a request is sent.
 interface AppRoute {
     upstream: URL;
-    readToken: () => string | undefined;
+    readToken: () => string | undefined | Promise<string | undefined>;
 }
 
 interface AppProxyOptions {
@@ -426,7 +426,7 @@ class AppProxy {
         let token: string | undefined;
 
         try {
-            token = route.readToken();
+            token = await route.readToken();
         } catch {
             // The token is not sent when it cannot be used for this address, such as a changed site or a plain http address.
             sendJsonError(outgoingResponse, BAD_GATEWAY_STATUS, 'The token for this server cannot be used now, so the request was not sent.');

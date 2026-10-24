@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 
+import { APP_OAUTH_CALLBACK_PATH } from '../../shared/connectedApps.ts';
 import { HUB_TRUST_HEADER } from '../../shared/hubProtocol.ts';
 import { checkPersonName } from '../../shared/peopleTypes.ts';
 import type { ActivityTracker, InstanceManager, PeopleStore, PersonRecord, StartResult } from '../contract.ts';
@@ -549,6 +550,20 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
             const redirectPath = person.mustChangePassword ? '/__hub/password' : readAfterLoginPath(name, options, context);
 
             return context.redirect(redirectPath, 303);
+        }
+
+        // A connected app's sign-in page sends the owner back from another site, so the strict hub cookie is not sent.
+        // This one path goes to the instance without a session. The instance checks the one-time state of the sign-in.
+        // An instance that is not running has lost that state, so the owner goes to the page instead.
+        if (context.req.method === 'GET' && context.req.path === APP_OAUTH_CALLBACK_PATH) {
+            const callbackStatus = await options.instances.status(name)
+                .catch(() => undefined);
+            const callbackResponse = callbackStatus === 'running'
+                ? await proxyRequest(context, person, options)
+                        .catch(() => undefined)
+                : undefined;
+
+            return callbackResponse ?? context.redirect('/', 303);
         }
 
         const currentTime = nowFor(options);
