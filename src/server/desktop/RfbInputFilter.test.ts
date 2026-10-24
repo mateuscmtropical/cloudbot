@@ -89,6 +89,16 @@ describe('RfbInputFilter', () => {
             .toThrow(RfbStreamError);
     });
 
+    it('passes a resize with the screen id that TigerVNC gave', () => {
+        const filter = startedFilter(() => true);
+        const tigerResize = Buffer.from(PORTRAIT_RESIZE);
+
+        tigerResize.writeUInt32BE(1804289383, 8);
+
+        expect(filter.filter(tigerResize))
+            .toEqual(tigerResize);
+    });
+
     it('restores the normal desktop size with one screen', () => {
         expect(DEFAULT_RESIZE)
             .toEqual(Buffer.from([251, 0, 5, 0, 3, 32, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 3, 32, 0, 0, 0, 0]));

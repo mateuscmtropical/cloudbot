@@ -24,6 +24,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- The Screen panel on a phone no longer stays black. The server refused the resize request of the phone, because noVNC sends back the random screen id of TigerVNC, and the panel kept connecting again.
 - A person stays signed in to the hub when CloudBot opens from its home screen icon, a notification or a link in another app. Hub sessions now end after 7 days, so each person signs in again once a week. Fingerprint or face sign-in on a device without a passkey says how to turn it on.
 - On a phone, the Screen panel connects again on its own while the desktop starts, keeps the composer on screen and no longer opens the bot list on a sideways drag.
 - The sign-in of an app opens in a new window. The CloudBot page stays where it is, and the new window tells it when the sign-in ends and closes itself.
