@@ -5,13 +5,14 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import { WebSocket } from 'ws';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SetupAccess } from '../access/SetupAccess.ts';
 import { openDatabase } from '../store/openDatabase.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { SettingsStore } from '../store/SettingsStore.ts';
 import { attachVncProxy } from './attachVncProxy.ts';
+import { buildSetDesktopSizeMessage } from './RfbInputFilter.ts';
 import { ScreenHolder } from './ScreenHolder.ts';
 
 function listenOnFreePort(server: Server | TcpServer): Promise<number> {
@@ -44,14 +45,17 @@ describe('attachVncProxy', () => {
     let httpPort: number;
     let sessionToken: string;
     let screen: ScreenHolder;
+    let receivedVncBytes: Buffer[];
 
     beforeEach(async () => {
         screen = new ScreenHolder();
+        receivedVncBytes = [];
         opened = await openDatabase(':memory:');
         access = new SetupAccess(new SettingsStore(opened.db));
         vncServer = createTcpServer((connection) => {
             connection.write('RFB 003.008\n');
             connection.on('data', (chunk) => {
+                receivedVncBytes.push(Buffer.from(chunk));
                 connection.write(chunk);
             });
         });
@@ -71,6 +75,38 @@ describe('attachVncProxy', () => {
 
         sessionToken = redeemedToken;
     });
+
+    async function connectAndRequestPortraitResize(size: { width: number; height: number } = { width: 400, height: 800 }): Promise<WebSocket> {
+        const webSocket = new WebSocket(`ws://127.0.0.1:${String(httpPort)}/api/desktop/vnc`, {
+            headers: { cookie: `cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(httpPort)}` },
+        });
+        const handshake = Buffer.concat([Buffer.from('RFB 003.008\n'), Buffer.from([1, 1])]);
+        const resize = buildSetDesktopSizeMessage(size);
+
+        await new Promise<void>((resolve) => {
+            webSocket.on('open', resolve);
+        });
+        webSocket.send(Buffer.concat([handshake, resize]));
+        await vi.waitFor(() => {
+            const received = Buffer.concat(receivedVncBytes);
+
+            expect(received.includes(resize))
+                .toBe(true);
+        });
+
+        return webSocket;
+    }
+
+    async function waitForDefaultDesktopResize(): Promise<void> {
+        const reset = buildSetDesktopSizeMessage({ width: 1280, height: 800 });
+
+        await vi.waitFor(() => {
+            const received = Buffer.concat(receivedVncBytes);
+
+            expect(received.includes(reset))
+                .toBe(true);
+        });
+    }
 
     afterEach(() => {
         httpServer.closeAllConnections();
@@ -253,5 +289,43 @@ describe('attachVncProxy', () => {
             expect(echoed.includes(POINTER))
                 .toBe(true);
         });
+    });
+
+    it('restores the default desktop size when the owner gives the screen back', async () => {
+        screen.giveToPerson();
+        const webSocket = await connectAndRequestPortraitResize();
+
+        screen.giveToBot();
+        await waitForDefaultDesktopResize();
+        webSocket.close();
+    });
+
+    it('restores the default desktop size when the owner closes the screen panel', async () => {
+        screen.giveToPerson();
+        const webSocket = await connectAndRequestPortraitResize();
+
+        webSocket.close();
+        await waitForDefaultDesktopResize();
+    });
+
+    it('keeps the surviving panel size when another owner panel closes', async () => {
+        screen.giveToPerson();
+        const firstPanel = await connectAndRequestPortraitResize({ width: 400, height: 800 });
+        const secondPanel = await connectAndRequestPortraitResize({ width: 500, height: 1000 });
+
+        receivedVncBytes = [];
+
+        await new Promise<void>((resolve) => {
+            firstPanel.once('close', () => {
+                resolve();
+            });
+            firstPanel.close();
+        });
+
+        expect(receivedVncBytes)
+            .toHaveLength(0);
+
+        secondPanel.close();
+        await waitForDefaultDesktopResize();
     });
 });

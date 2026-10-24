@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { RfbInputFilter, RfbStreamError } from './RfbInputFilter.ts';
+import { RfbInputFilter, RfbStreamError, buildSetDesktopSizeMessage } from './RfbInputFilter.ts';
 
 const HANDSHAKE = Buffer.concat([Buffer.from('RFB 003.008\n'), Buffer.from([1, 1])]);
 const UPDATE_REQUEST = Buffer.from([3, 0, 0, 0, 0, 0, 5, 0, 5, 0]);
@@ -8,6 +8,8 @@ const KEY_DOWN = Buffer.from([4, 1, 0, 0, 0, 0, 0, 97]);
 const POINTER = Buffer.from([5, 1, 0, 10, 0, 10]);
 const CUT_TEXT = Buffer.concat([Buffer.from([6, 0, 0, 0, 0, 0, 0, 3]), Buffer.from('abc')]);
 const SET_ENCODINGS = Buffer.from([2, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 1]);
+const PORTRAIT_RESIZE = buildSetDesktopSizeMessage({ width: 400, height: 800 });
+const DEFAULT_RESIZE = buildSetDesktopSizeMessage({ width: 1280, height: 800 });
 
 function startedFilter(isAllowed: () => boolean): RfbInputFilter {
     const filter = new RfbInputFilter(isAllowed);
@@ -39,6 +41,66 @@ describe('RfbInputFilter', () => {
 
         expect(filter.filter(all))
             .toEqual(all);
+    });
+
+    it('passes a bounded desktop resize only while the owner holds the screen', () => {
+        let isAllowed = false;
+        const filter = startedFilter(() => isAllowed);
+
+        expect(filter.filter(PORTRAIT_RESIZE))
+            .toHaveLength(0);
+        expect(filter.hasRequestedDesktopResize)
+            .toBe(false);
+
+        isAllowed = true;
+
+        expect(filter.filter(PORTRAIT_RESIZE))
+            .toEqual(PORTRAIT_RESIZE);
+        expect(filter.hasRequestedDesktopResize)
+            .toBe(true);
+    });
+
+    it('reports only forwarded resize requests to the desktop coordinator', () => {
+        let isAllowed = false;
+        const requestedSizes: Array<{ width: number; height: number }> = [];
+        const filter = new RfbInputFilter(() => isAllowed, (size) => {
+            requestedSizes.push(size);
+        });
+
+        filter.filter(HANDSHAKE);
+        filter.filter(PORTRAIT_RESIZE);
+        isAllowed = true;
+        filter.filter(PORTRAIT_RESIZE);
+
+        expect(requestedSizes)
+            .toEqual([{ width: 400, height: 800 }]);
+    });
+
+    it('accepts only a single full-screen resize request with bounded dimensions', () => {
+        const filter = startedFilter(() => true);
+        const oversized = buildSetDesktopSizeMessage({ width: 1921, height: 800 });
+        const multipleScreens = Buffer.from(PORTRAIT_RESIZE);
+
+        multipleScreens[6] = 2;
+
+        expect(() => filter.filter(oversized))
+            .toThrow(RfbStreamError);
+        expect(() => filter.filter(multipleScreens))
+            .toThrow(RfbStreamError);
+    });
+
+    it('restores the normal desktop size with one screen', () => {
+        expect(DEFAULT_RESIZE)
+            .toEqual(Buffer.from([251, 0, 5, 0, 3, 32, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 3, 32, 0, 0, 0, 0]));
+    });
+
+    it('frames a desktop resize request that arrives in pieces', () => {
+        const filter = startedFilter(() => true);
+
+        expect(filter.filter(PORTRAIT_RESIZE.subarray(0, 9)))
+            .toHaveLength(0);
+        expect(filter.filter(PORTRAIT_RESIZE.subarray(9)))
+            .toEqual(PORTRAIT_RESIZE);
     });
 
     it('decides for each message when the holder changes', () => {

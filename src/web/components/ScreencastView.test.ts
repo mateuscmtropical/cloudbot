@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildKeyInput, buildPointerInput, buildSocketUrl, buildWheelInput, isShortcutHeld, parseFrame, pictureRect } from './ScreencastView.tsx';
+import { buildKeyInput, buildPointerInput, buildResizeInput, buildSocketUrl, buildWheelInput, isShortcutHeld, parseFrame, pictureRect } from './ScreencastView.tsx';
 import type { ScreencastFrame } from './ScreencastView.tsx';
 
 const FRAME: ScreencastFrame = { data: 'AAAA', width: 1280, height: 800 };
@@ -47,6 +47,22 @@ describe('buildPointerInput', () => {
 
     it('sends nothing for a picture with no size', () => {
         expect(buildPointerInput('up', 10, 10, { left: 0, top: 0, width: 0, height: 0 }, FRAME))
+            .toBeUndefined();
+    });
+});
+
+describe('buildResizeInput', () => {
+    it('uses the panel size on a phone and the normal size on a wide screen', () => {
+        expect(buildResizeInput(390, 680, true))
+            .toEqual({ type: 'resize', width: 390, height: 680 });
+        expect(buildResizeInput(1200, 700, false))
+            .toEqual({ type: 'resize', width: 1280, height: 800 });
+    });
+
+    it('bounds portrait sizes and waits for a visible panel', () => {
+        expect(buildResizeInput(200, 2500, true))
+            .toEqual({ type: 'resize', width: 240, height: 1920 });
+        expect(buildResizeInput(0, 0, true))
             .toBeUndefined();
     });
 });

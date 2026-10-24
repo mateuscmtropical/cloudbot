@@ -1582,11 +1582,16 @@ button.list-row {
 }
 
 .desktop-screen {
+    position: relative;
     width: 100%;
     height: 70vh;
     min-height: 320px;
     overflow: hidden;
     background: #000;
+}
+
+.desktop-screen.is-resizing {
+    overflow: auto;
 }
 
 /* Expanded, the picture takes the height the panel has left. Then the controls stay on screen under it on a phone. */
@@ -1634,6 +1639,14 @@ button.list-row {
     .desktop-screen {
         height: 50vh;
     }
+
+    .desktop-screen.is-resizing {
+        height: 65vh;
+    }
+
+    .desktop-panel.is-expanded .desktop-screen.is-resizing {
+        height: 100%;
+    }
 }
 /* Local mode shows the browser's frames. The picture keeps its shape inside the panel. */
 .desktop-screen.screencast img {
@@ -1642,6 +1655,10 @@ button.list-row {
     height: 100%;
     object-fit: contain;
     user-select: none;
+}
+
+.desktop-vnc-target {
+    position: relative;
 }
 
 /* The people screen replaces the main view and keeps long rosters inside the available space. */

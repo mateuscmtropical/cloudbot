@@ -10,6 +10,7 @@ import { HUB_TRUST_HEADER } from '../../shared/hubProtocol.ts';
 import { isValidHubSecret } from '../access/hubSession.ts';
 import { SESSION_COOKIE_NAME } from '../access/requireSession.ts';
 import type { SetupAccess } from '../access/SetupAccess.ts';
+import { DesktopResizeCoordinator } from './DesktopResizeCoordinator.ts';
 import { RfbInputFilter } from './RfbInputFilter.ts';
 import type { ScreenHolder } from './ScreenHolder.ts';
 
@@ -24,7 +25,7 @@ interface VncProxyOptions {
 }
 
 const VNC_PATH = '/api/desktop/vnc';
-// x11vnc listens on localhost only. See docker/cloudbot-desktop.
+// TigerVNC listens on localhost only. See docker/cloudbot-desktop.
 const VNC_HOST = '127.0.0.1';
 const DEFAULT_VNC_PORT = 5900;
 // A slow browser must not make the server queue screen updates without limit.
@@ -90,13 +91,37 @@ function resumeWhenDrained(webSocket: WebSocket, vncSocket: Socket): void {
     }, RESUME_CHECK_MS);
 }
 
-// Binary frames in, raw RFB bytes out, and the other way round. noVNC speaks WebSocket, x11vnc speaks TCP.
-function bridgeToVnc(webSocket: WebSocket, vncPort: number, screen: ScreenHolder): void {
+// Binary frames in, raw RFB bytes out, and the other way round. noVNC speaks WebSocket, TigerVNC speaks TCP.
+function bridgeToVnc(webSocket: WebSocket, vncPort: number, screen: ScreenHolder, resizeCoordinator: DesktopResizeCoordinator): void {
     const vncSocket = connect({ host: VNC_HOST, port: vncPort });
-    const inputFilter = new RfbInputFilter(() => screen.isPersonHolding);
+    const resizeOwner = {};
+    const inputFilter = new RfbInputFilter(
+        () => screen.isPersonHolding,
+        (size) => {
+            resizeCoordinator.request(resizeOwner, vncSocket, size);
+        },
+    );
+    const stopListening = screen.onChange((isPersonHolding) => {
+        if (!isPersonHolding) {
+            resizeCoordinator.restoreAll(vncSocket);
+        }
+    });
+
+    function closeBridge(): void {
+        stopListening();
+        const didQueueDefaultSize = resizeCoordinator.release(resizeOwner, vncSocket);
+
+        if (didQueueDefaultSize || vncSocket.destroyed || vncSocket.writableEnded) {
+            return;
+        }
+
+        vncSocket.end();
+    }
 
     vncSocket.on('data', (chunk: Buffer) => {
-        webSocket.send(chunk);
+        if (webSocket.readyState === webSocket.OPEN) {
+            webSocket.send(chunk);
+        }
 
         if (webSocket.bufferedAmount > MAX_BUFFERED_BYTES && !vncSocket.isPaused()) {
             vncSocket.pause();
@@ -104,10 +129,12 @@ function bridgeToVnc(webSocket: WebSocket, vncPort: number, screen: ScreenHolder
         }
     });
     vncSocket.on('close', () => {
+        stopListening();
         webSocket.close();
     });
     // The desktop may be down or restarting. The panel shows a disconnected state.
     vncSocket.on('error', () => {
+        stopListening();
         webSocket.close();
     });
     webSocket.on('message', (data: Buffer) => {
@@ -119,15 +146,20 @@ function bridgeToVnc(webSocket: WebSocket, vncPort: number, screen: ScreenHolder
             }
         } catch {
             // A stream that cannot be framed could carry input the filter cannot see.
+            const didQueueDefaultSize = resizeCoordinator.release(resizeOwner, vncSocket);
+
             webSocket.close();
-            vncSocket.destroy();
+
+            if (!didQueueDefaultSize && !vncSocket.destroyed && !vncSocket.writableEnded) {
+                vncSocket.destroy();
+            }
         }
     });
     webSocket.on('close', () => {
-        vncSocket.destroy();
+        closeBridge();
     });
     webSocket.on('error', () => {
-        vncSocket.destroy();
+        closeBridge();
     });
 }
 
@@ -193,6 +225,7 @@ function attachSessionSocket(options: SessionSocketOptions): void {
 
 function attachVncProxy(options: VncProxyOptions): void {
     const vncPort = options.vncPort ?? DEFAULT_VNC_PORT;
+    const resizeCoordinator = new DesktopResizeCoordinator();
 
     attachSessionSocket({
         server: options.server,
@@ -201,7 +234,7 @@ function attachVncProxy(options: VncProxyOptions): void {
         path: VNC_PATH,
         publicUrl: options.publicUrl,
         accept: (webSocket) => {
-            bridgeToVnc(webSocket, vncPort, options.screen);
+            bridgeToVnc(webSocket, vncPort, options.screen, resizeCoordinator);
         },
     });
 }

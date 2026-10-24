@@ -19,6 +19,7 @@ All notable changes to this project are listed here. The format follows
 
 - `sudo cloudbot update` removes the old image and the build cache older than three days, so the disk does not fill up. The old image goes once no instance runs on it, which `--all` makes happen.
 - The bot list now uses a dark chat layout with bot activity times, name search, and shared controls.
+- On a phone in portrait, the Screen panel resizes the desktop or local browser viewport to make text easier to read. It restores the normal size when the owner gives up the screen, closes the last resized panel or switches to a wide viewport.
 - A new hub no longer prints a generated owner password. The first person who opens the owner address chooses a password and becomes the owner. After that the page closes and only the owner adds people.
 - A CloudBot inside a hub has an Account button in the sidebar. It opens a panel to change the password, manage passkeys and sign out. A person can change the password at any time with the current one.
 - The name form of the hub address accepts a capitalized name and shows a wrong name on the same screen. It also works in Chrome and Opera, where the page policy blocked the redirect to the person.
