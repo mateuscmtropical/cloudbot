@@ -17,7 +17,8 @@ interface SessionRow extends Record<string, SQLOutputValue> {
 
 const SESSION_TOKEN_BYTES = 32;
 const SESSION_HASH_BYTES = 32;
-const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+// Each person signs in again once a week.
+const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 const CREATE_LOGIN_SESSIONS_TABLE = `
     CREATE TABLE IF NOT EXISTS login_sessions (
         token_hash TEXT PRIMARY KEY,
@@ -34,9 +35,14 @@ function hashToken(token: string): Buffer {
     return hash.digest();
 }
 
-function createLoginSessionTables(database: DatabaseSync): void {
+function createLoginSessionTables(database: DatabaseSync, now = Date.now()): void {
     database.exec(CREATE_LOGIN_SESSIONS_TABLE);
     database.exec('CREATE INDEX IF NOT EXISTS login_sessions_name_idx ON login_sessions (name)');
+    // Sessions made under a longer lifetime end within one lifetime of now.
+    const latestExpiry = now + SESSION_LIFETIME_MS;
+    const statement = database.prepare('UPDATE login_sessions SET expires_at = ? WHERE expires_at > ?');
+
+    statement.run(latestExpiry, latestExpiry);
 }
 
 class SqliteLoginSessions implements LoginSessions {

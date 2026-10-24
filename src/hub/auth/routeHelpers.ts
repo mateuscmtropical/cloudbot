@@ -17,12 +17,14 @@ interface SessionState {
 interface SessionCookieOptions {
     httpOnly: true;
     secure: boolean;
-    sameSite: 'Strict';
+    sameSite: 'Lax';
     path: '/';
     maxAge: number;
 }
 
-const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+// Lax, so opening the app from its icon, a notification or another app keeps the person signed in.
+// Requests that change state are still checked by requestHasSameOrigin.
+const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 const UNKNOWN_CLIENT_ADDRESS = 'unknown';
 const SIGN_IN_DENIED_MESSAGE = 'Sign-in is not allowed from this address.';
 
@@ -129,7 +131,7 @@ function readContextCookie(context: Context, name: string): string | undefined {
 }
 
 function sessionCookieOptions(secure: boolean, maxAge = SESSION_MAX_AGE_SECONDS): SessionCookieOptions {
-    return { httpOnly: true, secure, sameSite: 'Strict', path: '/', maxAge };
+    return { httpOnly: true, secure, sameSite: 'Lax', path: '/', maxAge };
 }
 
 function startHubSession(context: Context, sessions: LoginSessions, name: string, secure: boolean, now: number): string {

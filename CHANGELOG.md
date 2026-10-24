@@ -23,6 +23,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- A person stays signed in to the hub when CloudBot opens from its home screen icon, a notification or a link in another app. Hub sessions now end after 7 days, so each person signs in again once a week. Fingerprint or face sign-in on a device without a passkey says how to turn it on.
 - The sign-in of an app opens in a new window. The CloudBot page stays where it is, and the new window tells it when the sign-in ends and closes itself.
 
 ### Security
