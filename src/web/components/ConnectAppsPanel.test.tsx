@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../../shared/chatTypes.ts';
 import type { ConnectedAppSummary } from '../../shared/connectedApps.ts';
 import { listConnectedApps, removeConnectedApp, startAppConnection, startAppSignIn } from '../apiClient.ts';
+import { APP_CATALOG, APP_CATEGORIES } from '../appCatalog.ts';
 import { ConnectAppsPanel } from './ConnectAppsPanel.tsx';
 
 vi.mock('../apiClient.ts', () => ({
@@ -37,13 +38,13 @@ describe('ConnectAppsPanel', () => {
         vi.restoreAllMocks();
     });
 
-    it('shows featured apps in order with a search field and custom app row', async () => {
+    it('shows the catalog with category chips, a search field and a custom app row', async () => {
         vi.mocked(listConnectedApps)
             .mockResolvedValue([]);
 
         const { container } = render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
 
-        expect(await screen.findByRole('region', { name: 'Featured' }))
+        expect(await screen.findByRole('region', { name: 'All apps' }))
             .toBeTruthy();
         expect(screen.getByText('Linear'))
             .toBeTruthy();
@@ -59,8 +60,12 @@ describe('ConnectAppsPanel', () => {
             .toBeTruthy();
         expect(screen.getByRole('button', { name: 'Add custom app' }))
             .toBeTruthy();
-        expect(container.querySelectorAll('.connect-app-icon'))
-            .toHaveLength(3);
+        expect(container.querySelectorAll('.connect-app-icon-app'))
+            .toHaveLength(APP_CATALOG.length);
+        expect(container.querySelectorAll('.connect-app-icon-custom'))
+            .toHaveLength(1);
+        expect(screen.getByRole('button', { name: 'All', pressed: true }))
+            .toBeTruthy();
         expect(screen.getByRole('button', { name: 'Connect Linear' }))
             .toBeTruthy();
         expect(screen.getByRole('button', { name: 'Connect Notion' }))
@@ -71,7 +76,82 @@ describe('ConnectAppsPanel', () => {
             .not.toContain('tools');
     });
 
-    it('filters apps by name and can show only installed apps', async () => {
+    it('gives every category a chip and shows only its apps when pressed', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        await screen.findByRole('region', { name: 'All apps' });
+        APP_CATEGORIES.forEach((category) => {
+            expect(screen.getByRole('button', { name: category, pressed: false }))
+                .toBeTruthy();
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Finance' }));
+
+        expect(screen.getByRole('region', { name: 'Finance' }))
+            .toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Finance', pressed: true }))
+            .toBeTruthy();
+        expect(screen.getByText('Stripe'))
+            .toBeTruthy();
+        expect(screen.queryByText('Linear'))
+            .toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'All' }));
+
+        expect(screen.getByRole('region', { name: 'All apps' }))
+            .toBeTruthy();
+        expect(screen.getByText('Linear'))
+            .toBeTruthy();
+    });
+
+    it('filters apps by name, description and category', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        const searchInput = await screen.findByRole('searchbox', { name: 'Search apps' });
+
+        fireEvent.change(searchInput, { target: { value: 'notion' } });
+        expect(screen.getByText('Notion'))
+            .toBeTruthy();
+        expect(screen.queryByText('Linear'))
+            .toBeNull();
+
+        fireEvent.change(searchInput, { target: { value: 'scheduled meetings' } });
+        expect(screen.getByText('Calendly'))
+            .toBeTruthy();
+        expect(screen.queryByText('Notion'))
+            .toBeNull();
+
+        fireEvent.change(searchInput, { target: { value: 'finance' } });
+        expect(screen.getByText('Stripe'))
+            .toBeTruthy();
+        expect(screen.queryByText('Calendly'))
+            .toBeNull();
+
+        fireEvent.change(searchInput, { target: { value: 'missing app' } });
+        expect(screen.getByText('No apps match your search.'))
+            .toBeTruthy();
+    });
+
+    it('combines the search with the chosen category', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        await screen.findByRole('region', { name: 'All apps' });
+        fireEvent.click(screen.getByRole('button', { name: 'Finance' }));
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Search apps' }), { target: { value: 'linear' } });
+
+        expect(screen.queryByText('Linear'))
+            .toBeNull();
+        expect(screen.getByText('No apps match your search.'))
+            .toBeTruthy();
+    });
+
+    it('can show only installed apps, also inside a category', async () => {
         vi.mocked(listConnectedApps)
             .mockResolvedValue([LINEAR]);
 
@@ -79,13 +159,6 @@ describe('ConnectAppsPanel', () => {
 
         expect(await screen.findByText('1 installed'))
             .toBeTruthy();
-        fireEvent.change(screen.getByRole('searchbox', { name: 'Search apps' }), { target: { value: 'notion' } });
-        expect(screen.getByText('Notion'))
-            .toBeTruthy();
-        expect(screen.queryByText('Linear'))
-            .toBeNull();
-
-        fireEvent.change(screen.getByRole('searchbox', { name: 'Search apps' }), { target: { value: '' } });
         fireEvent.click(screen.getByRole('button', { name: 'Show installed apps' }));
 
         expect(screen.getByText('Linear'))
@@ -93,34 +166,38 @@ describe('ConnectAppsPanel', () => {
         expect(screen.queryByText('Notion'))
             .toBeNull();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Show all apps' }));
-        expect(screen.getByText('Notion'))
-            .toBeTruthy();
-    });
+        fireEvent.click(screen.getByRole('button', { name: 'Design' }));
 
-    it('See all clears search and the installed filter', async () => {
-        vi.mocked(listConnectedApps)
-            .mockResolvedValue([LINEAR]);
-
-        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
-        const searchInput = screen.getByRole('searchbox', { name: 'Search apps' });
-
-        await screen.findByText('1 installed');
-        fireEvent.change(searchInput, { target: { value: 'missing app' } });
+        expect(screen.queryByText('Linear'))
+            .toBeNull();
         expect(screen.getByText('No apps match your search.'))
             .toBeTruthy();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Show installed apps' }));
-        fireEvent.click(screen.getByRole('button', { name: 'See all featured apps' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Productivity' }));
 
-        expect((searchInput as HTMLInputElement).value)
-            .toBe('');
-        expect(screen.getByRole('button', { name: 'Show installed apps' }))
+        expect(screen.getByText('Linear'))
             .toBeTruthy();
+        expect(screen.queryByText('Notion'))
+            .toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Show all apps' }));
+
         expect(screen.getByText('Notion'))
             .toBeTruthy();
     });
 
+    it('connects an app from the catalog with its own name and address', async () => {
+        vi.mocked(listConnectedApps)
+            .mockResolvedValue([]);
+
+        render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Connect Todoist' }));
+
+        await waitFor(() => {
+            expect(startAppSignIn)
+                .toHaveBeenCalledWith('bot-1', 'todoist', 'https://ai.todoist.net/mcp');
+        });
+    });
     it('opens the sign-in page of the app when it has one', async () => {
         vi.mocked(listConnectedApps)
             .mockResolvedValue([]);

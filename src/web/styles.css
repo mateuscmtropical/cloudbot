@@ -470,6 +470,50 @@ svg {
     opacity: 1;
 }
 
+/* Only this row scrolls sideways. The page and the panel never do. */
+.connect-app-chips {
+    display: flex;
+    flex: none;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+    padding-bottom: var(--space-1);
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.connect-app-chips::-webkit-scrollbar {
+    display: none;
+}
+
+.connect-app-chip {
+    flex: none;
+    min-height: 40px;
+    padding: 0 var(--space-4);
+    border: 1px solid var(--color-surface-border);
+    border-radius: var(--radius-control);
+    background: var(--color-surface-control);
+    color: var(--color-text);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.9375rem;
+    white-space: nowrap;
+}
+
+.connect-app-chip:hover {
+    background: var(--color-hover);
+}
+
+.connect-app-chip[aria-pressed='true'] {
+    border-color: var(--color-accent);
+    background: var(--color-accent);
+    color: #fff;
+}
+
+.connect-app-chip:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
 .connect-app-sections {
     display: flex;
     flex-direction: column;
@@ -493,23 +537,6 @@ svg {
 
 .connect-app-group .list-group-rows > .list-row + .list-row {
     border-top: 0;
-}
-
-.connect-app-see-all {
-    position: absolute;
-    top: var(--space-3);
-    right: var(--space-1);
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--color-text-muted);
-    cursor: pointer;
-    font: inherit;
-    font-size: 0.875rem;
-}
-
-.connect-app-see-all:hover {
-    color: var(--color-text);
 }
 
 .connect-apps-panel .connect-app-group .connect-app-row {
@@ -546,15 +573,10 @@ svg {
     font-weight: 700;
 }
 
-.connect-app-icon-linear {
-    background: #5e6ad2;
+/* White on 30% lightness has a contrast ratio of at least 4.7 for every hue. */
+.connect-app-icon-app {
+    background: hsl(var(--app-hue) 55% 30%);
     color: #fff;
-}
-
-.connect-app-icon-notion {
-    border: 1px solid var(--color-surface-border);
-    background: var(--color-surface-control);
-    color: var(--color-text);
 }
 
 .connect-app-icon-custom {

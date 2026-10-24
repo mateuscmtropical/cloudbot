@@ -560,7 +560,7 @@ changes cannot reach a private host. The address of a connected server is kept i
 
 The tools of a connected server are named `mcp__<name>__<tool>`, so they go through the approval
 path like other outside connectors. `app_connect` always asks the owner. The Connect apps panel
-offers the known Linear and Notion addresses plus a custom address. Connect first asks `POST /api/apps/oauth/start`
+offers a catalog of known app addresses (`src/web/appCatalog.ts`) with category chips, plus a custom address. Connect first asks `POST /api/apps/oauth/start`
 for the sign-in page of the server. When the server has none, the panel falls back to `POST /api/apps/connect`,
 which sends the request to the selected bot as a normal chat message, so it uses the same `app_connect` approval,
 address check and secure token form as a request typed in chat. Both paths save into the same list.
