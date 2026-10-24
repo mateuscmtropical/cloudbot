@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { ReactElement, SyntheticEvent } from 'react';
+import type { CSSProperties, ReactElement, SyntheticEvent } from 'react';
 
 import type { ConnectedAppStatus, ConnectedAppSummary } from '../../shared/connectedApps.ts';
 import { listConnectedApps, removeConnectedApp, startAppConnection, startAppSignIn } from '../apiClient.ts';
+import { APP_CATALOG, APP_CATEGORIES } from '../appCatalog.ts';
+import type { AppCategory, CatalogApp } from '../appCatalog.ts';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
 import { CloseIcon, FilterIcon, SearchIcon } from './icons.tsx';
@@ -17,36 +19,19 @@ interface ConnectAppsPanelProps {
 }
 
 type LoadState = 'loading' | 'ready' | 'failed';
-type AppIconName = 'linear' | 'notion' | 'custom';
-
-interface KnownApp {
-    serverName: string;
-    displayName: string;
-    description: string;
-    url: string;
-    icon: AppIconName;
-}
+type CategoryFilter = AppCategory | 'All';
 
 interface AppIconProps {
-    name: AppIconName;
+    app: CatalogApp;
 }
 
-const KNOWN_APPS: KnownApp[] = [
-    {
-        serverName: 'linear',
-        displayName: 'Linear',
-        description: 'Find issues and update team projects.',
-        url: 'https://mcp.linear.app/mcp',
-        icon: 'linear',
-    },
-    {
-        serverName: 'notion',
-        displayName: 'Notion',
-        description: 'Search your workspace and manage pages.',
-        url: 'https://mcp.notion.com/mcp',
-        icon: 'notion',
-    },
-];
+// The hue is the only part of the icon style that changes per app. The color rule lives in styles.css.
+interface AppIconStyle extends CSSProperties {
+    '--app-hue': number;
+}
+
+const ALL_CATEGORIES: CategoryFilter = 'All';
+const CATEGORY_FILTERS: CategoryFilter[] = [ALL_CATEGORIES, ...APP_CATEGORIES];
 
 function getStatusLabel(status: ConnectedAppStatus): string {
     if (status === 'needs_token') {
@@ -97,20 +82,29 @@ function getCustomDisplayName(app: ConnectedAppSummary): string {
     }
 }
 
-function AppIcon({ name }: AppIconProps): ReactElement {
-    if (name === 'custom') {
-        return (
-            <span className="connect-app-icon connect-app-icon-custom" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                    <path d="M9.5 14.5 14.5 9.5M8 16l-1.5 1.5a4 4 0 0 1-5.7-5.7l4-4a4 4 0 0 1 5.7 0M16 8l1.5-1.5a4 4 0 0 1 5.7 5.7l-4 4a4 4 0 0 1-5.7 0" />
-                </svg>
-            </span>
-        );
-    }
+function getAppHue(serverName: string): number {
+    const letters = Array.from(serverName);
+    const hueSum = letters.reduce((sum, letter) => sum * 31 + (letter.codePointAt(0) ?? 0), 7);
 
-    const initial = name === 'linear' ? 'L' : 'N';
+    return hueSum % 360;
+}
 
-    return <span className={`connect-app-icon connect-app-icon-${name}`} aria-hidden="true">{initial}</span>;
+function CustomAppIcon(): ReactElement {
+    return (
+        <span className="connect-app-icon connect-app-icon-custom" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+                <path d="M9.5 14.5 14.5 9.5M8 16l-1.5 1.5a4 4 0 0 1-5.7-5.7l4-4a4 4 0 0 1 5.7 0M16 8l1.5-1.5a4 4 0 0 1 5.7 5.7l-4 4a4 4 0 0 1-5.7 0" />
+            </svg>
+        </span>
+    );
+}
+
+function AppIcon({ app }: AppIconProps): ReactElement {
+    const iconStyle: AppIconStyle = { '--app-hue': getAppHue(app.serverName) };
+    const initial = app.displayName.charAt(0)
+        .toUpperCase();
+
+    return <span className="connect-app-icon connect-app-icon-app" style={iconStyle} aria-hidden="true">{initial}</span>;
 }
 
 function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelProps): ReactElement {
@@ -122,6 +116,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
     const [startingAppName, setStartingAppName] = useState<string | undefined>(undefined);
     const [removingIds, setRemovingIds] = useState<string[]>([]);
     const [isShowingInstalledOnly, setIsShowingInstalledOnly] = useState(false);
+    const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>(ALL_CATEGORIES);
     const [isCustomFormOpen, setIsCustomFormOpen] = useState(false);
 
     useEffect(() => {
@@ -218,21 +213,17 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
             });
     }
 
-    function showAllApps(): void {
-        setSearchQuery('');
-        setIsShowingInstalledOnly(false);
-    }
-
     const searchTerm = searchQuery.trim()
         .toLowerCase();
-    const customApps = apps.filter(app => !KNOWN_APPS.some(knownApp => knownApp.serverName === app.name));
-    const filteredKnownApps = KNOWN_APPS.filter((knownApp) => {
-        const connectedApp = apps.find(app => app.name === knownApp.serverName);
+    const customApps = apps.filter(app => !APP_CATALOG.some(catalogApp => catalogApp.serverName === app.name));
+    const filteredCatalogApps = APP_CATALOG.filter((catalogApp) => {
+        const connectedApp = apps.find(app => app.name === catalogApp.serverName);
+        const matchesCategory = selectedCategory === ALL_CATEGORIES || catalogApp.category === selectedCategory;
         const matchesInstalledFilter = !isShowingInstalledOnly || connectedApp !== undefined;
-        const knownAppName = knownApp.displayName.toLowerCase();
-        const matchesSearch = searchTerm.length === 0 || knownAppName.includes(searchTerm);
+        const searchableText = `${catalogApp.displayName} ${catalogApp.description} ${catalogApp.category}`.toLowerCase();
+        const matchesSearch = searchTerm.length === 0 || searchableText.includes(searchTerm);
 
-        return matchesInstalledFilter && matchesSearch;
+        return matchesCategory && matchesInstalledFilter && matchesSearch;
     });
     const filteredCustomApps = customApps.filter((app) => {
         const displayName = getCustomDisplayName(app);
@@ -240,10 +231,11 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
 
         return searchTerm.length === 0 || normalizedDisplayName.includes(searchTerm);
     });
-    const hasMatchingApps = filteredKnownApps.length > 0 || filteredCustomApps.length > 0;
+    const hasMatchingApps = filteredCatalogApps.length > 0 || filteredCustomApps.length > 0;
     const installedCount = apps.length.toString();
     const installedCountAccessibleLabel = `${installedCount} installed apps`;
     const installedCountLabel = `${installedCount} installed`;
+    const groupLabel = selectedCategory === ALL_CATEGORIES ? 'All apps' : selectedCategory;
 
     return (
         <section aria-label="Connect apps" className="connect-apps-panel">
@@ -276,6 +268,21 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                     <FilterIcon />
                 </RoundButton>
             </div>
+            <div className="connect-app-chips" role="group" aria-label="App categories">
+                {CATEGORY_FILTERS.map(category => (
+                    <button
+                        key={category}
+                        type="button"
+                        className="connect-app-chip"
+                        aria-pressed={category === selectedCategory}
+                        onClick={() => {
+                            setSelectedCategory(category);
+                        }}
+                    >
+                        {category}
+                    </button>
+                ))}
+            </div>
             {notice === undefined ? null : <p className="connect-app-message" role="status">{notice}</p>}
             {selectedBotId === undefined ? <p className="connect-app-problem">Choose a bot before connecting an app.</p> : null}
             {loadState === 'loading' ? <p className="connect-app-message">Loading apps...</p> : null}
@@ -286,20 +293,20 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                 : null}
             <div className="connect-app-sections">
                 <div className="connect-app-section">
-                    <ListGroup label="Featured" className="connect-app-group">
-                        {filteredKnownApps.map((knownApp) => {
-                            const connectedApp = apps.find(app => app.name === knownApp.serverName);
-                            const isStarting = startingAppName === knownApp.serverName;
-                            const description = connectedApp === undefined ? knownApp.description : getStatusLabel(connectedApp.status);
+                    <ListGroup label={groupLabel} className="connect-app-group">
+                        {filteredCatalogApps.map((catalogApp) => {
+                            const connectedApp = apps.find(app => app.name === catalogApp.serverName);
+                            const isStarting = startingAppName === catalogApp.serverName;
+                            const description = connectedApp === undefined ? catalogApp.description : getStatusLabel(connectedApp.status);
                             const actionButton = connectedApp?.status !== 'connected'
                                 ? (
                                         <button
                                             type="button"
                                             className="connect-app-action"
                                             disabled={selectedBotId === undefined || startingAppName !== undefined}
-                                            aria-label={`Connect ${knownApp.displayName}`}
+                                            aria-label={`Connect ${catalogApp.displayName}`}
                                             onClick={() => {
-                                                handleConnect(knownApp.serverName, knownApp.url);
+                                                handleConnect(catalogApp.serverName, catalogApp.url);
                                             }}
                                         >
                                             {isStarting ? 'Starting...' : 'Connect'}
@@ -310,7 +317,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                             type="button"
                                             className="connect-app-action"
                                             disabled={removingIds.includes(connectedApp.id)}
-                                            aria-label={`Remove ${knownApp.displayName}`}
+                                            aria-label={`Remove ${catalogApp.displayName}`}
                                             onClick={() => {
                                                 handleRemove(connectedApp.id);
                                             }}
@@ -321,17 +328,16 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
 
                             return (
                                 <ListRow
-                                    key={knownApp.serverName}
+                                    key={catalogApp.serverName}
                                     className="connect-app-row"
-                                    title={knownApp.displayName}
+                                    title={catalogApp.displayName}
                                     description={description}
-                                    leadingIcon={<AppIcon name={knownApp.icon} />}
+                                    leadingIcon={<AppIcon app={catalogApp} />}
                                     trailingControl={actionButton}
                                 />
                             );
                         })}
                     </ListGroup>
-                    <button type="button" className="connect-app-see-all" aria-label="See all featured apps" onClick={showAllApps}>See all</button>
                 </div>
                 <div className="connect-app-section">
                     <ListGroup label="Custom" className="connect-app-group">
@@ -357,7 +363,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                     className="connect-app-row"
                                     title={displayName}
                                     description={getStatusLabel(app.status)}
-                                    leadingIcon={<AppIcon name="custom" />}
+                                    leadingIcon={<CustomAppIcon />}
                                     trailingControl={removeButton}
                                 />
                             );
@@ -366,7 +372,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                             className="connect-app-row connect-app-add-row"
                             title="Add custom app"
                             description="Connect any app by its address."
-                            leadingIcon={<AppIcon name="custom" />}
+                            leadingIcon={<CustomAppIcon />}
                             trailingControl={(
                                 <button
                                     type="button"
@@ -384,7 +390,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                         {isCustomFormOpen
                             ? (
                                     <form className="connect-app-custom-form" onSubmit={handleCustomSubmit}>
-                                        <AppIcon name="custom" />
+                                        <CustomAppIcon />
                                         <div className="connect-app-custom-copy">
                                             <strong>Custom app</strong>
                                             <label htmlFor="custom-app-address">Connect any app by its address.</label>
@@ -410,7 +416,6 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                 )
                             : null}
                     </ListGroup>
-                    <button type="button" className="connect-app-see-all" aria-label="See all custom apps" onClick={showAllApps}>See all</button>
                 </div>
             </div>
         </section>

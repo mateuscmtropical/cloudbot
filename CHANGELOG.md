@@ -8,6 +8,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- The Connect apps panel lists a catalog of 67 apps with category chips, such as Productivity, Code and Finance. Search also matches the description and the category.
 - Connect apps signs in on the app's own page. Connect on Linear, Notion or a custom app opens the sign-in and approval page of the app, with no token to paste, and brings the owner back to CloudBot. The token goes to the vault and is renewed by itself. A server without that sign-in still asks for a token in the chat.
 
 ### Changed
