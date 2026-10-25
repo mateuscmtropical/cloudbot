@@ -494,7 +494,7 @@ twice.
 `ChatService.cleanUploads` runs on start and once a day, for uploads and shared files. A pending file that was
 never sent is removed after one day. Any other file in the upload folders is
 removed when its modification time is older than `CLOUDBOT_UPLOAD_RETENTION_DAYS`
-(default 30). The age counts from the upload, not from the send. A bot with a
+(default 15). The age counts from the upload, not from the send. A bot with a
 running, queued or waiting turn keeps all its files. The age comes from the file
 time, so a pending file lost in a restart is treated as used.
 

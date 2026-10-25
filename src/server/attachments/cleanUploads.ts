@@ -9,7 +9,7 @@ interface CleanUploadsOptions {
     nowMs: number;
 }
 
-const DEFAULT_RETENTION_DAYS = 30;
+const DEFAULT_RETENTION_DAYS = 15;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 // A file that was uploaded and never sent is removed after this time.
 const UNSENT_UPLOAD_MAX_AGE_MS = MS_PER_DAY;
