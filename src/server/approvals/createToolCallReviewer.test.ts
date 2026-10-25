@@ -532,3 +532,27 @@ describe('createToolCallReviewer review cost', () => {
             .toHaveBeenCalledWith(expect.any(String), turnSignal, undefined, undefined, expect.any(Function));
     });
 });
+
+describe('browser target', () => {
+    it('adds the page and element of a browser call to the prompt as data', async () => {
+        const askModel = vi.fn<ReviewModel>(() => Promise.resolve(answer({})));
+        const describeBrowserTarget = vi.fn(() => Promise.resolve('Page: https://chat.example/\nElement: row "Ana Silva"'));
+        const reviewer = createToolCallReviewer({ askModel, readContext: () => Promise.resolve(CONTEXT), describeBrowserTarget });
+        const call = { toolName: 'mcp__cloudbot__browser_click', input: { element: 41 } };
+
+        await expect(reviewer('bot-1', call)).resolves.toEqual({ decision: 'allow' });
+        expect(describeBrowserTarget)
+            .toHaveBeenCalledWith(call);
+        expect(askModel.mock.calls[0]?.[0])
+            .toContain('Browser target:\nPage: https://chat.example/\nElement: row "Ana Silva"');
+    });
+
+    it('leaves the target out when the tool hits no browser element', () => {
+        const prompt = buildReviewPrompt(BASH_CALL, CONTEXT);
+
+        expect(prompt)
+            .not.toContain('Browser target:\n');
+        expect(prompt)
+            .toContain('When the target is unknown, allow the call unless');
+    });
+});

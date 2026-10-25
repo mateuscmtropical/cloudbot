@@ -18,6 +18,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- The bot clicks page elements by number. `browser_read` and `browser_open` list the buttons, links, fields and chat rows on the screen, each with a number and its name, and `browser_click` takes that number. A point in screenshot pixels still works. The approval review now sees the page and the element a click, a key or typing hits, such as `button "Send"` or a chat row, so opening a chat or a menu no longer asks the owner as an unknown click.
 - Older messages load as you scroll up, with no Load older messages button. A line at the top says when they are loading. A chat too short to scroll loads them by itself until it fills the screen.
 
 - Big photos are made smaller in the browser before the upload. A JPEG, PNG or WebP image over 1.5 MB or over 2048 pixels on its longer side is sent as a JPEG of at most 2048 pixels, so a phone photo always reaches the model as an image. GIFs and other files are sent as they are.

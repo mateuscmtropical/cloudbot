@@ -252,10 +252,10 @@ is left.
 
 | Tool | What it does |
 |---|---|
-| `browser_open` | Opens an http or https address, waits up to 15 seconds for it to load and returns its title, address and visible text |
-| `browser_read` | Returns the title, address and visible text of the open page |
+| `browser_open` | Opens an http or https address, waits up to 15 seconds for it to load and returns its title, address, visible text and numbered elements |
+| `browser_read` | Returns the title, address, visible text and numbered elements of the open page. The elements are the buttons, links, fields and focusable rows on the screen, up to 300 |
 | `browser_screenshot` | Returns a PNG of the page to the model. With `showOwner`, it is also posted to the chat |
-| `browser_click` | Clicks at a point, in screenshot pixels |
+| `browser_click` | Clicks an element by its number, or a point in screenshot pixels |
 | `browser_type` | Types text into the focused field |
 | `browser_key` | Presses Enter, Tab, Escape, Backspace, an arrow key, PageUp or PageDown |
 | `browser_scroll` | Scrolls the page by a number of pixels |
