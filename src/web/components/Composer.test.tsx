@@ -64,6 +64,25 @@ describe('Composer', () => {
             .toBe('first line');
     });
 
+    it('sends nothing on Enter with a touch keyboard, so only the button sends', () => {
+        const touchQuery = { matches: true } as MediaQueryList;
+
+        vi.spyOn(window, 'matchMedia')
+            .mockReturnValue(touchQuery);
+
+        const onSend = vi.fn();
+        const textarea = renderComposer({ onSend });
+
+        fireEvent.change(textarea, { target: { value: 'first line' } });
+        fireEvent.keyDown(textarea, { key: 'Enter' });
+
+        expect(onSend)
+            .not.toHaveBeenCalled();
+        expect(textarea.getAttribute('enterkeyhint'))
+            .toBe('enter');
+        vi.restoreAllMocks();
+    });
+
     it('shows a stop button instead of send while a turn runs', () => {
         renderComposer({ isRunning: true });
 

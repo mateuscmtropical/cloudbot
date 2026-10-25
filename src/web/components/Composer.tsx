@@ -29,9 +29,16 @@ interface ComposerProps {
 }
 
 const NO_HISTORY: string[] = [];
+// A phone or tablet keyboard. There Enter adds a line and only the send button sends.
+const TOUCH_KEYBOARD_QUERY = '(pointer: coarse)';
+
+function readIsTouchKeyboard(): boolean {
+    return typeof window.matchMedia === 'function' && window.matchMedia(TOUCH_KEYBOARD_QUERY).matches;
+}
 
 function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop, onAttach, onRemoveAttachment, onTypingChange, sentHistory = NO_HISTORY }: ComposerProps): ReactElement {
     const [draft, setDraft] = useState('');
+    const [isTouchKeyboard] = useState(readIsTouchKeyboard);
     // The message the arrow keys show, counted in sentHistory. Undefined while the person types their own text.
     const [historyIndex, setHistoryIndex] = useState<number | undefined>(undefined);
     // The text that was in the box before the arrow keys started, so arrow down can bring it back.
@@ -163,7 +170,8 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
         }
 
         // Enter alone sends. Shift+Enter adds a line. Enter during IME composition belongs to the IME.
-        const isSendKey = event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing;
+        // On a touch keyboard Enter always adds a line.
+        const isSendKey = event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !isTouchKeyboard;
 
         if (!isSendKey) {
             return;
@@ -251,6 +259,7 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
                         ref={textAreaRef}
                         className="composer-input"
                         rows={1}
+                        enterKeyHint={isTouchKeyboard ? 'enter' : 'send'}
                         placeholder={`Ask ${botName}...`}
                         value={draft}
                         onChange={(event) => {

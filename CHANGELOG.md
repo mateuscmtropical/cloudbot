@@ -31,6 +31,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- On a phone or tablet, Enter in the text box adds a line instead of sending. Only the send button sends. The keyboard shows its new line key. A computer keyboard still sends with Enter.
 - A Codex bot sees the images attached to a message again. The image folder lost its setgid bit, so the files got the server's group and Codex could not read them. The review on ChatGPT also starts now, since it passed no setting to the Codex wrapper and sudo refused it.
 - The back button of the phone no longer leaves the app. It closes the open panel, such as the bot list, the account, the bot profile, Connect apps or the Screen. From the chat on a phone it opens the bot list, and from the bot list it leaves the app.
 - A long message in the text box no longer turns it into an oval that cuts the text at the corners. The box keeps its pill shape for one line and becomes a rounded box for more.
