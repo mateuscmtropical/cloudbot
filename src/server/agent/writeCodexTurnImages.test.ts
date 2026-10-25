@@ -28,6 +28,21 @@ describe('writeCodexTurnImages', () => {
             .toEqual([]);
     });
 
+    it.skipIf(process.platform === 'win32')('keeps the setgid bit on a group readable folder, so the files get its group', () => {
+        const home = mkdtempSync(join(tmpdir(), 'cloudbot-codex-images-'));
+
+        const images = writeCodexTurnImages(home, [{ mediaType: 'image/png', data: 'iVBORw0K' }], true);
+        const [path = ''] = images.paths;
+        const folderMode = statSync(join(path, '..')).mode & 0o7777;
+        const fileMode = statSync(path).mode & 0o777;
+
+        expect(folderMode)
+            .toBe(0o2750);
+        expect(fileMode)
+            .toBe(0o640);
+        images.remove();
+    });
+
     it('writes nothing for a turn without images', () => {
         const home = mkdtempSync(join(tmpdir(), 'cloudbot-codex-images-'));
 
