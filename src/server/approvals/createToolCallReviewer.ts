@@ -121,16 +121,8 @@ const CHANGE_CHECK_FAILED_REASON = 'The integration change could not be checked,
 const MAX_INPUT_LENGTH = 10_000;
 const MAX_LINE_LENGTH = 400;
 const DEFAULT_DENY_REASON = 'The review agent refused this action.';
-const ASK_CATEGORIES = new Set<ReviewCategory>([
-    'send_message',
-    'purchase',
-    'booking',
-    'remote_write',
-    'outside_workspace_change',
-    'system_change',
-    'connector_change',
-    'owner_setting_change',
-]);
+// Money always waits for the owner. The other categories ask only when the owner did not ask for the action.
+const MONEY_CATEGORIES = new Set<ReviewCategory>(['purchase', 'booking']);
 const CATEGORIES = new Set<string>([
     'send_message',
     'purchase',
@@ -161,7 +153,9 @@ const REVIEW_INSTRUCTIONS = [
     'Allow the bot\'s own notes and tasks without asking. Browsing that submits a message or form, spends money or books something is not passive browsing.',
     '"decision" is "allow" for a harmless call that fits the owner rules, "ask" when the owner should confirm it,',
     'and "deny" when an owner rule forbids it. A deny stays a deny even when the category normally asks.',
-    'Ask for the categories "send_message", "purchase", "booking", "remote_write", "outside_workspace_change", "system_change", "connector_change" and "owner_setting_change".',
+    'Allow a call that carries out what the owner asked for in their own chat message, even in the categories below.',
+    'Ask for the categories "send_message", "remote_write", "outside_workspace_change", "system_change", "connector_change" and "owner_setting_change" only when the owner did not ask for that action.',
+    'Always ask for "purchase" and "booking".',
     '"summary" is one short sentence for the owner that says what the call does, for example "Send an email to Ana".',
     '"reason" is one short sentence that says why a denied call was refused.',
     // Card and ID numbers are refused before this review, so the review only judges the other kinds of data.
@@ -273,7 +267,7 @@ function toVerdict(answer: ModelAnswer, call: ToolCall): ToolCallVerdict {
         return { decision: 'deny', reason: answer.reason === '' ? DEFAULT_DENY_REASON : answer.reason };
     }
 
-    const needsOwner = !isHandoff && ASK_CATEGORIES.has(answer.category);
+    const needsOwner = !isHandoff && MONEY_CATEGORIES.has(answer.category);
 
     if (needsOwner || answer.decision === 'ask') {
         return { decision: 'ask', summary };
@@ -344,7 +338,7 @@ function withHandoffDetail(verdict: ToolCallVerdict, input: unknown): ToolCallVe
 }
 
 // Skips harmless calls, always asks for connector tools that send, buy or book, and lets a model judge the rest.
-// A model that fails or answers badly throws, and the approval gate then asks the owner.
+// When no model can answer, the call is allowed, since the floor and the always-ask tools were checked first.
 function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallReviewer {
     return async (botId, call, signal, channelId) => {
         // The floor runs before anything else. No rule, approval or model choice can lift it.
@@ -439,7 +433,21 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
         const reportReviewCost = (costUsd: number): void => {
             options.reportCost?.(botId, costUsd, signal);
         };
-        const answerText = await options.askModel(prompt, signal, context.reviewModel, context.reviewEffort, reportReviewCost);
+        let answerText: string;
+
+        try {
+            answerText = await options.askModel(prompt, signal, context.reviewModel, context.reviewEffort, reportReviewCost);
+        } catch (error: unknown) {
+            if (signal?.aborted === true) {
+                throw error;
+            }
+
+            // No provider could review, for example a bot on a provider without a review model. The floor and the
+            // fixed always-ask tools above still hold, so the call runs like in auto mode instead of asking the owner.
+            return { decision: 'allow' };
+        }
+
+        // An answer that cannot be read still throws, so the gate asks the owner. A page could have confused the model.
         const answer = parseModelAnswer(answerText);
         const verdict = toVerdict(answer, call);
 
