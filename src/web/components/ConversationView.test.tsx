@@ -449,14 +449,14 @@ describe('ConversationView older messages', () => {
             .toBe(1300);
     });
 
-    it('keeps the place on screen when a load ends with no older messages and the button goes away', () => {
+    it('keeps the place on screen when a load ends with no older messages and the loading line goes away', () => {
         const messages = [createSequencedMessage(3), createSequencedMessage(4)];
         const view = renderWithHistory(messages, { hasOlderMessages: true, onLoadOlder: vi.fn() });
         const messageList = messageListOf(view.container);
         const firstMessage = messageElementOf(view.container, 'm3');
 
         Object.defineProperty(messageList, 'scrollHeight', { configurable: true, value: 1000 });
-        // The load button sits above the first message, so the first message starts 40 pixels down.
+        // The loading line sits above the first message, so the first message starts 40 pixels down.
         Object.defineProperty(firstMessage, 'offsetTop', { configurable: true, value: 140 });
         Object.defineProperty(firstMessage, 'offsetHeight', { configurable: true, value: 100 });
         view.rerender(historyElement([...messages], { hasOlderMessages: true, onLoadOlder: vi.fn() }));
@@ -464,7 +464,7 @@ describe('ConversationView older messages', () => {
 
         view.rerender(historyElement([...messages], { hasOlderMessages: true, isLoadingOlder: true, onLoadOlder: vi.fn() }));
 
-        // The empty page ends the load, and the button goes away, so the first message moves up 40 pixels.
+        // The empty page ends the load, and the loading line goes away, so the first message moves up 40 pixels.
         Object.defineProperty(firstMessage, 'offsetTop', { configurable: true, value: 100 });
         view.rerender(historyElement([...messages], { hasOlderMessages: false, isLoadingOlder: false }));
 
@@ -492,30 +492,46 @@ describe('ConversationView older messages', () => {
             .toBe(1500);
     });
 
-    it('shows a load button at the top when older messages exist and no load is running', () => {
+    it('has no load button, and says when older messages are loading', () => {
+        const loadingView = renderWithHistory([createSequencedMessage(3)], { hasOlderMessages: true, isLoadingOlder: true, onLoadOlder: vi.fn() });
+
+        expect(screen.queryByRole('button', { name: /older messages|Loading/v }))
+            .toBeNull();
+        expect(loadingView.container.querySelector('.load-older-status')?.textContent)
+            .toBe('Loading older messages...');
+        loadingView.unmount();
+
+        const doneView = renderWithHistory([createSequencedMessage(3)], { hasOlderMessages: false, onLoadOlder: vi.fn() });
+
+        expect(doneView.container.querySelector('.load-older-status'))
+            .toBeNull();
+    });
+
+    it('asks for older messages by itself once when the list is too short to scroll', () => {
         const onLoadOlder = vi.fn();
+        const messages = [createSequencedMessage(3)];
+        const view = renderWithHistory(messages, { hasOlderMessages: true, onLoadOlder });
+        const messageList = messageListOf(view.container);
 
-        renderWithHistory([createSequencedMessage(3)], { hasOlderMessages: true, onLoadOlder });
-
-        fireEvent.click(screen.getByRole('button', { name: 'Load older messages' }));
+        Object.defineProperty(messageList, 'clientHeight', { configurable: true, value: 800 });
+        Object.defineProperty(messageList, 'scrollHeight', { configurable: true, value: 300 });
+        view.rerender(historyElement([...messages], { hasOlderMessages: true, onLoadOlder }));
 
         expect(onLoadOlder)
             .toHaveBeenCalledTimes(1);
-    });
 
-    it('shows a disabled Loading button while a load runs, and no button when nothing is older', () => {
-        const loadingView = renderWithHistory([createSequencedMessage(3)], { hasOlderMessages: true, isLoadingOlder: true, onLoadOlder: vi.fn() });
+        // The load fails, so the oldest message is the same and the list does not ask again.
+        view.rerender(historyElement([...messages], { hasOlderMessages: true, isLoadingOlder: true, onLoadOlder }));
+        view.rerender(historyElement([...messages], { hasOlderMessages: true, onLoadOlder }));
 
-        const loadingButton = screen.getByRole('button', { name: 'Loading...' });
+        expect(onLoadOlder)
+            .toHaveBeenCalledTimes(1);
 
-        expect(loadingButton.getAttribute('disabled'))
-            .not.toBeNull();
-        loadingView.unmount();
+        // A page arrives and the list is still short, so it asks for the next one.
+        view.rerender(historyElement([createSequencedMessage(2), ...messages], { hasOlderMessages: true, onLoadOlder }));
 
-        renderWithHistory([createSequencedMessage(3)], { hasOlderMessages: false, onLoadOlder: vi.fn() });
-
-        expect(screen.queryByRole('button', { name: 'Load older messages' }))
-            .toBeNull();
+        expect(onLoadOlder)
+            .toHaveBeenCalledTimes(2);
     });
 });
 

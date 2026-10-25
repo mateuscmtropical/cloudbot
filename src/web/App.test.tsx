@@ -1293,8 +1293,8 @@ describe('App older messages', () => {
 
         reconnect();
         await waitFor(() => {
-            expect(screen.getByRole('button', { name: 'Load older messages' }))
-                .toBeTruthy();
+            expect(container.querySelector('.load-older-status'))
+                .not.toBeNull();
         });
         scrollToTop(container);
 

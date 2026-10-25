@@ -18,6 +18,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- Older messages load as you scroll up, with no Load older messages button. A line at the top says when they are loading. A chat too short to scroll loads them by itself until it fills the screen.
+
 - Big photos are made smaller in the browser before the upload. A JPEG, PNG or WebP image over 1.5 MB or over 2048 pixels on its longer side is sent as a JPEG of at most 2048 pixels, so a phone photo always reaches the model as an image. GIFs and other files are sent as they are.
 - Attached files are removed after 15 days instead of 30. `CLOUDBOT_UPLOAD_RETENTION_DAYS` still sets another time.
 - The bot asks for approval much less, like auto mode. The review that decides which tool calls need the owner now also runs on ChatGPT, after Claude and before Gemini. A message, a git push or a system change that the owner asked for in the chat runs without a card. Purchases and bookings still ask. When no provider can review, as on a bot that only uses opencode, the call runs instead of asking, and the blocked commands and the always-ask tools still hold.
