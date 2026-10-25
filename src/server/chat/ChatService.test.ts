@@ -2093,7 +2093,7 @@ describe('ChatService', () => {
 
     it('opens the Screen panel once in a turn when the bot opens pages in its browser', async () => {
         const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:9' });
-        const page = { title: 'Google', url: 'https://www.google.com/', text: 'Search', isTruncated: false };
+        const page = { title: 'Google', url: 'https://www.google.com/', text: 'Search', isTruncated: false, elements: [] };
 
         vi.spyOn(browser, 'open')
             .mockResolvedValue(page);

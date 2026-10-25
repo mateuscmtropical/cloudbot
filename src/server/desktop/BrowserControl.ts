@@ -16,11 +16,27 @@ interface PageTarget {
     webSocketDebuggerUrl?: string;
 }
 
+// An element the bot can click by its number. The number is Chromium's backend node id, so it stays the same
+// across connections for as long as the element is on the page.
+interface PageElement {
+    ref: number;
+    role: string;
+    name: string;
+}
+
 interface PageText {
     title: string;
     url: string;
     text: string;
     isTruncated: boolean;
+    elements: PageElement[];
+}
+
+// What a browser action hits: an element number, a point, or with neither the focused element.
+interface BrowserTarget {
+    element?: number | undefined;
+    x?: number | undefined;
+    y?: number | undefined;
 }
 
 interface ClickResult {
@@ -98,6 +114,53 @@ const ISOLATED_WORLD_NAME = 'cloudbot-secret-check';
 // as in "billing cc-number".
 const SECRET_AUTOCOMPLETE_VALUES = new Set(['current-password', 'new-password', 'one-time-code', 'cc-number', 'cc-csc']);
 const ORIGIN_EXPRESSION = 'location.origin';
+const URL_EXPRESSION = 'location.href';
+const FOCUSED_ELEMENT_EXPRESSION = 'document.activeElement';
+const MAX_LISTED_ELEMENTS = 300;
+const MAX_ELEMENT_NAME_LENGTH = 100;
+const ELEMENT_GONE_MESSAGE = 'That element is gone or hidden. Read the page again for new element numbers.';
+// Elements that take a click or text. A focusable element counts too, such as a chat row with a tabindex.
+const CLICKABLE_ROLES = ['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'row', 'gridcell', 'listitem', 'treeitem', 'combobox', 'textbox', 'searchbox', 'slider', 'spinbutton'];
+const CLICKABLE_SELECTOR = [
+    'a[href]', 'button', 'input:not([type="hidden"])', 'select', 'textarea', 'summary', '[tabindex]:not([tabindex="-1"])', '[contenteditable=""]', '[contenteditable="true"]',
+    ...CLICKABLE_ROLES.map(role => `[role="${role}"]`),
+].join(',');
+// Shared by the scripts below. They run in an isolated world, so page scripts cannot change what they read.
+// The name never reads the value of a field, so a typed password is never listed. Only a button input's value is its label.
+const ELEMENT_HELPERS = `
+    const selector = ${JSON.stringify(CLICKABLE_SELECTOR)};
+    const inputRoles = { checkbox: "checkbox", radio: "radio", submit: "button", button: "button", reset: "button", image: "button", range: "slider", number: "spinbutton", search: "searchbox" };
+    const tagRoles = { A: "link", BUTTON: "button", SELECT: "combobox", TEXTAREA: "textbox", SUMMARY: "button" };
+    const roleOf = (element) => element.getAttribute("role") || (element.tagName === "INPUT" ? (inputRoles[element.type] || "textbox") : tagRoles[element.tagName]) || (element.isContentEditable ? "textbox" : element.tagName.toLowerCase());
+    const textOf = (id) => { const labelElement = document.getElementById(id); return labelElement ? labelElement.innerText : ""; };
+    const nameOf = (element) => {
+        const isField = element.tagName === "INPUT" || element.tagName === "TEXTAREA" || element.tagName === "SELECT";
+        const isButtonInput = element.tagName === "INPUT" && ["submit", "button", "reset"].includes(element.type);
+        const labelledBy = (element.getAttribute("aria-labelledby") || "").split(/\\s+/).filter(Boolean).map(textOf).join(" ");
+        const label = element.labels && element.labels[0] ? element.labels[0].innerText : "";
+        const imageNames = [...element.querySelectorAll("img[alt], [aria-label]")].map(image => image.getAttribute("alt") || image.getAttribute("aria-label") || "");
+        const imageName = imageNames.find(text => text.trim() !== "") || "";
+        const candidates = [element.getAttribute("aria-label"), labelledBy, label, isField ? "" : element.innerText, isButtonInput ? element.value : "", element.getAttribute("placeholder"), element.getAttribute("title"), element.getAttribute("alt"), imageName];
+        return candidates.map(text => (text || "").trim()).find(text => text !== "") || "";
+    };
+    const describe = (element) => ({ role: roleOf(element), name: nameOf(element) });
+`;
+// Only what is on the screen and not covered, such as by a dialog. The rest is listed after a scroll.
+const LIST_ELEMENTS_EXPRESSION = `(() => {
+    ${ELEMENT_HELPERS}
+    const isOnScreen = (element) => {
+        const box = element.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0 || box.bottom <= 0 || box.right <= 0 || box.top >= innerHeight || box.left >= innerWidth) { return false; }
+        const pointX = Math.min(Math.max((box.left + box.right) / 2, 0), innerWidth - 1);
+        const pointY = Math.min(Math.max((box.top + box.bottom) / 2, 0), innerHeight - 1);
+        const hit = document.elementFromPoint(pointX, pointY);
+        return Boolean(hit) && (element.contains(hit) || hit.contains(element));
+    };
+    return [...document.querySelectorAll(selector)].filter(isOnScreen).slice(0, ${String(MAX_LISTED_ELEMENTS)});
+})()`;
+const DESCRIBE_LIST_FUNCTION = `function () { ${ELEMENT_HELPERS} return this.map(describe); }`;
+// The clickable element around the target, such as the button around a clicked label.
+const DESCRIBE_HOLDER_FUNCTION = `function () { ${ELEMENT_HELPERS} const holder = this.closest ? this.closest(selector) : null; return holder ? describe(holder) : null; }`;
 // A user name or a code in a plain field is not as risky as a password, but a search box or a checkbox is still refused.
 const USERNAME_INPUT_TYPES = new Set(['text', 'email', 'tel']);
 const CODE_INPUT_TYPES = new Set(['text', 'tel', 'number']);
@@ -222,6 +285,44 @@ function parseWebUrl(rawUrl: string): string {
     return parsedUrl.href;
 }
 
+function readObject(value: unknown, field: string): unknown {
+    return typeof value === 'object' && value !== null ? Reflect.get(value, field) : undefined;
+}
+
+// The id of the remote object an evaluate or a resolve returned. Empty for null, such as no element under a point.
+function readObjectId(result: unknown, field: string): string {
+    const remoteObject = readObject(result, field);
+
+    return readStringField(remoteObject, 'objectId');
+}
+
+function readBackendNodeId(value: unknown): number | undefined {
+    const id = readObject(value, 'backendNodeId');
+
+    return typeof id === 'number' ? id : undefined;
+}
+
+function cleanName(name: string): string {
+    const singleLine = name.replace(/\s+/g, ' ')
+        .trim();
+
+    return singleLine.length > MAX_ELEMENT_NAME_LENGTH ? `${singleLine.slice(0, MAX_ELEMENT_NAME_LENGTH)}...` : singleLine;
+}
+
+function readDescription(value: unknown): Omit<PageElement, 'ref'> | undefined {
+    if (typeof value !== 'object' || value === null) {
+        return undefined;
+    }
+
+    const name = readStringField(value, 'name');
+
+    return { role: readStringField(value, 'role'), name: cleanName(name) };
+}
+
+function describeElement(element: Omit<PageElement, 'ref'>): string {
+    return `${element.role} ${JSON.stringify(element.name)}`;
+}
+
 // Drives the page that is shown on the bot's screen. Each action opens its own
 // connection, so a browser restart between two actions does not break the next one.
 class BrowserControl {
@@ -292,23 +393,53 @@ class BrowserControl {
         });
     }
 
-    // The first mouse events after a page loads can be lost, and the field then gets no focus.
-    // So a click on a field that did not take the focus is repeated once, and the result tells the model.
     click(pointX: number, pointY: number): Promise<ClickResult> {
-        const point = { x: pointX, y: pointY };
+        return this.withPage(page => this.clickPoint(page, pointX, pointY));
+    }
 
+    // Clicks the middle of an element from the page's element list, after scrolling it into view.
+    clickElement(ref: number): Promise<ClickResult> {
         return this.withPage(async (page) => {
-            await this.dispatchClick(page, point);
+            let content: unknown;
 
-            let focus = await this.readClickFocus(page, pointX, pointY);
+            try {
+                await page.call('DOM.scrollIntoViewIfNeeded', { backendNodeId: ref });
+                const box = await page.call('DOM.getBoxModel', { backendNodeId: ref });
+                const model: unknown = typeof box === 'object' && box !== null ? Reflect.get(box, 'model') : undefined;
 
-            if (focus.targetIsTextField && !focus.focusedIsField) {
-                await this.sleep(CLICK_RETRY_DELAY_MS);
-                await this.dispatchClick(page, point);
-                focus = await this.readClickFocus(page, pointX, pointY);
+                content = typeof model === 'object' && model !== null ? Reflect.get(model, 'content') : undefined;
+            } catch (error: unknown) {
+                if (error instanceof CdpError) {
+                    throw new BrowserError(ELEMENT_GONE_MESSAGE);
+                }
+
+                throw error;
             }
 
-            return { hasFocusedField: focus.focusedIsField };
+            // The content box is four corners, as x and y pairs.
+            if (!Array.isArray(content) || content.length !== 8 || !content.every(coordinate => typeof coordinate === 'number')) {
+                throw new BrowserError(ELEMENT_GONE_MESSAGE);
+            }
+
+            const [x1, y1, , , x3, y3] = content;
+            const pointX = Math.round(((x1 ?? 0) + (x3 ?? 0)) / 2);
+            const pointY = Math.round(((y1 ?? 0) + (y3 ?? 0)) / 2);
+
+            return this.clickPoint(page, pointX, pointY);
+        });
+    }
+
+    // Names the page and the element an action hits, for the approval review. It only reads the page.
+    describeTarget(target: BrowserTarget): Promise<string> {
+        return this.withPage(async (page) => {
+            const contextId = await createIsolatedContext(page);
+            const urlResult = await page.call('Runtime.evaluate', { expression: URL_EXPRESSION, returnByValue: true, contextId });
+            const url = readEvaluatedValue(urlResult);
+            const objectId = await this.findTargetObject(page, contextId, target);
+            const element = objectId === '' ? undefined : await this.describeHolder(page, objectId);
+            const elementText = element === undefined ? 'unknown' : describeElement(element);
+
+            return `Page: ${typeof url === 'string' ? url : 'unknown'}\nElement: ${elementText}`;
         });
     }
 
@@ -407,6 +538,55 @@ class BrowserControl {
         });
     }
 
+    // The first mouse events after a page loads can be lost, and the field then gets no focus.
+    // So a click on a field that did not take the focus is repeated once, and the result tells the model.
+    private async clickPoint(page: CdpConnection, pointX: number, pointY: number): Promise<ClickResult> {
+        const point = { x: pointX, y: pointY };
+
+        await this.dispatchClick(page, point);
+
+        let focus = await this.readClickFocus(page, pointX, pointY);
+
+        if (focus.targetIsTextField && !focus.focusedIsField) {
+            await this.sleep(CLICK_RETRY_DELAY_MS);
+            await this.dispatchClick(page, point);
+            focus = await this.readClickFocus(page, pointX, pointY);
+        }
+
+        return { hasFocusedField: focus.focusedIsField };
+    }
+
+    // Finds the element a target names, in the isolated world. Empty when there is none, such as an element number from an old page.
+    private async findTargetObject(page: CdpConnection, contextId: number, target: BrowserTarget): Promise<string> {
+        if (target.element !== undefined) {
+            try {
+                const resolved = await page.call('DOM.resolveNode', { backendNodeId: target.element, executionContextId: contextId });
+
+                return readObjectId(resolved, 'object');
+            } catch (error: unknown) {
+                if (error instanceof CdpError) {
+                    return '';
+                }
+
+                throw error;
+            }
+        }
+
+        const expression = target.x !== undefined && target.y !== undefined
+            ? `document.elementFromPoint(${String(target.x)}, ${String(target.y)})`
+            : FOCUSED_ELEMENT_EXPRESSION;
+        const found = await page.call('Runtime.evaluate', { expression, contextId });
+
+        return readObjectId(found, 'result');
+    }
+
+    private async describeHolder(page: CdpConnection, objectId: string): Promise<Omit<PageElement, 'ref'> | undefined> {
+        const described = await page.call('Runtime.callFunctionOn', { objectId, functionDeclaration: DESCRIBE_HOLDER_FUNCTION, returnByValue: true });
+        const value = readEvaluatedValue(described);
+
+        return readDescription(value);
+    }
+
     private async dispatchClick(page: CdpConnection, point: { x: number; y: number }): Promise<void> {
         await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
         await page.call('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
@@ -440,13 +620,66 @@ class BrowserControl {
         const value = readEvaluatedValue(result);
         const fullText = readStringField(value, 'text');
         const isTruncated = fullText.length > MAX_PAGE_TEXT_LENGTH;
+        const elements = await this.listElements(page);
 
         return {
             title: readStringField(value, 'title'),
             url: readStringField(value, 'url'),
             text: fullText.slice(0, MAX_PAGE_TEXT_LENGTH),
             isTruncated,
+            elements,
         };
+    }
+
+    // The page text still comes back when the element list cannot be read, for example while the page reloads.
+    private async listElements(page: CdpConnection): Promise<PageElement[]> {
+        try {
+            return await this.readElements(page);
+        } catch (error: unknown) {
+            if (error instanceof CdpError || error instanceof BrowserError) {
+                return [];
+            }
+
+            throw error;
+        }
+    }
+
+    // The script returns the elements themselves. Each one's number is its backend node id, which DOM.describeNode gives.
+    private async readElements(page: CdpConnection): Promise<PageElement[]> {
+        const contextId = await createIsolatedContext(page);
+        const listed = await page.call('Runtime.evaluate', { expression: LIST_ELEMENTS_EXPRESSION, contextId });
+        const listId = readObjectId(listed, 'result');
+
+        if (listId === '') {
+            return [];
+        }
+
+        const described = await page.call('Runtime.callFunctionOn', { objectId: listId, functionDeclaration: DESCRIBE_LIST_FUNCTION, returnByValue: true });
+        const descriptions = readEvaluatedValue(described);
+        const properties = await page.call('Runtime.getProperties', { objectId: listId, ownProperties: true });
+        const propertyList = readObject(properties, 'result');
+        // The list also has a length property. Only the numbered entries are elements.
+        const isIndex = (item: unknown): boolean => {
+            const name = readStringField(item, 'name');
+
+            return /^\d+$/.test(name);
+        };
+        const items = Array.isArray(propertyList) ? propertyList.filter(isIndex) : [];
+        const readings = items.map(async (item): Promise<PageElement | undefined> => {
+            const objectId = readObjectId(item, 'value');
+            const indexText = readStringField(item, 'name');
+            const index = Number(indexText);
+            const descriptionValue: unknown = Array.isArray(descriptions) ? descriptions[index] : undefined;
+            const description = readDescription(descriptionValue);
+            const nodeResult = await page.call('DOM.describeNode', { objectId });
+            const node = readObject(nodeResult, 'node');
+            const ref = readBackendNodeId(node);
+
+            return ref === undefined || description === undefined ? undefined : { ref, ...description };
+        });
+        const elements = await Promise.all(readings);
+
+        return elements.filter(element => element !== undefined);
     }
 
     // Page.navigate returns before the page loads. The ready state is polled
@@ -613,5 +846,5 @@ function checkedSocketUrl(raw: unknown, devtoolsPort: string): string {
     return socketUrl;
 }
 
-export { BROWSER_KEYS, BrowserControl, BrowserError, DESKTOP_DEVTOOLS_URL, GATE_REFUSED_ERROR, KEY_DEFINITIONS, MAX_PAGE_TEXT_LENGTH, devtoolsSocketUrl, parseWebUrl };
-export type { BrowserControlOptions, BrowserKey, ClickResult, LoginField, PageText };
+export { BROWSER_KEYS, BrowserControl, BrowserError, DESKTOP_DEVTOOLS_URL, GATE_REFUSED_ERROR, KEY_DEFINITIONS, MAX_LISTED_ELEMENTS, MAX_PAGE_TEXT_LENGTH, devtoolsSocketUrl, parseWebUrl };
+export type { BrowserControlOptions, BrowserKey, BrowserTarget, ClickResult, LoginField, PageElement, PageText };

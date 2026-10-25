@@ -38,6 +38,7 @@ import { createApp } from './createApp.ts';
 import { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { attachVncProxy } from './desktop/attachVncProxy.ts';
 import { DESKTOP_DEVTOOLS_URL } from './desktop/BrowserControl.ts';
+import { describeBrowserTarget } from './desktop/createBrowserTools.ts';
 import { MobileSites } from './desktop/MobileSites.ts';
 import { attachScreencast } from './desktop/attachScreencast.ts';
 import { buildLocalBrowserCommand, buildLocalBrowserTools, createLocalBrowserSpawn, defaultLocalBrowserEnvironment, localBrowserProfileDir, localGatePortFor, planLocalBrowser, saveLocalGatePort, startPlannedGate, verifyLocalBrowserGate } from './desktop/localBrowser.ts';
@@ -357,6 +358,8 @@ const toolCallReviewer = createToolCallReviewer({
     describeBotImport: (botId, input) => chatService.describeBotImport(botId, input),
     describeGalleryInstall: (botId, input) => chatService.describeGalleryInstall(botId, input),
     describeGalleryShare: botId => chatService.describeGalleryShare(botId),
+    // A click, a key or typing is reviewed with the element it hits, so the review can tell a chat row from a send button.
+    describeBrowserTarget: browser === undefined ? undefined : call => describeBrowserTarget(browser, call),
     // The review cost counts against the spending limit of the turn that asked for the review.
     reportCost: (botId, costUsd, turnSignal) => {
         chatService.recordReviewCost(botId, costUsd, turnSignal);

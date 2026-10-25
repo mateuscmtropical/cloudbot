@@ -170,6 +170,7 @@ describe('BrowserControl', () => {
             url: 'https://example.com/',
             text: 'Hello',
             isTruncated: false,
+            elements: [],
         });
         expect(fetchCalls.calls[0])
             .toEqual({ url: 'http://127.0.0.1:9222/json/list', method: 'GET' });
@@ -572,5 +573,140 @@ describe('BrowserControl', () => {
                 .some(call => call.method === 'Input.insertText'))
                 .toBe(false);
         }));
+    });
+});
+
+// A page in an isolated world with two elements on the screen, a Send button and a field.
+function elementsAnswer(overrides = new Map<string, CdpAnswer>()): CdpAnswer {
+    return (call: SentCall) => {
+        const override = overrides.get(call.method);
+
+        if (override !== undefined) {
+            return override(call);
+        }
+
+        if (call.method === 'Page.getFrameTree') {
+            return { result: { frameTree: { frame: { id: 'frame-1' } } } };
+        }
+
+        if (call.method === 'Page.createIsolatedWorld') {
+            return { result: { executionContextId: 7 } };
+        }
+
+        if (call.method === 'Runtime.evaluate' && call.params.expression === 'location.href') {
+            return { result: { result: { value: 'https://chat.example/' } } };
+        }
+
+        if (call.method === 'Runtime.evaluate' && typeof call.params.expression === 'string' && call.params.expression.includes('querySelectorAll(selector)')) {
+            return { result: { result: { objectId: 'list-1' } } };
+        }
+
+        if (call.method === 'Runtime.evaluate' && call.params.expression === 'document.activeElement') {
+            return { result: { result: { objectId: 'focused-1' } } };
+        }
+
+        if (call.method === 'Runtime.evaluate') {
+            return { result: { result: { value: { title: 'Chat', url: 'https://chat.example/', text: 'Hi' } } } };
+        }
+
+        if (call.method === 'Runtime.callFunctionOn' && call.params.objectId === 'list-1') {
+            return { result: { result: { value: [{ role: 'button', name: 'Send' }, { role: 'textbox', name: '  Type a\n message ' }] } } };
+        }
+
+        if (call.method === 'Runtime.callFunctionOn') {
+            return { result: { result: { value: { role: 'textbox', name: 'Type a message' } } } };
+        }
+
+        if (call.method === 'Runtime.getProperties') {
+            return { result: { result: [{ name: '0', value: { objectId: 'el-0' } }, { name: '1', value: { objectId: 'el-1' } }, { name: 'length', value: { value: 2 } }] } };
+        }
+
+        if (call.method === 'DOM.describeNode') {
+            return { result: { node: { backendNodeId: call.params.objectId === 'el-0' ? 41 : 42 } } };
+        }
+
+        if (call.method === 'DOM.getBoxModel') {
+            return { result: { model: { content: [100, 200, 140, 200, 140, 220, 100, 220] } } };
+        }
+
+        return { result: {} };
+    };
+}
+
+describe('BrowserControl elements', () => {
+    it('lists the elements on the screen with their numbers, roles and one-line names', async () => {
+        const { browser, sockets } = createBrowser(elementsAnswer());
+        const page = await browser.read();
+
+        expect(page.elements)
+            .toEqual([{ ref: 41, role: 'button', name: 'Send' }, { ref: 42, role: 'textbox', name: 'Type a message' }]);
+
+        const listCall = actionCalls(sockets.sockets[0])
+            .find(call => call.method === 'Runtime.evaluate' && call.params.contextId === 7);
+
+        expect(listCall)
+            .toBeDefined();
+    });
+
+    it('still returns the page text when the element list cannot be read', async () => {
+        const { browser } = createBrowser(elementsAnswer(new Map([['Page.createIsolatedWorld', () => ({ error: { message: 'Frame gone.' } })]])));
+        const page = await browser.read();
+
+        expect(page.text)
+            .toBe('Hi');
+        expect(page.elements)
+            .toEqual([]);
+    });
+
+    it('clicks the middle of an element after scrolling it into view', async () => {
+        const { browser, sockets } = createBrowser(elementsAnswer());
+
+        await browser.clickElement(41);
+
+        const calls = actionCalls(sockets.sockets[0]);
+        const pressed = calls.find(call => call.params.type === 'mousePressed');
+
+        expect(calls[0])
+            .toMatchObject({ method: 'DOM.scrollIntoViewIfNeeded', params: { backendNodeId: 41 } });
+        expect(pressed?.params)
+            .toMatchObject({ x: 120, y: 210 });
+    });
+
+    it('tells the model to read again when the element is gone', async () => {
+        const { browser, sockets } = createBrowser(elementsAnswer(new Map([['DOM.scrollIntoViewIfNeeded', () => ({ error: { message: 'No node found for given backend id' } })]])));
+
+        await expect(browser.clickElement(99)).rejects.toThrow('Read the page again');
+        expect(actionCalls(sockets.sockets[0])
+            .filter(call => call.method === 'Input.dispatchMouseEvent'))
+            .toEqual([]);
+    });
+
+    it('names the page and the element a click by number hits', async () => {
+        const { browser, sockets } = createBrowser(elementsAnswer(new Map([['DOM.resolveNode', () => ({ result: { object: { objectId: 'el-0' } } })]])));
+
+        await expect(browser.describeTarget({ element: 41 })).resolves.toBe('Page: https://chat.example/\nElement: textbox "Type a message"');
+        expect(actionCalls(sockets.sockets[0])
+            .find(call => call.method === 'DOM.resolveNode')?.params)
+            .toEqual({ backendNodeId: 41, executionContextId: 7 });
+    });
+
+    it('names the element under a point, and the focused one when there is no target', async () => {
+        const { browser, sockets } = createBrowser(elementsAnswer());
+
+        await browser.describeTarget({ x: 5, y: 6 });
+        await expect(browser.describeTarget({})).resolves.toContain('textbox "Type a message"');
+
+        const expressions = sockets.sockets.flatMap(socket => actionCalls(socket))
+            .filter(call => call.method === 'Runtime.evaluate')
+            .map(call => call.params.expression);
+
+        expect(expressions)
+            .toEqual(expect.arrayContaining(['document.elementFromPoint(5, 6)', 'document.activeElement']));
+    });
+
+    it('says unknown when the element number is from an old page', async () => {
+        const { browser } = createBrowser(elementsAnswer(new Map([['DOM.resolveNode', () => ({ error: { message: 'No node with given id found' } })]])));
+
+        await expect(browser.describeTarget({ element: 99 })).resolves.toBe('Page: https://chat.example/\nElement: unknown');
     });
 });
