@@ -29,6 +29,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- A long message in the text box no longer turns it into an oval that cuts the text at the corners. The box keeps its pill shape for one line and becomes a rounded box for more.
 - A Codex bot follows its current instructions in an old chat. Codex kept the instructions a chat started with, so a changed rule, such as answering on WhatsApp, only reached new chats. Changed instructions now go into the chat before the next message.
 - On Android, the message field and the expanded Screen panel stay above the navigation bar when CloudBot draws under it. Before, the bar covered the message field.
 - The first key typed with the Keyboard button of the Screen panel no longer erases a character on the screen and adds a space.
