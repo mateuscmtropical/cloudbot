@@ -83,13 +83,13 @@ describe('readUploadRetentionMs', () => {
             .toBe(7 * DAY_MS);
     });
 
-    it.each(['', 'abc', '0', '-3'])('uses 30 days for the value "%s"', (value) => {
+    it.each(['', 'abc', '0', '-3'])('uses 15 days for the value "%s"', (value) => {
         expect(readUploadRetentionMs({ CLOUDBOT_UPLOAD_RETENTION_DAYS: value }))
-            .toBe(30 * DAY_MS);
+            .toBe(15 * DAY_MS);
     });
 
-    it('uses 30 days when the variable is missing', () => {
+    it('uses 15 days when the variable is missing', () => {
         expect(readUploadRetentionMs({}))
-            .toBe(30 * DAY_MS);
+            .toBe(15 * DAY_MS);
     });
 });

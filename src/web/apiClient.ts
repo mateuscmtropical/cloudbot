@@ -8,6 +8,7 @@ import type { TurnLimits } from '../shared/limitTypes.ts';
 import type { ChannelDetail, ChannelPostView, ChannelSummary } from '../shared/channelTypes.ts';
 import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse } from '../shared/providerTypes.ts';
 import type { PushKeyResponse, PushSubscriptionInput, PushUnsubscribeInput } from '../shared/pushTypes.ts';
+import { compressImage } from './compressImage.ts';
 
 const API_ROOT = '/api';
 
@@ -186,8 +187,10 @@ async function stopTurn(botId: string): Promise<void> {
 async function uploadAttachments(botId: string, files: File[]): Promise<void> {
     const path = botPath(botId, '/attachments');
     const formData = new FormData();
+    const compressions = files.map(compressImage);
+    const preparedFiles = await Promise.all(compressions);
 
-    files.forEach((file) => {
+    preparedFiles.forEach((file) => {
         formData.append('files', file);
     });
 
