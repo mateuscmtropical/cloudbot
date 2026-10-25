@@ -17,7 +17,8 @@ const EXTENSIONS: Record<TurnImageMediaType, string> = {
 const PRIVATE_FOLDER_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 // With an agent user, Codex runs as that user and reads the images through the group of the turn root.
-const GROUP_FOLDER_MODE = 0o750;
+// The setgid bit stays on, since a plain 0750 clears it and the files would then get the server's group.
+const GROUP_FOLDER_MODE = 0o2750;
 const GROUP_FILE_MODE = 0o640;
 
 // Codex takes an image as a file path (a localImage input) and reads the file itself. Each turn writes its images to a

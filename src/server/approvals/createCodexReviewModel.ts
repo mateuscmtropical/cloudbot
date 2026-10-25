@@ -1,6 +1,7 @@
 import { tmpdir } from 'node:os';
 import { createInterface } from 'node:readline';
 
+import { buildCodexArguments } from '../agent/CodexEngine.ts';
 import type { CodexAgentLaunch } from '../agent/codexAgentLaunch.ts';
 import type { ReviewModel } from './createToolCallReviewer.ts';
 
@@ -23,6 +24,7 @@ const REVIEW_INSTRUCTIONS = 'You are a careful reviewer of tool calls. You run n
 const INITIALIZE_ID = 1;
 const THREAD_ID = 2;
 const TURN_ID = 3;
+const CODEX_REVIEW_ARGUMENTS = buildCodexArguments([]);
 
 function readLine(line: string): CodexReviewLine | undefined {
     try {
@@ -38,7 +40,8 @@ function createCodexReviewModel(options: CodexReviewModelOptions): ReviewModel {
     const timeoutMs = options.timeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS;
 
     return (prompt, signal) => new Promise((resolve, reject) => {
-        const child = options.launch.spawnFunction('codex', ['app-server'], {
+        // The locked settings, as for a turn. sudo only allows the wrapper with arguments after app-server.
+        const child = options.launch.spawnFunction('codex', CODEX_REVIEW_ARGUMENTS, {
             cwd: tmpdir(),
             env: {},
             stdio: ['pipe', 'pipe', 'ignore'],
