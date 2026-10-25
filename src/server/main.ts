@@ -24,9 +24,11 @@ import { readHubConfig } from './people/hubConfig.ts';
 import { PasskeyService } from './access/PasskeyService.ts';
 import { buildSetupLink, readPublicBaseUrl, readServerHost, readServerPort } from './access/setupLinkUrl.ts';
 import { createAgyReviewModel } from './approvals/createAgyReviewModel.ts';
+import { createCodexReviewModel } from './approvals/createCodexReviewModel.ts';
+import { skipAfterFailure } from './approvals/skipAfterFailure.ts';
 import { createClaudeReviewModel } from './approvals/createClaudeReviewModel.ts';
 import type { ReviewModel } from './approvals/createToolCallReviewer.ts';
-import { PROVIDER_AGENT_WRAPPER, wrapperAgentLaunch } from './agent/codexAgentLaunch.ts';
+import { PROVIDER_AGENT_WRAPPER, codexAgentLaunch, wrapperAgentLaunch } from './agent/codexAgentLaunch.ts';
 import { createReviewContextReader } from './approvals/createReviewContextReader.ts';
 import { createToolCallReviewer } from './approvals/createToolCallReviewer.ts';
 import { ChatService } from './chat/ChatService.ts';
@@ -312,21 +314,29 @@ const integrationService = integrationUser === undefined
 const askClaudeReview = createClaudeReviewModel({
     pathToClaudeCodeExecutable: claudePath, environment, workingDirectory: dataDir,
 });
-// An owner who connected only Gemini has no Claude sign-in, so a failed Claude review is tried again on agy.
-// agy runs only through the Docker wrapper, so without an agent user there is no second try.
+// An owner who connected only ChatGPT or Gemini has no Claude sign-in, so a failed Claude review is tried again on
+// Codex and then on agy. Both run only through the Docker wrappers, so without an agent user there is no second try.
+const askCodexReview = agentUser === undefined ? undefined : createCodexReviewModel({ launch: codexAgentLaunch(agentUser) });
 const askAgyReview = agentUser === undefined
     ? undefined
     : createAgyReviewModel({ launch: wrapperAgentLaunch(agentUser, PROVIDER_AGENT_WRAPPER), command: PROVIDER_AGENT_WRAPPER, args: ['gemini', 'agy-review'] });
-const askReviewModel: ReviewModel = async (prompt, signal, model, effort, onCost) => {
-    try {
-        return await askClaudeReview(prompt, signal, model, effort, onCost);
-    } catch (error: unknown) {
-        if (askAgyReview === undefined || signal?.aborted === true) {
+const fallbackReviews: ReviewModel[] = askCodexReview === undefined || askAgyReview === undefined
+    ? []
+    : [
+            skipAfterFailure(askCodexReview),
+            skipAfterFailure(askAgyReview),
+        ];
+const askClaudeReviewOnce = skipAfterFailure(askClaudeReview);
+const askReviewModel: ReviewModel = (prompt, signal, model, effort, onCost) => {
+    const firstTry = askClaudeReviewOnce(prompt, signal, model, effort, onCost);
+
+    return fallbackReviews.reduce((attempt, askNext) => attempt.catch((error: unknown) => {
+        if (signal?.aborted === true) {
             throw error;
         }
 
-        return askAgyReview(prompt, signal, model, effort);
-    }
+        return askNext(prompt, signal, model, effort);
+    }), firstTry);
 };
 const toolCallReviewer = createToolCallReviewer({
     askModel: askReviewModel,

@@ -229,11 +229,16 @@ After the floor, `classifyToolCall` sorts the call:
 The review model is one call with no tools, no settings files, no saved session
 and one turn. It sees the call, the owner rules and the last six chat lines.
 Webhook bodies, page watches and messages from other bots are labeled as not the
-owner. It answers with a category and a decision. A message, a purchase or a
-booking always becomes a question for the owner. An answer that is not valid, a
-failed call and a timeout of 60 seconds all send the question to the owner.
-When Claude is not signed in, the review runs on agy as the bot user, and its
-hook refuses every tool, so that call has no tools either. See
+owner. It answers with a category and a decision. A purchase or a booking
+always becomes a question for the owner. A message, a remote write or a system
+change runs when the owner asked for it in their own chat message, and asks
+otherwise. An answer that is not valid sends the question to the owner. When
+Claude is not signed in, the review runs on Codex with the ChatGPT sign-in in a
+read-only turn that never asks, and then on agy as the bot user, whose hook
+refuses every tool. When no review model answers in 60 seconds, the call runs.
+This is a deliberate trade: without any review model, prompt injection is
+stopped only by the command floor, the always-ask tools and the sensitive data
+check. See
 [Review agent](ARCHITECTURE.md#review-agent).
 
 ### Owner approval

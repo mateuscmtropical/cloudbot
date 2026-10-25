@@ -36,6 +36,7 @@ const APPROVAL_CATEGORY_CASES: ApprovalCategoryCase[] = [
     { name: 'new connectors', category: 'connector_change', toolName: 'mcp__future__connect_account', input: {} },
     { name: 'rule, limit and provider changes', category: 'owner_setting_change', toolName: 'Bash', input: { command: 'echo local' } },
 ];
+const OWNER_ASKED_CASES = APPROVAL_CATEGORY_CASES.filter(testCase => testCase.category !== 'purchase' && testCase.category !== 'booking');
 const DENIED_CATEGORY_CASES: ApprovalCategoryCase[] = [
     ...APPROVAL_CATEGORY_CASES,
     { name: 'a sensitive message', category: 'send_message', toolName: 'Bash', input: {} },
@@ -248,17 +249,26 @@ describe('createToolCallReviewer', () => {
             .toEqual({ decision: 'allow' });
     });
 
-    it.each(['send_message', 'purchase', 'booking'])('asks for the category %s even when the model allows', async (category) => {
-        const { reviewer } = createReviewer(answer({ category, decision: 'allow', summary: 'Send an email to Ana' }));
+    it.each(['purchase', 'booking'])('asks for the category %s even when the model allows', async (category) => {
+        const { reviewer } = createReviewer(answer({ category, decision: 'allow', summary: 'Buy a ticket' }));
 
         const verdict = await reviewer('bot-1', BASH_CALL);
 
         expect(verdict)
-            .toEqual({ decision: 'ask', summary: 'Send an email to Ana' });
+            .toEqual({ decision: 'ask', summary: 'Buy a ticket' });
     });
 
-    it.each(APPROVAL_CATEGORY_CASES)('asks before $name when the model allows it', async ({ category, toolName, input }) => {
+    it.each(OWNER_ASKED_CASES)('runs $name when the model allows it, since the owner asked', async ({ category, toolName, input }) => {
         const { reviewer } = createReviewer(answer({ category, decision: 'allow', summary: 'Confirm this action.' }));
+
+        const verdict = await reviewer('bot-1', { toolName, input });
+
+        expect(verdict)
+            .toEqual({ decision: 'allow' });
+    });
+
+    it.each(APPROVAL_CATEGORY_CASES)('asks before $name when the model asks', async ({ category, toolName, input }) => {
+        const { reviewer } = createReviewer(answer({ category, decision: 'ask', summary: 'Confirm this action.' }));
 
         const verdict = await reviewer('bot-1', { toolName, input });
 
@@ -311,12 +321,33 @@ describe('createToolCallReviewer', () => {
             .toEqual({ decision: 'allow' });
     });
 
-    it('throws when the model fails, so the gate asks the owner', async () => {
+    it('allows the call when no model can review it', async () => {
         const { reviewer } = createReviewer(new Error('offline'));
 
-        await expect(reviewer('bot-1', BASH_CALL))
+        const verdict = await reviewer('bot-1', BASH_CALL);
+
+        expect(verdict)
+            .toEqual({ decision: 'allow' });
+    });
+
+    it('still refuses a floor command when no model can review it', async () => {
+        const { reviewer } = createReviewer(new Error('offline'));
+
+        const verdict = await reviewer('bot-1', { toolName: 'Bash', input: { command: 'rm -rf /' } });
+
+        expect(verdict.decision)
+            .toBe('deny');
+    });
+
+    it('throws when the turn stops during the review', async () => {
+        const { reviewer } = createReviewer(new Error('stopped'));
+        const controller = new AbortController();
+
+        controller.abort();
+
+        await expect(reviewer('bot-1', BASH_CALL, controller.signal))
             .rejects
-            .toThrow('offline');
+            .toThrow('stopped');
     });
 
     it('throws when the answer is not valid', async () => {

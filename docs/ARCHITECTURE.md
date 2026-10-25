@@ -1364,13 +1364,21 @@ that sends something in a way the patterns miss relies on the model's category.
 Each reviewed call costs one extra model call. The review runs as the server
 user, which is safe only because the call has no tools.
 
-When the Claude call fails, as it does for an owner who connected only Gemini,
-the review is tried once more on agy (`createAgyReviewModel`). It runs as the
-bot user through the `agy-review` action of `docker/cloudbot-provider`. That
-action gives the hook no review address, so `agy-hook.js` refuses every tool
-and the model can only answer in text. A Claude model choice is replaced by a
-small Gemini model. Without an agent user there is no agy, so the failed review
-asks the owner as before.
+When the Claude call fails, as it does for an owner who connected only ChatGPT
+or Gemini, the review is tried on Codex and then on agy. Codex
+(`createCodexReviewModel`) runs one ephemeral read-only turn of
+`codex app-server` with the ChatGPT sign-in, through the same wrapper as the
+Codex engine, and never asks for approval. agy (`createAgyReviewModel`) runs as
+the bot user through the `agy-review` action of `docker/cloudbot-provider`.
+That action gives the hook no review address, so `agy-hook.js` refuses every
+tool and the model can only answer in text. A Claude model choice is replaced
+by a small Gemini model. A review model that fails is skipped for ten minutes
+(`skipAfterFailure`), so a provider without a sign-in does not slow every call.
+
+When no review model answers, for example on a bot that only uses opencode, the
+call runs, like in auto mode. The command floor and the always-ask tools were
+checked before the review, so they still hold. An answer that cannot be read
+still asks the owner, since a page could have confused the model.
 
 ## Command floor
 
