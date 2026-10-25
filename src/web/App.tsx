@@ -7,7 +7,8 @@ import { BotList } from './components/BotList.tsx';
 import { ChannelView } from './components/ChannelView.tsx';
 import type { MessageActions } from './components/MessageItem.tsx';
 import { deriveMascotState } from './mascotState.ts';
-import { useSwipeMenu } from './useSwipeMenu.ts';
+import { useBackButton } from './useBackButton.ts';
+import { NARROW_SCREEN_QUERY, useSwipeMenu } from './useSwipeMenu.ts';
 import { findConversationMascot, startMascotHop } from './mascotHop.ts';
 import type { MascotHop, MascotHopPoint } from './mascotHop.ts';
 import { useAppUpdate } from './useAppUpdate.ts';
@@ -168,6 +169,28 @@ function App(): ReactElement {
     const [initialSearch] = useState(() => window.location.search);
     const [appReturn] = useState(() => readAppReturn(initialSearch));
     const [isConnectAppsOpen, setIsConnectAppsOpen] = useState(appReturn !== undefined);
+    const [isNarrowScreen] = useState(() => window.matchMedia(NARROW_SCREEN_QUERY).matches);
+
+    // The back button closes the newest open panel. On a phone, back from the chat opens the bot list, like the
+    // arrow in the header, and back from the list leaves the app.
+    useBackButton(isNarrowScreen && !isBotListOpen, () => {
+        setIsBotListOpen(true);
+    });
+    useBackButton(isBotListOpen, () => {
+        setIsBotListOpen(false);
+    });
+    useBackButton(isPeopleOpen, () => {
+        setIsPeopleOpen(false);
+    });
+    useBackButton(isAccountOpen, () => {
+        setIsAccountOpen(false);
+    });
+    useBackButton(isBotProfileOpen, () => {
+        setIsBotProfileOpen(false);
+    });
+    useBackButton(isConnectAppsOpen, () => {
+        setIsConnectAppsOpen(false);
+    });
 
     // The sign-in opened in a new window. That window tells the first one and closes itself.
     // If the browser keeps it open, it stays as it is, with the panel and the notice.
