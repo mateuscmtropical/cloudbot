@@ -28,6 +28,12 @@
     --size-pill-field: 52px;
     --size-bot-face: 44px;
     --sidebar-width: 320px;
+    /* The parts of the screen that the phone's status and navigation bars cover. They are 0 where nothing covers the
+       page. index.html asks for them with viewport-fit=cover. */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
     font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     color: var(--color-text);
     background: var(--color-background);
@@ -49,6 +55,8 @@ body {
 
 body {
     margin: 0;
+    /* One place keeps the whole app out from under the phone's bars. Only fixed full screen panels add it again. */
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
     background: var(--color-background);
     color: var(--color-text);
 }
@@ -92,8 +100,7 @@ svg {
 
 .app {
     display: flex;
-    height: 100vh;
-    height: 100dvh;
+    height: 100%;
     overflow: hidden;
 }
 
@@ -368,7 +375,7 @@ svg {
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    padding: var(--space-3) var(--space-4);
 }
 
 .bot-list-search {
@@ -731,7 +738,7 @@ svg {
         height: 100vh;
         height: 100dvh;
         max-height: none;
-        padding: max(var(--space-3), env(safe-area-inset-top)) var(--space-4) max(var(--space-4), env(safe-area-inset-bottom));
+        padding: calc(var(--space-3) + var(--safe-top)) var(--space-4) calc(var(--space-4) + var(--safe-bottom));
         border-radius: 0;
         transform: none;
         animation: none;
@@ -1643,7 +1650,7 @@ button.list-row {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    margin: 12px 24px calc(20px + env(safe-area-inset-bottom, 0px));
+    margin: 12px 24px 20px;
     padding: 0;
 }
 
@@ -1719,6 +1726,7 @@ button.list-row {
         position: fixed;
         inset: 0 auto 0 0;
         z-index: 2;
+        padding: var(--safe-top) 0 var(--safe-bottom) var(--safe-left);
         transform: translateX(-100%);
         transition: transform 0.2s ease;
         width: 100vw;
@@ -1758,7 +1766,7 @@ button.list-row {
     }
 
     .composer {
-        margin: 8px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+        margin: 8px 12px 12px;
     }
 
     .message-user .text-message {
@@ -2061,7 +2069,8 @@ button.list-row {
     inset: 0;
     z-index: 100;
     margin: 0;
-    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    padding-top: var(--safe-top);
+    padding-bottom: calc(16px + var(--safe-bottom));
     border-radius: 0;
 }
 
@@ -2910,8 +2919,7 @@ button.list-row {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 100vh;
-    height: 100dvh;
+    height: 100%;
     overflow-y: auto;
     padding: var(--space-4);
 }

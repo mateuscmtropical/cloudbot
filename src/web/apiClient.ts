@@ -435,44 +435,64 @@ function saveLimits(botId: string, limits: TurnLimits): Promise<TurnLimits> {
     return requestJson<TurnLimits>(path, init);
 }
 
+const STREAM_RETRY_MS = 3000;
+
+// A phone that turns its screen off or leaves the app can keep a dead stream that still looks open, and a stream
+// that gets an error page while a hibernated bot wakes up is closed by the browser for good. So the stream opens
+// again whenever the page is shown or the network comes back, and again a moment after the browser gave up on it.
+function openEventStream(path: string, onEvent: (event: ChatEvent) => void, onOpen: () => void): () => void {
+    const stream: { source: EventSource | undefined; retry: number | undefined } = { source: undefined, retry: undefined };
+
+    const connect = (): void => {
+        window.clearTimeout(stream.retry);
+        stream.source?.close();
+
+        const eventSource = new EventSource(path);
+
+        stream.source = eventSource;
+        eventSource.addEventListener('open', () => {
+            onOpen();
+        });
+        eventSource.addEventListener('message', (messageEvent: MessageEvent<string>) => {
+            const parsedEvent = JSON.parse(messageEvent.data) as ChatEvent;
+
+            onEvent(parsedEvent);
+        });
+        eventSource.addEventListener('error', () => {
+            if (eventSource.readyState === EventSource.CLOSED) {
+                stream.retry = window.setTimeout(connect, STREAM_RETRY_MS);
+            }
+        });
+    };
+    const connectWhenShown = (): void => {
+        if (document.visibilityState === 'visible') {
+            connect();
+        }
+    };
+
+    connect();
+    document.addEventListener('visibilitychange', connectWhenShown);
+    window.addEventListener('online', connect);
+
+    return () => {
+        document.removeEventListener('visibilitychange', connectWhenShown);
+        window.removeEventListener('online', connect);
+        window.clearTimeout(stream.retry);
+        stream.source?.close();
+    };
+}
+
 // onOpen runs on the first connection and on every reconnect. Events missed while
 // the stream was down are lost, so the caller reloads the conversation there.
 function subscribeToEvents(botId: string, onEvent: (event: ChatEvent) => void, onOpen: () => void): () => void {
     const path = botPath(botId, '/events');
-    const eventSource = new EventSource(path);
 
-    eventSource.addEventListener('open', () => {
-        onOpen();
-    });
-
-    eventSource.addEventListener('message', (messageEvent: MessageEvent<string>) => {
-        const parsedEvent = JSON.parse(messageEvent.data) as ChatEvent;
-
-        onEvent(parsedEvent);
-    });
-
-    return () => {
-        eventSource.close();
-    };
+    return openEventStream(path, onEvent, onOpen);
 }
 
 // The messages of every bot in one stream. The caller reloads the bot list on open, since events missed while it was down are lost.
 function subscribeToAllBotEvents(onEvent: (event: ChatEvent) => void, onOpen: () => void): () => void {
-    const eventSource = new EventSource(`${API_ROOT}/events`);
-
-    eventSource.addEventListener('open', () => {
-        onOpen();
-    });
-
-    eventSource.addEventListener('message', (messageEvent: MessageEvent<string>) => {
-        const parsedEvent = JSON.parse(messageEvent.data) as ChatEvent;
-
-        onEvent(parsedEvent);
-    });
-
-    return () => {
-        eventSource.close();
-    };
+    return openEventStream(`${API_ROOT}/events`, onEvent, onOpen);
 }
 
 // The remote MCP servers the owner connected. The list never holds a token.

@@ -1,4 +1,4 @@
-import { Suspense, createElement, lazy, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, createElement, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
@@ -234,6 +234,27 @@ function ConversationView({
         previousScrollHeightRef.current = messageListElement.scrollHeight;
         // The working bubble shows up after a delay, so its arrival scrolls the list too.
     }, [messages, draftText, botId, isLoadingOlder, isThinkingShown]);
+
+    // Back on the app, after the screen was off or another app was open, the chat follows the newest message. The
+    // reload that the event stream does then lands at the bottom too, since the list counts as near the bottom.
+    useEffect(() => {
+        const followNewest = (): void => {
+            const messageListElement = messageListRef.current;
+
+            if (document.visibilityState !== 'visible' || messageListElement === null) {
+                return;
+            }
+
+            messageListElement.scrollTop = messageListElement.scrollHeight;
+            previousScrollHeightRef.current = messageListElement.scrollHeight;
+        };
+
+        document.addEventListener('visibilitychange', followNewest);
+
+        return () => {
+            document.removeEventListener('visibilitychange', followNewest);
+        };
+    }, []);
 
     // A tapped notification names a message. It is scrolled into view once the list has messages, found or not,
     // so a message that is not in the newest page never scrolls the view later. This effect follows the bottom scroll above.
