@@ -30,6 +30,7 @@ All notable changes to this project are listed here. The format follows
 ### Fixed
 
 - A Codex bot sees the images attached to a message again. The image folder lost its setgid bit, so the files got the server's group and Codex could not read them. The review on ChatGPT also starts now, since it passed no setting to the Codex wrapper and sudo refused it.
+- The back button of the phone no longer leaves the app. It closes the open panel, such as the bot list, the account, the bot profile, Connect apps or the Screen. From the chat on a phone it opens the bot list, and from the bot list it leaves the app.
 - A long message in the text box no longer turns it into an oval that cuts the text at the corners. The box keeps its pill shape for one line and becomes a rounded box for more.
 - A Codex bot follows its current instructions in an old chat. Codex kept the instructions a chat started with, so a changed rule, such as answering on WhatsApp, only reached new chats. Changed instructions now go into the chat before the next message.
 - On Android, the message field and the expanded Screen panel stay above the navigation bar when CloudBot draws under it. Before, the bar covered the message field.

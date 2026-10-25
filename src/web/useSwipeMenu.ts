@@ -78,5 +78,5 @@ function useSwipeMenu(isOpen: boolean, setIsOpen: (isOpen: boolean) => void): vo
     }, [isOpen, setIsOpen]);
 }
 
-export { readSwipe, useSwipeMenu };
+export { NARROW_SCREEN_QUERY, readSwipe, useSwipeMenu };
 export type { SwipeDirection, TouchPoint };

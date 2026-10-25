@@ -24,6 +24,7 @@ import { WebhookUrlNotice } from './WebhookUrlNotice.tsx';
 import { PersonCredentialsNotice } from './PersonCredentialsNotice.tsx';
 import { BackIcon, CodeIcon, MoreIcon } from './icons.tsx';
 import type { MessageActions } from './MessageItem.tsx';
+import { useBackButton } from '../useBackButton.ts';
 
 // Within this many pixels of the top, the view asks for the page of older messages.
 const LOAD_OLDER_THRESHOLD_PX = 40;
@@ -150,6 +151,11 @@ function ConversationView({
     const isBubbleDue = isThinkingBubbleShown({ isRunning, messages });
     const isThinkingShown = useDelayedFlag(isBubbleDue, BUBBLE_DELAY_MS);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
+
+    useBackButton(isDesktopOpen, () => {
+        setIsDesktopOpen(false);
+    });
+
     const [isRenaming, setIsRenaming] = useState(false);
     const lastNameTapRef = useRef<Tap | undefined>(undefined);
     const [shownBotId, setShownBotId] = useState(bot?.id);
