@@ -92,6 +92,10 @@ class FakeAppServer extends EventEmitter {
             this.say({ id: message.id, result: { thread: { id: threadId } } });
         }
 
+        if (message.method === 'thread/inject_items') {
+            this.say({ id: message.id, result: {} });
+        }
+
         if (message.method === 'turn/start') {
             this.say({ id: message.id, result: { turn: { id: 'turn-1', status: 'inProgress' } } });
             this.say({ method: 'turn/started', params: { threadId: 'thread-1', turn: { id: 'turn-1' } } });
@@ -352,6 +356,38 @@ describe('CodexEngine', () => {
             .toMatchObject({ threadId: 'thread-7', approvalPolicy: 'untrusted' });
         expect(events)
             .toContainEqual({ type: 'session', sessionId: 'thread-7' });
+    });
+
+    it('sends changed instructions to a resumed thread once', async () => {
+        const { engine, servers } = makeEngine(completeTurn);
+        const injectsOf = (index: number): SentMessage[] | undefined => servers[index]?.sent.filter(message => message.method === 'thread/inject_items');
+
+        await collect(engine.runTurn(makeRequest({ sessionId: 'thread-7', systemPrompt: 'Old rules.' })));
+        await collect(engine.runTurn(makeRequest({ sessionId: 'thread-7', systemPrompt: 'Old rules.' })));
+        await collect(engine.runTurn(makeRequest({ sessionId: 'thread-7', systemPrompt: 'New rules.' })));
+
+        const first = injectsOf(0);
+        const second = injectsOf(1);
+        const third = injectsOf(2);
+
+        expect(first)
+            .toHaveLength(1);
+        expect(second)
+            .toHaveLength(0);
+        expect(third?.[0]?.params)
+            .toEqual({ threadId: 'thread-7', items: [{ type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'Your instructions changed. These replace all earlier developer instructions.\n\nNew rules.' }] }] });
+    });
+
+    it('does not resend the instructions of a thread it just started', async () => {
+        const { engine, servers } = makeEngine(completeTurn);
+
+        await collect(engine.runTurn(makeRequest({ systemPrompt: 'Rules.' })));
+        await collect(engine.runTurn(makeRequest({ sessionId: 'thread-1', systemPrompt: 'Rules.' })));
+
+        const injects = servers[1]?.sent.filter(message => message.method === 'thread/inject_items');
+
+        expect(injects)
+            .toHaveLength(0);
     });
 
     it('answers a command approval with the decision of the review', async () => {

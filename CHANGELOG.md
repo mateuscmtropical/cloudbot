@@ -9,7 +9,6 @@ All notable changes to this project are listed here. The format follows
 ### Added
 
 - The passkeys page can add fingerprint or face sign-in for the device in use. Before, a passkey could only be added from the offer after a password sign-in. Each new passkey is named after the platform of the device, such as Android or Windows.
-- Sites open in their mobile version while a phone holds the screen. The bot's Chromium then sends the user agent of Chrome on Android, follows the page's mobile viewport and takes a drag as a touch, so it scrolls the page. The desktop version comes back on the next load after the phone gives the screen back.
 - Sites open in their mobile version while a phone holds the screen. The bot's Chromium then sends the user agent of Chrome on Android and takes a drag as a touch, so it scrolls the page. A page that was already open fits the narrow screen too. The desktop version comes back on the next load after the phone gives the screen back.
 - Bitwarden logins for the bot. The Bitwarden card in Connect apps takes the server address, the API key and the master password of the owner. They stay in the vault under a name that the model cannot read, and the server runs the official Bitwarden CLI itself. The new `browser_fill_login` tool types the user name, the password or the one-time code of a login into the focused field. The server reads the real page address, offers only the logins saved for that site, and asks the owner before it types. The bot never sees a value. The vault locks after ten idle minutes. The image installs `@bitwarden/cli` 2026.9.1. An integration script can no longer be given a secret that starts with `OAUTH_` or `BITWARDEN_`, and an app token cannot start with `BITWARDEN_`.
 - The Connect apps catalog is a grid of cards sorted by name, with three columns on a phone. Each app shows its logo when it has one, drawn from shapes bundled with CloudBot. The other apps keep a colored initial.
@@ -29,6 +28,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- A Codex bot follows its current instructions in an old chat. Codex kept the instructions a chat started with, so a changed rule, such as answering on WhatsApp, only reached new chats. Changed instructions now go into the chat before the next message.
 - On Android, the message field and the expanded Screen panel stay above the navigation bar when CloudBot draws under it. Before, the bar covered the message field.
 - The first key typed with the Keyboard button of the Screen panel no longer erases a character on the screen and adds a space.
 - On a phone, the whole desktop fits in the Screen panel while you hold it. Before, the desktop stayed 500 pixels wide in a narrower panel, so its right side was cut off and could not be reached.

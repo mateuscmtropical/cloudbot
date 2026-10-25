@@ -78,6 +78,7 @@ const CODEX_USER_HOME_SUFFIX = '-home';
 const CLIENT_NAME = 'cloudbot';
 const CLIENT_VERSION = '0.0.0';
 const START_FAILED = 'Codex could not start the turn.';
+const UPDATED_INSTRUCTIONS = 'Your instructions changed. These replace all earlier developer instructions.\n\n';
 const STOPPED_EARLY = 'Codex stopped before the turn ended.';
 // The setup calls answer at once when Codex works. A Codex that never answers would hold the turn open.
 const SETUP_TIMEOUT_MS = 60000;
@@ -242,6 +243,7 @@ function preparePrivateFolder(folder: string): void {
 class CodexEngine implements AgentRunner {
     private readonly options: CodexEngineOptions;
     private readonly spawnFunction: SpawnFunction;
+    private readonly sentPrompts = new Map<string, string>();
 
     constructor(options: CodexEngineOptions) {
         if (!options.codexPath.startsWith('/')) {
@@ -558,6 +560,21 @@ class CodexEngine implements AgentRunner {
             }
 
             progress.threadId = threadId;
+
+            // A resumed thread keeps the instructions it started with, so new ones go in as a developer message.
+            const { systemPrompt } = request;
+
+            if (systemPrompt !== undefined) {
+                const isPromptChanged = this.sentPrompts.get(threadId) !== systemPrompt;
+
+                if (request.sessionId && isPromptChanged) {
+                    const update = { type: 'message', role: 'developer', content: [{ type: 'input_text', text: `${UPDATED_INSTRUCTIONS}${systemPrompt}` }] };
+
+                    await call('thread/inject_items', { threadId, items: [update] });
+                }
+
+                this.sentPrompts.set(threadId, systemPrompt);
+            }
 
             const imageInputs = imagePaths.map(path => ({ type: 'localImage', path }));
             const input = [{ type: 'text', text: request.prompt, text_elements: [] }, ...imageInputs];
