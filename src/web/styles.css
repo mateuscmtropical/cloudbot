@@ -1469,11 +1469,12 @@ button.list-row {
     scroll-padding-top: 72px;
 }
 
-.load-older-button {
-    display: block;
-    margin: 0 auto 8px;
-    padding: 4px 12px;
+.load-older-status {
+    min-height: 1.4em;
+    margin: 0 0 8px;
+    text-align: center;
     font-size: 0.85rem;
+    color: var(--color-text-muted);
 }
 
 .message {

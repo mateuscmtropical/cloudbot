@@ -145,6 +145,8 @@ function ConversationView({
     const previousScrollHeightRef = useRef(0);
     const olderAnchorRef = useRef<OlderAnchor | undefined>(undefined);
     const previousIsLoadingRef = useRef(false);
+    // The oldest message when a list too short to scroll last asked for older messages by itself.
+    const autoLoadedOldestRef = useRef<number | undefined>(undefined);
     const botName = bot?.name ?? 'CloudBot';
     const sentHistory = useMemo(() => sentMessageTexts(messages), [messages]);
     const providerChangeCount = useMemo(() => countProviderChanges(messages), [messages]);
@@ -280,6 +282,22 @@ function ConversationView({
             : undefined;
     }, [isLoadingOlder]);
 
+    // A list too short to scroll never sends a scroll, so it asks for the older page itself until it fills the screen.
+    // It asks once per oldest message, so a failed load is not retried in a loop.
+    useEffect(() => {
+        const messageListElement = messageListRef.current;
+        const oldestSequence = messages[0]?.sequence;
+
+        if (messageListElement === null || !hasOlderMessages || isLoadingOlder || oldestSequence === autoLoadedOldestRef.current) {
+            return;
+        }
+
+        if (messageListElement.clientHeight > 0 && messageListElement.scrollHeight <= messageListElement.clientHeight) {
+            autoLoadedOldestRef.current = oldestSequence;
+            onLoadOlder?.();
+        }
+    }, [messages, hasOlderMessages, isLoadingOlder, onLoadOlder]);
+
     function handleScroll(): void {
         const messageListElement = messageListRef.current;
 
@@ -398,12 +416,9 @@ function ConversationView({
                     : null}
             </div>
             <div className="message-list" ref={messageListRef} onScroll={handleScroll}>
+                {/* Older messages load on scroll, with no button. The line stays while more exist, so the list does not jump when a load starts. */}
                 {hasOlderMessages
-                    ? (
-                            <button type="button" className="load-older-button" disabled={isLoadingOlder} onClick={onLoadOlder}>
-                                {isLoadingOlder ? 'Loading...' : 'Load older messages'}
-                            </button>
-                        )
+                    ? <p className="load-older-status" role="status">{isLoadingOlder ? 'Loading older messages...' : ''}</p>
                     : null}
                 {messages.map(message => (
                     <div key={message.id} data-message-id={message.id}>
