@@ -107,11 +107,13 @@ describe('buildSystemPrompt', () => {
             .not.toContain('email_setup');
     });
 
-    it('explains that WhatsApp messages arrive in the chat and answers stay there, only when WhatsApp is on', () => {
+    it('explains that WhatsApp messages arrive in the chat and replies go through WhatsApp Web, only when WhatsApp is on', () => {
         const profile = { name: 'Ana', title: 'Assistant', description: '' };
 
         expect(buildSystemPrompt(profile, { hasWhatsApp: true }))
-            .toContain('never on WhatsApp');
+            .toContain('WhatsApp Web in your browser');
+        expect(buildSystemPrompt(profile, { hasWhatsApp: true }))
+            .not.toContain('never on WhatsApp');
         expect(buildSystemPrompt(profile))
             .not.toContain('whatsapp_connect');
     });

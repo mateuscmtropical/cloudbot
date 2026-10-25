@@ -1198,7 +1198,7 @@ describe('ChatService', () => {
         expect(withWhatsApp.receivedRequests[0]?.allowedTools)
             .toEqual(expect.arrayContaining(WHATSAPP_TOOL_FULL_NAMES));
         expect(withWhatsApp.receivedRequests[0]?.systemPrompt)
-            .toContain('never on WhatsApp');
+            .toContain('WhatsApp Web in your browser');
         expect(withoutWhatsApp.receivedRequests[0]?.allowedTools)
             .not.toContain(WHATSAPP_TOOL_FULL_NAMES[0]);
         expect(withoutWhatsApp.receivedRequests[0]?.systemPrompt)
