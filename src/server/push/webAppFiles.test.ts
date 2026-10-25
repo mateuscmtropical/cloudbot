@@ -60,6 +60,13 @@ describe('the installable web app files', () => {
             .not.toContain('100vh');
     });
 
+    it('gives the root the page height, so the app fits the screen and the composer stays in view', () => {
+        const rootRule = /\n#root\s*\{([^}]*)\}/.exec(stylesheet)?.[1] ?? '';
+
+        expect(rootRule)
+            .toContain('height: 100%');
+    });
+
     it('keeps a scroll at the end of the chat inside the message list', () => {
         const listRule = /\n\.message-list\s*\{([^}]*)\}/.exec(stylesheet)?.[1] ?? '';
 

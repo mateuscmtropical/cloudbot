@@ -53,6 +53,11 @@ body {
     overscroll-behavior: none;
 }
 
+/* Without a height here the app grows as tall as the chat and the composer ends up below the screen. See issue #437. */
+#root {
+    height: 100%;
+}
+
 body {
     margin: 0;
     /* One place keeps the whole app out from under the phone's bars. Only fixed full screen panels add it again. */
