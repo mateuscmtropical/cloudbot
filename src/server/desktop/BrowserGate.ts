@@ -5,7 +5,7 @@ import { lookup } from 'node:dns/promises';
 import { isAllowablePrivateAddress, isPublicAddress, readLocalAddresses } from '../watches/publicAddress.ts';
 import { normalizeHost } from './browserHost.ts';
 
-// The browser's proxy. docker/cloudbot-desktop starts Chromium with this port, so the two must match.
+// The browser's proxy. docker/chromium-flags starts Chromium with this port, so the two must match.
 const BROWSER_GATE_PORT = 9224;
 const GATE_HOST = '127.0.0.1';
 

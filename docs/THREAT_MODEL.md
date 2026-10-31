@@ -160,6 +160,9 @@ the page. Chromium runs as `bot` and listens for DevTools on `127.0.0.1:9222`, s
 of the bot could read the field through that port. Such a command still goes through the tool call
 review, and the owner approved the login and the site first. The fill keeps the value out of the
 chat, the tool results and the logs. It does not hide it from a bot that sets out to read the page.
+The same holds for the desktop tools. They act on the whole screen as `bot`, so they can open
+Chromium's own menus too. Each click, key and typing is reviewed, and typed text passes the same
+command floor as a shell command. See [Desktop tools](ARCHITECTURE.md#desktop-tools).
 
 The subscription login is not in the vault. Each provider's CLI keeps it in the
 home of the `bot` user. CloudBot never reads, copies or stores it. The bot

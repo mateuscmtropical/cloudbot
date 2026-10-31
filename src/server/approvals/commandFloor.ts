@@ -99,6 +99,11 @@ const FILE_FIELDS_BY_TOOL = new Map<string, string[]>([
     ['NotebookEdit', ['notebook_path']],
 ]);
 const WRITE_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit']);
+// The field that holds a shell command. Text typed on the desktop can go into a terminal, so it is checked the same way.
+const COMMAND_FIELD_BY_TOOL = new Map<string, string>([
+    ['Bash', 'command'],
+    ['mcp__cloudbot__desktop_type', 'text'],
+]);
 
 function normalizeCommand(command: string): string {
     // A backslash at the end of a line joins the lines. Any other line break ends the command, as a separator does.
@@ -438,8 +443,10 @@ function checkFileTool(call: ToolCall): string | undefined {
 }
 
 function checkCallText(call: ToolCall): string | undefined {
-    if (call.toolName === 'Bash') {
-        const command = readInputText(call.input, 'command');
+    const commandField = COMMAND_FIELD_BY_TOOL.get(call.toolName);
+
+    if (commandField !== undefined) {
+        const command = readInputText(call.input, commandField);
 
         return command.length > MAX_COMMAND_LENGTH ? REASON_TOO_LONG : checkCommandText(command);
     }

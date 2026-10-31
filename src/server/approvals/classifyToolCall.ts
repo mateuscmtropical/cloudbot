@@ -17,6 +17,9 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__browser_read',
     'mcp__cloudbot__browser_screenshot',
     'mcp__cloudbot__browser_scroll',
+    // A screenshot only looks, and the wheel only moves the view. Desktop clicks, keys and typing are reviewed.
+    'mcp__cloudbot__desktop_screenshot',
+    'mcp__cloudbot__desktop_scroll',
     'mcp__cloudbot__request_screen',
     // Recording hands the screen to the owner, who does the task. Reading the recording only reads those steps.
     'mcp__cloudbot__screen_record',
@@ -111,6 +114,7 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
 
 // The tools of the bot itself have fixed names. Any other tool is an outside connector.
 const OWN_TOOL_PREFIX = 'mcp__cloudbot__';
+const DESKTOP_TYPE_TOOL_NAME = `${OWN_TOOL_PREFIX}desktop_type`;
 
 // A word in a tool name that means a message goes out, money moves or a place is held.
 const ALWAYS_ASK_WORDS = new Set([
@@ -172,6 +176,12 @@ function readCommand(input: unknown): string {
     return typeof command === 'string' ? command : '';
 }
 
+function readTypedText(input: unknown): string {
+    const text = (input as { text?: unknown } | null)?.text;
+
+    return typeof text === 'string' ? text : '';
+}
+
 function isSensitiveWord(word: string): boolean {
     const singular = word.endsWith('s') ? word.slice(0, -1) : word;
     const isKnownWord = ALWAYS_ASK_WORDS.has(word) || ALWAYS_ASK_WORDS.has(singular);
@@ -189,6 +199,12 @@ function classifyToolCall(call: ToolCall): ToolCallClass {
     }
 
     const command = readCommand(call.input);
+    // Text typed on the desktop can go into a terminal, so it is read like a command too.
+    const desktopText = call.toolName === DESKTOP_TYPE_TOOL_NAME ? readTypedText(call.input) : '';
+
+    if (isOutboundCommand(desktopText)) {
+        return 'always-ask';
+    }
 
     if (call.toolName === 'Bash' && isOutboundCommand(command)) {
         return 'always-ask';

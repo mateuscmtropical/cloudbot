@@ -134,13 +134,28 @@ Rules between folders:
 
 ## Desktop
 
-The image installs TigerVNC, openbox, wmctrl, xterm and Chromium. The script
+The image installs TigerVNC, openbox, the tint2 panel, the jgmenu app menu,
+wmctrl, xdotool, xterm and Chromium. The script
 `docker/cloudbot-desktop`, installed as `/usr/local/bin/cloudbot-desktop`,
 starts TigerVNC as `bot` on display `:1` with a 1280 by 800 screen. TigerVNC
-provides both the X server and the VNC server. Chromium keeps its profile in
-`/home/bot/.config/cloudbot-chromium`, so sign-ins survive a restart. The
-script maximizes Chromium with wmctrl so openbox resizes it with the virtual
-screen. Chromium listens for
+provides both the X server and the VNC server. The screen is a whole desktop,
+not only the browser. A panel at the bottom (`docker/tint2rc`) holds an Apps
+button, a terminal and the browser, a button for each open window and a clock.
+The Apps menu (`docker/jgmenurc`) reads the desktop entries each time it
+opens, so an app installed later shows up, also one installed in the bot home
+with an entry in `~/.local/share/applications`. Apps opened from the panel run
+as `bot` in the bot home and stay open after a turn. `/home/bot` is a volume,
+so they survive a new container.
+
+Chromium keeps its profile in
+`/home/bot/.config/cloudbot-chromium`, so sign-ins survive a restart. Its
+flags live in `docker/chromium-flags`, installed as `/etc/chromium.d/cloudbot`.
+Debian's `chromium` launcher reads that folder on every start, so a Chromium
+opened from the menu, a terminal or `xdg-open` gets the same profile, port and
+gate, and opens a new window in the running browser. The script maximizes
+Chromium with wmctrl so openbox resizes it with the virtual screen, above the
+panel. Chromium starts again a second after it closes, since the browser tools
+need it. Chromium listens for
 the DevTools protocol on `127.0.0.1:9222`. TigerVNC listens on
 `127.0.0.1:5900` without a password. Neither port leaves the container,
 because compose exposes only the server port. A real Xvfb and x11vnc probe did
@@ -282,6 +297,46 @@ Chromium runs with `--no-sandbox`, because Docker's default seccomp profile
 blocks the namespaces its sandbox needs. Open choices like this one are listed
 in [OWNER_QUESTIONS.md](OWNER_QUESTIONS.md).
 
+### Desktop tools
+
+With the desktop, the bot also drives the whole screen, in any app, with
+`createDesktopTools` in `src/server/desktop/`. The browser tools stay the first
+choice for web pages, since they read the page text.
+
+| Tool | What it does |
+|---|---|
+| `desktop_screenshot` | Returns a PNG of the whole screen, with every window and the panel. With `showOwner`, it is also posted to the chat |
+| `desktop_click` | Clicks a point in screenshot pixels, with the left, middle or right button, once or twice |
+| `desktop_type` | Types text into the window that has the focus |
+| `desktop_key` | Presses one key or chord of X key names, such as `Return`, `ctrl+l` or `alt+Tab` |
+| `desktop_scroll` | Turns the mouse wheel over a point, 1 to 30 steps up or down |
+
+`DesktopInput` runs `docker/cloudbot-desktop-input`, installed as
+`/usr/local/bin/cloudbot-desktop-input`, through
+`sudo -n -u bot`. So xdotool, xprop, xwininfo and the Pillow screenshot run as
+`bot`, the owner of the X server, and never as `cloudbot`. A desktop the bot
+controls could answer an X client with anything, and these clients are C code.
+The script checks every argument, and typed text comes on stdin, so it is never
+read as an option. The server passes only `HOME` and `PATH`. Each call gives up
+after 10 seconds, plus 20 ms for each typed character.
+
+Like the browser tools, every desktop tool refuses while the owner holds the
+screen. A click, a key or typing is reviewed. The review gets the name of the
+top visible window at the point, read from the stacking order of openbox, or
+the window with the focus. A window name can be a page title, and it is framed
+as data. Text typed on the desktop can go into a terminal, so the command floor
+and the outbound command check read it like a Bash command, and a card or ID
+number in it is refused like in `browser_type`. The screenshot and the wheel
+skip the review. The first action of a turn opens the Screen panel, like
+`browser_open`.
+
+Accepted limits. The checks on typed text are text matches, so a command typed
+in two parts is judged in parts. A command typed into a terminal runs without
+the turn marker, so it is not ended with the turn. The bot's own shell can
+already reach the X display and the DevTools port, see
+[THREAT_MODEL.md](THREAT_MODEL.md). Teaching a skill with `screen_record`
+records the browser only.
+
 ### Network gate
 
 Chromium sends all its traffic through a SOCKS5 gate in the server process,
@@ -302,7 +357,7 @@ that is closed. A client that leaves before its tunnel opens stops the session,
 so nothing is connected for it. A server error after start is logged, and the
 gate keeps running.
 
-`docker/cloudbot-desktop` starts Chromium with `--proxy-server` for this port,
+`docker/chromium-flags` starts every Chromium with `--proxy-server` for this port,
 with `--proxy-bypass-list=<-loopback>`, so loopback goes through the gate too,
 and with the WebRTC policy `disable_non_proxied_udp`, so UDP does not skip the
 proxy. The two ports must match. When the gate is down, Chromium has no network.

@@ -242,6 +242,17 @@ describe('command floor lets through near misses', () => {
     });
 });
 
+describe('command floor on the desktop', () => {
+    it('checks text typed on the desktop like a command, since it can go into a terminal', () => {
+        expect(checkCommandFloor(tool('mcp__cloudbot__desktop_type', { text: 'rm -rf ~' })))
+            .toBe(checkCommandFloor(bash('rm -rf ~')));
+        expect(checkCommandFloor(tool('mcp__cloudbot__desktop_type', { text: 'rm -rf ~' })))
+            .toBeDefined();
+        expect(checkCommandFloor(tool('mcp__cloudbot__desktop_type', { text: 'npm test' })))
+            .toBeUndefined();
+    });
+});
+
 describe('command floor limits and failures', () => {
     it('refuses a bash command longer than 20000 characters', () => {
         expect(checkCommandFloor(bash('a'.repeat(20001))))

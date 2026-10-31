@@ -28,6 +28,8 @@ import { readMaxUploadBytes, removeFiles, saveFiles } from '../attachments/saveU
 import { readMaxShareBytes, shareWorkspaceFile } from '../files/shareFile.ts';
 import type { BrowserControl } from '../desktop/BrowserControl.ts';
 import { BROWSER_TOOL_FULL_NAMES, createBrowserTools } from '../desktop/createBrowserTools.ts';
+import { DESKTOP_TOOL_FULL_NAMES, createDesktopTools } from '../desktop/createDesktopTools.ts';
+import type { DesktopInput } from '../desktop/DesktopInput.ts';
 import { BROWSER_ALLOW_TOOL_FULL_NAMES, createBrowserAllowTools } from '../desktop/createBrowserAllowTools.ts';
 import type { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
 import { BotSecretError, assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
@@ -222,6 +224,8 @@ interface ChatServiceOptions {
     uploadRetentionMs?: number | undefined;
     // The browser on the bot's desktop. Without it the bot gets no browser tools.
     browser?: BrowserControl | undefined;
+    // The whole desktop of the bot, every app and not only the browser. Without it the bot gets no desktop tools.
+    desktopInput?: DesktopInput | undefined;
     // Where the secrets the bot asks for are kept. Without it the bot cannot ask for one.
     botSecrets?: BotSecrets | undefined;
     // The owner's Bitwarden accounts. With the browser and the approval gate it gives the bot browser_fill_login.
@@ -711,6 +715,7 @@ class ChatService {
     private readonly uploadRetentionMs: number;
     private readonly maxShareBytes: number;
     private readonly browser: BrowserControl | undefined;
+    private readonly desktopInput: DesktopInput | undefined;
     private readonly botSecrets: BotSecrets | undefined;
     private readonly bitwarden: BitwardenVault | undefined;
     private readonly templateGallery: TemplateGallery | undefined;
@@ -804,6 +809,7 @@ class ChatService {
         this.uploadRetentionMs = options.uploadRetentionMs ?? readUploadRetentionMs(process.env);
         this.maxShareBytes = options.maxShareBytes ?? readMaxShareBytes();
         this.browser = options.browser;
+        this.desktopInput = options.desktopInput;
         this.botSecrets = options.botSecrets;
         this.bitwarden = options.bitwarden;
         this.templateGallery = options.templateGallery;
@@ -3683,6 +3689,16 @@ class ChatService {
                             this.showOpenedBrowser(botId);
                         },
                     );
+            const desktopTools = this.desktopInput === undefined
+                ? []
+                : createDesktopTools(
+                        this.desktopInput,
+                        pngBase64 => this.shareScreenshot(botId, pngBase64),
+                        this.screen,
+                        () => {
+                            this.showOpenedBrowser(botId);
+                        },
+                    );
             const screenTools = this.createScreenTools(botId);
             const secretTools = this.createSecretTools(botId);
             const emailTools = this.emailAccountService === undefined || this.emailSender === undefined
@@ -3760,7 +3776,7 @@ class ChatService {
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath),
-                [...browserTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...whatsappTools],
+                [...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...whatsappTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -3800,6 +3816,7 @@ class ChatService {
             const memoryBlock = await readWorkspaceMemoryBlock(workspaceDir, memoryAccess);
             const profilePrompt = buildSystemPrompt(bot, {
                 hasBrowser: this.browser !== undefined,
+                hasDesktop: this.desktopInput !== undefined,
                 hasRoutines: this.routineStore !== undefined,
                 hasTasks: this.taskStore !== undefined,
                 hasModels: this.modelStore !== undefined,
@@ -4043,6 +4060,7 @@ class ChatService {
         }
 
         const browserToolNames = this.browser === undefined ? [] : BROWSER_TOOL_FULL_NAMES;
+        const desktopToolNames = this.desktopInput === undefined ? [] : DESKTOP_TOOL_FULL_NAMES;
         const browserAllowToolNames = this.browserAllowStore === undefined || this.browser === undefined ? [] : BROWSER_ALLOW_TOOL_FULL_NAMES;
         const typeSecretToolNames = this.browser === undefined ? [] : [TYPE_SECRET_TOOL_FULL_NAME];
         const fillLoginToolNames = this.browser === undefined || this.bitwarden === undefined ? [] : [FILL_LOGIN_TOOL_FULL_NAME];
@@ -4077,7 +4095,7 @@ class ChatService {
         const telegramToolNames = this.telegram === undefined ? [] : TELEGRAM_TOOL_FULL_NAMES;
         const whatsappToolNames = this.whatsapp === undefined ? [] : WHATSAPP_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...whatsappToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...desktopToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...whatsappToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.

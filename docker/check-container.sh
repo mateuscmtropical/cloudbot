@@ -173,6 +173,20 @@ CHROMIUM_USER="$(docker exec "$CONTAINER_NAME" ps -o user= -C chromium | sort -u
 [ "$CHROMIUM_USER" = "bot" ] || fail "Chromium runs as '$CHROMIUM_USER', expected 'bot'"
 echo "ok: the desktop runs as bot and Chromium answers on localhost"
 
+PANEL_USER="$(docker exec "$CONTAINER_NAME" ps -o user= -C tint2 | sort -u)"
+[ "$PANEL_USER" = "bot" ] || fail "the desktop panel runs as '$PANEL_USER', expected 'bot'"
+docker exec "$CONTAINER_NAME" pgrep -u bot -f -- '--proxy-server=socks5://127.0.0.1:9224' >/dev/null \
+    || fail "Chromium runs without the network gate"
+echo "ok: the desktop panel runs as bot and Chromium runs behind the gate"
+
+# The server sees and drives the desktop only through the input helper, which runs as bot and checks its arguments.
+PNG_MARK="$(docker exec --user cloudbot "$CONTAINER_NAME" sh -c 'sudo -n -u bot -- /usr/local/bin/cloudbot-desktop-input screenshot | head -c 4 | tail -c 3')"
+[ "$PNG_MARK" = "PNG" ] || fail "the input helper did not return a PNG screenshot"
+if docker exec --user cloudbot "$CONTAINER_NAME" sudo -n -u bot -- /usr/local/bin/cloudbot-desktop-input key --help >/dev/null 2>&1; then
+    fail "the input helper accepted an option as a key"
+fi
+echo "ok: the input helper takes a screenshot as bot and refuses a bad key"
+
 if ARGUMENT_OUTPUT="$(docker exec --user cloudbot "$CONTAINER_NAME" sudo -n -u bot -- /usr/local/bin/cloudbot-desktop --extra 2>&1)"; then
     fail "cloudbot can pass arguments to the desktop script"
 fi

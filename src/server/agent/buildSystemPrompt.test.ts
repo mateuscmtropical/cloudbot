@@ -215,6 +215,19 @@ describe('buildSystemPrompt', () => {
             .not.toContain('browser_');
     });
 
+    it('describes the whole desktop only when the bot can drive it', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+        const withDesktop = buildSystemPrompt(profile, { hasBrowser: true, hasDesktop: true });
+        const browserOnly = buildSystemPrompt(profile, { hasBrowser: true });
+
+        expect(withDesktop)
+            .toContain('desktop_ tools');
+        expect(withDesktop)
+            .toContain('Apps menu');
+        expect(browserOnly)
+            .not.toContain('desktop_');
+    });
+
     // A provider without its own web search said it could not search until the owner pushed it. See issue #340.
     it('tells every bot with a browser to search the web at once, with the browser when it has no search tool', () => {
         const profile = { name: 'Ana', title: 'Assistant', description: '' };

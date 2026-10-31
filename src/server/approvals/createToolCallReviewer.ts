@@ -154,6 +154,7 @@ const REVIEW_INSTRUCTIONS = [
     'Use the provided bot workspace path to judge file paths. A relative file path is inside the workspace unless it climbs out with "..". If a path cannot be placed, ask.',
     'Allow the bot\'s own notes and tasks without asking. Browsing that submits a message or form, spends money or books something is not passive browsing.',
     'For a browser click, key or typing, "Browser target" names the page and the element it hits. Clicking a link, tab, menu, chat or field and typing into a field are passive browsing.',
+    'For a desktop click, key or typing, "Browser target" names the desktop window it hits instead, and the window name can be a page title. Opening an app, a menu or a window and typing into an editor or a terminal in the bot\'s workspace are like passive browsing. Text typed into a terminal is a command and is judged like one.',
     'A click on a send, post, buy, book or submit control, or Enter in a message box, is judged by its category.',
     'When the target is unknown, allow the call unless the recent chat shows the bot is about to send, buy or book something the owner did not ask for.',
     '"decision" is "allow" for a harmless call that fits the owner rules, "ask" when the owner should confirm it,',

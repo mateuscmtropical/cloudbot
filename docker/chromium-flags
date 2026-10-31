@@ -1,0 +1,12 @@
+# shellcheck shell=sh
+# Installed as /etc/chromium.d/cloudbot. Debian's /usr/bin/chromium reads every file in /etc/chromium.d,
+# so each start of Chromium gets these flags: the desktop's own start, the app menu, a terminal and xdg-open.
+# A start while the browser runs opens a new window in it, never a second browser without the gate.
+#
+# The DevTools port must match DESKTOP_DEVTOOLS_URL in src/server/desktop/BrowserControl.ts.
+# Chromium sends all its traffic, loopback included, through the SOCKS gate of the server on port 9224.
+# The gate refuses private addresses. The port must match BROWSER_GATE_PORT in src/server/desktop/BrowserGate.ts.
+# If the gate is down, Chromium has no network, which is the safe result.
+# Docker's default seccomp profile blocks the namespaces Chromium's sandbox needs,
+# so the container is the sandbox. See docs/OWNER_QUESTIONS.md.
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --no-sandbox --remote-debugging-port=9222 --user-data-dir=$HOME/.config/cloudbot-chromium --no-first-run --no-default-browser-check --disable-dev-shm-usage --proxy-server=socks5://127.0.0.1:9224 --proxy-bypass-list=<-loopback> --force-webrtc-ip-handling-policy=disable_non_proxied_udp --webrtc-ip-handling-policy=disable_non_proxied_udp"

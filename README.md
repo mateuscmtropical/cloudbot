@@ -80,8 +80,11 @@ keeps the volumes and the install folder. Docker stays installed. Back up the
   the middle.
 - **Set itself up in the chat.** The first conversation asks which AI provider
   you want, signs you in and tells you when it is ready.
-- **Work on its own computer.** A browser, a terminal and files of its own.
-  It shows you screenshots as it works. Its browser cannot reach private or
+- **Work on its own computer.** A whole Linux desktop of its own, with a
+  browser, a terminal, an Apps menu and files. The bot clicks, types and takes
+  screenshots in any app on it, not only the browser. Take the screen in
+  Computer to use it yourself. An app you install in the bot's home, such as
+  VS Code, shows up in the Apps menu. Its browser cannot reach private or
   local addresses unless you allow a host.
 - **Hand the screen to you.** When a site asks for something only a person can
   do, such as a CAPTCHA or a 2FA code, it opens the screen for you and takes

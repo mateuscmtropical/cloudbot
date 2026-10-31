@@ -65,7 +65,7 @@ const KEY_DEFINITIONS: Record<BrowserKey, KeyDefinition> = {
     PageDown: { code: 'PageDown', keyCode: 34 },
 };
 const BROWSER_KEYS = Object.keys(KEY_DEFINITIONS) as BrowserKey[];
-// docker/cloudbot-desktop starts Chromium with this DevTools port, on localhost only.
+// docker/chromium-flags starts Chromium with this DevTools port, on localhost only.
 const DESKTOP_DEVTOOLS_URL = 'http://127.0.0.1:9222';
 const LOOPBACK_HOSTNAME = '127.0.0.1';
 const NOT_RUNNING_MESSAGE = 'The browser is not running. Try again in a few seconds.';

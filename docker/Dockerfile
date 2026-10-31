@@ -21,7 +21,8 @@ RUN pnpm build
 FROM base AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash bubblewrap ca-certificates curl sudo \
-        chromium fonts-dejavu-core fonts-liberation openbox procps tigervnc-standalone-server wmctrl x11-xserver-utils xterm \
+        chromium fonts-dejavu-core fonts-liberation jgmenu openbox procps tigervnc-standalone-server tint2 wmctrl \
+        x11-utils x11-xserver-utils xdotool xterm \
         poppler-utils python3 python3-docx python3-lxml python3-openpyxl \
         python3-pil python3-pip python3-pypdf python3-reportlab python3-typing-extensions \
         python3-xlsxwriter git openssl \
@@ -61,6 +62,12 @@ RUN groupadd --system cloudbot \
 
 COPY --chmod=0440 docker/cloudbot-agent.sudoers /etc/sudoers.d/cloudbot-agent
 COPY --chmod=0755 docker/cloudbot-desktop /usr/local/bin/cloudbot-desktop
+COPY --chmod=0755 docker/cloudbot-desktop-input /usr/local/bin/cloudbot-desktop-input
+# Debian's chromium launcher reads /etc/chromium.d, so every start of Chromium gets the gate and the bot profile.
+COPY --chmod=0644 docker/chromium-flags /etc/chromium.d/cloudbot
+# The desktop panel and its app menu. COPY --chmod would give the folder the file mode too.
+RUN install -d -m 0755 /usr/local/share/cloudbot
+COPY --chmod=0644 docker/tint2rc docker/jgmenurc /usr/local/share/cloudbot/
 COPY --chmod=0755 docker/cloudbot-remove-workspace /usr/local/bin/cloudbot-remove-workspace
 COPY --chmod=0755 docker/cloudbot-read-memory /usr/local/bin/cloudbot-read-memory
 COPY --chmod=0755 docker/cloudbot-signal-group /usr/local/bin/cloudbot-signal-group

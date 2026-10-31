@@ -272,5 +272,5 @@ function createBrowserTools(browser: BrowserControl, shareScreenshot?: Screensho
     return [openTool, readTool, screenshotTool, clickTool, typeTool, keyTool, scrollTool] as CloudbotTool[];
 }
 
-export { BROWSER_TOOL_FULL_NAMES, SCREEN_HEIGHT, SCREEN_WIDTH, createBrowserTools, describeBrowserTarget };
+export { BROWSER_TOOL_FULL_NAMES, SCREEN_HEIGHT, SCREEN_WIDTH, createBrowserTools, describeBrowserTarget, shareIfAsked };
 export type { BrowserToolResult, ScreenshotShareHandler };

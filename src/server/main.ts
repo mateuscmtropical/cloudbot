@@ -39,6 +39,8 @@ import { ScreenHolder } from './desktop/ScreenHolder.ts';
 import { attachVncProxy } from './desktop/attachVncProxy.ts';
 import { DESKTOP_DEVTOOLS_URL } from './desktop/BrowserControl.ts';
 import { describeBrowserTarget } from './desktop/createBrowserTools.ts';
+import { describeDesktopTarget } from './desktop/createDesktopTools.ts';
+import { DESKTOP_INPUT_PATH, DesktopInput } from './desktop/DesktopInput.ts';
 import { MobileSites } from './desktop/MobileSites.ts';
 import { attachScreencast } from './desktop/attachScreencast.ts';
 import { buildLocalBrowserCommand, buildLocalBrowserTools, createLocalBrowserSpawn, defaultLocalBrowserEnvironment, localBrowserProfileDir, localGatePortFor, planLocalBrowser, saveLocalGatePort, startPlannedGate, verifyLocalBrowserGate } from './desktop/localBrowser.ts';
@@ -196,6 +198,9 @@ const providerChoices = new ProviderChoices(settings);
 // Chrome, Chromium or Edge with its own profile, and the browser tools stay off when none is found.
 const desktopCommand = buildDesktopCommand(process.env.CLOUDBOT_DESKTOP_COMMAND, agentUser);
 const desktop = desktopCommand === undefined ? undefined : new DesktopSupervisor({ desktopCommand });
+// The bot sees and drives the whole desktop through a fixed helper that runs as the agent user, like the desktop itself.
+const desktopInputCommand = desktop === undefined ? undefined : buildDesktopCommand(DESKTOP_INPUT_PATH, agentUser);
+const desktopInput = desktopInputCommand === undefined ? undefined : new DesktopInput(desktopInputCommand);
 const localBrowserEnvironment = defaultLocalBrowserEnvironment();
 const localProfileDir = localBrowserProfileDir(dataDir);
 // The plan decides the desktop, no browser, a new local browser or a reused one. It logs why a browser stays off.
@@ -359,7 +364,12 @@ const toolCallReviewer = createToolCallReviewer({
     describeGalleryInstall: (botId, input) => chatService.describeGalleryInstall(botId, input),
     describeGalleryShare: botId => chatService.describeGalleryShare(botId),
     // A click, a key or typing is reviewed with the element it hits, so the review can tell a chat row from a send button.
-    describeBrowserTarget: browser === undefined ? undefined : call => describeBrowserTarget(browser, call),
+    // A desktop click, key or typing is reviewed with the window it hits.
+    describeBrowserTarget: async (call) => {
+        const browserTarget = browser === undefined ? undefined : await describeBrowserTarget(browser, call);
+
+        return browserTarget ?? (desktopInput === undefined ? undefined : await describeDesktopTarget(desktopInput, call));
+    },
     // The review cost counts against the spending limit of the turn that asked for the review.
     reportCost: (botId, costUsd, turnSignal) => {
         chatService.recordReviewCost(botId, costUsd, turnSignal);
@@ -501,7 +511,7 @@ const chatService: ChatService = new ChatService({
     passkeys,
     peopleAdmin,
     telegram: telegramBridge,
-    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, botSecrets, bitwarden: bitwardenVault, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, skillStore, routineStore, taskStore, modelStore, limitStore, screen,
+    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, desktopInput, botSecrets, bitwarden: bitwardenVault, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, skillStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     templateGallery,
     providerTools,
