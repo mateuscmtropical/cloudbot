@@ -19,6 +19,9 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- Edit on the bot profile page changes the name, the color and the shape of the bot together. The button turns into Save, and Edit comes back after the change is saved. The More menu of the page offers Delete instead of a second rename.
+- Connected apps opens as a page in place of the chat on wide screens too, not as a box over the chat. Opened from the bot profile, its close button goes back to the profile.
+- The help text under a setting card keeps its space from the card on every page.
 - The notification for a finished turn says what the bot did. It shows the first line of the last reply instead of "Finished its work." The owner can ask for another text, such as for a routine, and the bot sets it with the new `notification_text` tool.
 - The bot clicks page elements by number. `browser_read` and `browser_open` list the buttons, links, fields and chat rows on the screen, each with a number and its name, and `browser_click` takes that number. A point in screenshot pixels still works. The approval review now sees the page and the element a click, a key or typing hits, such as `button "Send"` or a chat row, so opening a chat or a menu no longer asks the owner as an unknown click.
 - Older messages load as you scroll up, with no Load older messages button. A line at the top says when they are loading. A chat too short to scroll loads them by itself until it fills the screen.
@@ -36,6 +39,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- Closing a page of the app, such as Connected apps opened from the bot profile, no longer leaves the app for the previous page of the browser. The back button now closes the pages one by one.
 - On a phone, the keyboard no longer hides the newest messages. When the message list gets shorter, from the keyboard or a taller text box, a reader at the bottom stays at the bottom. A reader who scrolled up to older messages keeps their place.
 - An owner Allow rule now works as a standing permission. A send, push or other action that a rule allows runs without an approval card, also in a routine turn, as long as it meets the conditions the rule sets. Purchases and bookings still always ask, and a Block rule still wins.
 - On a phone or tablet, Enter in the text box adds a line instead of sending. Only the send button sends. The keyboard shows its new line key. A computer keyboard still sends with Enter.

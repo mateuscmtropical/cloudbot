@@ -103,3 +103,59 @@ describe('rename bot route', () => {
             .toBe(200);
     });
 });
+
+describe('bot mascot route', () => {
+    let dataDir: string;
+    let opened: OpenedDatabase;
+    let botStore: BotStore;
+    let app: Hono;
+
+    function putMascot(body: Record<string, unknown>): RequestInit {
+        return { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+    }
+
+    beforeEach(async () => {
+        dataDir = await mkdtemp(join(tmpdir(), 'cloudbot-mascot-'));
+        opened = await openDatabase(':memory:');
+        botStore = new BotStore(opened.db);
+        const chatService = new ChatService({ botStore, messageStore: new MessageStore(opened.db), runner: new FakeAgentRunner([]), dataDir });
+
+        app = createChatRoutes(chatService);
+    });
+
+    afterEach(async () => {
+        opened.close();
+        await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
+    });
+
+    it('changes the color and the shape and answers the summary', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const response = await app.request(`/api/bots/${bot.id}/mascot`, putMascot({ color: 'mint', shape: 'wide' }));
+
+        expect(response.status)
+            .toBe(200);
+        expect(await response.json())
+            .toMatchObject({ id: bot.id, mascotColor: 'mint', mascotShape: 'wide' });
+    });
+
+    it('refuses an unknown color or shape and an empty body, and keeps the mascot', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const path = `/api/bots/${bot.id}/mascot`;
+        const unknownColor = await app.request(path, putMascot({ color: 'gold', shape: 'wide' }));
+        const unknownShape = await app.request(path, putMascot({ shape: 'square' }));
+        const empty = await app.request(path, putMascot({}));
+        const unchanged = await botStore.getById(bot.id);
+
+        expect([unknownColor.status, unknownShape.status, empty.status])
+            .toEqual([400, 400, 400]);
+        expect(unchanged?.mascotShape)
+            .toBe(bot.mascotShape);
+    });
+
+    it('answers 404 for a bot that does not exist', async () => {
+        const response = await app.request('/api/bots/missing/mascot', putMascot({ color: 'mint' }));
+
+        expect(response.status)
+            .toBe(404);
+    });
+});

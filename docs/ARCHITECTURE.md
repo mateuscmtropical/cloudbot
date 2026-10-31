@@ -1589,6 +1589,20 @@ Each bot has a mascot: a cloud body in one of nine colors and one of four shapes
 in SVG by `src/web/components/CloudMascot.tsx`, with a white face. The color and shape are
 columns of `bots` (`mascot_color`, `mascot_shape`, migration 0011), chosen at random by
 `BotStore.create` and changed by the `profile_set_mascot` tool. `src/shared/mascot.ts` holds the palette.
+The owner changes them on the bot profile page. Edit turns the name into a field and shows the colors and the shapes, and
+the mascot above shows the pick. Save sends `PUT /api/bots/:id/name` when the name changed and then
+`PUT /api/bots/:id/mascot` with `color` and `shape` when the look changed, and shows Edit again. A refused name keeps the
+form open with the reason and sends no look. The More menu of the profile page offers Delete, with the same dialog as the bot list.
+
+The pages of the main column (Account, People, the bot profile and Connected apps) show one at a time in place of the
+chat. A page opened from another one shows above it, such as Connected apps from the profile, and closing it shows that
+page again. Each open page has a history entry through `useBackButton` (`src/web/useBackButton.ts`), so the back button
+closes the newest one. The entry keeps in its state how many pages were open there, and a back press closes the pages above
+that number. A browser picks the target of `history.back` when it is called, so a page that closed and another that
+opened in the same tap used to undo the new entry and leave the history one step behind. A later close then went back past
+the first page of the app. Now a page that opens in the same tap takes over the entry of the one that closed with
+`replaceState`, and the entries left over are taken back after the tap with one `history.go`. It goes back only from an
+entry of a page, so closing a page never leaves the app.
 
 The face comes from `deriveMascotState` (`src/web/mascotState.ts`), from what the app already
 knows, in this order: a pending approval card (waiting), a running turn (thinking), composer text

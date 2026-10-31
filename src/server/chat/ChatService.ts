@@ -95,6 +95,7 @@ import { FILL_LOGIN_TOOL_FULL_NAME, createFillLoginTool } from '../bitwarden/cre
 import type { BitwardenVault } from '../bitwarden/BitwardenVault.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
+import type { MascotChoice } from '../../shared/mascot.ts';
 import type { ChannelStore } from '../store/ChannelStore.ts';
 import type { RuleStore } from '../store/RuleStore.ts';
 import type { RoutineStore } from '../store/RoutineStore.ts';
@@ -1904,6 +1905,13 @@ class ChatService {
         const summary = await this.summarizeBot(renamed);
 
         return { kind: 'renamed', bot: summary };
+    }
+
+    // The owner picks the color and the shape of the mascot, as the bot can with set_mascot. Only the given fields change.
+    async changeBotMascot(botId: string, changes: Partial<MascotChoice>): Promise<BotSummary | undefined> {
+        const changedBot = await this.botStore.updateMascot(botId, changes);
+
+        return changedBot === undefined ? undefined : this.summarizeBot(changedBot);
     }
 
     setSetup(setup: SetupConversation): void {
