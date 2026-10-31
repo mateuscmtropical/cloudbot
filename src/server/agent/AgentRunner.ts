@@ -65,11 +65,19 @@ interface TurnRequest {
     maxSpendUsd?: number;
     // Variables added to the agent's environment for this turn, such as the GitHub proxy addresses. Only the server sets them.
     extraEnvironment?: Record<string, string>;
+    // The chat hands the running turn new messages of the owner through it. Unset keeps every new message in the queue.
+    inbox?: TurnInbox;
     abortSignal: AbortSignal;
+}
+
+// An engine that can take a message in the middle of a turn sets deliver while its input is open, and clears it when the input
+// closes. deliver returns false when the turn can no longer take the message, so the chat queues it instead.
+interface TurnInbox {
+    deliver?: ((text: string) => boolean) | undefined;
 }
 
 interface AgentRunner {
     runTurn(request: TurnRequest): AsyncIterable<AgentEvent>;
 }
 
-export type { AgentDefinition, AgentRunner, McpServerConfig, ToolCall, ToolCallDecision, TurnImage, TurnImageMediaType, TurnRequest };
+export type { AgentDefinition, AgentRunner, McpServerConfig, ToolCall, ToolCallDecision, TurnImage, TurnImageMediaType, TurnInbox, TurnRequest };

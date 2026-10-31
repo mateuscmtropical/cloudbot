@@ -70,6 +70,20 @@ function buildUserMessage(request: TurnRequest): string {
     return `${JSON.stringify(message)}\n`;
 }
 
+// A message of the owner for the running turn. The CLI takes a user message that carries a uuid into the turn between tool rounds,
+// or answers it as one more result when the turn has no step left.
+function buildFollowUpMessage(text: string, uuid: string): string {
+    const message = { type: 'user', message: { role: 'user', content: text }, parent_tool_use_id: null, uuid };
+
+    return `${JSON.stringify(message)}\n`;
+}
+
+// A success result that names queued sends is followed by another result, so the input stays open for it.
+// Every other result closes the input. A message the CLI already read is still answered after that.
+function hasQueuedSends(message: CliMessage): boolean {
+    return message.type === 'result' && message.subtype === 'success' && (message.queued_turn_count ?? 0) > 0;
+}
+
 // The control request the engine sends for a stop. The CLI ends the turn and keeps the session.
 function buildInterruptMessage(requestId: string): string {
     const message = { type: 'control_request', request_id: requestId, request: { subtype: 'interrupt' } };
@@ -382,9 +396,14 @@ class ClaudeCliEngine implements AgentRunner {
                 .unref();
         });
 
-        // Stdin stays open while the turn runs, so a stop can send the interrupt. It closes after the result, and the CLI exits then.
+        // Stdin stays open while the turn runs, so a stop can send the interrupt and the owner can add a message.
+        // It closes after the last result, and the CLI exits then.
         let inputEnded = false;
         const endInput = (): void => {
+            if (request.inbox !== undefined) {
+                request.inbox.deliver = undefined;
+            }
+
             if (!inputEnded) {
                 inputEnded = true;
                 child.stdin?.end();
@@ -451,6 +470,27 @@ class ClaudeCliEngine implements AgentRunner {
 
         child.stdin?.write(userMessage);
 
+        const stdin = child.stdin;
+        // A stop, an exit or the end of the input all refuse the message, so the chat queues it.
+        const deliver = (text: string): boolean => {
+            if (stdin === null || inputEnded || stop.isStopped || exitResult !== undefined) {
+                return false;
+            }
+
+            const uuid = randomUUID();
+            const followUp = buildFollowUpMessage(text, uuid);
+
+            stdin.write(followUp);
+
+            return true;
+        };
+        // The inbox opens once the session started. A message given to a CLI that failed before that could be lost on the retry.
+        const openInbox = (): void => {
+            if (request.inbox !== undefined && !inputEnded) {
+                request.inbox.deliver = deliver;
+            }
+        };
+
         let latestResetsAt: number | undefined;
         let sawResult = false;
 
@@ -463,10 +503,18 @@ class ClaudeCliEngine implements AgentRunner {
             for await (const line of lines) {
                 const message = parseCliLine(line);
 
-                // The result ends the input even during a stop, so the CLI exits at once and does not wait for the grace period.
+                if (message?.type === 'system' && message.subtype === 'init') {
+                    openInbox();
+                }
+
+                // The last result ends the input, and any result does during a stop, so the CLI exits at once and does not wait for
+                // the grace period. A result with queued sends keeps the input open, since the CLI answers them next.
                 if (message?.type === 'result') {
                     sawResult = true;
-                    endInput();
+
+                    if (stop.isStopped || !hasQueuedSends(message)) {
+                        endInput();
+                    }
                 }
 
                 // While stopping, the lines are still read, so the result arrives and closes stdin. Their events are dropped.
@@ -545,5 +593,5 @@ class ClaudeCliEngine implements AgentRunner {
     }
 }
 
-export { ClaudeCliEngine, buildCliArguments, buildInterruptMessage, buildUserMessage, noProxyValues, signalProcessTree };
+export { ClaudeCliEngine, buildCliArguments, buildFollowUpMessage, buildInterruptMessage, buildUserMessage, noProxyValues, signalProcessTree };
 export type { ClaudeCliEngineOptions, CliTurnFiles, SignalAction, SpawnFunction };

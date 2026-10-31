@@ -439,8 +439,17 @@ routes above, so the bot cannot add or remove one itself. The removal card shows
 
 `ChatService` in `src/server/chat/` holds the chat rules. It stores the user
 message, runs one turn at a time per bot through an `AgentRunner`, and stores
-each reply. A message sent during a turn joins the bot's queue and runs after
-it. It is saved at once and marked as queued until its turn starts. When the
+each reply. A message the owner types during a turn of the bot's own chat
+(a chat, routine or webhook turn) goes into that turn when its engine can take
+it. The turn's `TurnInbox` has a `deliver` function only while the engine's
+input is open. The Claude CLI engine opens it after the CLI's `init` and writes
+the message to the CLI's stdin as a user message with a `uuid`. The CLI folds
+it into the running turn between tool rounds, or answers it as one more result
+in the same process. The input stays open while a result reports
+`queued_turn_count`, and closes after the last result. Any other message, a
+message with files and a message the engine refuses join the bot's queue and
+run after the turn. Such a message is saved at once and marked as queued until
+its turn starts. When the
 runner reports a rejected usage limit, the turn waits until the reset time, or
 5 minutes when the runner gives none. Then it runs again: the same message if
 no session event came, otherwise a short "Continue." turn in the same session.

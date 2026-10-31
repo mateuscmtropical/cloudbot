@@ -526,6 +526,86 @@ describe('ClaudeCliEngine process handling', () => {
             .toBe(1);
     });
 
+    it('hands an owner message to the running CLI and closes the input after the last result', async () => {
+        const { loopback } = makeLoopback();
+        const inbox: NonNullable<TurnRequest['inbox']> = {};
+        const inputLines: string[] = [];
+        const { spawn, children } = scriptedSpawn({ stdout: '', exitCode: null, hangs: true });
+        const engine = new ClaudeCliEngine({ loopback, spawnFunction: spawn, environment: {}, signalProcess: () => undefined, endLeftovers: () => undefined });
+        const eventsPromise = collect(engine.runTurn(makeRequest({ inbox })));
+
+        await vi.waitFor(() => {
+            expect(children)
+                .toHaveLength(1);
+        });
+        const child = children[0] as FakeChild;
+
+        child.stdin.on('data', (chunk: Buffer) => {
+            const lines = chunk.toString('utf8')
+                .split('\n')
+                .filter(line => line !== '');
+
+            inputLines.push(...lines);
+        });
+        const say = (message: object): void => {
+            child.stdout.write(`${JSON.stringify(message)}\n`);
+        };
+
+        // Before the session starts, a new message waits in the queue.
+        expect(inbox.deliver)
+            .toBeUndefined();
+        say({ type: 'system', subtype: 'init', session_id: 's-1', tools: [], mcp_servers: [] });
+        await vi.waitFor(() => {
+            expect(inbox.deliver)
+                .toBeDefined();
+        });
+        const deliver = inbox.deliver as (text: string) => boolean;
+
+        expect(deliver('Also check the weather.'))
+            .toBe(true);
+        await vi.waitFor(() => {
+            expect(inputLines)
+                .toHaveLength(2);
+        });
+        const followUp = JSON.parse(inputLines[1] ?? '{}') as { message: { content: string }; uuid: string };
+
+        expect(followUp.message.content)
+            .toBe('Also check the weather.');
+        expect(followUp.uuid)
+            .toMatch(/^[0-9a-f-]{36}$/);
+
+        // A result with a queued send keeps the input open, so the owner can still add a message.
+        say({ type: 'result', subtype: 'success', is_error: false, result: 'Done.', total_cost_usd: 0, duration_ms: 1, queued_turn_count: 1 });
+        say({ type: 'assistant', message: { content: [{ type: 'text', text: 'Sunny.' }] } });
+        await vi.waitFor(() => {
+            expect(child.stdin.writableEnded)
+                .toBe(false);
+        });
+        expect(inbox.deliver)
+            .toBe(deliver);
+
+        // The last result closes the input. A message after it is refused, so the chat queues it.
+        say({ type: 'result', subtype: 'success', is_error: false, result: 'Sunny.', total_cost_usd: 0, duration_ms: 1, queued_turn_count: 0 });
+        await vi.waitFor(() => {
+            expect(child.stdin.writableEnded)
+                .toBe(true);
+        });
+        expect(inbox.deliver)
+            .toBeUndefined();
+        expect(deliver('Too late.'))
+            .toBe(false);
+        child.stdout.end();
+        child.emit('exit', 0);
+        const events = await eventsPromise;
+
+        expect(significant(events))
+            .toEqual([
+                { type: 'turn_finished', costUsd: 0, durationMs: 1 },
+                { type: 'text', text: 'Sunny.' },
+                { type: 'turn_finished', costUsd: 0, durationMs: 1 },
+            ]);
+    });
+
     // A real process tree: a stand-in CLI starts a long command as its approved tool, then exits on the interrupt and leaves
     // the command running, as a CLI may do. The stop must still end that command.
     it.skipIf(process.platform === 'win32')('ends the turn on a stop during a running approved command, and the command is gone', async () => {
