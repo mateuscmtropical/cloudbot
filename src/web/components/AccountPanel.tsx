@@ -99,8 +99,9 @@ function NotificationsSection({ pushControls = BROWSER_PUSH_CONTROLS, groupLabel
             });
     };
 
+    // The section keeps its own spacing, so the help text sits the same under the card on every page.
     return (
-        <>
+        <div className="settings-section">
             <ListGroup label={groupLabel} ariaLabel="Notifications">
                 <ListRow
                     title="Notifications"
@@ -110,7 +111,7 @@ function NotificationsSection({ pushControls = BROWSER_PUSH_CONTROLS, groupLabel
             </ListGroup>
             <p className="settings-help-text">{describeSwitchState(state)}</p>
             {problem === '' ? null : <p className="settings-error" role="alert">{problem}</p>}
-        </>
+        </div>
     );
 }
 

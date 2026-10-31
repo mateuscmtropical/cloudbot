@@ -9,6 +9,7 @@ import { streamSSE } from 'hono/streaming';
 import type { SSEStreamingApi } from 'hono/streaming';
 
 import type { ChatEvent, ChatMessage } from '../../shared/chatTypes.ts';
+import { MASCOT_COLOR_NAMES, MASCOT_SHAPES } from '../../shared/mascot.ts';
 import { MAX_FILES_PER_UPLOAD, readMaxUploadBytes } from '../attachments/saveUpload.ts';
 import { DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError } from './ChatService.ts';
 import type { ChatService, DeleteBotOutcome, MessagePageOptions } from './ChatService.ts';
@@ -23,6 +24,7 @@ interface ChatErrorResponse {
 const BOT_NOT_FOUND: ChatErrorResponse = { error: 'No bot has this id.' };
 const BOT_DELETING: ChatErrorResponse = { error: 'This bot is being deleted.' };
 const INVALID_NAME: ChatErrorResponse = { error: 'Send a name of 1 to 40 characters on one line.' };
+const INVALID_MASCOT: ChatErrorResponse = { error: `Send a "color", one of ${MASCOT_COLOR_NAMES.join(', ')}, or a "shape", one of ${MASCOT_SHAPES.join(', ')}.` };
 const DELETE_FAILED: ChatErrorResponse = { error: 'Could not delete this bot. Try again.' };
 // Each refusal has its own text, so the web app can show the owner why.
 const DELETE_REFUSED: Record<Exclude<DeleteBotOutcome, 'deleted' | 'missing'>, ChatErrorResponse> = {
@@ -235,6 +237,26 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
         }
 
         return context.json(INVALID_NAME, 400);
+    });
+
+    // The owner picks the mascot, as the bot can with set_mascot. Each field is optional, and at least one is sent.
+    routes.put('/api/bots/:id/mascot', async (context) => {
+        const botId = context.req.param('id');
+        const payload: unknown = await context.req.json()
+            .catch(() => undefined);
+        const fields = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {};
+        const color = MASCOT_COLOR_NAMES.find(name => name === fields.color);
+        const shape = MASCOT_SHAPES.find(name => name === fields.shape);
+        const isColorValid = fields.color === undefined || color !== undefined;
+        const isShapeValid = fields.shape === undefined || shape !== undefined;
+
+        if (!isColorValid || !isShapeValid || (color === undefined && shape === undefined)) {
+            return context.json(INVALID_MASCOT, 400);
+        }
+
+        const changedBot = await chatService.changeBotMascot(botId, { ...(color === undefined ? {} : { color }), ...(shape === undefined ? {} : { shape }) });
+
+        return changedBot === undefined ? context.json(BOT_NOT_FOUND, 404) : context.json(changedBot);
     });
 
     routes.get('/api/bots/:id/messages', async (context) => {

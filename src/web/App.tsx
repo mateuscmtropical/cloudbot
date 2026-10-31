@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatEvent, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../shared/chatTypes.ts';
 import type { ChannelDetail, ChannelSummary } from '../shared/channelTypes.ts';
+import type { MascotChoice } from '../shared/mascot.ts';
 import { BotList } from './components/BotList.tsx';
 import { ChannelView } from './components/ChannelView.tsx';
 import type { MessageActions } from './components/MessageItem.tsx';
@@ -19,7 +20,7 @@ import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
 import { PullIndicator } from './components/PullIndicator.tsx';
 import { UpdateBanner } from './components/UpdateBanner.tsx';
-import { createBot, deleteBot, getChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToAllBotEvents, subscribeToEvents, uploadAttachments, listUploads, removeUpload, renameBot } from './apiClient.ts';
+import { changeBotMascot, createBot, deleteBot, getChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToAllBotEvents, subscribeToEvents, uploadAttachments, listUploads, removeUpload, renameBot } from './apiClient.ts';
 import { mergeLoadedUploads } from './attachmentChips.ts';
 import { loadSeen, markUnread, saveSeen, updateSeen } from './unreadMarks.ts';
 import { applyTabIcon } from './tabIcon.ts';
@@ -888,6 +889,16 @@ function App(): ReactElement {
             });
     }
 
+    function handleChangeMascot(botId: string, mascot: MascotChoice): Promise<string | undefined> {
+        return changeBotMascot(botId, mascot)
+            .then((changed) => {
+                setBots(previousBots => previousBots.map(bot => (bot.id === changed.id ? { ...bot, mascotColor: changed.mascotColor, mascotShape: changed.mascotShape } : bot)));
+
+                return undefined;
+            })
+            .catch(() => 'The look could not be changed.');
+    }
+
     function handleDeleteBot(botId: string): Promise<string | undefined> {
         return deleteBot(botId)
             .then(async () => {
@@ -1292,17 +1303,6 @@ function App(): ReactElement {
                     setIsPeopleOpen(true);
                 }}
             />
-            {isConnectAppsOpen
-                ? (
-                        <ConnectAppsPanel
-                            selectedBotId={selectedBotId}
-                            notice={appReturn === undefined ? undefined : describeAppReturn(appReturn)}
-                            onClose={() => {
-                                setIsConnectAppsOpen(false);
-                            }}
-                        />
-                    )
-                : null}
             {isBotListOpen
                 ? (
                         <button
@@ -1334,7 +1334,20 @@ function App(): ReactElement {
                             </div>
                         )}
                 {isUpdateReady ? <UpdateBanner canApplyUpdate={canApplyUpdate} onApply={applyUpdate} onDismiss={dismissUpdate} /> : null}
-                {isAccountOpen
+                {/* One page shows at a time. A page opened from another one, such as Connected apps from the bot
+                    profile, shows above it, and closing it shows that page again. */}
+                {isConnectAppsOpen
+                    ? (
+                            <ConnectAppsPanel
+                                selectedBotId={selectedBotId}
+                                notice={appReturn === undefined ? undefined : describeAppReturn(appReturn)}
+                                onClose={() => {
+                                    setIsConnectAppsOpen(false);
+                                }}
+                            />
+                        )
+                    : null}
+                {isAccountOpen && !isPeopleOpen && !isConnectAppsOpen
                     ? (
                             <AccountPanel
                                 isHub={hubRole !== 'standalone'}
@@ -1342,8 +1355,6 @@ function App(): ReactElement {
                                 personRole={hubRole === 'member' ? 'Member' : 'Owner'}
                                 onPeople={() => {
                                     setIsBotListOpen(false);
-                                    setIsAccountOpen(false);
-                                    setIsBotProfileOpen(false);
                                     setIsPeopleOpen(true);
                                 }}
                                 onClose={() => {
@@ -1352,7 +1363,7 @@ function App(): ReactElement {
                             />
                         )
                     : null}
-                {isBotProfileOpen && selectedBot !== undefined
+                {isBotProfileOpen && selectedBot !== undefined && !isConnectAppsOpen
                     ? (
                             <BotProfilePanel
                                 bot={selectedBot}
@@ -1360,8 +1371,9 @@ function App(): ReactElement {
                                     setIsBotProfileOpen(false);
                                 }}
                                 onRenameBot={handleRenameBot}
+                                onChangeMascot={handleChangeMascot}
+                                onDeleteBot={handleDeleteBot}
                                 onOpenConnectApps={() => {
-                                    setIsBotProfileOpen(false);
                                     setIsConnectAppsOpen(true);
                                 }}
                                 onOpenScreen={() => {
@@ -1371,7 +1383,7 @@ function App(): ReactElement {
                             />
                         )
                     : null}
-                {isPeopleOpen && hubRole === 'owner'
+                {isPeopleOpen && hubRole === 'owner' && !isConnectAppsOpen
                     ? (
                             <PeoplePanel
                                 onClose={() => {
@@ -1380,7 +1392,7 @@ function App(): ReactElement {
                             />
                         )
                     : null}
-                {isPeopleOpen && hubRole !== 'owner'
+                {isPeopleOpen && hubRole !== 'owner' && !isConnectAppsOpen
                     ? (
                             <PeopleHubHint
                                 role={hubRole}
@@ -1395,7 +1407,7 @@ function App(): ReactElement {
                             />
                         )
                     : null}
-                {!isPeopleOpen && !isAccountOpen && selectedChannelId !== undefined
+                {!isPeopleOpen && !isAccountOpen && !isConnectAppsOpen && selectedChannelId !== undefined
                     ? (
                             <ChannelView
                                 channel={channelDetail?.id === selectedChannelId ? channelDetail : undefined}
@@ -1409,7 +1421,7 @@ function App(): ReactElement {
                     : null}
                 {!isPeopleOpen && !isAccountOpen && selectedChannelId === undefined
                     ? (
-                            <div className="conversation-host" hidden={isBotProfileOpen}>
+                            <div className="conversation-host" hidden={isBotProfileOpen || isConnectAppsOpen}>
                                 <ConversationView
                                     bot={selectedBot}
                                     bots={bots}

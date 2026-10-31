@@ -38,6 +38,8 @@ describe('BotProfilePanel', () => {
                 bot={BOT}
                 onClose={vi.fn()}
                 onRenameBot={vi.fn(() => Promise.resolve(undefined))}
+                onChangeMascot={vi.fn(() => Promise.resolve(undefined))}
+                onDeleteBot={vi.fn(() => Promise.resolve(undefined))}
                 onOpenConnectApps={onOpenConnectApps}
                 onOpenScreen={onOpenScreen}
                 computerState="Idle"
@@ -59,14 +61,17 @@ describe('BotProfilePanel', () => {
             .toHaveBeenCalledOnce();
     });
 
-    it('renames the bot through the existing rename handler', async () => {
+    it('turns Edit into Save, saves the name, the color and the shape, then shows Edit again', async () => {
         const onRenameBot = vi.fn(() => Promise.resolve(undefined));
+        const onChangeMascot = vi.fn(() => Promise.resolve(undefined));
 
         render(
             <BotProfilePanel
                 bot={BOT}
                 onClose={vi.fn()}
                 onRenameBot={onRenameBot}
+                onChangeMascot={onChangeMascot}
+                onDeleteBot={vi.fn(() => Promise.resolve(undefined))}
                 onOpenConnectApps={vi.fn()}
                 onOpenScreen={vi.fn()}
                 pushControls={createPushControls()}
@@ -74,15 +79,80 @@ describe('BotProfilePanel', () => {
         );
 
         fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-        const nameField = screen.getByRole<HTMLInputElement>('textbox', { name: `Name of ${BOT.name}` });
 
-        fireEvent.change(nameField, { target: { value: 'New name' } });
-        fireEvent.keyDown(nameField, { key: 'Enter' });
+        expect(screen.queryByRole('button', { name: 'Edit' }))
+            .toBeNull();
+
+        fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'New name' } });
+        fireEvent.click(screen.getByRole('radio', { name: 'mint' }));
+        fireEvent.click(screen.getByRole('radio', { name: 'wide' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        expect(await screen.findByRole('button', { name: 'Edit' }))
+            .toBeTruthy();
+        expect(onRenameBot)
+            .toHaveBeenCalledWith(BOT.id, 'New name');
+        expect(onChangeMascot)
+            .toHaveBeenCalledWith(BOT.id, { color: 'mint', shape: 'wide' });
+    });
+
+    it('keeps the form open with the reason when the name is refused, and saves nothing else', async () => {
+        const onChangeMascot = vi.fn(() => Promise.resolve(undefined));
+
+        render(
+            <BotProfilePanel
+                bot={BOT}
+                onClose={vi.fn()}
+                onRenameBot={vi.fn(() => Promise.resolve('Another bot in a channel has this name.'))}
+                onChangeMascot={onChangeMascot}
+                onDeleteBot={vi.fn(() => Promise.resolve(undefined))}
+                onOpenConnectApps={vi.fn()}
+                onOpenScreen={vi.fn()}
+                pushControls={createPushControls()}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+        fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Taken' } });
+        fireEvent.click(screen.getByRole('radio', { name: 'mint' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        expect(await screen.findByRole('alert'))
+            .toHaveProperty('textContent', 'Another bot in a channel has this name.');
+        expect(onChangeMascot)
+            .not
+            .toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: 'Save' }))
+            .toBeTruthy();
+    });
+
+    it('deletes the bot from the more menu after the owner confirms', async () => {
+        const onDeleteBot = vi.fn(() => Promise.resolve(undefined));
+        const onClose = vi.fn();
+
+        render(
+            <BotProfilePanel
+                bot={BOT}
+                onClose={onClose}
+                onRenameBot={vi.fn(() => Promise.resolve(undefined))}
+                onChangeMascot={vi.fn(() => Promise.resolve(undefined))}
+                onDeleteBot={onDeleteBot}
+                onOpenConnectApps={vi.fn()}
+                onOpenScreen={vi.fn()}
+                pushControls={createPushControls()}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Delete bot' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
         await waitFor(() => {
-            expect(onRenameBot)
-                .toHaveBeenCalledWith(BOT.id, 'New name');
+            expect(onClose)
+                .toHaveBeenCalledOnce();
         });
+        expect(onDeleteBot)
+            .toHaveBeenCalledWith(BOT.id);
     });
 
     it('uses the device notification setting and shows its help text', async () => {
@@ -91,6 +161,8 @@ describe('BotProfilePanel', () => {
                 bot={BOT}
                 onClose={vi.fn()}
                 onRenameBot={vi.fn(() => Promise.resolve(undefined))}
+                onChangeMascot={vi.fn(() => Promise.resolve(undefined))}
+                onDeleteBot={vi.fn(() => Promise.resolve(undefined))}
                 onOpenConnectApps={vi.fn()}
                 onOpenScreen={vi.fn()}
                 pushControls={createPushControls()}

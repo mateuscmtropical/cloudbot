@@ -154,6 +154,33 @@ describe('App bot list', () => {
             .toBeTruthy();
     });
 
+    it('shows Connected apps in place of Bot Profile and goes back to the profile when it closes', async () => {
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(subscribeToEvents)
+            .mockReturnValue(() => undefined);
+
+        render(<App />);
+
+        await screen.findByRole('textbox');
+        fireEvent.click(screen.getByRole('button', { name: 'Open bot profile' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Connected apps' }));
+
+        expect(await screen.findByRole('region', { name: 'Connect apps' }))
+            .toBeTruthy();
+        expect(screen.queryByRole('heading', { name: 'CloudBot' }))
+            .toBeNull();
+        expect(screen.queryByRole('textbox', { name: 'Ask CloudBot...' }))
+            .toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Close connect apps' }));
+
+        expect(await screen.findByRole('heading', { name: 'CloudBot' }))
+            .toBeTruthy();
+    });
+
     it('tells the owner of a CloudBot that runs on its own to install a hub', async () => {
         vi.mocked(listBots)
             .mockResolvedValue([]);

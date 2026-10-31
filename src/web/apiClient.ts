@@ -8,6 +8,7 @@ import type { TurnLimits } from '../shared/limitTypes.ts';
 import type { ChannelDetail, ChannelPostView, ChannelSummary } from '../shared/channelTypes.ts';
 import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse } from '../shared/providerTypes.ts';
 import type { PushKeyResponse, PushSubscriptionInput, PushUnsubscribeInput } from '../shared/pushTypes.ts';
+import type { MascotChoice } from '../shared/mascot.ts';
 import { compressImage } from './compressImage.ts';
 
 const API_ROOT = '/api';
@@ -367,6 +368,14 @@ function renameBot(botId: string, name: string): Promise<BotSummary> {
     return requestJson<BotSummary>(path, init);
 }
 
+// The owner picks the color and the shape of the mascot.
+function changeBotMascot(botId: string, mascot: MascotChoice): Promise<BotSummary> {
+    const path = botPath(botId, '/mascot');
+    const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mascot) };
+
+    return requestJson<BotSummary>(path, init);
+}
+
 function getModelSettings(botId: string): Promise<ModelSettingsResponse> {
     const path = botPath(botId, '/models');
 
@@ -643,6 +652,7 @@ export {
     switchBotProvider,
     saveProviderModel,
     renameBot,
+    changeBotMascot,
     saveModelSettings,
     getLimits,
     saveLimits,
