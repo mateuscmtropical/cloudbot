@@ -7,7 +7,7 @@ import { openDatabase } from '../store/openDatabase.ts';
 import { PushSubscriptionStore } from '../store/PushSubscriptionStore.ts';
 import type { PushNotice } from '../../shared/pushTypes.ts';
 import type { PushRequest } from './createPushSender.ts';
-import { NOTICE_LINES, PushNotifier } from './PushNotifier.ts';
+import { NOTICE_LINES, PushNotifier, buildPushNotice } from './PushNotifier.ts';
 import { generateVapidKeyPair } from './webPushCrypto.ts';
 
 interface FakeBrowser {
@@ -336,5 +336,26 @@ describe('PushNotifier', () => {
 
         expect(notifier.publicKey)
             .toBe(keys.publicKey);
+    });
+});
+
+describe('buildPushNotice', () => {
+    const DONE = { kind: 'done', botId: 'bot-1', botName: 'Ana', messageId: undefined } as const;
+
+    it('shows the line of the turn on one line', () => {
+        const notice = buildPushNotice({ ...DONE, body: 'Sent the\n weekly report ' });
+
+        expect(notice.body)
+            .toBe('Sent the weekly report');
+    });
+
+    it('falls back to the plain line without a line of its own', () => {
+        const withoutLine = buildPushNotice(DONE);
+        const blankLine = buildPushNotice({ ...DONE, body: '  ' });
+
+        expect(withoutLine.body)
+            .toBe(NOTICE_LINES.done);
+        expect(blankLine.body)
+            .toBe(NOTICE_LINES.done);
     });
 });

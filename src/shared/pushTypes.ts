@@ -5,7 +5,7 @@ type PushNoticeKind = 'done' | 'approval' | 'screen';
 interface PushNotice {
     // The name of the bot.
     title: string;
-    // A short neutral line. It never holds the text of a message.
+    // One short line, such as the first line of the reply or the line the bot set for the notification.
     body: string;
     kind: PushNoticeKind;
     botId: string;

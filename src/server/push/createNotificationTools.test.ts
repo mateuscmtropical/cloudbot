@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createNotificationsDisableTool, createNotificationsEnableTool } from './createNotificationTools.ts';
+import { createNotificationTextTool, createNotificationsDisableTool, createNotificationsEnableTool } from './createNotificationTools.ts';
 import type { NotificationToolResult } from './createNotificationTools.ts';
 
 type ToolHandler = (args: Record<string, unknown>, extra: unknown) => Promise<NotificationToolResult>;
@@ -31,6 +31,34 @@ describe('createNotificationsEnableTool', () => {
             .toBe(true);
         expect(result.content[0]?.text)
             .not.toContain('disk full');
+    });
+});
+
+describe('createNotificationTextTool', () => {
+    it('keeps the line on one line for the notification of the turn', async () => {
+        const lines: string[] = [];
+        const handler = createNotificationTextTool((line) => {
+            lines.push(line);
+        }).handler as unknown as ToolHandler;
+        const result = await handler({ text: '  Resumo diário\n pronto ' }, {});
+
+        expect(lines)
+            .toEqual(['Resumo diário pronto']);
+        expect(result.isError)
+            .toBeUndefined();
+    });
+
+    it('refuses a blank line and keeps nothing', async () => {
+        const lines: string[] = [];
+        const handler = createNotificationTextTool((line) => {
+            lines.push(line);
+        }).handler as unknown as ToolHandler;
+        const result = await handler({ text: ' \n ' }, {});
+
+        expect(lines)
+            .toEqual([]);
+        expect(result.isError)
+            .toBe(true);
     });
 });
 

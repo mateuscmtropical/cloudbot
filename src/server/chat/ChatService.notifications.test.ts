@@ -25,6 +25,28 @@ class HoldingRunner implements AgentRunner {
     }
 }
 
+// A turn that calls one of its CloudBot tools and then replies, like a model would.
+class ToolCallingRunner implements AgentRunner {
+    constructor(
+        private readonly toolName: string,
+        private readonly toolInput: Record<string, unknown>,
+        private readonly replyText: string,
+    ) {}
+
+    runTurn(request: TurnRequest): AsyncIterable<AgentEvent> {
+        return this.callThenReply(request);
+    }
+
+    private async* callThenReply(request: TurnRequest): AsyncGenerator<AgentEvent> {
+        const calledTool = request.tools?.find(candidate => candidate.name === this.toolName);
+
+        await calledTool?.handler(this.toolInput, {});
+
+        yield { type: 'text', text: this.replyText };
+        yield { type: 'turn_finished' };
+    }
+}
+
 async function* waitForStop(abortSignal: AbortSignal): AsyncGenerator<AgentEvent> {
     await new Promise<void>((resolve) => {
         abortSignal.addEventListener('abort', () => {
@@ -81,8 +103,8 @@ describe('ChatService notifications', () => {
         await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
-    it('notifies the owner when a turn finishes, with the bot and its newest message', async () => {
-        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'All done, the password is hunter2.' } }]);
+    it('notifies the owner when a turn finishes, with the first line of the reply and the newest message', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: '## **Sent** the weekly report\n\nThe details follow.' } }]);
         const service = new ChatService({ botStore, messageStore, runner, dataDir, notifyOwner });
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
         const finished = waitForTurnFinish(service, bot.id);
@@ -91,13 +113,25 @@ describe('ChatService notifications', () => {
         await finished;
         await waitForNotices(notices, 1);
 
-        const newest = ((await service.listMessages(bot.id)) ?? []).at(-1);
+        const messages = await service.listMessages(bot.id);
+        const newest = (messages ?? []).at(-1);
 
         expect(notices[0])
-            .toEqual({ kind: 'done', botId: bot.id, botName: 'Ana', messageId: newest?.id });
-        // The notice holds ids and the bot name. The reply text never goes into it.
-        expect(JSON.stringify(notices))
-            .not.toContain('hunter2');
+            .toEqual({ kind: 'done', botId: bot.id, botName: 'Ana', messageId: newest?.id, body: 'Sent the weekly report' });
+    });
+
+    it('uses the line the bot set with notification_text', async () => {
+        const runner = new ToolCallingRunner('notification_text', { text: 'Daily summary is ready' }, 'Here is the summary.');
+        const service = new ChatService({ botStore, messageStore, runner, dataDir, notifyOwner });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'Hi');
+        await finished;
+        await waitForNotices(notices, 1);
+
+        expect(notices[0]?.body)
+            .toBe('Daily summary is ready');
     });
 
     it('does not notify when the owner stops the turn', async () => {
@@ -255,7 +289,7 @@ describe('ChatService notifications', () => {
                     options: [{ id: 'enable', label: 'Turn on notifications' }, { id: 'later', label: 'Not now' }],
                 });
             expect(JSON.stringify(card.body))
-                .toContain('never the text of a message');
+                .toContain('the first line of my reply');
         });
 
         it('closes the card with the answer of the owner, once', async () => {

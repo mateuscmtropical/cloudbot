@@ -19,6 +19,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- The notification for a finished turn says what the bot did. It shows the first line of the last reply instead of "Finished its work." The owner can ask for another text, such as for a routine, and the bot sets it with the new `notification_text` tool.
 - The bot clicks page elements by number. `browser_read` and `browser_open` list the buttons, links, fields and chat rows on the screen, each with a number and its name, and `browser_click` takes that number. A point in screenshot pixels still works. The approval review now sees the page and the element a click, a key or typing hits, such as `button "Send"` or a chat row, so opening a chat or a menu no longer asks the owner as an unknown click.
 - Older messages load as you scroll up, with no Load older messages button. A line at the top says when they are loading. A chat too short to scroll loads them by itself until it fills the screen.
 
