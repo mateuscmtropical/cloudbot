@@ -46,7 +46,7 @@ class ScreenHolder {
     }
 }
 
-const SCREEN_HELD_BY_PERSON_MESSAGE = 'The owner has the screen right now. Do not use the browser. Stop and wait until the owner tells you to continue.';
+const SCREEN_HELD_BY_PERSON_MESSAGE = 'The owner has the screen right now. Do not use the browser or the desktop. Stop and wait until the owner tells you to continue.';
 
 export { SCREEN_HELD_BY_PERSON_MESSAGE, ScreenHolder };
 export type { ScreenHolderName };

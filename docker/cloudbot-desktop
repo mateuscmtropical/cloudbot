@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # Starts the bot's desktop as the bot user: a virtual screen, a window manager,
-# a terminal, Chromium and TigerVNC. Everything listens on localhost only.
-# The script exits when one part exits, and the server starts it again.
+# a panel with an app menu, Chromium and TigerVNC. Everything listens on
+# localhost only. The script exits when one part exits, and the server starts it again.
 #
 # The server runs it through sudo, which allows no arguments.
 #
-# Chromium sends all its traffic, loopback included, through the SOCKS gate of the
-# server on GATE_PORT. The gate refuses private addresses. Its port must match
-# BROWSER_GATE_PORT in src/server/desktop/BrowserGate.ts. If the gate is down,
-# Chromium has no network, which is the safe result.
+# Chromium gets its profile, its DevTools port and the network gate from
+# /etc/chromium.d/cloudbot, see docker/chromium-flags. So a Chromium started
+# from the app menu or a terminal opens a window in this same browser.
 
 set -euo pipefail
 
@@ -17,10 +16,10 @@ SCREEN_WIDTH=1280
 SCREEN_HEIGHT=800
 SCREEN_DEPTH=24
 VNC_PORT=5900
-DEVTOOLS_PORT=9222
-GATE_PORT=9224
+PANEL_CONFIG=/usr/local/share/cloudbot/tint2rc
 STATE_DIR="$HOME/.cache/cloudbot-desktop"
 LOG_FILE="$STATE_DIR/desktop.log"
+# The same folder as --user-data-dir in docker/chromium-flags.
 PROFILE_DIR="$HOME/.config/cloudbot-chromium"
 LOCK_FILE="/tmp/cloudbot-desktop.lock"
 X_SOCKET="/tmp/.X11-unix/X$DISPLAY_NUMBER"
@@ -28,8 +27,11 @@ X_LOCK="/tmp/.X$DISPLAY_NUMBER-lock"
 CHILD_PIDS=()
 
 export DISPLAY=":$DISPLAY_NUMBER"
+# Apps opened from the panel start in the bot home and read and write UTF-8.
+export LANG=C.UTF-8
 
 mkdir -p "$STATE_DIR" "$PROFILE_DIR"
+cd "$HOME"
 
 # One desktop at a time. A second start fails at once. The children close
 # descriptor 9 (9>&-), so parts left over after a crash do not hold the lock.
@@ -88,12 +90,12 @@ CHILD_PIDS+=("$!")
 # The empty desktop has the dark color of the app, not black.
 xsetroot -solid '#1b1b1f' || true
 
-xterm -geometry 100x30+40+40 >> "$LOG_FILE" 2>&1 9>&- &
+# The panel holds the app menu, a terminal and the browser, and a button for each open window.
+# Apps open from the menu run as bot in this desktop and stay open after a turn ends.
+tint2 -c "$PANEL_CONFIG" >> "$LOG_FILE" 2>&1 9>&- &
 CHILD_PIDS+=("$!")
 
-# Docker's default seccomp profile blocks the namespaces Chromium's sandbox needs,
-# so the container is the sandbox. See docs/OWNER_QUESTIONS.md.
-# Chromium starts again a second after it closes, so closing its window never leaves an empty desktop.
+# Chromium starts again a second after it closes, since the browser tools need it.
 maximize_browser() {
     local window_id
 
@@ -111,20 +113,7 @@ maximize_browser() {
 
 run_browser() {
     while :; do
-        chromium \
-            --no-sandbox \
-            --remote-debugging-port="$DEVTOOLS_PORT" \
-            --user-data-dir="$PROFILE_DIR" \
-            --no-first-run \
-            --no-default-browser-check \
-            --disable-dev-shm-usage \
-            --window-position=0,0 \
-            --start-maximized \
-            --proxy-server="socks5://127.0.0.1:$GATE_PORT" \
-            --proxy-bypass-list="<-loopback>" \
-            --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
-            --webrtc-ip-handling-policy=disable_non_proxied_udp \
-            https://www.google.com/ >> "$LOG_FILE" 2>&1 9>&- &
+        chromium --window-position=0,0 --start-maximized https://www.google.com/ >> "$LOG_FILE" 2>&1 9>&- &
         local browser_pid=$!
 
         if ! maximize_browser; then

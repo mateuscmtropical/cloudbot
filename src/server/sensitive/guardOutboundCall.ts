@@ -5,6 +5,7 @@ const OWN_TOOL_PREFIX = 'mcp__cloudbot__';
 // Own tools whose input leaves the bot: the browser, hand-offs, integrations, and text that is sent to a page or a schedule.
 const OUTBOUND_BOT_TOOL_NAMES = new Set([
     `${OWN_TOOL_PREFIX}browser_type`,
+    `${OWN_TOOL_PREFIX}desktop_type`,
     `${OWN_TOOL_PREFIX}browser_open`,
     `${OWN_TOOL_PREFIX}bot_send`,
     `${OWN_TOOL_PREFIX}integration_run`,

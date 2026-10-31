@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# Lets the server see and drive the bot's desktop: a screenshot, the mouse, the keyboard and the name of a window.
+# The server runs it through sudo as the bot user, see cloudbot-agent.sudoers. So the X tools run as the user
+# that owns the desktop, never as the server user. Each argument is checked here before it reaches a tool.
+#
+#   screenshot                  a PNG of the whole screen on stdout
+#   click X Y BUTTON COUNT      BUTTON is 1 (left), 2 (middle) or 3 (right), COUNT is 1 or 2
+#   scroll X Y up|down COUNT    COUNT is 1 to 30 steps of the wheel
+#   type                        types the text read from stdin, so it is never read as an option
+#   key COMBO                   presses one key or chord, such as Return, ctrl+l or alt+Tab
+#   window                      the name of the window that has the keyboard focus
+#   window X Y                  the name of the top visible window at the point
+set -euo pipefail
+
+export DISPLAY=:1
+# xdotool reads the text as UTF-8 only with a UTF-8 locale.
+export LC_ALL=C.UTF-8
+
+fail() {
+    echo "$1" >&2
+    exit 2
+}
+
+check_number() {
+    case "$1" in
+        ''|*[!0-9]*) fail "invalid number" ;;
+    esac
+
+    [ "${#1}" -le 5 ] || fail "invalid number"
+}
+
+# The name of a window, or nothing when it has none.
+window_name() {
+    xdotool getwindowname "$1" 2>/dev/null || true
+}
+
+# Reads the stacking list from the top down. Openbox draws a title bar around each window, so the frame extents
+# widen the area of each one.
+window_at() {
+    local point_x=$1 point_y=$2 stacking window_ids window_id info extents
+    local left top width height frame_left frame_right frame_top frame_bottom
+
+    stacking="$(xprop -root -notype _NET_CLIENT_LIST_STACKING 2>/dev/null || true)"
+    case "$stacking" in
+        *"#"*) window_ids="${stacking#*# }" ;;
+        *) window_ids="" ;;
+    esac
+    window_ids="${window_ids//,/}"
+
+    # shellcheck disable=SC2086 # The ids are split into words on purpose.
+    for window_id in $(printf '%s\n' $window_ids | tac); do
+        info="$(xwininfo -id "$window_id" 2>/dev/null || true)"
+        case "$info" in
+            *"Map State: IsViewable"*) ;;
+            *) continue ;;
+        esac
+
+        left="$(printf '%s\n' "$info" | sed -n 's/^ *Absolute upper-left X: *\(-\{0,1\}[0-9]*\).*/\1/p')"
+        top="$(printf '%s\n' "$info" | sed -n 's/^ *Absolute upper-left Y: *\(-\{0,1\}[0-9]*\).*/\1/p')"
+        width="$(printf '%s\n' "$info" | sed -n 's/^ *Width: *\([0-9]*\).*/\1/p')"
+        height="$(printf '%s\n' "$info" | sed -n 's/^ *Height: *\([0-9]*\).*/\1/p')"
+        extents="$(xprop -id "$window_id" -notype _NET_FRAME_EXTENTS 2>/dev/null || true)"
+        case "$extents" in
+            *"= "*) IFS=', ' read -r frame_left frame_right frame_top frame_bottom <<< "${extents#*= }" ;;
+            *) frame_left=0 frame_right=0 frame_top=0 frame_bottom=0 ;;
+        esac
+
+        if [ -z "$left" ] || [ -z "$top" ] || [ -z "$width" ] || [ -z "$height" ]; then
+            continue
+        fi
+
+        if [ "$point_x" -ge $((left - frame_left)) ] && [ "$point_x" -lt $((left + width + frame_right)) ] \
+            && [ "$point_y" -ge $((top - frame_top)) ] && [ "$point_y" -lt $((top + height + frame_bottom)) ]; then
+            window_name "$window_id"
+            return 0
+        fi
+    done
+}
+
+[ "$#" -ge 1 ] || fail "usage: cloudbot-desktop-input screenshot|click|scroll|type|key|window ..."
+
+case "$1" in
+    screenshot)
+        [ "$#" -eq 1 ] || fail "invalid arguments"
+        exec python3 -I -c 'import sys
+from PIL import ImageGrab
+ImageGrab.grab(xdisplay=":1").save(sys.stdout.buffer, "PNG")'
+        ;;
+    click)
+        [ "$#" -eq 5 ] || fail "invalid arguments"
+        check_number "$2"
+        check_number "$3"
+        case "$4" in 1|2|3) ;; *) fail "invalid button" ;; esac
+        case "$5" in 1|2) ;; *) fail "invalid count" ;; esac
+        exec xdotool mousemove --sync "$2" "$3" click --repeat "$5" "$4"
+        ;;
+    scroll)
+        [ "$#" -eq 5 ] || fail "invalid arguments"
+        check_number "$2"
+        check_number "$3"
+        check_number "$5"
+        [ "$5" -ge 1 ] && [ "$5" -le 30 ] || fail "invalid count"
+        case "$4" in
+            up) wheel_button=4 ;;
+            down) wheel_button=5 ;;
+            *) fail "invalid direction" ;;
+        esac
+        exec xdotool mousemove --sync "$2" "$3" click --repeat "$5" --delay 40 "$wheel_button"
+        ;;
+    type)
+        [ "$#" -eq 1 ] || fail "invalid arguments"
+        exec xdotool type --clearmodifiers --delay 12 --file -
+        ;;
+    key)
+        [ "$#" -eq 2 ] || fail "invalid arguments"
+        [ "${#2}" -le 64 ] || fail "invalid key"
+        [[ "$2" =~ ^[A-Za-z0-9_]+(\+[A-Za-z0-9_]+)*$ ]] || fail "invalid key"
+        exec xdotool key --clearmodifiers "$2"
+        ;;
+    window)
+        if [ "$#" -eq 1 ]; then
+            active_window="$(xdotool getactivewindow 2>/dev/null || true)"
+            [ -z "$active_window" ] || window_name "$active_window"
+            exit 0
+        fi
+
+        [ "$#" -eq 3 ] || fail "invalid arguments"
+        check_number "$2"
+        check_number "$3"
+        window_at "$2" "$3"
+        ;;
+    *)
+        fail "unknown action"
+        ;;
+esac

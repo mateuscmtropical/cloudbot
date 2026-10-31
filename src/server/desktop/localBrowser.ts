@@ -108,7 +108,7 @@ const WINDOW_HEIGHT = 800;
 const LOOPBACK_HOST = '127.0.0.1';
 const GATE_NOT_VERIFIED_MESSAGE = 'The browser tools are off until the browser passes the gate check. Tell the owner if this lasts.';
 
-// The same flags as docker/cloudbot-desktop, so the local browser has the same gate and the same DevTools rules.
+// The same flags as docker/chromium-flags, so the local browser has the same gate and the same DevTools rules.
 // The bypass list without loopback sends loopback through the gate, which refuses it.
 // Port 0 lets Chrome pick a free port. It writes the port to DevToolsActivePort in the profile.
 function buildLocalBrowserArguments(options: LocalBrowserArgumentsOptions): string[] {

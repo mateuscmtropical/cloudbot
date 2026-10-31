@@ -1,0 +1,89 @@
+# The panel of the bot's desktop, installed as /usr/local/share/cloudbot/tint2rc.
+# From the left: the app menu, a terminal, the browser, a button for each open window and the clock.
+
+# Background 1: the panel
+rounded = 0
+border_width = 0
+background_color = #111114 100
+border_color = #000000 0
+
+# Background 2: a button
+rounded = 4
+border_width = 0
+background_color = #2a2a30 100
+border_color = #000000 0
+background_color_hover = #3a3a44 100
+border_color_hover = #000000 0
+
+# Background 3: the active window
+rounded = 4
+border_width = 0
+background_color = #45455a 100
+border_color = #000000 0
+background_color_hover = #50506a 100
+border_color_hover = #000000 0
+
+panel_items = PLTC
+panel_size = 100% 36
+panel_margin = 0 0
+panel_padding = 4 3 6
+panel_background_id = 1
+panel_position = bottom center horizontal
+panel_layer = top
+panel_monitor = all
+panel_dock = 0
+wm_menu = 1
+strut_policy = follow_size
+autohide = 0
+font_shadow = 0
+
+# The app menu lists every app with a desktop entry, also one installed later.
+button = new
+button_text = Apps
+button_font = sans Bold 10
+button_font_color = #ffffff 100
+button_padding = 10 4
+button_background_id = 2
+button_centered = 1
+button_lclick_command = jgmenu --config-file=/usr/local/share/cloudbot/jgmenurc
+
+launcher_padding = 4 2 4
+launcher_background_id = 0
+launcher_icon_background_id = 2
+launcher_icon_size = 24
+launcher_icon_theme = Adwaita
+launcher_tooltip = 1
+launcher_item_app = /usr/share/applications/debian-xterm.desktop
+launcher_item_app = /usr/share/applications/chromium.desktop
+
+taskbar_mode = single_desktop
+taskbar_padding = 4 2 4
+taskbar_background_id = 0
+taskbar_hide_inactive_tasks = 0
+taskbar_name = 0
+
+task_text = 1
+task_icon = 1
+task_centered = 0
+task_tooltip = 1
+task_maximum_size = 220 30
+task_padding = 6 2 6
+task_font = sans 9
+task_font_color = #ffffff 85
+task_active_font_color = #ffffff 100
+task_iconified_font_color = #ffffff 55
+task_background_id = 2
+task_active_background_id = 3
+task_iconified_background_id = 2
+mouse_left = toggle_iconify
+mouse_middle = close
+mouse_right = none
+mouse_scroll_up = none
+mouse_scroll_down = none
+
+time1_format = %H:%M
+time1_font = sans Bold 10
+clock_font_color = #ffffff 100
+clock_padding = 10 0
+clock_background_id = 0
+clock_tooltip = %A %d %B %Y

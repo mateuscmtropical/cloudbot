@@ -15,6 +15,9 @@ cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-signal-group *
 cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-end-turn *
 # The empty string allows the desktop script only without arguments.
 cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-desktop ""
+# Screenshots, mouse and keyboard on the bot's desktop. The X tools run as bot, never as cloudbot. The script checks
+# every argument, and typed text comes on stdin.
+cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-desktop-input *
 # Deletes the workspace of one bot, since the bot user owns the files the agent made. The script takes only a bot id
 # and checks it, see docker/cloudbot-remove-workspace.
 cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-remove-workspace *

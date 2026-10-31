@@ -111,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - run: shellcheck docker/install.sh docker/cloudbot docker/check-container.sh docker/cloudbot-desktop docker/cloudbot-remove-workspace docker/cloudbot-read-memory docker/cloudbot-end-turn
+      - run: shellcheck docker/install.sh docker/cloudbot docker/check-container.sh docker/cloudbot-desktop docker/cloudbot-desktop-input docker/chromium-flags docker/cloudbot-remove-workspace docker/cloudbot-read-memory docker/cloudbot-end-turn
 
   powershell:
     name: Check the PowerShell installer (${{ matrix.arch }})

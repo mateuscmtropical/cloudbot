@@ -8,6 +8,7 @@ const CPF_TEXT = 'CPF 529.982.247-25';
 describe('findSensitiveOutboundRefusal', () => {
     it.each([
         ['mcp__cloudbot__browser_type', { text: CARD_TEXT }, 'payment card number'],
+        ['mcp__cloudbot__desktop_type', { text: CARD_TEXT }, 'payment card number'],
         ['mcp__cloudbot__bot_send', { bot: 'Ana', text: CARD_TEXT }, 'payment card number'],
         ['mcp__cloudbot__integration_run', { name: 'sync', args: [CPF_TEXT] }, 'Brazilian CPF number'],
         ['mcp__cloudbot__browser_open', { url: 'https://shop.example/?card=4111111111111111' }, 'payment card number'],
