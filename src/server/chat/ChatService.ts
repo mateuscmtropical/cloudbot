@@ -59,7 +59,8 @@ import type { WebhookCreation } from '../webhooks/createWebhookTools.ts';
 import type { DeliveryMemory, WebhookRefusalLog } from '../webhooks/webhookMemory.ts';
 import { WATCH_TOOL_FULL_NAMES, createWatchTools } from '../watches/createWatchTools.ts';
 import type { WatchStore } from '../store/WatchStore.ts';
-import { NOTIFICATIONS_DISABLE_TOOL_FULL_NAME, NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, createNotificationsDisableTool, createNotificationsEnableTool } from '../push/createNotificationTools.ts';
+import { NOTIFICATION_TEXT_TOOL_FULL_NAME, NOTIFICATIONS_DISABLE_TOOL_FULL_NAME, NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, createNotificationTextTool, createNotificationsDisableTool, createNotificationsEnableTool } from '../push/createNotificationTools.ts';
+import { firstReplyLine } from '../push/noticeLine.ts';
 import { TELEGRAM_TOOL_FULL_NAMES, createTelegramTools } from '../telegram/createTelegramTools.ts';
 import type { TelegramConnector } from '../telegram/createTelegramTools.ts';
 import type { OwnerNotice } from '../push/PushNotifier.ts';
@@ -399,6 +400,8 @@ const FILE_ID_PATTERN = /^[0-9a-f-]{36}$/;
 // The turns of the bot's own chat that take a new owner message while they run. A hand-off answers another bot, a channel
 // turn speaks in the channel and a quiet check-in removes its messages, so those keep new messages in the queue.
 const INBOX_TURN_SOURCES = new Set<TurnSource>(['chat', 'routine', 'webhook']);
+// The newest messages read to find the last reply of a turn for its notification.
+const DONE_NOTICE_LOOKBACK = 50;
 // Used when the runner reports a limit without a reset time.
 const USAGE_LIMIT_FALLBACK_WAIT_MS = 5 * 60 * 1000;
 // A reset time is kept between these bounds. The minimum stops a retry loop on a past time.
@@ -422,7 +425,7 @@ function maskMessageBody(body: MessageBody): MessageBody {
 const PREVIEW_LENGTH = 80;
 const PASSKEY_ADD_CARD_TEXT = 'A passkey lets this phone or computer sign in to CloudBot with its lock screen, face or fingerprint. Tap the button, then follow what your browser asks. The setup link from the server still works if you lose it.';
 const NOTIFICATION_OFF_CARD_TEXT = 'I can stop the notifications on this browser. Tap the button and this browser forgets them. Other browsers keep theirs until you do the same there.';
-const NOTIFICATION_CARD_TEXT = 'I can send a notification to this browser when I finish a task, when something waits for your approval, and when I need you on my screen. It shows my name and a short line, never the text of a message. Tap the button, then allow notifications when your browser asks. You can turn them off later in the site settings of your browser.';
+const NOTIFICATION_CARD_TEXT = 'I can send a notification to this browser when I finish a task, when something waits for your approval, and when I need you on my screen. When I finish, it shows my name and the first line of my reply, or a line you asked me to use. Tap the button, then allow notifications when your browser asks. You can turn them off later in the site settings of your browser.';
 
 class PendingUploadLimitError extends Error {
     constructor() {
@@ -750,6 +753,8 @@ class ChatService {
     private readonly allBotsListeners = new Set<ChatEventListener>();
     private readonly pendingPeopleCredentialsByBot = new Map<string, ChatPersonCredentialsEvent[]>();
     private readonly runningTurns = new Map<string, AbortController>();
+    // The line the bot set with notification_text for the notification at the end of its running turn.
+    private readonly turnNoticeLines = new Map<string, string>();
     // The inbox of each running turn that can take a new owner message. The engine fills in its deliver while its input is open.
     private readonly turnInboxes = new Map<string, TurnInbox>();
     // The hand-offs each running turn has sent, by the sender's bot id. Cleared when the turn finishes.
@@ -2119,7 +2124,8 @@ class ChatService {
     }
 
     // Sends a notification in the background. A failure never reaches the chat, since the chat already shows the event.
-    private sendNotice(botId: string, kind: PushNoticeKind, messageId: string | undefined): void {
+    // The body is the line to show. Without it the notification shows the plain line of its kind.
+    private sendNotice(botId: string, kind: PushNoticeKind, messageId: string | undefined, body?: string): void {
         const notifyOwner = this.notifyOwner;
 
         if (notifyOwner === undefined) {
@@ -2132,18 +2138,28 @@ class ChatService {
                     return undefined;
                 }
 
-                return notifyOwner({ kind, botId, botName: bot.name, messageId });
+                return notifyOwner({ kind, botId, botName: bot.name, messageId, ...(body === undefined ? {} : { body }) });
             })
             .catch(() => {
                 console.error('Could not send a notification.');
             });
     }
 
-    // The owner opens the newest message of the bot, which is the reply of the turn that ended.
-    private sendTurnDoneNotice(botId: string): void {
-        this.messageStore.listByBot(botId, { limit: 1 })
+    // The owner opens the newest message of the bot, which is the reply of the turn that ended. The notification says what the
+    // turn did: the line the bot set with notification_text, or else the first line of its last reply.
+    // Only a reply of this turn counts, so a turn without text never shows the reply of an earlier one.
+    private sendTurnDoneNotice(botId: string, turnMessageIds: string[]): void {
+        const chosenLine = this.turnNoticeLines.get(botId);
+        const turnMessageIdSet = new Set(turnMessageIds);
+
+        this.turnNoticeLines.delete(botId);
+        this.messageStore.listByBot(botId, { limit: DONE_NOTICE_LOOKBACK })
             .then((latestMessages) => {
-                this.sendNotice(botId, 'done', latestMessages[0]?.id);
+                const lastReply = latestMessages.findLast(message => turnMessageIdSet.has(message.id) && message.role === 'assistant' && message.kind === 'text');
+                const replyText = lastReply === undefined ? '' : (lastReply.content as TextBody).text;
+                const body = chosenLine ?? firstReplyLine(replyText);
+
+                this.sendNotice(botId, 'done', latestMessages.at(-1)?.id, body);
             })
             .catch(() => {
                 console.error('Could not send a notification.');
@@ -3623,8 +3639,9 @@ class ChatService {
         // Set when the turn ends on an error, so its hand-off reply says so.
         let hasFailed = false;
 
-        // A number held back by the stream masker never crosses into the next turn.
+        // A number held back by the stream masker never crosses into the next turn, and nor does a notification line of a stopped turn.
         this.streamMaskers.delete(botId);
+        this.turnNoticeLines.delete(botId);
 
         try {
             const bot = await this.botStore.getById(botId);
@@ -3716,6 +3733,9 @@ class ChatService {
                 : [
                         createNotificationsEnableTool(() => this.postNotificationCard(botId)),
                         createNotificationsDisableTool(() => this.postNotificationOffCard(botId)),
+                        createNotificationTextTool((line) => {
+                            this.turnNoticeLines.set(botId, line);
+                        }),
                     ];
             const passkeyService = this.passkeys;
             const passkeyTools = passkeyService === undefined
@@ -3863,7 +3883,7 @@ class ChatService {
                     // A turn that the owner stopped is not news to the owner. A webhook turn starts without the owner, and an outside
                     // service could fire it often, so it never buzzes the phone. A quiet check-in left nothing to look at.
                     if (!abortController.signal.aborted && turn.source !== 'webhook' && !wasDroppedQuiet) {
-                        this.sendTurnDoneNotice(botId);
+                        this.sendTurnDoneNotice(botId, turnState.savedMessageIds);
                     }
                 }
             } finally {
@@ -4062,7 +4082,7 @@ class ChatService {
 
     // The notification tools need the push sender. They do not need the approval gate.
     private notificationToolNames(): string[] {
-        return this.notifyOwner === undefined ? [] : [NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, NOTIFICATIONS_DISABLE_TOOL_FULL_NAME];
+        return this.notifyOwner === undefined ? [] : [NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, NOTIFICATIONS_DISABLE_TOOL_FULL_NAME, NOTIFICATION_TEXT_TOOL_FULL_NAME];
     }
 
     private peopleToolNames(): string[] {

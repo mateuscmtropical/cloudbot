@@ -53,6 +53,8 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__notifications_enable',
     // The same: it posts a card, and the browser removes its own subscription when the owner taps.
     'mcp__cloudbot__notifications_disable',
+    // It only sets the line of the owner's own notification at the end of the turn.
+    'mcp__cloudbot__notification_text',
     // Listing only reads the names. Adding and removing post a card, and the browser acts only when the owner taps it.
     'mcp__cloudbot__passkey_add',
     'mcp__cloudbot__passkey_list',

@@ -1,15 +1,18 @@
 import type { PushSubscriptionRecord, PushSubscriptionStore } from '../store/PushSubscriptionStore.ts';
 import type { PushNotice, PushNoticeKind } from '../../shared/pushTypes.ts';
 import type { PushSender } from './createPushSender.ts';
+import { toNoticeLine } from './noticeLine.ts';
 import { buildVapidAuthorization, encryptPushPayload } from './webPushCrypto.ts';
 import type { VapidKeyPair } from './webPushCrypto.ts';
 
-// What happened, for which bot, and the message the owner should see. The notification never carries the text of a message.
+// What happened, for which bot, and the message the owner should see.
 interface OwnerNotice {
     kind: PushNoticeKind;
     botId: string;
     botName: string;
     messageId: string | undefined;
+    // The line to show, such as the first line of the reply. Without it the notification shows the plain line of its kind.
+    body?: string | undefined;
 }
 
 interface PushNotifierOptions {
@@ -21,8 +24,8 @@ interface PushNotifierOptions {
     now?: () => number;
 }
 
-// Neutral lines. The push service sees the size and timing of each push, and the text is encrypted, but nothing in it
-// says what the bot did.
+// The plain line of each kind, for a notice without its own line. The text is encrypted, so the push service sees only
+// the size and timing of each push.
 const NOTICE_LINES: Record<PushNoticeKind, string> = {
     done: 'Finished its work.',
     approval: 'Waiting for your approval.',
@@ -35,15 +38,17 @@ const GONE_STATUSES = [404, 410];
 const MS_PER_SECOND = 1000;
 // A bot that answers many short turns would buzz the phone for each. One push of this kind in a minute is enough.
 const DONE_PUSH_INTERVAL_MS = 60 * MS_PER_SECOND;
-// A long name is cut, so every payload stays well under the 512 bytes that the padding fills.
+// A long name is cut. With the body line, the payload stays far under the 4 KB a push can carry.
 const MAX_TITLE_CHARACTERS = 40;
 
 function buildPushNotice(notice: OwnerNotice): PushNotice {
+    const bodyLine = notice.body === undefined ? undefined : toNoticeLine(notice.body);
+
     return {
         title: Array.from(notice.botName)
             .slice(0, MAX_TITLE_CHARACTERS)
             .join(''),
-        body: NOTICE_LINES[notice.kind],
+        body: bodyLine ?? NOTICE_LINES[notice.kind],
         kind: notice.kind,
         botId: notice.botId,
         // Without a message the click opens the bot at its newest message.
