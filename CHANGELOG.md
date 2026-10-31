@@ -34,6 +34,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- On a phone, the keyboard no longer hides the newest messages. When the message list gets shorter, from the keyboard or a taller text box, a reader at the bottom stays at the bottom. A reader who scrolled up to older messages keeps their place.
 - An owner Allow rule now works as a standing permission. A send, push or other action that a rule allows runs without an approval card, also in a routine turn, as long as it meets the conditions the rule sets. Purchases and bookings still always ask, and a Block rule still wins.
 - On a phone or tablet, Enter in the text box adds a line instead of sending. Only the send button sends. The keyboard shows its new line key. A computer keyboard still sends with Enter.
 - The app stays clear of the phone's status and navigation bars in every view. The page now asks for the safe area with `viewport-fit=cover`, so the whole app is padded by it once. Before, the safe area was always 0 and the message box could sit under the navigation bar.

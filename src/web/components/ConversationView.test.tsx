@@ -715,3 +715,62 @@ describe('ConversationView thinking bubble', () => {
             .toBe('Running a command');
     });
 });
+
+describe('ConversationView height changes', () => {
+    let resizeCallbacks: (() => void)[] = [];
+
+    class FakeResizeObserver {
+        observe = vi.fn();
+        disconnect = vi.fn();
+
+        constructor(callback: () => void) {
+            resizeCallbacks.push(callback);
+        }
+    }
+
+    function resizeList(messageList: HTMLElement, height: number): void {
+        Object.defineProperty(messageList, 'clientHeight', { configurable: true, value: height });
+        resizeCallbacks.forEach((callback) => {
+            callback();
+        });
+    }
+
+    // Renders a list 1000 pixels tall in a 600 pixel view, with the reader at the given scroll.
+    function renderSettled(scrollTop: number): HTMLElement {
+        const view = renderWithHistory([createSequencedMessage(1), createSequencedMessage(2)], {});
+        const messageList = messageListOf(view.container);
+
+        Object.defineProperty(messageList, 'scrollHeight', { configurable: true, value: 1000 });
+        resizeList(messageList, 600);
+        messageList.scrollTop = scrollTop;
+
+        return messageList;
+    }
+
+    beforeEach(() => {
+        resizeCallbacks = [];
+        vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('keeps the newest message in view when the keyboard makes the list shorter', () => {
+        const messageList = renderSettled(400);
+
+        resizeList(messageList, 300);
+
+        expect(messageList.scrollTop)
+            .toBe(1000);
+    });
+
+    it('leaves a reader who scrolled up to older messages in place', () => {
+        const messageList = renderSettled(100);
+
+        resizeList(messageList, 300);
+
+        expect(messageList.scrollTop)
+            .toBe(100);
+    });
+});
