@@ -53,7 +53,7 @@ function ChannelView({ channel, onPost, onStop, onOpenBotList }: ChannelViewProp
             <div className="channel-roster-pill">
                 {channel?.members.map(member => (
                     <span key={member.botId} className="channel-roster-member">
-                        <CloudMascot color={member.mascotColor} shape={member.mascotShape} state="idle" size={ROSTER_MASCOT_SIZE} />
+                        <CloudMascot color={member.mascotColor} shape={member.mascotShape} eyes={member.mascotEyes} state="idle" size={ROSTER_MASCOT_SIZE} />
                         <span className="channel-roster-name">{member.isManager ? `${member.name} (manager)` : member.name}</span>
                     </span>
                 ))}
@@ -63,7 +63,7 @@ function ChannelView({ channel, onPost, onStop, onOpenBotList }: ChannelViewProp
                     <article key={post.id} className="channel-post" data-message-id={post.id}>
                         {post.role === 'user'
                             ? null
-                            : <CloudMascot color={post.authorColor} shape={post.authorShape} state="idle" size={POST_MASCOT_SIZE} />}
+                            : <CloudMascot color={post.authorColor} shape={post.authorShape} eyes={post.authorEyes} state="idle" size={POST_MASCOT_SIZE} />}
                         <div className="channel-post-body">
                             <span className="channel-post-author">{post.authorName}</span>
                             <p className="channel-post-text">{post.body.kind === 'text' ? post.body.text : ''}</p>

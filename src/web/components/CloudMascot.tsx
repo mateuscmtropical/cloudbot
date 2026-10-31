@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
-import { MASCOT_COLORS, readMascotColor } from '../../shared/mascot.ts';
-import type { MascotColorName, MascotShape } from '../../shared/mascot.ts';
+import { MASCOT_COLORS, MASCOT_FACE_COLORS, readMascotColor } from '../../shared/mascot.ts';
+import type { MascotColorName, MascotEyes, MascotShape } from '../../shared/mascot.ts';
 import { computeEyeOffset, computeTypingEyeOffset, subscribeToPointer, subscribeToTyping } from '../mascotPointer.ts';
 import type { Point } from '../mascotPointer.ts';
 import type { MascotState } from '../mascotState.ts';
@@ -10,6 +10,8 @@ import type { MascotState } from '../mascotState.ts';
 interface CloudMascotProps {
     color: MascotColorName;
     shape: MascotShape;
+    // The face the bot shows at rest. Other states keep their own face, such as thinking.
+    eyes?: MascotEyes;
     state: MascotState;
     // Width and height in pixels. The cloud keeps its proportions.
     size?: number;
@@ -29,11 +31,12 @@ interface BaseSpec {
     rx: number;
 }
 
-// A body is a few circles over a flat base with rounded ends. Some bodies have a small floating dot.
+// A body is a few circles over a flat base with rounded ends. Some bodies have small floating dots or extra paths, such as a curl.
 interface BodySpec {
     circles: CircleSpec[];
     base: BaseSpec;
-    dot?: CircleSpec;
+    dots?: CircleSpec[];
+    paths?: string[];
 }
 
 const VIEW_BOX = '-10 -10 160 130';
@@ -77,7 +80,23 @@ const BODY_SPECS: Record<MascotShape, BodySpec> = {
     bubble: {
         circles: [{ cx: 38, cy: 72, r: 26 }, { cx: 68, cy: 52, r: 30 }, { cx: 100, cy: 74, r: 24 }],
         base: { x: 14, y: 72, width: 110, height: 40, rx: 20 },
-        dot: { cx: 132, cy: 18, r: 9 },
+        dots: [{ cx: 132, cy: 18, r: 9 }],
+    },
+    bubbles: {
+        circles: [{ cx: 38, cy: 72, r: 26 }, { cx: 68, cy: 52, r: 30 }, { cx: 100, cy: 74, r: 24 }],
+        base: { x: 14, y: 72, width: 110, height: 40, rx: 20 },
+        dots: [{ cx: 112, cy: 4, r: 9 }, { cx: 134, cy: 24, r: 7 }],
+    },
+    curl: {
+        circles: [{ cx: 40, cy: 74, r: 26 }, { cx: 72, cy: 52, r: 32 }, { cx: 104, cy: 74, r: 26 }],
+        base: { x: 12, y: 74, width: 120, height: 36, rx: 18 },
+        paths: ['M60 26 Q50 12 60 4 Q60 16 78 21 Z'],
+    },
+    wisp: {
+        circles: [{ cx: 38, cy: 70, r: 28 }, { cx: 68, cy: 50, r: 32 }, { cx: 98, cy: 70, r: 26 }],
+        base: { x: 10, y: 70, width: 110, height: 38, rx: 19 },
+        paths: ['M104 52 Q124 54 130 38 Q142 54 128 66 Q140 72 132 84 Q120 108 100 108 Z'],
+        dots: [{ cx: 144, cy: 82, r: 6 }],
     },
 };
 
@@ -100,36 +119,122 @@ function sparkle(centerX: number): string {
     return [top, toRight, toBottom, toLeft, toTop].join(' ');
 }
 
+// A drawing of one eye. Lines are stroked with round ends, and shapes such as a heart are filled.
+interface EyeDrawing {
+    d: string;
+    isFilled: boolean;
+}
+
+type EyeDrawer = (centerX: number) => EyeDrawing;
+
+function point(pointX: number, pointY: number): string {
+    return `${String(pointX)} ${String(pointY)}`;
+}
+
+function smileEye(centerX: number): EyeDrawing {
+    return { d: smileArc(centerX), isFilled: false };
+}
+
+// An upside-down U. The tall one has longer sides.
+function archEye(centerX: number): EyeDrawing {
+    return { d: `M${point(centerX - 8, EYE_Y + 5)} V${String(EYE_Y)} A8 8 0 0 1 ${point(centerX + 8, EYE_Y)} V${String(EYE_Y + 5)}`, isFilled: false };
+}
+
+function tallArchEye(centerX: number): EyeDrawing {
+    return { d: `M${point(centerX - 7, EYE_Y + 9)} V${String(EYE_Y - 1)} A7 7 0 0 1 ${point(centerX + 7, EYE_Y - 1)} V${String(EYE_Y + 9)}`, isFilled: false };
+}
+
+function dotEye(centerX: number): EyeDrawing {
+    return { d: `M${point(centerX - 8, EYE_Y)} a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0`, isFilled: true };
+}
+
+function crossEye(centerX: number): EyeDrawing {
+    return { d: `M${point(centerX - 7, EYE_Y - 7)} L${point(centerX + 7, EYE_Y + 7)} M${point(centerX + 7, EYE_Y - 7)} L${point(centerX - 7, EYE_Y + 7)}`, isFilled: false };
+}
+
+// A ">" on the left eye and a "<" on the right eye both point at the middle of the face.
+function pointRightEye(centerX: number): EyeDrawing {
+    return { d: `M${point(centerX - 5, EYE_Y - 8)} L${point(centerX + 6, EYE_Y)} L${point(centerX - 5, EYE_Y + 8)}`, isFilled: false };
+}
+
+function pointLeftEye(centerX: number): EyeDrawing {
+    return { d: `M${point(centerX + 5, EYE_Y - 8)} L${point(centerX - 6, EYE_Y)} L${point(centerX + 5, EYE_Y + 8)}`, isFilled: false };
+}
+
+function heartEye(centerX: number): EyeDrawing {
+    const bottom = point(centerX, EYE_Y + 10);
+    const leftLobe = `C${point(centerX - 15, EYE_Y)} ${point(centerX - 10, EYE_Y - 12)} ${point(centerX, EYE_Y - 4)}`;
+    const rightLobe = `C${point(centerX + 10, EYE_Y - 12)} ${point(centerX + 15, EYE_Y)} ${bottom}`;
+
+    return { d: `M${bottom} ${leftLobe} ${rightLobe} Z`, isFilled: true };
+}
+
+function starEye(centerX: number): EyeDrawing {
+    return { d: sparkle(centerX), isFilled: true };
+}
+
+function dashEye(centerX: number): EyeDrawing {
+    return { d: `M${point(centerX - 7, EYE_Y)} H${String(centerX + 7)}`, isFilled: false };
+}
+
+// The left and the right eye of each resting face.
+const EYE_DRAWERS: Record<MascotEyes, [EyeDrawer, EyeDrawer]> = {
+    smile: [smileEye, smileEye],
+    cross: [crossEye, crossEye],
+    arch: [archEye, archEye],
+    dots: [dotEye, dotEye],
+    wink: [smileEye, pointLeftEye],
+    hearts: [heartEye, heartEye],
+    stars: [starEye, starEye],
+    excited: [pointRightEye, pointLeftEye],
+    sleepy: [dashEye, dashEye],
+    peek: [dotEye, smileEye],
+    happy: [tallArchEye, tallArchEye],
+};
+
+function renderRestingEyes(eyes: MascotEyes, faceColor: string): ReactElement {
+    const [drawLeft, drawRight] = EYE_DRAWERS[eyes];
+    const drawings = [drawLeft(LEFT_EYE_X), drawRight(RIGHT_EYE_X)];
+
+    return (
+        <g strokeWidth={FACE_STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round">
+            {drawings.map(drawing => (
+                <path
+                    key={drawing.d}
+                    d={drawing.d}
+                    fill={drawing.isFilled ? faceColor : 'none'}
+                    stroke={drawing.isFilled ? 'none' : faceColor}
+                />
+            ))}
+        </g>
+    );
+}
+
 // The face of each state. The eyes go in a group of their own, so a blink or a pointer offset moves them alone.
 // Filled parts set stroke to none, so the white outline from the svg defaults does not draw around them.
-function renderFace(state: MascotState): ReactElement {
+function renderFace(state: MascotState, eyes: MascotEyes, faceColor: string): ReactElement {
     switch (state) {
         case 'idle':
-            return (
-                <g stroke={WHITE} fill="none" strokeWidth={FACE_STROKE_WIDTH} strokeLinecap="round">
-                    <path d={smileArc(LEFT_EYE_X)} />
-                    <path d={smileArc(RIGHT_EYE_X)} />
-                </g>
-            );
+            return renderRestingEyes(eyes, faceColor);
         // The working eyes look around through the stylesheet, not the pointer.
         case 'typing':
         case 'working':
             return (
-                <g fill={WHITE} stroke="none">
+                <g fill={faceColor} stroke="none">
                     <circle cx={LEFT_EYE_X} cy={EYE_Y} r={EYE_RADIUS} />
                     <circle cx={RIGHT_EYE_X} cy={EYE_Y} r={EYE_RADIUS} />
                 </g>
             );
         case 'thinking':
             return (
-                <g stroke={WHITE} fill="none" strokeWidth={FACE_STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round">
+                <g stroke={faceColor} fill="none" strokeWidth={FACE_STROKE_WIDTH} strokeLinecap="round" strokeLinejoin="round">
                     <path d="M43 61 L52 70 L43 79" />
                     <path d="M97 61 L88 70 L97 79" />
                 </g>
             );
         case 'done':
             return (
-                <g fill={WHITE} stroke="none">
+                <g fill={faceColor} stroke="none">
                     <path d={sparkle(LEFT_EYE_X)} />
                     <path d={sparkle(RIGHT_EYE_X)} />
                 </g>
@@ -137,20 +242,20 @@ function renderFace(state: MascotState): ReactElement {
         case 'waiting':
             return (
                 <g>
-                    <circle cx={LEFT_EYE_X} cy={EYE_Y} r={EYE_RADIUS} fill={WHITE} stroke="none" />
-                    <path d={smileArc(RIGHT_EYE_X)} stroke={WHITE} fill="none" strokeWidth={FACE_STROKE_WIDTH} strokeLinecap="round" />
+                    <circle cx={LEFT_EYE_X} cy={EYE_Y} r={EYE_RADIUS} fill={faceColor} stroke="none" />
+                    <path d={smileArc(RIGHT_EYE_X)} stroke={faceColor} fill="none" strokeWidth={FACE_STROKE_WIDTH} strokeLinecap="round" />
                 </g>
             );
         case 'sleepy':
             return (
-                <g stroke={WHITE} fill="none" strokeWidth={FACE_STROKE_WIDTH} strokeLinecap="round">
+                <g stroke={faceColor} fill="none" strokeWidth={FACE_STROKE_WIDTH} strokeLinecap="round">
                     <path d={`M45 ${String(EYE_Y)} H59`} />
                     <path d={`M81 ${String(EYE_Y)} H95`} />
                 </g>
             );
         case 'error':
             return (
-                <g stroke={WHITE} fill="none" strokeWidth={FACE_STROKE_WIDTH} strokeLinecap="round">
+                <g stroke={faceColor} fill="none" strokeWidth={FACE_STROKE_WIDTH} strokeLinecap="round">
                     <path d="M44 62 L60 78 M60 62 L44 78" />
                     <path d="M80 62 L96 78 M96 62 L80 78" />
                 </g>
@@ -173,7 +278,7 @@ function pickBlinkDelayMs(randomValue: number): number {
     return BLINK_MIN_DELAY_MS + randomValue * (BLINK_MAX_DELAY_MS - BLINK_MIN_DELAY_MS);
 }
 
-function CloudMascot({ color, shape, state, size = DEFAULT_SIZE }: CloudMascotProps): ReactElement {
+function CloudMascot({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE }: CloudMascotProps): ReactElement {
     const svgRef = useRef<SVGSVGElement>(null);
     const [eyeOffset, setEyeOffset] = useState<Point>({ x: 0, y: 0 });
     const [isBlinking, setIsBlinking] = useState(false);
@@ -184,7 +289,9 @@ function CloudMascot({ color, shape, state, size = DEFAULT_SIZE }: CloudMascotPr
     const isLooking = hasMovingEyes && isOnScreen;
     const isBlinkShown = hasMovingEyes && isBlinking;
     const body = BODY_SPECS[shape];
-    const fill = MASCOT_COLORS[readMascotColor(color)];
+    const knownColor = readMascotColor(color);
+    const fill = MASCOT_COLORS[knownColor];
+    const faceColor = MASCOT_FACE_COLORS[knownColor] ?? WHITE;
 
     useEffect(() => {
         const element = svgRef.current;
@@ -315,7 +422,7 @@ function CloudMascot({ color, shape, state, size = DEFAULT_SIZE }: CloudMascotPr
         : undefined;
 
     return (
-        <span className={`cloud-mascot is-${state}`} data-state={state} data-shape={shape} style={{ width: size, height: size }}>
+        <span className={`cloud-mascot is-${state}`} data-state={state} data-shape={shape} data-color={color} data-eyes={eyes} style={{ width: size, height: size }}>
             <svg ref={svgRef} viewBox={VIEW_BOX} aria-hidden="true" focusable="false">
                 <g className="cloud-look" style={{ transform: lookTransform }}>
                     <g className="cloud-body" fill={fill} stroke="none">
@@ -323,12 +430,13 @@ function CloudMascot({ color, shape, state, size = DEFAULT_SIZE }: CloudMascotPr
                             <circle key={`${String(circle.cx)}-${String(circle.cy)}`} cx={circle.cx} cy={circle.cy} r={circle.r} />
                         ))}
                         <rect x={body.base.x} y={body.base.y} width={body.base.width} height={body.base.height} rx={body.base.rx} />
-                        {body.dot === undefined ? null : <circle cx={body.dot.cx} cy={body.dot.cy} r={body.dot.r} />}
+                        {body.dots?.map(dot => <circle key={`${String(dot.cx)}-${String(dot.cy)}`} cx={dot.cx} cy={dot.cy} r={dot.r} />)}
+                        {body.paths?.map(path => <path key={path} d={path} />)}
                     </g>
                     <g className="cloud-face" data-face={state} data-tracks-pointer={hasMovingEyes ? 'true' : undefined}>
                         <g style={{ transform: eyeTransform }}>
                             <g className="cloud-eyes" data-blinking={isBlinkShown ? 'true' : undefined}>
-                                {renderFace(state)}
+                                {renderFace(state, eyes, faceColor)}
                             </g>
                         </g>
                     </g>

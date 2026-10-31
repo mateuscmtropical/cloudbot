@@ -270,6 +270,7 @@ describe('ChatService channel rounds', () => {
             authorName: 'Ana',
             authorColor: 'blue',
             authorShape: 'puff',
+            authorEyes: 'smile',
             role,
             kind: 'text',
             body: { kind: 'text', text },

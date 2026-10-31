@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 import type { MessageBody } from '../../shared/chatTypes.ts';
-import { MASCOT_COLOR_NAMES, MASCOT_SHAPES } from '../../shared/mascot.ts';
+import { MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES } from '../../shared/mascot.ts';
 import { CONNECTED_APP_STATUSES } from '../../shared/connectedApps.ts';
 import { INTEGRATION_COMMANDS } from '../../shared/integrations.ts';
 import { TASK_STATUSES } from '../../shared/taskTypes.ts';
@@ -38,6 +38,10 @@ const bots = sqliteTable('bots', {
     mascotShape: text('mascot_shape', { enum: MASCOT_SHAPES })
         .notNull()
         .default('puff'),
+    // The resting face. Existing bots keep the arcs they had.
+    mascotEyes: text('mascot_eyes', { enum: MASCOT_EYES })
+        .notNull()
+        .default('smile'),
 });
 
 // `sequence` is the insertion order and the paging cursor. AUTOINCREMENT keeps
@@ -523,6 +527,9 @@ const channelMessages = sqliteTable('channel_messages', {
         .notNull(),
     authorShape: text('author_shape', { enum: MASCOT_SHAPES })
         .notNull(),
+    authorEyes: text('author_eyes', { enum: MASCOT_EYES })
+        .notNull()
+        .default('smile'),
     role: text('role', { enum: MESSAGE_ROLES })
         .notNull(),
     kind: text('kind')

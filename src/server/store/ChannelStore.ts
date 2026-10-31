@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
-import type { MascotColorName, MascotShape } from '../../shared/mascot.ts';
-import { readMascotColor } from '../../shared/mascot.ts';
+import type { MascotColorName, MascotEyes, MascotShape } from '../../shared/mascot.ts';
+import { readMascotColor, readMascotEyes, readMascotShape } from '../../shared/mascot.ts';
 import type { MessageBody, ChatRole } from '../../shared/chatTypes.ts';
 import { channelMembers, channelMessages, channels } from './schema.ts';
 import type { AppDatabase, StoreOptions } from './types.ts';
@@ -41,6 +41,7 @@ interface NewChannelMessage {
     authorName: string;
     authorColor: MascotColorName;
     authorShape: MascotShape;
+    authorEyes: MascotEyes;
     role: ChatRole;
     kind: string;
     body: MessageBody;
@@ -239,6 +240,7 @@ class ChannelStore {
                 authorName: message.authorName,
                 authorColor: message.authorColor,
                 authorShape: message.authorShape,
+                authorEyes: message.authorEyes,
                 role: message.role,
                 kind: message.kind,
                 content: message.body,
@@ -260,6 +262,7 @@ class ChannelStore {
             authorName: message.authorName,
             authorColor: message.authorColor,
             authorShape: message.authorShape,
+            authorEyes: message.authorEyes,
             role: message.role,
             kind: message.kind,
             body: message.body,
@@ -285,7 +288,8 @@ class ChannelStore {
                 authorBotId: row.authorBotId ?? undefined,
                 authorName: row.authorName,
                 authorColor: readMascotColor(row.authorColor),
-                authorShape: row.authorShape,
+                authorShape: readMascotShape(row.authorShape),
+                authorEyes: readMascotEyes(row.authorEyes),
                 role: row.role,
                 kind: row.kind,
                 body: row.content,

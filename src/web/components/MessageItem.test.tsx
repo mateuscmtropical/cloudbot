@@ -47,7 +47,7 @@ describe('answered setup messages', () => {
         const text = [`Message from bot News`, NOT_OWNER_LINE, '', 'Find the top video today.'].join('\n');
         const message = { id: 'handoff', botId: 'bot', role: 'user' as const, sequence: 3, createdAt: 3, body: { kind: 'text' as const, text } };
 
-        const { container } = render(<MessageItem message={message} actions={actions} handoffSender={{ mascotColor: 'blue', mascotShape: 'puff' }} />);
+        const { container } = render(<MessageItem message={message} actions={actions} handoffSender={{ mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile' }} />);
 
         expect(screen.getByText('News'))
             .toBeTruthy();

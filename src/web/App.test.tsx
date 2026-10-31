@@ -63,7 +63,7 @@ function createBot(name: string, id = 'bot-1'): BotSummary {
         id,
         name,
         title: 'Coworker',
-        mascotColor: 'blue', mascotShape: 'puff',
+        mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile',
         lastMessagePreview: '',
         hasUnread: false, lastMessageSequence: 0,
     };

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { asc, eq } from 'drizzle-orm';
 
-import { randomMascot, readMascotColor } from '../../shared/mascot.ts';
+import { randomMascot, readMascotColor, readMascotEyes, readMascotShape } from '../../shared/mascot.ts';
 import type { MascotChoice } from '../../shared/mascot.ts';
 import { bots, turnQueue, turnWaits } from './schema.ts';
 import type { StoredUploadRecord } from './schema.ts';
@@ -17,6 +17,13 @@ interface QueuedTurnRecord {
     text: string;
     uploads: StoredUploadRecord[];
     source: 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot';
+}
+
+type BotRow = typeof bots.$inferSelect;
+
+// A stored look that is not known any more, such as a removed color, reads as the default, so the bot still shows up.
+function readBotRow(row: BotRow): Bot {
+    return { ...row, mascotColor: readMascotColor(row.mascotColor), mascotShape: readMascotShape(row.mascotShape), mascotEyes: readMascotEyes(row.mascotEyes) };
 }
 
 interface UsageWaitRecord {
@@ -44,6 +51,7 @@ class BotStore {
             createdAt: this.now(),
             mascotColor: mascot.color,
             mascotShape: mascot.shape,
+            mascotEyes: mascot.eyes,
         };
         const insertedRows = await this.database.insert(bots)
             .values(newBot)
@@ -54,7 +62,7 @@ class BotStore {
             throw new Error('Inserting a bot returned no row');
         }
 
-        return { ...insertedBot, mascotColor: readMascotColor(insertedBot.mascotColor) };
+        return readBotRow(insertedBot);
     }
 
     // Removes the bot row. Every table that keeps per-bot rows cascades from it, so they go too.
@@ -76,7 +84,7 @@ class BotStore {
             return undefined;
         }
 
-        return { ...bot, mascotColor: readMascotColor(bot.mascotColor) };
+        return readBotRow(bot);
     }
 
     async list(): Promise<Bot[]> {
@@ -86,7 +94,7 @@ class BotStore {
             .from(bots)
             .orderBy(oldestFirst, byIdAscending);
 
-        return rows.map(row => ({ ...row, mascotColor: readMascotColor(row.mascotColor) }));
+        return rows.map(row => readBotRow(row));
     }
 
     // Only the fields present in `changes` are written, so a partial update never overwrites the others.
@@ -104,11 +112,12 @@ class BotStore {
     }
 
     // Only the mascot fields present in `changes` are written.
-    async updateMascot(botId: string, changes: { color?: MascotChoice['color'] | undefined; shape?: MascotChoice['shape'] | undefined }): Promise<Bot | undefined> {
+    async updateMascot(botId: string, changes: Partial<MascotChoice>): Promise<Bot | undefined> {
         const botCondition = eq(bots.id, botId);
         const mascotChanges = {
             ...(changes.color === undefined ? {} : { mascotColor: changes.color }),
             ...(changes.shape === undefined ? {} : { mascotShape: changes.shape }),
+            ...(changes.eyes === undefined ? {} : { mascotEyes: changes.eyes }),
         };
 
         if (Object.keys(mascotChanges).length > 0) {

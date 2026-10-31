@@ -892,7 +892,7 @@ function App(): ReactElement {
     function handleChangeMascot(botId: string, mascot: MascotChoice): Promise<string | undefined> {
         return changeBotMascot(botId, mascot)
             .then((changed) => {
-                setBots(previousBots => previousBots.map(bot => (bot.id === changed.id ? { ...bot, mascotColor: changed.mascotColor, mascotShape: changed.mascotShape } : bot)));
+                setBots(previousBots => previousBots.map(bot => (bot.id === changed.id ? { ...bot, mascotColor: changed.mascotColor, mascotShape: changed.mascotShape, mascotEyes: changed.mascotEyes } : bot)));
 
                 return undefined;
             })

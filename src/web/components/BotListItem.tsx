@@ -50,7 +50,7 @@ function BotListItem({ bot, isSelected, mascotState, onPointerUp, onClick, actio
                 onContextMenu={pressHold.onContextMenu}
                 onClick={onClick}
             >
-                <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={44} />
+                <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} eyes={bot.mascotEyes} state={mascotState} size={44} />
                 <span className="bot-text">
                     <span className="bot-name-line">
                         <span className="bot-name">{bot.name}</span>

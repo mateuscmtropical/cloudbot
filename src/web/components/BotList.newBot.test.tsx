@@ -6,7 +6,7 @@ import type { BotSummary } from '../../shared/chatTypes.ts';
 import { BotList } from './BotList.tsx';
 
 const BOTS: BotSummary[] = [
-    { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 },
+    { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 },
 ];
 
 describe('BotList new bot button', () => {

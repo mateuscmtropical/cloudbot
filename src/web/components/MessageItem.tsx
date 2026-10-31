@@ -34,7 +34,7 @@ interface MessageItemProps {
     message: ChatMessage;
     actions: MessageActions;
     // The bot that sent a hand-off. Its mascot shows beside the message, and the default mascot when it is gone.
-    handoffSender?: Pick<BotSummary, 'mascotColor' | 'mascotShape'> | undefined;
+    handoffSender?: Pick<BotSummary, 'mascotColor' | 'mascotShape' | 'mascotEyes'> | undefined;
 }
 
 function renderBody(message: ChatMessage, actions: MessageActions): ReactElement | null {
@@ -170,7 +170,7 @@ function renderHandoff(sender: ParsedBotHandoff, handoffSender: MessageItemProps
         <div className="message message-handoff has-mascot">
             {handoffSender === undefined
                 ? <span className="mascot-gap" style={{ width: HANDOFF_MASCOT_SIZE }} aria-hidden="true" />
-                : <CloudMascot color={handoffSender.mascotColor} shape={handoffSender.mascotShape} state="idle" size={HANDOFF_MASCOT_SIZE} />}
+                : <CloudMascot color={handoffSender.mascotColor} shape={handoffSender.mascotShape} eyes={handoffSender.mascotEyes} state="idle" size={HANDOFF_MASCOT_SIZE} />}
             <div className="text-message">
                 <div className="handoff-sender">{sender.senderName}</div>
                 <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(sender.text) }} />

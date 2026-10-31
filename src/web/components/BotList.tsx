@@ -129,7 +129,7 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
                         if (renamingBotId === bot.id && onRenameBot !== undefined) {
                             return (
                                 <div key={bot.id} className={`${itemClassName} is-renaming`}>
-                                    <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={40} />
+                                    <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} eyes={bot.mascotEyes} state={mascotState} size={40} />
                                     <span className="bot-text">
                                         <span className="bot-name-line">
                                             <RenameField

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MASCOT_COLORS, MASCOT_COLOR_NAMES, MASCOT_SHAPES, readMascotColor, randomMascot } from './mascot.ts';
+import { MASCOT_COLORS, MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_FACE_COLORS, MASCOT_PRESETS, MASCOT_SHAPES, readMascotColor, readMascotEyes, randomMascot } from './mascot.ts';
 
 // The relative luminance of a color, from its hex text, as WCAG defines it.
 function relativeLuminance(hex: string): number {
@@ -17,22 +17,36 @@ function whiteContrast(hex: string): number {
     return 1.05 / (colorLuminance + 0.05);
 }
 
-// The lowest contrast the palette keeps for a white face.
+// The lowest contrast the vivid colors keep for a white face. The pastel colors follow the mascot sheet instead.
 const MIN_FACE_CONTRAST = 3;
+const VIVID_COLOR_COUNT = 9;
 
 describe('mascot palette', () => {
-    it('keeps at least 3 to 1 contrast between a white face and every color', () => {
-        MASCOT_COLOR_NAMES.forEach((name) => {
+    it('keeps at least 3 to 1 contrast between a white face and every vivid color', () => {
+        const vividNames = MASCOT_COLOR_NAMES.slice(0, VIVID_COLOR_COUNT);
+
+        vividNames.forEach((name) => {
             expect(whiteContrast(MASCOT_COLORS[name]))
                 .toBeGreaterThanOrEqual(MIN_FACE_CONTRAST);
         });
     });
 
-    it('has nine colors and four shapes', () => {
-        expect(MASCOT_COLOR_NAMES)
-            .toHaveLength(9);
-        expect(MASCOT_SHAPES)
-            .toHaveLength(4);
+    it('gives a white body a face that is not white', () => {
+        expect(MASCOT_FACE_COLORS.white)
+            .not.toBe(MASCOT_COLORS.white);
+    });
+
+    it('has a ready look for each of the twelve clouds of the mascot sheet, made of known parts', () => {
+        expect(MASCOT_PRESETS)
+            .toHaveLength(12);
+        MASCOT_PRESETS.forEach((preset) => {
+            expect(MASCOT_COLOR_NAMES)
+                .toContain(preset.color);
+            expect(MASCOT_SHAPES)
+                .toContain(preset.shape);
+            expect(MASCOT_EYES)
+                .toContain(preset.eyes);
+        });
     });
 
     it('has no yellow, which reads as brown', () => {
@@ -57,14 +71,23 @@ describe('readMascotColor', () => {
     });
 });
 
+describe('readMascotEyes', () => {
+    it('keeps known eyes and reads unknown eyes as the smile', () => {
+        expect(readMascotEyes('hearts'))
+            .toBe('hearts');
+        expect(readMascotEyes('lasers'))
+            .toBe('smile');
+    });
+});
+
 describe('randomMascot', () => {
-    it('takes the first color and shape for a random source that returns 0', () => {
+    it('takes the first look of the sheet for a random source that returns 0', () => {
         expect(randomMascot(() => 0))
-            .toEqual({ color: 'blue', shape: 'puff' });
+            .toEqual({ color: 'white', shape: 'puff', eyes: 'cross' });
     });
 
-    it('takes the last color and shape for a random source that returns almost 1', () => {
+    it('takes the last look of the sheet for a random source that returns almost 1', () => {
         expect(randomMascot(() => 0.999))
-            .toEqual({ color: 'green', shape: 'bubble' });
+            .toEqual({ color: 'iris', shape: 'bubble', eyes: 'happy' });
     });
 });

@@ -1,5 +1,5 @@
 import type { ChatRole, MessageBody } from './chatTypes.ts';
-import type { MascotColorName, MascotShape } from './mascot.ts';
+import type { MascotColorName, MascotEyes, MascotShape } from './mascot.ts';
 
 // A bot in a channel, shown with its current name and mascot.
 interface ChannelMemberView {
@@ -7,6 +7,7 @@ interface ChannelMemberView {
     name: string;
     mascotColor: MascotColorName;
     mascotShape: MascotShape;
+    mascotEyes: MascotEyes;
     isManager: boolean;
 }
 
@@ -23,6 +24,7 @@ interface ChannelPostView {
     authorName: string;
     authorColor: MascotColorName;
     authorShape: MascotShape;
+    authorEyes: MascotEyes;
     role: ChatRole;
     body: MessageBody;
 }

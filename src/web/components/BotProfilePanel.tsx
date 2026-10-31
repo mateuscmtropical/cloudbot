@@ -2,8 +2,8 @@ import { useState } from 'react';
 import type { KeyboardEvent, ReactElement } from 'react';
 
 import type { BotSummary } from '../../shared/chatTypes.ts';
-import { MASCOT_COLORS, MASCOT_COLOR_NAMES, MASCOT_SHAPES } from '../../shared/mascot.ts';
-import type { MascotChoice, MascotColorName, MascotShape } from '../../shared/mascot.ts';
+import { MASCOT_COLORS, MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_PRESETS, MASCOT_SHAPES } from '../../shared/mascot.ts';
+import type { MascotChoice } from '../../shared/mascot.ts';
 import { NotificationsSection } from './AccountPanel.tsx';
 import type { PushControls } from './AccountPanel.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
@@ -28,10 +28,8 @@ interface BotProfilePanelProps {
     pushControls?: PushControls | undefined;
 }
 
-interface BotDraft {
+interface BotDraft extends MascotChoice {
     name: string;
-    color: MascotColorName;
-    shape: MascotShape;
 }
 
 interface BotEditFormProps {
@@ -43,7 +41,7 @@ interface BotEditFormProps {
     onDone: () => void;
 }
 
-// The name, the color and the shape change together. Save writes only what changed. Cancel or Escape keeps the bot as it was.
+// The name and the look change together. A ready look from the mascot sheet sets the color, the shape and the eyes at once. Save writes only what changed. Cancel or Escape keeps the bot as it was.
 function BotEditForm({ bot, draft, onDraftChange, onRenameBot, onChangeMascot, onDone }: BotEditFormProps): ReactElement {
     const [problem, setProblem] = useState<string | undefined>(undefined);
     const [isSaving, setIsSaving] = useState(false);
@@ -51,14 +49,14 @@ function BotEditForm({ bot, draft, onDraftChange, onRenameBot, onChangeMascot, o
     async function save(): Promise<void> {
         const name = draft.name.trim();
         const isNameChanged = name !== bot.name;
-        const isMascotChanged = draft.color !== bot.mascotColor || draft.shape !== bot.mascotShape;
+        const isMascotChanged = draft.color !== bot.mascotColor || draft.shape !== bot.mascotShape || draft.eyes !== bot.mascotEyes;
 
         setIsSaving(true);
         setProblem(undefined);
 
         const nameProblem = isNameChanged ? await onRenameBot(bot.id, name) : undefined;
         const mascotProblem = nameProblem === undefined && isMascotChanged
-            ? await onChangeMascot(bot.id, { color: draft.color, shape: draft.shape })
+            ? await onChangeMascot(bot.id, { color: draft.color, shape: draft.shape, eyes: draft.eyes })
             : undefined;
         const saveProblem = nameProblem ?? mascotProblem;
 
@@ -109,6 +107,23 @@ function BotEditForm({ bot, draft, onDraftChange, onRenameBot, onChangeMascot, o
                 />
             </label>
             <fieldset className="bot-edit-choices">
+                <legend>Look</legend>
+                {MASCOT_PRESETS.map(preset => (
+                    <label key={preset.label} className="bot-edit-choice" title={preset.label}>
+                        <input
+                            type="radio"
+                            name="mascot-look"
+                            aria-label={preset.label}
+                            checked={draft.color === preset.color && draft.shape === preset.shape && draft.eyes === preset.eyes}
+                            onChange={() => {
+                                onDraftChange({ ...draft, color: preset.color, shape: preset.shape, eyes: preset.eyes });
+                            }}
+                        />
+                        <CloudMascot color={preset.color} shape={preset.shape} eyes={preset.eyes} state="idle" size={36} />
+                    </label>
+                ))}
+            </fieldset>
+            <fieldset className="bot-edit-choices">
                 <legend>Color</legend>
                 {MASCOT_COLOR_NAMES.map(colorName => (
                     <label key={colorName} className="bot-edit-choice" title={colorName}>
@@ -138,10 +153,28 @@ function BotEditForm({ bot, draft, onDraftChange, onRenameBot, onChangeMascot, o
                                 onDraftChange({ ...draft, shape: shapeName });
                             }}
                         />
-                        <CloudMascot color={draft.color} shape={shapeName} state="idle" size={36} />
+                        <CloudMascot color={draft.color} shape={shapeName} eyes={draft.eyes} state="idle" size={36} />
                     </label>
                 ))}
             </fieldset>
+            <fieldset className="bot-edit-choices">
+                <legend>Eyes</legend>
+                {MASCOT_EYES.map(eyesName => (
+                    <label key={eyesName} className="bot-edit-choice" title={eyesName}>
+                        <input
+                            type="radio"
+                            name="mascot-eyes"
+                            aria-label={eyesName}
+                            checked={draft.eyes === eyesName}
+                            onChange={() => {
+                                onDraftChange({ ...draft, eyes: eyesName });
+                            }}
+                        />
+                        <CloudMascot color={draft.color} shape={draft.shape} eyes={eyesName} state="idle" size={36} />
+                    </label>
+                ))}
+            </fieldset>
+            {' '}
             {problem === undefined ? null : <p className="bot-edit-problem" role="alert">{problem}</p>}
             <div className="bot-edit-actions">
                 <button type="button" className="choice-button" disabled={isSaving} onClick={onDone}>Cancel</button>
@@ -157,9 +190,10 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [deleteError, setDeleteError] = useState<string | undefined>(undefined);
     const [isDeleting, setIsDeleting] = useState(false);
-    // While editing, the mascot shows the color and the shape that Save would keep.
+    // While editing, the mascot shows the look that Save would keep.
     const shownColor = draft?.color ?? bot.mascotColor;
     const shownShape = draft?.shape ?? bot.mascotShape;
+    const shownEyes = draft?.eyes ?? bot.mascotEyes;
 
     async function confirmDelete(): Promise<void> {
         setIsDeleting(true);
@@ -206,7 +240,7 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
 
             <div className="bot-profile-content">
                 <div className="bot-profile-hero">
-                    <CloudMascot color={shownColor} shape={shownShape} state="idle" size={90} />
+                    <CloudMascot color={shownColor} shape={shownShape} eyes={shownEyes} state="idle" size={90} />
                     {draft === undefined
                         ? (
                                 <>
@@ -215,7 +249,7 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
                                         type="button"
                                         className="bot-profile-edit"
                                         onClick={() => {
-                                            setDraft({ name: bot.name, color: bot.mascotColor, shape: bot.mascotShape });
+                                            setDraft({ name: bot.name, color: bot.mascotColor, shape: bot.mascotShape, eyes: bot.mascotEyes });
                                         }}
                                     >
                                         Edit

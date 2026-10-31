@@ -297,6 +297,11 @@ svg {
     min-width: 0;
 }
 
+/* A white cloud gets a soft shadow, so it still stands out on a light page. */
+.cloud-mascot[data-color="white"] .cloud-body {
+    filter: drop-shadow(0 1px 3px rgb(15 30 60 / 30%));
+}
+
 .cloud-mascot svg {
     width: 100%;
     height: 100%;
@@ -2444,6 +2449,8 @@ button.list-row {
     width: 28px;
     height: 28px;
     border-radius: 50%;
+    /* A thin ring keeps the white swatch visible on a light page. */
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 15%);
 }
 
 .bot-edit-problem {
