@@ -7,7 +7,7 @@ const SOURCE: BotTemplateSource = {
     name: 'Ana',
     title: 'Mail helper',
     description: 'Sorts my mail each morning.',
-    mascot: { color: 'mint', shape: 'tall' },
+    mascot: { color: 'mint', shape: 'tall', eyes: 'stars' },
     rules: [
         { kind: 'block', text: 'Never send mail on my behalf.', blockedTools: ['Bash', 'WebFetch'] },
         { kind: 'allow', text: 'Mail summaries are fine.', blockedTools: [] },
@@ -216,6 +216,15 @@ describe('botTemplate', () => {
     it('refuses a mascot color or shape that does not exist', () => {
         expect(parseBotTemplate(fileWith({ mascot: { color: 'plaid', shape: 'tall' } })).ok)
             .toBe(false);
+        expect(parseBotTemplate(fileWith({ mascot: { color: 'mint', shape: 'tall', eyes: 'lasers' } })).ok)
+            .toBe(false);
+    });
+
+    it('gives a mascot from an older template without eyes the default smile', () => {
+        const parsed = parseBotTemplate(fileWith({ mascot: { color: 'mint', shape: 'tall' } }));
+
+        expect(parsed.ok && parsed.template.mascot)
+            .toEqual({ color: 'mint', shape: 'tall', eyes: 'smile' });
     });
 
     it('names the file after the bot and falls back when the name has no letters or digits', () => {

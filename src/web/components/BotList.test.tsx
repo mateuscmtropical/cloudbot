@@ -7,8 +7,8 @@ import type { ChannelSummary } from '../../shared/channelTypes.ts';
 import { BotList } from './BotList.tsx';
 
 const BOTS: BotSummary[] = [
-    { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 },
-    { id: 'bot-b', name: 'Bia', title: 'Assistant', mascotColor: 'pink', mascotShape: 'bubble', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 },
+    { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 },
+    { id: 'bot-b', name: 'Bia', title: 'Assistant', mascotColor: 'pink', mascotShape: 'bubble', mascotEyes: 'smile', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 },
 ];
 
 describe('BotList', () => {
@@ -113,8 +113,8 @@ describe('BotList', () => {
                 id: 'channel-1',
                 name: 'Project',
                 members: [
-                    { botId: 'bot-a', name: 'Ana', mascotColor: 'blue', mascotShape: 'puff', isManager: true },
-                    { botId: 'bot-b', name: 'Bia', mascotColor: 'pink', mascotShape: 'bubble', isManager: false },
+                    { botId: 'bot-a', name: 'Ana', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', isManager: true },
+                    { botId: 'bot-b', name: 'Bia', mascotColor: 'pink', mascotShape: 'bubble', mascotEyes: 'smile', isManager: false },
                 ],
             },
         ];

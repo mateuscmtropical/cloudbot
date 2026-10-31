@@ -4,7 +4,7 @@ import type { BotSummary } from '../shared/chatTypes.ts';
 import { markUnread, updateSeen } from './unreadMarks.ts';
 
 function createBot(id: string, lastMessageSequence: number): BotSummary {
-    return { id, name: id, title: '', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false, lastMessageSequence };
+    return { id, name: id, title: '', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', lastMessagePreview: '', hasUnread: false, lastMessageSequence };
 }
 
 describe('updateSeen', () => {

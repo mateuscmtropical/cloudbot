@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod/v4';
 
-import type { MascotColorName, MascotShape } from '../../shared/mascot.ts';
+import type { MascotColorName, MascotEyes, MascotShape } from '../../shared/mascot.ts';
 import { BotStore } from '../store/BotStore.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
@@ -9,8 +9,14 @@ import type { Bot } from '../store/types.ts';
 import { SET_MASCOT_TOOL_FULL_NAME, SET_MASCOT_TOOL_SHAPE, createSetMascotTool } from './createProfileToolServer.ts';
 
 // The SDK types optional fields as present with undefined, so the test passes both keys.
-function buildArguments(color: MascotColorName | undefined, shape: MascotShape | undefined): { color: MascotColorName | undefined; shape: MascotShape | undefined } {
-    return { color, shape };
+interface MascotArguments {
+    color: MascotColorName | undefined;
+    shape: MascotShape | undefined;
+    eyes: MascotEyes | undefined;
+}
+
+function buildArguments(color: MascotColorName | undefined, shape: MascotShape | undefined, eyes?: MascotEyes): MascotArguments {
+    return { color, shape, eyes };
 }
 
 describe('createSetMascotTool', () => {
@@ -46,6 +52,17 @@ describe('createSetMascotTool', () => {
             .toBeUndefined();
         await expect(botStore.getById(bot.id))
             .resolves.toMatchObject({ mascotColor: 'mint', mascotShape: 'wide' });
+    });
+
+    it('saves the eyes the model passes', async () => {
+        const tool = createSetMascotTool(botStore, bot.id);
+
+        const result = await tool.handler(buildArguments(undefined, undefined, 'hearts'), undefined);
+
+        expect(result.isError)
+            .toBeUndefined();
+        await expect(botStore.getById(bot.id))
+            .resolves.toMatchObject({ mascotEyes: 'hearts' });
     });
 
     it('changes only the field the model passes', async () => {

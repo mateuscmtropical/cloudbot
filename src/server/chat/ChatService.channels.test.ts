@@ -71,6 +71,7 @@ describe('ChatService deleting a bot that manages a channel', () => {
             authorName: 'Ben',
             authorColor: 'blue',
             authorShape: 'puff',
+            authorEyes: 'smile',
             role: 'assistant',
             kind: 'text',
             body: { kind: 'text', text: 'Done.' },

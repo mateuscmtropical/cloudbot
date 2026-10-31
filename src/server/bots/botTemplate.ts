@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 
-import { MASCOT_COLOR_NAMES, MASCOT_SHAPES } from '../../shared/mascot.ts';
+import { MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES } from '../../shared/mascot.ts';
 import type { MascotChoice } from '../../shared/mascot.ts';
 import { parseSchedule } from '../routines/schedule.ts';
 import type { RoutineSchedule } from '../routines/schedule.ts';
@@ -103,6 +103,9 @@ const routineSchema = z.object({
 const mascotSchema = z.object({
     color: z.enum(MASCOT_COLOR_NAMES),
     shape: z.enum(MASCOT_SHAPES),
+    // Templates made before the eyes existed have none, so they get the default smile.
+    eyes: z.enum(MASCOT_EYES)
+        .default('smile'),
 })
     .strict();
 

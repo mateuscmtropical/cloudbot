@@ -12,7 +12,7 @@ const BOT: BotSummary = {
     name: 'Outbound Prospecting',
     title: 'Assistant',
     mascotColor: 'pink',
-    mascotShape: 'bubble',
+    mascotShape: 'bubble', mascotEyes: 'smile',
     lastMessagePreview: '',
     hasUnread: false,
     lastMessageSequence: 0,
@@ -93,7 +93,34 @@ describe('BotProfilePanel', () => {
         expect(onRenameBot)
             .toHaveBeenCalledWith(BOT.id, 'New name');
         expect(onChangeMascot)
-            .toHaveBeenCalledWith(BOT.id, { color: 'mint', shape: 'wide' });
+            .toHaveBeenCalledWith(BOT.id, { color: 'mint', shape: 'wide', eyes: 'smile' });
+    });
+
+    it('sets the color, the shape and the eyes at once from a ready look, and the eyes alone after', async () => {
+        const onChangeMascot = vi.fn(() => Promise.resolve(undefined));
+
+        render(
+            <BotProfilePanel
+                bot={BOT}
+                onClose={vi.fn()}
+                onRenameBot={vi.fn(() => Promise.resolve(undefined))}
+                onChangeMascot={onChangeMascot}
+                onDeleteBot={vi.fn(() => Promise.resolve(undefined))}
+                onOpenConnectApps={vi.fn()}
+                onOpenScreen={vi.fn()}
+                pushControls={createPushControls()}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+        fireEvent.click(screen.getByRole('radio', { name: 'Hearts' }));
+        fireEvent.click(screen.getByRole('radio', { name: 'stars' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        expect(await screen.findByRole('button', { name: 'Edit' }))
+            .toBeTruthy();
+        expect(onChangeMascot)
+            .toHaveBeenCalledWith(BOT.id, { color: 'rose', shape: 'puff', eyes: 'stars' });
     });
 
     it('keeps the form open with the reason when the name is refused, and saves nothing else', async () => {

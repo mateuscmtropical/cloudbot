@@ -28,6 +28,7 @@ const RECENT_MESSAGE_LIMIT = 100;
 const OWNER_NAME = 'You';
 const OWNER_COLOR = 'blue';
 const OWNER_SHAPE = 'puff';
+const OWNER_EYES = 'smile';
 
 function readText(requestBody: unknown): string {
     if (typeof requestBody !== 'object' || requestBody === null || !('text' in requestBody)) {
@@ -52,7 +53,7 @@ function toMemberViews(channel: Channel, bots: Map<string, Bot>): ChannelMemberV
             return [];
         }
 
-        return [{ botId: bot.id, name: bot.name, mascotColor: bot.mascotColor, mascotShape: bot.mascotShape, isManager: member.isManager }];
+        return [{ botId: bot.id, name: bot.name, mascotColor: bot.mascotColor, mascotShape: bot.mascotShape, mascotEyes: bot.mascotEyes, isManager: member.isManager }];
     });
 }
 
@@ -67,6 +68,7 @@ function toPostView(message: ChannelMessage): ChannelPostView {
         authorName: message.authorName,
         authorColor: message.authorColor,
         authorShape: message.authorShape,
+        authorEyes: message.authorEyes,
         role: message.role,
         body: message.body,
     };
@@ -132,6 +134,7 @@ function createChannelRoutes(options: ChannelRoutesOptions): Hono {
             authorName: OWNER_NAME,
             authorColor: OWNER_COLOR,
             authorShape: OWNER_SHAPE,
+            authorEyes: OWNER_EYES,
             role: 'user',
             kind: 'text',
             body: { kind: 'text', text },

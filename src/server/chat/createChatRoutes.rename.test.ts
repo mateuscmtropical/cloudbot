@@ -128,28 +128,29 @@ describe('bot mascot route', () => {
         await rm(dataDir, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
     });
 
-    it('changes the color and the shape and answers the summary', async () => {
+    it('changes the color, the shape and the eyes and answers the summary', async () => {
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
-        const response = await app.request(`/api/bots/${bot.id}/mascot`, putMascot({ color: 'mint', shape: 'wide' }));
+        const response = await app.request(`/api/bots/${bot.id}/mascot`, putMascot({ color: 'mint', shape: 'wide', eyes: 'hearts' }));
 
         expect(response.status)
             .toBe(200);
         expect(await response.json())
-            .toMatchObject({ id: bot.id, mascotColor: 'mint', mascotShape: 'wide' });
+            .toMatchObject({ id: bot.id, mascotColor: 'mint', mascotShape: 'wide', mascotEyes: 'hearts' });
     });
 
-    it('refuses an unknown color or shape and an empty body, and keeps the mascot', async () => {
+    it('refuses an unknown color, shape or eyes and an empty body, and keeps the mascot', async () => {
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
         const path = `/api/bots/${bot.id}/mascot`;
         const unknownColor = await app.request(path, putMascot({ color: 'gold', shape: 'wide' }));
         const unknownShape = await app.request(path, putMascot({ shape: 'square' }));
+        const unknownEyes = await app.request(path, putMascot({ color: 'mint', eyes: 'lasers' }));
         const empty = await app.request(path, putMascot({}));
         const unchanged = await botStore.getById(bot.id);
 
-        expect([unknownColor.status, unknownShape.status, empty.status])
-            .toEqual([400, 400, 400]);
-        expect(unchanged?.mascotShape)
-            .toBe(bot.mascotShape);
+        expect([unknownColor.status, unknownShape.status, unknownEyes.status, empty.status])
+            .toEqual([400, 400, 400, 400]);
+        expect(unchanged)
+            .toMatchObject({ mascotColor: bot.mascotColor, mascotShape: bot.mascotShape, mascotEyes: bot.mascotEyes });
     });
 
     it('answers 404 for a bot that does not exist', async () => {

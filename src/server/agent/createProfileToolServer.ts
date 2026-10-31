@@ -2,7 +2,7 @@ import { tool } from './cloudbotTool.ts';
 import type { CloudbotTool } from './cloudbotTool.ts';
 import { z } from 'zod/v4';
 
-import { MASCOT_COLOR_NAMES, MASCOT_SHAPES } from '../../shared/mascot.ts';
+import { MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES } from '../../shared/mascot.ts';
 import type { BotStore } from '../store/BotStore.ts';
 import { ShareFileError } from '../files/shareFile.ts';
 import type { BotProfile } from '../store/types.ts';
@@ -12,12 +12,14 @@ const PROFILE_SERVER_NAME = 'cloudbot';
 const UPDATE_PROFILE_TOOL_NAME = 'update_profile';
 const SET_MASCOT_TOOL_NAME = 'profile_set_mascot';
 const SET_MASCOT_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${SET_MASCOT_TOOL_NAME}`;
-const SET_MASCOT_DESCRIPTION = `Change this bot's mascot, the cloud the owner sees next to its name. Pass a color, one of ${MASCOT_COLOR_NAMES.join(', ')}, or a shape, one of ${MASCOT_SHAPES.join(', ')}. Only the fields you pass change.`;
+const SET_MASCOT_DESCRIPTION = `Change this bot's mascot, the cloud the owner sees next to its name. Pass a color, one of ${MASCOT_COLOR_NAMES.join(', ')}, a shape, one of ${MASCOT_SHAPES.join(', ')}, or eyes, one of ${MASCOT_EYES.join(', ')}. The eyes are the face it shows at rest. Only the fields you pass change.`;
 
 const SET_MASCOT_TOOL_SHAPE = {
     color: z.enum(MASCOT_COLOR_NAMES)
         .optional(),
     shape: z.enum(MASCOT_SHAPES)
+        .optional(),
+    eyes: z.enum(MASCOT_EYES)
         .optional(),
 };
 // The model calls the tool by this full name, and allowedTools needs it too.
@@ -131,17 +133,22 @@ function createSetMascotTool(botStore: BotStore, botId: string): CloudbotTool<ty
         SET_MASCOT_DESCRIPTION,
         SET_MASCOT_TOOL_SHAPE,
         async (args): Promise<ProfileToolResult> => {
-            if (args.color === undefined && args.shape === undefined) {
-                return textResult('Pass a color, a shape or both. Nothing changed.', true);
+            if (args.color === undefined && args.shape === undefined && args.eyes === undefined) {
+                return textResult('Pass a color, a shape, eyes or several. Nothing changed.', true);
             }
 
-            const updatedBot = await botStore.updateMascot(botId, { color: args.color, shape: args.shape });
+            const changes = {
+                ...(args.color === undefined ? {} : { color: args.color }),
+                ...(args.shape === undefined ? {} : { shape: args.shape }),
+                ...(args.eyes === undefined ? {} : { eyes: args.eyes }),
+            };
+            const updatedBot = await botStore.updateMascot(botId, changes);
 
             if (updatedBot === undefined) {
                 return textResult('This bot no longer exists, so its mascot cannot change.', true);
             }
 
-            return textResult(`Mascot updated. Color: ${updatedBot.mascotColor}. Shape: ${updatedBot.mascotShape}.`, false);
+            return textResult(`Mascot updated. Color: ${updatedBot.mascotColor}. Shape: ${updatedBot.mascotShape}. Eyes: ${updatedBot.mascotEyes}.`, false);
         },
     );
 }

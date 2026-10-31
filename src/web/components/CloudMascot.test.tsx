@@ -3,12 +3,12 @@ import { act, cleanup, render } from '@testing-library/react';
 import type { RenderResult } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MASCOT_COLORS } from '../../shared/mascot.ts';
+import { MASCOT_COLORS, MASCOT_EYES, MASCOT_FACE_COLORS, MASCOT_SHAPES } from '../../shared/mascot.ts';
 import type { MascotState } from '../mascotState.ts';
 import { CloudMascot, pickBlinkDelayMs } from './CloudMascot.tsx';
 
 const ALL_STATES: MascotState[] = ['idle', 'typing', 'thinking', 'done', 'waiting', 'sleepy', 'error'];
-const ALL_SHAPES = ['puff', 'tall', 'wide', 'bubble'] as const;
+const ALL_SHAPES = MASCOT_SHAPES;
 
 // Makes matchMedia answer the reduced motion query with the given value.
 function setPrefersReducedMotion(prefers: boolean): void {
@@ -45,6 +45,38 @@ describe('CloudMascot', () => {
             .toBe(state);
         expect(face?.getAttribute('data-face'))
             .toBe(state);
+    });
+
+    it('draws different resting eyes for each choice, and keeps the thinking face whatever the eyes', () => {
+        const restingFaces = MASCOT_EYES.map((eyes) => {
+            const { container, unmount } = render(<CloudMascot color="blue" shape="puff" eyes={eyes} state="idle" />);
+            const markup = container.querySelector('.cloud-face')?.innerHTML ?? '';
+
+            unmount();
+
+            return markup;
+        });
+        const thinkingFaces = MASCOT_EYES.map((eyes) => {
+            const { container, unmount } = render(<CloudMascot color="blue" shape="puff" eyes={eyes} state="thinking" />);
+            const markup = container.querySelector('.cloud-face')?.innerHTML ?? '';
+
+            unmount();
+
+            return markup;
+        });
+
+        expect(new Set(restingFaces).size)
+            .toBe(MASCOT_EYES.length);
+        expect(new Set(thinkingFaces).size)
+            .toBe(1);
+    });
+
+    it('draws the face of a white cloud in its own color, not in white', () => {
+        const { container } = render(<CloudMascot color="white" shape="puff" eyes="cross" state="idle" />);
+        const strokes = Array.from(container.querySelectorAll('.cloud-eyes path'), path => path.getAttribute('stroke'));
+
+        expect(strokes)
+            .toEqual([MASCOT_FACE_COLORS.white, MASCOT_FACE_COLORS.white]);
     });
 
     it('draws a different face for each state', () => {

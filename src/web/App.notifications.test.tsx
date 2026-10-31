@@ -55,7 +55,7 @@ vi.mock('./pushClient.ts', async (importOriginal) => {
 });
 
 function createBot(name: string, id: string): BotSummary {
-    return { id, name, title: 'Coworker', mascotColor: 'blue', mascotShape: 'puff', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
+    return { id, name, title: 'Coworker', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
 }
 
 const CARD: ChatMessage = {

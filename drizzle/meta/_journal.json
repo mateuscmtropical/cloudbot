@@ -183,6 +183,13 @@
       "when": 1792789199607,
       "tag": "0025_provider_model_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1793477668523,
+      "tag": "0026_mascot_eyes",
+      "breakpoints": true
     }
   ]
 }

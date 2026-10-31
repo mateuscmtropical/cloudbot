@@ -356,7 +356,7 @@ function ConversationView({
                 {isRenaming && bot !== undefined && onRenameBot !== undefined
                     ? (
                             <div className="bot-pill">
-                                <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={28} />
+                                <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} eyes={bot.mascotEyes} state={mascotState} size={28} />
                                 <RenameField
                                     name={bot.name}
                                     label={`Name of ${bot.name}`}
@@ -376,7 +376,7 @@ function ConversationView({
                                 aria-label="Open bot profile"
                                 onClick={onOpenProfile}
                             >
-                                {bot === undefined ? null : <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} state={mascotState} size={28} />}
+                                {bot === undefined ? null : <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} eyes={bot.mascotEyes} state={mascotState} size={28} />}
                                 <span
                                     className="bot-pill-name"
                                     onPointerUp={(event) => {

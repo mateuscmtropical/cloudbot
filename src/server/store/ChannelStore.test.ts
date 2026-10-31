@@ -111,6 +111,7 @@ describe('ChannelStore', () => {
             authorName: 'Ben',
             authorColor: 'blue',
             authorShape: 'puff',
+            authorEyes: 'smile',
             role: 'assistant',
             kind: 'text',
             body: { kind: 'text', text: 'Part two is done.' },
@@ -127,7 +128,7 @@ describe('ChannelStore', () => {
 
     it('returns the newest messages, oldest first', async () => {
         const channel = await channels.create({ name: 'Project', managerId, memberIds: [managerId] });
-        const base = { authorBotId: managerId, authorName: 'Ana', authorColor: 'blue' as const, authorShape: 'puff' as const, role: 'user' as const, kind: 'text' };
+        const base = { authorBotId: managerId, authorName: 'Ana', authorColor: 'blue' as const, authorShape: 'puff' as const, authorEyes: 'smile' as const, role: 'user' as const, kind: 'text' };
 
         await channels.appendMessage(channel.id, { ...base, body: { kind: 'text', text: 'one' } });
         await channels.appendMessage(channel.id, { ...base, body: { kind: 'text', text: 'two' } });
@@ -148,6 +149,7 @@ describe('ChannelStore', () => {
             authorName: 'Ana',
             authorColor: 'blue',
             authorShape: 'puff',
+            authorEyes: 'smile',
             role: 'user',
             kind: 'text',
             body: { kind: 'text', text: 'Hi' },

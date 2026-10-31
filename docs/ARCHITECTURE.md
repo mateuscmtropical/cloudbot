@@ -1640,13 +1640,20 @@ In agent-user mode the workspace belongs to the agent user, so the server cannot
 
 ## Bot mascot
 
-Each bot has a mascot: a cloud body in one of nine colors and one of four shapes, drawn
-in SVG by `src/web/components/CloudMascot.tsx`, with a white face. The color and shape are
-columns of `bots` (`mascot_color`, `mascot_shape`, migration 0011), chosen at random by
-`BotStore.create` and changed by the `profile_set_mascot` tool. `src/shared/mascot.ts` holds the palette.
-The owner changes them on the bot profile page. Edit turns the name into a field and shows the colors and the shapes, and
-the mascot above shows the pick. Save sends `PUT /api/bots/:id/name` when the name changed and then
-`PUT /api/bots/:id/mascot` with `color` and `shape` when the look changed, and shows Edit again. A refused name keeps the
+Each bot has a mascot: a cloud body in one of 21 colors and one of seven shapes, with one of eleven pairs of eyes, drawn
+in SVG by `src/web/components/CloudMascot.tsx`. The eyes are the face it shows at rest. A bot at work shows the face of
+what it does, such as thinking, whatever eyes it has. The face is white, except on the white body, where
+`MASCOT_FACE_COLORS` makes it blue. The nine vivid colors keep at least 3 to 1 contrast with the white face. The other
+colors and the new shapes and eyes follow the mascot sheet of the project. The look is in three columns of `bots`
+(`mascot_color`, `mascot_shape`, migration 0011, and `mascot_eyes`, migration 0026). A channel post copies the eyes into
+`author_eyes`, like the color and the shape. `src/shared/mascot.ts` holds the palette and `MASCOT_PRESETS`, the twelve
+clouds of the sheet. `BotStore.create` picks one of them at random, and the `profile_set_mascot` tool changes the color,
+the shape or the eyes. A stored name the app does not know reads as the default, so the bot still shows up. A template
+from before the eyes gets the smile.
+The owner changes them on the bot profile page. Edit turns the name into a field and shows the ready looks, the colors,
+the shapes and the eyes. A ready look sets the color, the shape and the eyes at once, and the rows after it change one
+part. The mascot above shows the pick. Save sends `PUT /api/bots/:id/name` when the name changed and then
+`PUT /api/bots/:id/mascot` with `color`, `shape` and `eyes` when the look changed, and shows Edit again. A refused name keeps the
 form open with the reason and sends no look. The More menu of the profile page offers Delete, with the same dialog as the bot list.
 
 The pages of the main column (Account, People, the bot profile and Connected apps) show one at a time in place of the
