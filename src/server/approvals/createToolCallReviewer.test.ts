@@ -487,6 +487,17 @@ describe('buildReviewPrompt', () => {
             .toContain('Input: {"command":"ls"}');
     });
 
+    it('treats an Allow rule as a standing permission, with money still asking', () => {
+        const prompt = buildReviewPrompt(BASH_CALL, CONTEXT);
+
+        expect(prompt)
+            .toContain('An "Allow" owner rule is a standing permission.');
+        expect(prompt)
+            .toContain('only when the owner did not ask for that action and no Allow rule covers it.');
+        expect(prompt)
+            .toContain('Always ask for "purchase" and "booking".');
+    });
+
     it('says none when there are no rules or messages', () => {
         const prompt = buildReviewPrompt(BASH_CALL, { ownerRules: [], recentMessages: [] });
 

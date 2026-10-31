@@ -159,7 +159,10 @@ const REVIEW_INSTRUCTIONS = [
     '"decision" is "allow" for a harmless call that fits the owner rules, "ask" when the owner should confirm it,',
     'and "deny" when an owner rule forbids it. A deny stays a deny even when the category normally asks.',
     'Allow a call that carries out what the owner asked for in their own chat message, even in the categories below.',
-    'Ask for the categories "send_message", "remote_write", "outside_workspace_change", "system_change", "connector_change" and "owner_setting_change" only when the owner did not ask for that action.',
+    // The owner approved each rule with a card, so an Allow rule is a standing permission and not a hint.
+    'An "Allow" owner rule is a standing permission. A call that an Allow rule covers counts as asked for by the owner, so allow it, even in the categories below and in a routine turn.',
+    'When an owner rule sets a condition for such a call, such as a prefix on a message, allow only a call that meets it, and ask otherwise.',
+    'Ask for the categories "send_message", "remote_write", "outside_workspace_change", "system_change", "connector_change" and "owner_setting_change" only when the owner did not ask for that action and no Allow rule covers it.',
     'Always ask for "purchase" and "booking".',
     '"summary" is one short sentence for the owner that says what the call does, for example "Send an email to Ana".',
     '"reason" is one short sentence that says why a denied call was refused.',

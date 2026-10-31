@@ -34,6 +34,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- An owner Allow rule now works as a standing permission. A send, push or other action that a rule allows runs without an approval card, also in a routine turn, as long as it meets the conditions the rule sets. Purchases and bookings still always ask, and a Block rule still wins.
 - On a phone or tablet, Enter in the text box adds a line instead of sending. Only the send button sends. The keyboard shows its new line key. A computer keyboard still sends with Enter.
 - The app stays clear of the phone's status and navigation bars in every view. The page now asks for the safe area with `viewport-fit=cover`, so the whole app is padded by it once. Before, the safe area was always 0 and the message box could sit under the navigation bar.
 - The chat catches up when the phone comes back from a dark screen or another app. The live stream opens again, the chat reloads and it scrolls to the newest message.
