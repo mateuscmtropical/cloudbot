@@ -258,6 +258,34 @@ function ConversationView({
         };
     }, []);
 
+    // The phone keyboard and a taller composer make the list shorter. Its scroll stays where it was, which hides the
+    // newest messages under the keyboard. A reader who was at the bottom before the change stays at the bottom.
+    useEffect(() => {
+        const messageListElement = messageListRef.current;
+
+        if (messageListElement === null || typeof ResizeObserver === 'undefined') {
+            return;
+        }
+
+        let observedHeight = messageListElement.clientHeight;
+        const observer = new ResizeObserver(() => {
+            const distanceFromBottom = messageListElement.scrollHeight - messageListElement.scrollTop - observedHeight;
+
+            observedHeight = messageListElement.clientHeight;
+
+            if (distanceFromBottom <= NEAR_BOTTOM_PX) {
+                messageListElement.scrollTop = messageListElement.scrollHeight;
+                previousScrollHeightRef.current = messageListElement.scrollHeight;
+            }
+        });
+
+        observer.observe(messageListElement);
+
+        return () => {
+            observer.disconnect();
+        };
+    }, []);
+
     // A tapped notification names a message. It is scrolled into view once the list has messages, found or not,
     // so a message that is not in the newest page never scrolls the view later. This effect follows the bottom scroll above.
     useLayoutEffect(() => {
