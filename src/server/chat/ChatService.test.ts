@@ -1064,6 +1064,76 @@ describe('ChatService', () => {
             .toEqual({ kind: 'text', text: 'second', isQueued: false });
     });
 
+    it('hands an owner message to a running turn that can take it, without queueing it', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Reply' }, delayMs: 50 }], { takesMessages: true });
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'first');
+        // The turn sets up its tools before the engine opens its input, so the message is sent once the engine runs.
+        await vi.waitFor(() => {
+            expect(runner.receivedRequests)
+                .toHaveLength(1);
+        });
+        const addedMessage = await service.sendMessage(bot.id, 'second');
+
+        expect(addedMessage?.body)
+            .toEqual({ kind: 'text', text: 'second' });
+
+        await finished;
+
+        expect(runner.receivedRequests.map(request => request.prompt))
+            .toEqual(['first']);
+        expect(runner.deliveredTexts)
+            .toEqual(['second']);
+    });
+
+    it('queues a routine message even when the running turn can take messages', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Reply' }, delayMs: 50 }], { takesMessages: true });
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'first');
+        const routineMessage = await service.sendMessage(bot.id, 'daily summary', 'routine');
+
+        expect(routineMessage?.body)
+            .toEqual({ kind: 'text', text: 'daily summary', isQueued: true });
+
+        await finished;
+
+        expect(runner.receivedRequests.map(request => request.prompt))
+            .toEqual(['first', 'daily summary']);
+        expect(runner.deliveredTexts)
+            .toEqual([]);
+    });
+
+    it('queues the owner message when the running turn refuses it', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Reply' }, delayMs: 50 }]);
+        const runTurn = runner.runTurn.bind(runner);
+
+        // The engine closed its input between the check and the hand-off, so it refuses the message.
+        vi.spyOn(runner, 'runTurn')
+            .mockImplementation((request) => {
+                if (request.inbox !== undefined) {
+                    request.inbox.deliver = () => false;
+                }
+
+                return runTurn(request);
+            });
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+
+        await service.sendMessage(bot.id, 'first');
+        await service.sendMessage(bot.id, 'second');
+        await finished;
+
+        expect(runner.receivedRequests.map(request => request.prompt))
+            .toEqual(['first', 'second']);
+    });
+
     it('stops a running turn and keeps only the messages stored before the stop', async () => {
         const { service } = buildSetup([
             { event: { type: 'text', text: 'Partial' }, delayMs: 60_000 },

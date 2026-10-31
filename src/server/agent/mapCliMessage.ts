@@ -73,6 +73,8 @@ interface CliSuccessResult {
     total_cost_usd: number;
     duration_ms: number;
     api_error_status?: number | null | undefined;
+    // Sends the CLI still holds for a later result in the same process. An older CLI leaves it out.
+    queued_turn_count?: number | undefined;
 }
 
 interface CliErrorResult {

@@ -8,7 +8,7 @@ import { ApprovalGate } from '../approvals/ApprovalGate.ts';
 import type { ToolCallReviewer, ToolCallVerdict } from '../approvals/ApprovalGate.ts';
 import type { BotDeleteCheck } from '../approvals/createToolCallReviewer.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
-import type { AgentRunner, TurnImage, TurnRequest } from '../agent/AgentRunner.ts';
+import type { AgentRunner, TurnImage, TurnInbox, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
 import { MEMORY_FILE_NAME, readWorkspaceMemoryBlock } from '../agent/readWorkspaceMemory.ts';
 import { AGENT_TOOL_NAME, buildHelperAgents } from '../agent/buildHelperAgents.ts';
@@ -377,6 +377,8 @@ interface TurnContext {
     agents: NonNullable<TurnRequest['agents']>;
     // The limits of this turn. Each null field is no limit.
     limit: TurnLimit;
+    // Takes the owner's new messages into the running turn. Unset for a turn that keeps them in the queue.
+    inbox?: TurnInbox | undefined;
 }
 
 type ChatEventListener = (event: ChatEvent) => void;
@@ -394,6 +396,9 @@ const MAX_PENDING_FILES = 10;
 const SHARE_DIR_MODE = 0o700;
 const SHARE_FILE_MODE = 0o600;
 const FILE_ID_PATTERN = /^[0-9a-f-]{36}$/;
+// The turns of the bot's own chat that take a new owner message while they run. A hand-off answers another bot, a channel
+// turn speaks in the channel and a quiet check-in removes its messages, so those keep new messages in the queue.
+const INBOX_TURN_SOURCES = new Set<TurnSource>(['chat', 'routine', 'webhook']);
 // Used when the runner reports a limit without a reset time.
 const USAGE_LIMIT_FALLBACK_WAIT_MS = 5 * 60 * 1000;
 // A reset time is kept between these bounds. The minimum stops a retry loop on a past time.
@@ -745,6 +750,8 @@ class ChatService {
     private readonly allBotsListeners = new Set<ChatEventListener>();
     private readonly pendingPeopleCredentialsByBot = new Map<string, ChatPersonCredentialsEvent[]>();
     private readonly runningTurns = new Map<string, AbortController>();
+    // The inbox of each running turn that can take a new owner message. The engine fills in its deliver while its input is open.
+    private readonly turnInboxes = new Map<string, TurnInbox>();
     // The hand-offs each running turn has sent, by the sender's bot id. Cleared when the turn finishes.
     private readonly handoffsSentByTurn = new Map<string, number>();
     private readonly handoffsInFlight = new Map<string, number>();
@@ -2511,7 +2518,11 @@ class ChatService {
         const userBody: TextBody = attachmentSummaries.length === 0
             ? { kind: 'text', text }
             : { kind: 'text', text, attachments: attachmentSummaries };
-        const storedBody: TextBody = isQueued ? { ...userBody, isQueued: true } : userBody;
+        // The owner's own text goes into the running turn when its engine can take it. Files and messages from anyone else wait,
+        // and so does a message behind an owner message that already waits, so the owner's messages keep their order.
+        const isForRunningTurn = isQueued && source === 'chat' && turnUploads.length === 0 && !this.hasQueuedChatTurn(botId)
+            && this.turnInboxes.get(botId)?.deliver !== undefined;
+        const storedBody: TextBody = isQueued && !isForRunningTurn ? { ...userBody, isQueued: true } : userBody;
 
         if (takesUploads) {
             this.pendingUploads.delete(botId);
@@ -2534,6 +2545,17 @@ class ChatService {
             }
 
             throw error;
+        }
+
+        if (isForRunningTurn) {
+            // The inbox is read again, since the turn may have closed its input while the message was saved.
+            const deliver = this.turnInboxes.get(botId)?.deliver;
+
+            if (deliver?.(text) === true) {
+                return userMessage;
+            }
+
+            await this.setQueuedFlag(userMessage.id, true);
         }
 
         if (isQueued) {
@@ -3457,6 +3479,17 @@ class ChatService {
 
     // The message stops being marked as queued once its turn starts or is cancelled.
     private async clearQueuedFlag(messageId: string): Promise<void> {
+        await this.setQueuedFlag(messageId, false);
+    }
+
+    // True when an owner message already waits in the queue.
+    private hasQueuedChatTurn(botId: string): boolean {
+        const botTurns = this.queuedTurns.get(botId) ?? [];
+
+        return botTurns.some(turn => turn.source === 'chat');
+    }
+
+    private async setQueuedFlag(messageId: string, isQueued: boolean): Promise<void> {
         const storedMessage = await this.messageStore.getById(messageId);
 
         if (storedMessage === undefined) {
@@ -3464,7 +3497,7 @@ class ChatService {
         }
 
         const body = storedMessage.content as TextBody;
-        const updatedMessage = await this.messageStore.updateContent(messageId, { ...body, isQueued: false });
+        const updatedMessage = await this.messageStore.updateContent(messageId, { ...body, isQueued });
 
         if (updatedMessage !== undefined) {
             this.publish(updatedMessage.botId, { type: 'message', message: toChatMessage(updatedMessage) });
@@ -3582,6 +3615,11 @@ class ChatService {
             this.channelRunning.set(botId, turn.channel.roundId);
         }
         const turnState: TurnState = { agentStarted: false, isRejectedByLimit: false, rejectedResetsAt: undefined, limit: undefined, hasError: false, savedMessageIds: [], endsQuiet: false, carriedMessageIds: this.takeCheckinCarry(turn) };
+        const inbox: TurnInbox | undefined = turn.channel === undefined && INBOX_TURN_SOURCES.has(turn.source) ? {} : undefined;
+
+        if (inbox !== undefined) {
+            this.turnInboxes.set(botId, inbox);
+        }
         // Set when the turn ends on an error, so its hand-off reply says so.
         let hasFailed = false;
 
@@ -3779,6 +3817,7 @@ class ChatService {
                 limit: turnLimit,
                 mcpServers: remoteServers,
                 tools: profileTools,
+                inbox,
             };
             const firstAttempt = await this.runAttempt(turnContext, bot.sessionId, turnState);
 
@@ -3799,6 +3838,12 @@ class ChatService {
             await this.saveAndPublish(botId, 'system', errorBody);
         } finally {
             this.streamMaskers.delete(botId);
+
+            // From here on a new owner message waits in the queue, since the turn takes no more input.
+            if (inbox !== undefined && this.turnInboxes.get(botId) === inbox) {
+                inbox.deliver = undefined;
+                this.turnInboxes.delete(botId);
+            }
 
             try {
                 await this.settleTurnEnd(turn, turnState);
@@ -4094,6 +4139,7 @@ class ChatService {
             ...(turnContext.limit.usd === null ? {} : { maxSpendUsd: turnContext.limit.usd }),
             ...(turnContext.reviewToolCall === undefined ? {} : { reviewToolCall: turnContext.reviewToolCall }),
             ...(githubEnvironment === undefined ? {} : { extraEnvironment: githubEnvironment }),
+            ...(turnContext.inbox === undefined ? {} : { inbox: turnContext.inbox }),
             ...sessionOption,
         };
         const isResumeAttempt = sessionId !== null;
