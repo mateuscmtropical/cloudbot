@@ -27,8 +27,8 @@ importers:
         specifier: ^2.9.0
         version: 2.9.0
       mailparser:
-        specifier: ^3.12.2
-        version: 3.12.2
+        specifier: ^3.13.0
+        version: 3.13.0
       marked:
         specifier: ^18.1.1
         version: 18.1.1
@@ -1226,6 +1226,10 @@ packages:
     resolution: {integrity: sha512-9008ddFqqKk7lMF2S1sLU7ExfJZP9zPw5tkZy24EVt45Ryme2x85f/5vJZZqQ+vCJkKcCY78dJ5yuEVG3ZrVZA==}
     engines: {node: '>=20.0.0'}
 
+  '@zone-eu/mailsplit@5.4.29':
+    resolution: {integrity: sha512-CCUNycmUjrV5M0wNf23waWAt9eOHczhjLbUQS7k0FNJvR0py9VSqHFt+tSl/D0+XI73VLG0U+PwYtq9R0zsm9Q==}
+    engines: {node: '>=20.0.0'}
+
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
     peerDependencies:
@@ -1747,8 +1751,8 @@ packages:
     resolution: {integrity: sha512-Byw3CchK4eSqbgzpttsUoC4hx2VPP+hnveAuYAYZNipEc+0WlDFjVb1ISNscjq/idvyDP/Xjg8mnBcdgbsgvzg==}
     engines: {node: '>=20.0.0'}
 
-  libmime@5.6.0:
-    resolution: {integrity: sha512-b5HR41QUt1whlvLnY3AhAYwba56DDiNv1xVTH5viVq86/m+wvW+HeooLx6x+MdNapho9ki7Lo/fTxuqwhEs/sQ==}
+  libmime@5.6.3:
+    resolution: {integrity: sha512-cuTUW/Jybvh5O4/U9p61gyutHOjDtZyGQYuY99+bfnaFwqcDf2Nb+R6hMHY6DDen2H9wLKQSMpofWUgn2TI5JQ==}
     engines: {node: '>=20.0.0'}
 
   libqp@3.0.1:
@@ -1860,8 +1864,8 @@ packages:
   magic-string@1.4.3:
     resolution: {integrity: sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ==}
 
-  mailparser@3.12.2:
-    resolution: {integrity: sha512-JbOt+AjJIr7+bhMp8g7ILevleoDAD0bXVlAJmikrz0sbQqmt88YELKDwYQL5JNugkV9lcN+DFv32dyhPsvqpHQ==}
+  mailparser@3.13.0:
+    resolution: {integrity: sha512-68zfGtGh1kQVEX6dhDctKFMTDXmu7Y1c/qCv8AfVwibACofJD22JLK1U2mSGbgt7mwI9yKCiOAx/dKKTgpiDtw==}
     engines: {node: '>=20.0.0'}
 
   marked@18.1.1:
@@ -1894,12 +1898,12 @@ packages:
     resolution: {integrity: sha512-5qr2okC4ItAI0hG5SaV0HoYMpnM/Y6+Oqr7AmPYy/2uEoGvS+GbSKLeRxSS1uAdu59yz0ouzcuXievSgg///WA==}
     engines: {node: '>=18'}
 
-  nodemailer@10.1.7:
-    resolution: {integrity: sha512-OQa6FDln5fLttmqSbjDiRYvFDOFNrBqfiOwHPlEbURil3b+vPB1v8xpi+Sp46drzNDlsTnNsS502vthmz56r4w==}
-    engines: {node: '>=20.0.0'}
-
   nodemailer@10.2.0:
     resolution: {integrity: sha512-/XyGw6kX2stMdKGUJdAQmYAeY1FscWfdRydfd2NtK3A3KDfUUXCqZzExSNAt2xhh90X2qLCR+o2Gd48YPJcJwA==}
+    engines: {node: '>=20.0.0'}
+
+  nodemailer@10.3.0:
+    resolution: {integrity: sha512-LsqM+Sxjap8BMgxQuVvABoEcm9ed2f3h2e0ohB7kV3sl9+4IaXlxC0DT8CQelg/S0he38gT4yT0RH1pvZxHf+A==}
     engines: {node: '>=20.0.0'}
 
   object-assign@4.1.1:
@@ -3257,6 +3261,12 @@ snapshots:
       libmime: 5.5.2
       libqp: 3.0.1
 
+  '@zone-eu/mailsplit@5.4.29':
+    dependencies:
+      libbase64: 1.4.1
+      libmime: 5.6.3
+      libqp: 3.0.1
+
   acorn-jsx@5.3.2(acorn@8.19.0):
     dependencies:
       acorn: 8.19.0
@@ -3741,7 +3751,7 @@ snapshots:
       libbase64: 1.4.1
       libqp: 3.0.1
 
-  libmime@5.6.0:
+  libmime@5.6.3:
     dependencies:
       encoding-japanese: 2.4.0
       iconv-lite: 0.7.3
@@ -3827,14 +3837,14 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  mailparser@3.12.2:
+  mailparser@3.13.0:
     dependencies:
-      '@zone-eu/mailsplit': 5.4.27
+      '@zone-eu/mailsplit': 5.4.29
       he: 1.2.0
       html-to-text: 10.0.1
-      libmime: 5.6.0
+      libmime: 5.6.3
       linkify-it: 5.0.2
-      nodemailer: 10.1.7
+      nodemailer: 10.3.0
       punycode.js: 2.3.1
       tlds: 1.261.0
 
@@ -3865,9 +3875,9 @@ snapshots:
 
   node-releases@2.0.59: {}
 
-  nodemailer@10.1.7: {}
-
   nodemailer@10.2.0: {}
+
+  nodemailer@10.3.0: {}
 
   object-assign@4.1.1: {}
 
