@@ -212,6 +212,39 @@ describe('CloudMascot', () => {
         vi.useRealTimers();
     });
 
+    it('shuts the eyes of a sleeping bot, draws the letters and stops it looking around', () => {
+        const { container } = render(<CloudMascot color="blue" shape="puff" state="idle" mood="sleeping" isActive />);
+
+        expect(container.querySelector('.cloud-mascot')
+            ?.getAttribute('data-effect'))
+            .toBe('sleeping');
+        expect(container.querySelectorAll('.fx-z'))
+            .toHaveLength(3);
+        expect(container.querySelector('.cloud-face')
+            ?.getAttribute('data-face'))
+            .toBe('sleepy');
+        expect(container.querySelector('.cloud-face')
+            ?.getAttribute('data-tracks-pointer'))
+            .toBeNull();
+    });
+
+    it('sneezes bolts with a cold, at the delay of the bot', () => {
+        const { container } = render(<CloudMascot color="blue" shape="puff" state="idle" mood="cold" moodDelaySeconds={-3} />);
+        const root = container.querySelector<HTMLElement>('.cloud-mascot');
+
+        expect(container.querySelectorAll('.fx-bolt'))
+            .toHaveLength(3);
+        expect(root?.style.getPropertyValue('--mood-delay'))
+            .toBe('-3s');
+    });
+
+    it('shows no mood while the bot works', () => {
+        const { container } = render(<CloudMascot color="blue" shape="puff" state="thinking" mood="cold" />);
+
+        expect(container.querySelector('.mascot-effects'))
+            .toBeNull();
+    });
+
     it('stops listening to the pointer while it is off screen', () => {
         const visibility: { report?: (entries: IntersectionObserverEntry[]) => void } = {};
 

@@ -15,7 +15,7 @@ describe('mascot reduced motion in the stylesheet', () => {
         expect(reducedBlockStart)
             .toBeGreaterThanOrEqual(0);
         expect(reducedBlock)
-            .toContain('.cloud-mascot svg');
+            .toContain('.cloud-mascot > svg');
         expect(reducedBlock)
             .toContain('animation: none !important');
         expect(reducedBlock)
