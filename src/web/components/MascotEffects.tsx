@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 
+import type { MascotBolt, ShownWeather } from '../../shared/mascot.ts';
 import type { MascotEffect } from '../mascotMood.ts';
 import './mascotEffects.css';
 
@@ -15,12 +16,82 @@ interface EffectPiece {
 
 const LETTER_Z = 'M3 3 H13 L3 13 H13';
 const BOLT = 'M9 0 L2 9 H7 L5 16 L13 6 H8 Z';
-const DROP = 'M8 1 C11 6 13 8 13 11 A5 5 0 0 1 3 11 C3 8 5 6 8 1 Z';
 const RAIN_LINE = 'M8 2 L6 14';
 const QUESTION = 'M4 5 A4 4 0 1 1 9 9 Q8 10 8 12 M8 15 V15.2';
 const STAR = 'M8 0 Q8 8 16 8 Q8 8 8 16 Q8 8 0 8 Q8 8 8 0 Z';
+const FLAKE = 'M8 1 V15 M2 4.5 L14 11.5 M14 4.5 L2 11.5';
+const SUN_CORE = 'M8 4 A4 4 0 1 1 7.99 4 Z';
+const SUN_RAYS = 'M8 0.5 V2.5 M8 13.5 V15.5 M0.5 8 H2.5 M13.5 8 H15.5 M2.7 2.7 L4.1 4.1 M11.9 11.9 L13.3 13.3 M13.3 2.7 L11.9 4.1 M4.1 11.9 L2.7 13.3';
+const GUST = 'M1 6 H10 Q14 6 13 3 M1 11 H13';
+const BUBBLE = 'M8 3 A5 5 0 1 1 7.99 3 Z';
+const RAINBOW_OUTER = 'M1.5 15 A6.5 6.5 0 0 1 14.5 15';
+const RAINBOW_MIDDLE = 'M3 15 A5 5 0 0 1 13 15';
+const RAINBOW_INNER = 'M4.5 15 A3.5 3.5 0 0 1 11.5 15';
 
-const EFFECT_PIECES: Record<MascotEffect, EffectPiece[]> = {
+const RAIN_PIECES: EffectPiece[] = [
+    { className: 'fx-rain fx-first', path: RAIN_LINE, left: 22, top: 74, width: 14 },
+    { className: 'fx-rain fx-second', path: RAIN_LINE, left: 44, top: 76, width: 14 },
+    { className: 'fx-rain fx-third', path: RAIN_LINE, left: 66, top: 74, width: 14 },
+];
+
+// Where the bolts start for each direction. The stylesheet moves them on from there.
+const BOLT_PIECES: Record<MascotBolt, EffectPiece[]> = {
+    down: [
+        { className: 'fx-bolt fx-first', path: BOLT, left: 20, top: 76, width: 20, isFilled: true },
+        { className: 'fx-bolt fx-second', path: BOLT, left: 42, top: 82, width: 16, isFilled: true },
+        { className: 'fx-bolt fx-third', path: BOLT, left: 62, top: 76, width: 20, isFilled: true },
+    ],
+    up: [
+        { className: 'fx-bolt fx-first', path: BOLT, left: 18, top: 6, width: 20, isFilled: true },
+        { className: 'fx-bolt fx-second', path: BOLT, left: 42, top: 0, width: 16, isFilled: true },
+        { className: 'fx-bolt fx-third', path: BOLT, left: 64, top: 6, width: 20, isFilled: true },
+    ],
+    left: [
+        { className: 'fx-bolt fx-first', path: BOLT, left: -2, top: 28, width: 20, isFilled: true },
+        { className: 'fx-bolt fx-second', path: BOLT, left: -6, top: 48, width: 16, isFilled: true },
+        { className: 'fx-bolt fx-third', path: BOLT, left: -2, top: 66, width: 20, isFilled: true },
+    ],
+    right: [
+        { className: 'fx-bolt fx-first', path: BOLT, left: 82, top: 28, width: 20, isFilled: true },
+        { className: 'fx-bolt fx-second', path: BOLT, left: 90, top: 48, width: 16, isFilled: true },
+        { className: 'fx-bolt fx-third', path: BOLT, left: 82, top: 66, width: 20, isFilled: true },
+    ],
+    around: [
+        { className: 'fx-bolt fx-first', path: BOLT, left: 2, top: 52, width: 20, isFilled: true },
+        { className: 'fx-bolt fx-second', path: BOLT, left: 42, top: 82, width: 16, isFilled: true },
+        { className: 'fx-bolt fx-third', path: BOLT, left: 78, top: 52, width: 20, isFilled: true },
+    ],
+};
+
+const WEATHER_PIECES: Record<Exclude<ShownWeather, 'lightning'>, EffectPiece[]> = {
+    rain: RAIN_PIECES,
+    snow: [
+        { className: 'fx-snow fx-first', path: FLAKE, left: 18, top: 72, width: 16 },
+        { className: 'fx-snow fx-second', path: FLAKE, left: 44, top: 76, width: 13 },
+        { className: 'fx-snow fx-third', path: FLAKE, left: 68, top: 72, width: 16 },
+    ],
+    sun: [
+        { className: 'fx-sun-rays', path: SUN_RAYS, left: 60, top: -14, width: 48 },
+        { className: 'fx-sun-core', path: SUN_CORE, left: 60, top: -14, width: 48, isFilled: true },
+    ],
+    wind: [
+        { className: 'fx-wind fx-first', path: GUST, left: -8, top: 22, width: 26 },
+        { className: 'fx-wind fx-second', path: GUST, left: -12, top: 46, width: 22 },
+        { className: 'fx-wind fx-third', path: GUST, left: -8, top: 68, width: 26 },
+    ],
+    bubbles: [
+        { className: 'fx-bubble fx-first', path: BUBBLE, left: 26, top: 8, width: 14 },
+        { className: 'fx-bubble fx-second', path: BUBBLE, left: 48, top: 2, width: 18 },
+        { className: 'fx-bubble fx-third', path: BUBBLE, left: 68, top: 10, width: 12 },
+    ],
+    rainbow: [
+        { className: 'fx-rainbow fx-first', path: RAINBOW_OUTER, left: 6, top: -30, width: 88 },
+        { className: 'fx-rainbow fx-second', path: RAINBOW_MIDDLE, left: 6, top: -30, width: 88 },
+        { className: 'fx-rainbow fx-third', path: RAINBOW_INNER, left: 6, top: -30, width: 88 },
+    ],
+};
+
+const EFFECT_PIECES: Record<Exclude<MascotEffect, 'weather'>, EffectPiece[]> = {
     // The nod before sleep moves the cloud itself.
     dozing: [],
     sleeping: [
@@ -28,17 +99,7 @@ const EFFECT_PIECES: Record<MascotEffect, EffectPiece[]> = {
         { className: 'fx-z fx-second', path: LETTER_Z, left: 72, top: 4, width: 22 },
         { className: 'fx-z fx-third', path: LETTER_Z, left: 72, top: 4, width: 28 },
     ],
-    cold: [
-        { className: 'fx-drop', path: DROP, left: 44, top: 90, width: 12, isFilled: true },
-        { className: 'fx-bolt fx-first', path: BOLT, left: 2, top: 52, width: 20, isFilled: true },
-        { className: 'fx-bolt fx-second', path: BOLT, left: 40, top: 70, width: 16, isFilled: true },
-        { className: 'fx-bolt fx-third', path: BOLT, left: 78, top: 52, width: 20, isFilled: true },
-    ],
-    storm: [
-        { className: 'fx-rain fx-first', path: RAIN_LINE, left: 22, top: 74, width: 14 },
-        { className: 'fx-rain fx-second', path: RAIN_LINE, left: 44, top: 76, width: 14 },
-        { className: 'fx-rain fx-third', path: RAIN_LINE, left: 66, top: 74, width: 14 },
-    ],
+    storm: RAIN_PIECES,
     question: [
         { className: 'fx-question', path: QUESTION, left: 72, top: -4, width: 26 },
     ],
@@ -51,13 +112,25 @@ const EFFECT_PIECES: Record<MascotEffect, EffectPiece[]> = {
 
 interface MascotEffectsProps {
     effect: MascotEffect;
+    weather: ShownWeather;
+    bolt: MascotBolt;
+}
+
+function readPieces({ effect, weather, bolt }: MascotEffectsProps): EffectPiece[] {
+    if (effect !== 'weather') {
+        return EFFECT_PIECES[effect];
+    }
+
+    return weather === 'lightning' ? BOLT_PIECES[bolt] : WEATHER_PIECES[weather];
 }
 
 // Each piece is a small svg of its own and moves only by transform and opacity, so the compositor runs it without a repaint.
-function MascotEffects({ effect }: MascotEffectsProps): ReactElement {
+function MascotEffects(props: MascotEffectsProps): ReactElement {
+    const pieces = readPieces(props);
+
     return (
-        <span className="mascot-effects" data-effect={effect} aria-hidden="true">
-            {EFFECT_PIECES[effect].map(piece => (
+        <span className="mascot-effects" data-effect={props.effect} data-bolt={props.bolt} aria-hidden="true">
+            {pieces.map(piece => (
                 <svg
                     key={piece.className}
                     className={`mascot-fx ${piece.className}`}

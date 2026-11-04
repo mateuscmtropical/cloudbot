@@ -14,7 +14,7 @@ const BOT: BotSummary = {
     name: 'Research',
     title: 'Assistant',
     mascotColor: 'pink',
-    mascotShape: 'bubble', mascotEyes: 'smile',
+    mascotShape: 'bubble', mascotEyes: 'smile', mascotWeather: 'auto', mascotBolt: 'down',
     lastMessagePreview: 'Found three useful sources.',
     hasUnread: true,
     lastMessageSequence: 1,

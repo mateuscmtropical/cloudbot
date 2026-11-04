@@ -1,7 +1,8 @@
+import type { MascotWeather } from '../shared/mascot.ts';
 import type { MascotState } from './mascotState.ts';
 
 // A mood plays while a bot has nothing to do. It never replaces a state, which says something real about the bot.
-type MascotMood = 'dozing' | 'sleeping' | 'cold';
+type MascotMood = 'dozing' | 'sleeping' | 'weather';
 
 // The drawn effect around a mascot. A state brings its own, and an idle bot shows the one of its mood.
 type MascotEffect = MascotMood | 'storm' | 'question' | 'cheer';
@@ -14,6 +15,7 @@ interface MascotMoodInput {
     now: number;
     // When the owner left this chat. It stays awake for a moment after that.
     leftAt?: number | undefined;
+    weather?: MascotWeather | undefined;
 }
 
 // A chat quiet for this long falls asleep.
@@ -23,8 +25,8 @@ const AWAKE_AFTER_LEAVING_MS = 60 * 1000;
 // The length of the nod before sleep. The animation in the stylesheet takes the same time.
 const DOZE_MS = 5000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-// One bot in this many has a cold on a given day.
-const COLD_ONE_IN = 5;
+// A bot that follows its shape shows its weather on one day in this many. A weather the owner picked stays on.
+const WEATHER_ONE_IN = 5;
 // The length of the sneeze cycle in the stylesheet, so each bot can start at its own point in it.
 const SNEEZE_CYCLE_S = 14;
 
@@ -45,7 +47,7 @@ function readSleepAt(input: MascotMoodInput): number {
 function pickMascotMood(input: MascotMoodInput): MascotMood | undefined {
     const seed = readBotSeed(input.botId);
     const day = Math.floor(input.now / DAY_MS);
-    const hasCold = (seed + day) % COLD_ONE_IN === 0;
+    const hasWeather = (input.weather ?? 'auto') !== 'auto' || (seed + day) % WEATHER_ONE_IN === 0;
     const sleepAt = readSleepAt(input);
 
     if (!input.isSelected && input.now >= sleepAt) {
@@ -56,10 +58,10 @@ function pickMascotMood(input: MascotMoodInput): MascotMood | undefined {
         return 'dozing';
     }
 
-    return hasCold ? 'cold' : undefined;
+    return hasWeather ? 'weather' : undefined;
 }
 
-// The next moment the mood can change, so a timer can wait for exactly that. A new day can change who has a cold.
+// The next moment the mood can change, so a timer can wait for exactly that. A new day can change whose weather shows.
 function readNextMoodChangeAt(input: MascotMoodInput): number {
     const nextDayAt = (Math.floor(input.now / DAY_MS) + 1) * DAY_MS;
     const sleepAt = readSleepAt(input);
@@ -88,7 +90,7 @@ function pickMascotEffect(state: MascotState, mood: MascotMood | undefined): Mas
     }
 }
 
-// A negative delay, so bots with a cold do not all sneeze at once.
+// A negative delay, so bots do not all move in step.
 function readSneezeDelaySeconds(botId: string): number {
     return -(readBotSeed(botId) % SNEEZE_CYCLE_S);
 }

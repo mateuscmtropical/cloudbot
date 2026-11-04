@@ -3,7 +3,7 @@ import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatEvent, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../shared/chatTypes.ts';
 import type { ChannelDetail, ChannelSummary } from '../shared/channelTypes.ts';
-import type { MascotChoice } from '../shared/mascot.ts';
+import type { MascotLook } from '../shared/mascot.ts';
 import { BotList } from './components/BotList.tsx';
 import { ChannelView } from './components/ChannelView.tsx';
 import type { MessageActions } from './components/MessageItem.tsx';
@@ -910,10 +910,10 @@ function App(): ReactElement {
             });
     }
 
-    function handleChangeMascot(botId: string, mascot: MascotChoice): Promise<string | undefined> {
+    function handleChangeMascot(botId: string, mascot: MascotLook): Promise<string | undefined> {
         return changeBotMascot(botId, mascot)
             .then((changed) => {
-                setBots(previousBots => previousBots.map(bot => (bot.id === changed.id ? { ...bot, mascotColor: changed.mascotColor, mascotShape: changed.mascotShape, mascotEyes: changed.mascotEyes } : bot)));
+                setBots(previousBots => previousBots.map(bot => (bot.id === changed.id ? { ...bot, mascotColor: changed.mascotColor, mascotShape: changed.mascotShape, mascotEyes: changed.mascotEyes, mascotWeather: changed.mascotWeather, mascotBolt: changed.mascotBolt } : bot)));
 
                 return undefined;
             })
