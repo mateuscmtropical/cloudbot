@@ -1,16 +1,48 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { readWorkspaceMemoryBlock } from './readWorkspaceMemory.ts';
+import { readWorkspaceMemoryBlock, readWorkspaceMemoryText, writeWorkspaceMemory } from './readWorkspaceMemory.ts';
 import type { ReadCommand } from './readWorkspaceMemory.ts';
 
 function workspace(): string {
     return mkdtempSync(join(tmpdir(), 'cloudbot-memory-read-'));
 }
+
+describe('writeWorkspaceMemory', () => {
+    it('replaces the file and reads back the same text', async () => {
+        const dir = workspace();
+
+        writeFileSync(join(dir, 'MEMORY.md'), 'old');
+        await writeWorkspaceMemory(dir, 'new notes');
+
+        expect(await readWorkspaceMemoryText(dir))
+            .toBe('new notes');
+        expect(readdirSync(dir))
+            .toEqual(['MEMORY.md']);
+    });
+
+    it.skipIf(process.platform === 'win32')('replaces a link instead of writing through it', async () => {
+        const dir = workspace();
+        const outside = join(workspace(), 'outside.txt');
+
+        writeFileSync(outside, 'keep me');
+        symlinkSync(outside, join(dir, 'MEMORY.md'));
+        await writeWorkspaceMemory(dir, 'new notes');
+
+        expect(readFileSync(outside, 'utf8'))
+            .toBe('keep me');
+        expect(await readWorkspaceMemoryText(dir))
+            .toBe('new notes');
+    });
+
+    it('refuses a bad bot id in agent-user mode', async () => {
+        await expect(writeWorkspaceMemory('unused', 'text', { agentUser: 'bot', botId: '../other' })).rejects.toThrow('could not be written');
+    });
+});
 
 describe('readWorkspaceMemoryBlock', () => {
     it('frames a regular MEMORY.md as the bot\'s own notes, between markers', async () => {

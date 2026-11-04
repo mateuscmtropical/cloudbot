@@ -21,6 +21,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- The Search field in the sidebar also searches the chats of all bots. A result opens its chat at that message, loading older messages when needed. Accents do not matter, and words match while they are being typed.
+- Each bot has a Memory page in its profile. It lists what the bot wrote in its memory file, and the owner can delete a line or edit the whole text.
 - Each bot has a Permissions choice in the provider menu. Auto is the new default and uses the auto mode of each CLI, or the closest one it has. Ask keeps the old behavior. YOLO starts each CLI with its skip flag and stops all checks, at the owner's risk. Only the owner can change it, in the web app.
 
 ### Changed

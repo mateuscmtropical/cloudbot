@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Replaces one bot's memory file with stdin, as the bot user. An agent may own the file with mode 600, so the server
+# cannot write it itself. The server runs this through sudo, with the bot id as the only argument.
+#
+# The id must match the pattern the server checks, so no other path can be named. The text goes to a new file that is
+# moved over the old one, so a link is replaced and never followed. More than 64 KB is refused, as the read stops there.
+
+set -euo pipefail
+
+WORKSPACE_ROOT=/var/lib/cloudbot-workspaces
+MAX_BYTES=65536
+
+if [ "$#" -ne 1 ]; then
+    echo "Give one bot id." >&2
+    exit 2
+fi
+
+bot_id="$1"
+
+if [[ ! "$bot_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Invalid bot id." >&2
+    exit 2
+fi
+
+workspace="$WORKSPACE_ROOT/$bot_id"
+temporary="$(mktemp "$workspace/.MEMORY.XXXXXX")"
+trap 'rm -f -- "$temporary"' EXIT
+
+head -c "$((MAX_BYTES + 1))" > "$temporary"
+
+if [ "$(stat -c %s -- "$temporary")" -gt "$MAX_BYTES" ]; then
+    echo "The memory is too long." >&2
+    exit 3
+fi
+
+chmod 660 -- "$temporary"
+mv -f -T -- "$temporary" "$workspace/MEMORY.md"

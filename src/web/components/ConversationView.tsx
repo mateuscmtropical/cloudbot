@@ -70,6 +70,8 @@ interface ConversationViewProps {
     screenRequestId?: number | undefined;
     // The message a tapped notification was about. The view scrolls to it once the messages are there, and reports it handled.
     focusMessageId?: string | undefined;
+    // The sequence of that message, when it is known. The view then loads older pages until it reaches it.
+    focusSequence?: number | undefined;
     onFocusHandled?: (() => void) | undefined;
     onSend: (text: string) => void;
     onStop: () => void;
@@ -130,6 +132,7 @@ function ConversationView({
     onRenameBot,
     screenRequestId,
     focusMessageId,
+    focusSequence,
     onFocusHandled,
     onSend,
     onStop,
@@ -149,6 +152,8 @@ function ConversationView({
     const previousIsLoadingRef = useRef(false);
     // The oldest message when a list too short to scroll last asked for older messages by itself.
     const autoLoadedOldestRef = useRef<number | undefined>(undefined);
+    const focusLoadedOldestRef = useRef<number | undefined>(undefined);
+    const isFocusInOlderPage = focusSequence !== undefined && hasOlderMessages && (messages[0]?.sequence ?? 0) > focusSequence;
     const botName = bot?.name ?? 'CloudBot';
     const sentHistory = useMemo(() => sentMessageTexts(messages), [messages]);
     const providerChangeCount = useMemo(() => countProviderChanges(messages), [messages]);
@@ -307,6 +312,7 @@ function ConversationView({
 
     // A tapped notification names a message. It is scrolled into view once the list has messages, found or not,
     // so a message that is not in the newest page never scrolls the view later. This effect follows the bottom scroll above.
+    // A search hit also says where the message sits, so the view waits while the older pages that hold it load.
     useLayoutEffect(() => {
         const messageListElement = messageListRef.current;
 
@@ -316,9 +322,32 @@ function ConversationView({
 
         const focusedElement = findMessageElement(messageListElement, focusMessageId);
 
+        if (focusedElement === undefined && isFocusInOlderPage && (isLoadingOlder || focusLoadedOldestRef.current !== messages[0]?.sequence)) {
+            return;
+        }
+
         focusedElement?.scrollIntoView({ block: 'center' });
+        focusedElement?.classList.add('is-focused');
+        focusedElement?.addEventListener('animationend', () => {
+            focusedElement.classList.remove('is-focused');
+        }, { once: true });
         onFocusHandled?.();
-    }, [focusMessageId, messages, onFocusHandled]);
+    }, [focusMessageId, isFocusInOlderPage, isLoadingOlder, messages, onFocusHandled]);
+
+    // Asks for the next older page while the search hit is not on the list. It asks once per oldest message, so a failed load ends the wait.
+    useEffect(() => {
+        const messageListElement = messageListRef.current;
+        const oldestSequence = messages[0]?.sequence;
+
+        if (focusMessageId === undefined || messageListElement === null || !isFocusInOlderPage || isLoadingOlder || oldestSequence === focusLoadedOldestRef.current) {
+            return;
+        }
+
+        if (findMessageElement(messageListElement, focusMessageId) === undefined) {
+            focusLoadedOldestRef.current = oldestSequence;
+            onLoadOlder?.();
+        }
+    }, [focusMessageId, isFocusInOlderPage, isLoadingOlder, messages, onLoadOlder]);
 
     // Anchors the message at the top of the screen when a load starts. Drops the anchor when no load runs.
     useLayoutEffect(() => {

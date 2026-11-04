@@ -132,6 +132,12 @@ interface BotSummary {
     lastMessageSequence: number;
 }
 
+// A bot's memory file as the owner sees it. A cut one is longer than 64 KB and cannot be edited in the web app.
+interface BotMemory {
+    text: string;
+    isCut: boolean;
+}
+
 interface ChatMessageEvent {
     type: 'message';
     message: ChatMessage;
@@ -213,6 +219,7 @@ type ScreenHolderName = 'bot' | 'person';
 type ScreenViewName = 'vnc' | 'screencast';
 
 export type {
+    BotMemory,
     ScreenHolderName,
     ScreenViewName,
     AttachmentSummary,

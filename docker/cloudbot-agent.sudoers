@@ -24,6 +24,9 @@ cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-remove-workspace 
 # Prints the memory file of one bot, since an agent may write it with mode 600. The script takes only a bot id and
 # checks it, see docker/cloudbot-read-memory.
 cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-read-memory *
+# Replaces the memory file of one bot when the owner edits it. The script takes only a bot id and checks it, and the
+# text comes on stdin, see docker/cloudbot-write-memory.
+cloudbot ALL=(bot) NOPASSWD: NOSETENV: /usr/local/bin/cloudbot-write-memory *
 # Integrations run as their own user, which cannot read the vault or the workspaces. The server starts a fixed
 # wrapper there, see src/server/integrations/runIntegrationProcess.ts. The secret goes through stdin, not argv.
 # The cleanup after each run (pkill and the wipe of the user's HOME and /tmp files) also runs through this line.

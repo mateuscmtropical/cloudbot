@@ -12,7 +12,7 @@ import type { ChatEvent, ChatMessage } from '../../shared/chatTypes.ts';
 import { MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES } from '../../shared/mascot.ts';
 import { MAX_FILES_PER_UPLOAD, readMaxUploadBytes } from '../attachments/saveUpload.ts';
 import { DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError } from './ChatService.ts';
-import type { ChatService, DeleteBotOutcome, MessagePageOptions } from './ChatService.ts';
+import type { ChatService, DeleteBotOutcome, MessagePageOptions, SaveMemoryOutcome } from './ChatService.ts';
 import { BotDeletingError } from '../bots/BotDeletingError.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
 import type { SetupAction } from '../setup/SetupConversation.ts';
@@ -43,6 +43,13 @@ const NO_SHARED_FILE: ChatErrorResponse = { error: 'No shared file has this mess
 const TOO_LARGE: ChatErrorResponse = { error: 'The upload is larger than CLOUDBOT_MAX_UPLOAD_MB.' };
 const UPLOAD_DURING_TURN: ChatErrorResponse = { error: 'Wait until the reply finishes.' };
 const TOO_MANY_FILES: ChatErrorResponse = { error: `Send at most ${String(MAX_FILES_PER_UPLOAD)} files at once.` };
+const INVALID_MEMORY: ChatErrorResponse = { error: 'Send "text" and "expectedText" strings.' };
+const MEMORY_SAVE_FAILED: ChatErrorResponse = { error: 'Could not save the memory. Try again.' };
+const MEMORY_REFUSED: Record<'changed' | 'tooLong', ChatErrorResponse> = {
+    changed: { error: 'The bot changed its memory just now, so this was not saved. Check the memory and try again.' },
+    tooLong: { error: 'The memory is larger than 64 KB, so it cannot be saved here.' },
+};
+const MAX_SEARCH_LENGTH = 200;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 25_000;
 // An SSE comment line. Clients ignore it, and it keeps idle proxies from closing the stream.
 const HEARTBEAT_FRAME = ': heartbeat\n\n';
@@ -264,6 +271,49 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
         const changedBot = await chatService.changeBotMascot(botId, changes);
 
         return changedBot === undefined ? context.json(BOT_NOT_FOUND, 404) : context.json(changedBot);
+    });
+
+    routes.get('/api/search', async (context) => {
+        const text = context.req.query('q') ?? '';
+        const searchedText = text.slice(0, MAX_SEARCH_LENGTH);
+        const hits = await chatService.searchMessages(searchedText);
+
+        return context.json(hits);
+    });
+
+    routes.get('/api/bots/:id/memory', async (context) => {
+        const botId = context.req.param('id');
+        const memory = await chatService.readBotMemory(botId);
+
+        return memory === undefined ? context.json(BOT_NOT_FOUND, 404) : context.json(memory);
+    });
+
+    routes.put('/api/bots/:id/memory', async (context) => {
+        const botId = context.req.param('id');
+        const payload: unknown = await context.req.json()
+            .catch(() => undefined);
+        const fields = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {};
+
+        if (typeof fields.text !== 'string' || typeof fields.expectedText !== 'string') {
+            return context.json(INVALID_MEMORY, 400);
+        }
+
+        let outcome: SaveMemoryOutcome;
+
+        try {
+            outcome = await chatService.saveBotMemory(botId, fields.text, fields.expectedText);
+        } catch (error: unknown) {
+            // The owner sees only the generic message. The log keeps the error for the operator.
+            console.error('Saving a memory file failed', error);
+
+            return context.json(MEMORY_SAVE_FAILED, 500);
+        }
+
+        if (outcome === 'missing') {
+            return context.json(BOT_NOT_FOUND, 404);
+        }
+
+        return outcome === 'saved' ? context.json({ saved: true }) : context.json(MEMORY_REFUSED[outcome], 409);
     });
 
     routes.get('/api/bots/:id/messages', async (context) => {

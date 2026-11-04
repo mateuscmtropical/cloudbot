@@ -25,6 +25,53 @@ describe('MessageStore', () => {
         opened.close();
     });
 
+    it('finds shown messages by prefix, without accents, newest first, and marks the match', async () => {
+        const older = await messageStore.add({ botId: bot.id, role: 'user', kind: 'text', content: { kind: 'text', text: 'Reunião com a Ana' } });
+        const newer = await messageStore.add({ botId: bot.id, role: 'assistant', kind: 'choice', content: { kind: 'choice', prompt: 'Marcar reuniao?', options: [] } });
+
+        await messageStore.add({ botId: bot.id, role: 'assistant', kind: 'toolActivity', content: { kind: 'toolActivity', toolName: 'x', status: 'done', summary: 'reuniao' } });
+
+        const hits = await messageStore.search('reuni', 10);
+
+        expect(hits.map(hit => hit.messageId))
+            .toEqual([newer.id, older.id]);
+        expect(hits[1]?.snippet)
+            .toBe('\u0002Reunião\u0003 com a Ana');
+    });
+
+    it('reads search syntax and quotes as plain words', async () => {
+        await messageStore.add({ botId: bot.id, role: 'user', kind: 'text', content: { kind: 'text', text: 'say "NOT" here' } });
+
+        const hits = await messageStore.search('"NOT" body: *', 10);
+        const emptyHits = await messageStore.search('   ', 10);
+
+        expect(hits)
+            .toEqual([]);
+        expect(emptyHits)
+            .toEqual([]);
+        expect(await messageStore.search('"not"', 10))
+            .toHaveLength(1);
+    });
+
+    it('keeps the search index in step with edits, removals and a deleted bot', async () => {
+        const edited = await messageStore.add({ botId: bot.id, role: 'user', kind: 'text', content: { kind: 'text', text: 'alpha' } });
+        const removed = await messageStore.add({ botId: bot.id, role: 'user', kind: 'text', content: { kind: 'text', text: 'beta' } });
+        const botStore = new BotStore(opened.db);
+        const otherBot = await botStore.create({ name: 'Bia', title: '', description: '' });
+
+        await messageStore.add({ botId: otherBot.id, role: 'user', kind: 'text', content: { kind: 'text', text: 'gamma' } });
+        await messageStore.updateContent(edited.id, { kind: 'text', text: 'delta' });
+        await messageStore.removeMany(bot.id, [removed.id]);
+        await botStore.delete(otherBot.id);
+
+        const words = ['alpha', 'delta', 'beta', 'gamma'];
+        const hitLists = await Promise.all(words.map(word => messageStore.search(word, 10)));
+        const hitCounts = hitLists.map(hits => hits.length);
+
+        expect(hitCounts)
+            .toEqual([0, 1, 0, 0]);
+    });
+
     it('removes the given messages of one bot and keeps the others', async () => {
         const otherBot = await new BotStore(opened.db)
             .create({ name: 'Bia', title: '', description: '' });

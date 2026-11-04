@@ -2979,6 +2979,68 @@ button.list-row {
     opacity: 0.6;
 }
 
+/* A search hit: the snippet shows two lines around the match, with the match itself highlighted. */
+.channel-list-row.message-search-hit .list-row-description {
+    display: -webkit-box;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.message-search-hit mark {
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+    color: inherit;
+}
+
+/* The message a search or a notification opened glows once, so the eye finds it. */
+.is-focused {
+    border-radius: var(--radius-card);
+    animation: message-focus 1.6s ease-out;
+}
+
+@keyframes message-focus {
+    from {
+        background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+    }
+
+    to {
+        background: transparent;
+    }
+}
+
+.memory-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.memory-empty {
+    margin: 0;
+    color: var(--color-text-muted);
+}
+
+.memory-line .list-row-title {
+    overflow-wrap: anywhere;
+}
+
+.memory-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.memory-edit-text {
+    width: 100%;
+    padding: var(--space-3);
+    border: 1px solid var(--color-surface-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    color: inherit;
+    font: inherit;
+    resize: vertical;
+}
+
 /* The channel view: the roster floats under the name pill, and the messages scroll beneath both. */
 .channel-view .channel-messages {
     position: relative;
