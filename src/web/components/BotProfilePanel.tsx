@@ -10,9 +10,10 @@ import { Button } from './Button.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { Field } from './Field.tsx';
-import { AppsGridIcon, BackIcon, MoreIcon, MonitorIcon, TrashIcon } from './icons.tsx';
+import { AppsGridIcon, BackIcon, LibraryIcon, MoreIcon, MonitorIcon, TrashIcon } from './icons.tsx';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
+import { MemoryPanel } from './MemoryPanel.tsx';
 import { PanelHeader } from './PanelHeader.tsx';
 import { PopoverMenu, PopoverMenuItem } from './PopoverMenu.tsx';
 
@@ -191,10 +192,22 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [deleteError, setDeleteError] = useState<string | undefined>(undefined);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isMemoryOpen, setIsMemoryOpen] = useState(false);
     // While editing, the mascot shows the look that Save would keep.
     const shownColor = draft?.color ?? bot.mascotColor;
     const shownShape = draft?.shape ?? bot.mascotShape;
     const shownEyes = draft?.eyes ?? bot.mascotEyes;
+
+    if (isMemoryOpen) {
+        return (
+            <MemoryPanel
+                bot={bot}
+                onClose={() => {
+                    setIsMemoryOpen(false);
+                }}
+            />
+        );
+    }
 
     async function confirmDelete(): Promise<void> {
         setIsDeleting(true);
@@ -266,6 +279,14 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
                 <ListGroup ariaLabel="Bot settings">
                     <ListRow title="Connected apps" leadingIcon={<AppsGridIcon />} onClick={onOpenConnectApps} chevron />
                     <ListRow title="Computer" leadingIcon={<MonitorIcon />} value={computerState} onClick={onOpenScreen} chevron />
+                    <ListRow
+                        title="Memory"
+                        leadingIcon={<LibraryIcon />}
+                        onClick={() => {
+                            setIsMemoryOpen(true);
+                        }}
+                        chevron
+                    />
                 </ListGroup>
 
                 <NotificationsSection pushControls={pushControls} />

@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import type { Stats } from 'node:fs';
-import { lstat, open, rename } from 'node:fs/promises';
+import { lstat, mkdir, open, rename } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -20,6 +21,9 @@ const LEGACY_MEMORY_FILE_NAME = 'CLAUDE.md';
 // The fixed script in the image. It reads the file as the agent user, since an agent may write it with mode 600.
 const SUDO_PATH = '/usr/bin/sudo';
 const READ_MEMORY_PATH = '/usr/local/bin/cloudbot-read-memory';
+const WRITE_MEMORY_PATH = '/usr/local/bin/cloudbot-write-memory';
+// The group can write it, so the agent user in agent-user mode can edit its memory.
+const MEMORY_FILE_MODE = 0o660;
 const BOT_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const READ_TIMEOUT_MS = 5000;
 
@@ -143,9 +147,13 @@ async function readAgentMemoryText(access: AgentMemoryAccess, run: ReadCommand):
     }
 }
 
+function readWorkspaceMemoryText(workspaceDir: string, access?: AgentMemoryAccess, run: ReadCommand = runReadCommand): Promise<string | undefined> {
+    return access === undefined ? readLocalMemoryText(workspaceDir) : readAgentMemoryText(access, run);
+}
+
 // The framed block for the system prompt. Empty memory gives undefined, so no block is added.
 async function readWorkspaceMemoryBlock(workspaceDir: string, access?: AgentMemoryAccess, run: ReadCommand = runReadCommand): Promise<string | undefined> {
-    const memory = access === undefined ? await readLocalMemoryText(workspaceDir) : await readAgentMemoryText(access, run);
+    const memory = await readWorkspaceMemoryText(workspaceDir, access, run);
 
     if (memory === undefined || memory.trim() === '') {
         return undefined;
@@ -157,5 +165,47 @@ async function readWorkspaceMemoryBlock(workspaceDir: string, access?: AgentMemo
     return `${FRAME_INTRO}\n\n${BEGIN_MARKER}\n${quoted}\n${END_MARKER}`;
 }
 
-export { MEMORY_FILE_NAME, readWorkspaceMemoryBlock };
+// Replaces the memory file. A new file moves over the old one, so a link the bot left there is replaced, not followed.
+async function writeLocalMemory(workspaceDir: string, text: string): Promise<void> {
+    await mkdir(workspaceDir, { recursive: true });
+
+    const memoryPath = join(workspaceDir, MEMORY_FILE_NAME);
+    const temporaryPath = `${memoryPath}.${randomUUID()}`;
+    const handle = await open(temporaryPath, 'wx');
+
+    try {
+        await handle.chmod(MEMORY_FILE_MODE);
+        await handle.writeFile(text);
+    } finally {
+        await handle.close();
+    }
+
+    await rename(temporaryPath, memoryPath);
+}
+
+function writeAgentMemory(access: AgentMemoryAccess, text: string): Promise<void> {
+    if (!BOT_ID_PATTERN.test(access.botId)) {
+        return Promise.reject(new Error('The memory file could not be written.'));
+    }
+
+    return new Promise((resolve, reject) => {
+        const child = execFile(SUDO_PATH, ['-n', '-u', access.agentUser, '--', WRITE_MEMORY_PATH, access.botId], { timeout: READ_TIMEOUT_MS }, (error) => {
+            if (error) {
+                reject(new Error('The memory file could not be written.'));
+
+                return;
+            }
+
+            resolve();
+        });
+
+        child.stdin?.end(text);
+    });
+}
+
+function writeWorkspaceMemory(workspaceDir: string, text: string, access?: AgentMemoryAccess): Promise<void> {
+    return access === undefined ? writeLocalMemory(workspaceDir, text) : writeAgentMemory(access, text);
+}
+
+export { MEMORY_FILE_MODE, MEMORY_FILE_NAME, MEMORY_MAX_BYTES, MEMORY_TRUNCATED_NOTE, readWorkspaceMemoryBlock, readWorkspaceMemoryText, writeWorkspaceMemory };
 export type { AgentMemoryAccess, ReadCommand };

@@ -11,7 +11,7 @@ import type { BotDeleteCheck } from '../approvals/createToolCallReviewer.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnImage, TurnInbox, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
-import { MEMORY_FILE_NAME, readWorkspaceMemoryBlock } from '../agent/readWorkspaceMemory.ts';
+import { MEMORY_FILE_MODE, MEMORY_FILE_NAME, MEMORY_MAX_BYTES, MEMORY_TRUNCATED_NOTE, readWorkspaceMemoryBlock, readWorkspaceMemoryText, writeWorkspaceMemory } from '../agent/readWorkspaceMemory.ts';
 import { AGENT_TOOL_NAME, buildHelperAgents } from '../agent/buildHelperAgents.ts';
 import type { HelperKind } from '../agent/buildHelperAgents.ts';
 import {
@@ -148,8 +148,11 @@ import { removeBotDirectory } from '../bots/removeBotDirectory.ts';
 import { prepareAgentWorkspace } from '../agent/prepareAgentWorkspace.ts';
 import { removeAgentWorkspace } from '../bots/removeAgentWorkspace.ts';
 import { BotDeletingError } from '../bots/BotDeletingError.ts';
+import type { AgentMemoryAccess } from '../agent/readWorkspaceMemory.ts';
+import type { MessageSearchHit } from '../../shared/searchTypes.ts';
 import type {
     AttachmentSummary,
+    BotMemory,
     BotSummary,
     ChatEvent,
     ChatMessage,
@@ -171,12 +174,13 @@ const STARTING_NOTICE = 'CloudBot is starting. I will answer your message as soo
 const NEW_BOT_GREETING = 'Hi, I am new here. What should I be called, and what job should I do for you?';
 const STOP_WAIT_MS = 30_000;
 const STOP_POLL_MS = 50;
-// The mode of a new bot's MEMORY.md. The group can write it, so the agent user in agent-user mode can edit its memory.
-const MEMORY_FILE_MODE = 0o660;
+const SEARCH_RESULT_LIMIT = 30;
 
 // Why a bot was not deleted. 'deleted' is the only success.
 type DeleteBotOutcome = 'deleted' | 'missing' | 'last' | 'setup' | 'stopping' | 'deleting' | 'manager';
 type RefusedDeleteOutcome = Exclude<DeleteBotOutcome, 'deleted'>;
+
+type SaveMemoryOutcome = 'saved' | 'missing' | 'changed' | 'tooLong';
 
 // The owner renames a bot. A name that clashes with a channel member says why.
 type RenameBotOutcome = { kind: 'renamed'; bot: BotSummary } | { kind: 'missing' } | { kind: 'invalid' } | { kind: 'conflict'; reason: string };
@@ -1967,6 +1971,63 @@ class ChatService {
         const summaryPromises = bots.map(bot => this.summarizeBot(bot));
 
         return Promise.all(summaryPromises);
+    }
+
+    // Search across the chats of all bots, newest match first.
+    searchMessages(text: string): Promise<MessageSearchHit[]> {
+        return this.messageStore.search(text, SEARCH_RESULT_LIMIT);
+    }
+
+    private memoryAccessFor(botId: string): AgentMemoryAccess | undefined {
+        return this.agentUser === undefined ? undefined : { agentUser: this.agentUser, botId };
+    }
+
+    // What the bot wrote in its memory file, for the owner to see. A file past the cap comes cut, and cannot be saved back.
+    async readBotMemory(botId: string): Promise<BotMemory | undefined> {
+        const bot = await this.botStore.getById(botId);
+
+        if (bot === undefined) {
+            return undefined;
+        }
+
+        const workspace = this.workspaceFor(botId);
+        const access = this.memoryAccessFor(botId);
+        const text = await readWorkspaceMemoryText(workspace, access) ?? '';
+
+        return { text, isCut: text.endsWith(MEMORY_TRUNCATED_NOTE) };
+    }
+
+    // The owner edits the memory. The bot may have written it since the owner read it, so the save needs the text the
+    // owner saw, and a changed file is refused rather than overwritten.
+    async saveBotMemory(botId: string, text: string, expectedText: string): Promise<SaveMemoryOutcome> {
+        if (Buffer.byteLength(text) > MEMORY_MAX_BYTES) {
+            return 'tooLong';
+        }
+
+        const current = this.deletingBots.has(botId) ? undefined : await this.readBotMemory(botId);
+
+        if (current === undefined) {
+            return 'missing';
+        }
+
+        if (current.text !== expectedText) {
+            return 'changed';
+        }
+
+        if (current.isCut) {
+            return 'tooLong';
+        }
+
+        const workspace = this.workspaceFor(botId);
+        const access = this.memoryAccessFor(botId);
+
+        if (access !== undefined) {
+            await prepareAgentWorkspace(workspace);
+        }
+
+        await writeWorkspaceMemory(workspace, text, access);
+
+        return 'saved';
     }
 
     // The name follows the rules of a bot that renames itself: one line of plain text, at most 40 characters, and no clash in a channel.
@@ -4469,4 +4530,4 @@ class ChatService {
 }
 
 export { buildScreenshotName, ChatService, DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError };
-export type { ChatEventListener, ChatServiceOptions, DeleteBotOutcome, MessagePageOptions, RenameBotOutcome, SharedFileDownload, TurnSource };
+export type { ChatEventListener, ChatServiceOptions, DeleteBotOutcome, MessagePageOptions, RenameBotOutcome, SaveMemoryOutcome, SharedFileDownload, TurnSource };

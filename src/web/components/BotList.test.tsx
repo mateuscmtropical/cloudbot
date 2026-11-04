@@ -58,7 +58,7 @@ describe('BotList', () => {
             <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} onPeople={vi.fn()} onAccount={vi.fn()} />,
         );
 
-        const searchInput = screen.getByRole('searchbox', { name: 'Search bots' });
+        const searchInput = screen.getByRole('searchbox', { name: 'Search bots and messages' });
 
         fireEvent.click(screen.getByRole('button', { name: 'Focus search' }));
 
@@ -71,7 +71,7 @@ describe('BotList', () => {
             <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} onPeople={vi.fn()} />,
         );
 
-        fireEvent.change(screen.getByRole('searchbox', { name: 'Search bots' }), { target: { value: 'bia' } });
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Search bots and messages' }), { target: { value: 'bia' } });
 
         expect(screen.getByText('Bia'))
             .toBeTruthy();
