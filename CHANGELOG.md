@@ -21,6 +21,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Attachments look good now. Images waiting to be sent show as small thumbnails, and each one has its own remove button. Sent images show in the message as one large picture or a mosaic, and open in a viewer with arrows, swipe, Escape and download. Other files show as a card with an icon, the name and the size. Sent images stay after the upload cleanup, and every JPEG is drawn again in the browser, which drops its EXIF data such as the GPS position.
+- A bot's images show in the chat up to 30 MB, and an image made in a channel turn is posted in the channel. Files shared there show in the channel too.
 - Each bot has a Permissions choice in the provider menu. Auto is the new default and uses the auto mode of each CLI, or the closest one it has. Ask keeps the old behavior. YOLO starts each CLI with its skip flag and stops all checks, at the owner's risk. Only the owner can change it, in the web app.
 
 ### Changed

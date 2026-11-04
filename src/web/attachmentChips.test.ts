@@ -8,12 +8,17 @@ describe('mergeLoadedUploads', () => {
             { id: 'upload-1', name: 'uploading.txt', status: 'uploading' as const },
             { id: 'old-id', name: 'stale.txt', status: 'ready' as const },
         ];
-        const merged = mergeLoadedUploads(chips, [{ id: 'server-id', name: 'kept.txt', sizeBytes: 3 }]);
+        const uploads = [
+            { id: 'server-id', name: 'kept.txt', mimeType: 'application/octet-stream', sizeBytes: 3 },
+            { id: 'image-id', name: 'cat.png', mimeType: 'image/png', sizeBytes: 3 },
+        ];
+        const merged = mergeLoadedUploads(chips, uploads, 'bot 1');
 
         expect(merged)
             .toEqual([
                 { id: 'upload-1', name: 'uploading.txt', status: 'uploading' },
                 { id: 'server-id', name: 'kept.txt', status: 'ready' },
+                { id: 'image-id', name: 'cat.png', status: 'ready', previewUrl: '/api/bots/bot%201/uploads/image-id' },
             ]);
     });
 });
