@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- Only the bot of the open conversation follows the pointer and the caret. The others still blink. Following the pointer no longer renders React on each frame, so it stays smooth.
 - A bot can run alone. Anything that stays inside its container runs without a card, such as commands, package installs and `sudo`. A message, a push or another outside action waits for the owner only when the owner did not ask for it and no Allow rule covers it. Money and deleting a bot always wait. The check reads what the owner wrote, not the pages the bot read, and it finds the owner's request across a long task. The command floor and Block rules still refuse a call.
 - The agent CLIs are updated: Codex 0.166.0, Gemini CLI 0.66.0, Copilot 1.0.105, Qwen Code 0.26.7, OpenCode 2.2.5 and Mistral Vibe 3.1.0. Claude, Cursor, Grok, Kimi and Antigravity get their latest versions on this build.
 

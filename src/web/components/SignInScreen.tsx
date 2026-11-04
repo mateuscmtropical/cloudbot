@@ -33,7 +33,7 @@ function SignInScreen(): ReactElement {
     return (
         <main className="sign-in">
             <div className="sign-in-card">
-                <CloudMascot color="blue" shape="puff" state="idle" size={MASCOT_SIZE} />
+                <CloudMascot color="blue" shape="puff" state="idle" size={MASCOT_SIZE} isActive />
                 <h1>CloudBot</h1>
                 <p>Sign in with a passkey of this device, or open the setup link printed by the server.</p>
                 <button type="button" className="sign-in-button" onClick={signIn} disabled={isBusy}>Sign in with a passkey</button>

@@ -240,7 +240,7 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
 
             <div className="bot-profile-content">
                 <div className="bot-profile-hero">
-                    <CloudMascot color={shownColor} shape={shownShape} eyes={shownEyes} state="idle" size={90} />
+                    <CloudMascot color={shownColor} shape={shownShape} eyes={shownEyes} state="idle" size={90} isActive />
                     {draft === undefined
                         ? (
                                 <>

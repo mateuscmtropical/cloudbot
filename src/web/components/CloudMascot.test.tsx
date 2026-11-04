@@ -27,7 +27,7 @@ function setPrefersReducedMotion(prefers: boolean): void {
 }
 
 function renderMascot(state: MascotState, shape: (typeof ALL_SHAPES)[number] = 'puff', color: keyof typeof MASCOT_COLORS = 'blue'): RenderResult {
-    return render(<CloudMascot color={color} shape={shape} state={state} />);
+    return render(<CloudMascot color={color} shape={shape} state={state} isActive />);
 }
 
 describe('CloudMascot', () => {
@@ -175,7 +175,7 @@ describe('CloudMascot', () => {
 
         const addListener = vi.spyOn(window, 'addEventListener');
         const mascots = Array.from({ length: 30 }, (_value, index) => (
-            <CloudMascot key={String(index)} color="blue" shape="puff" state="idle" size={28} />
+            <CloudMascot key={String(index)} color="blue" shape="puff" state="idle" size={28} isActive />
         ));
 
         render(<>{mascots}</>);
@@ -185,6 +185,31 @@ describe('CloudMascot', () => {
         expect(pointerMoveAdds)
             .toHaveLength(1);
         addListener.mockRestore();
+    });
+
+    it('leaves a bot that is not the open conversation out of the pointer and the caret, and it still blinks', () => {
+        setPrefersReducedMotion(false);
+        vi.useFakeTimers();
+        vi.spyOn(Math, 'random')
+            .mockReturnValue(0);
+
+        const addListener = vi.spyOn(window, 'addEventListener');
+        const { container } = render(<CloudMascot color="blue" shape="puff" state="idle" />);
+
+        expect(addListener.mock.calls.filter(call => call[0] === 'pointermove'))
+            .toHaveLength(0);
+        expect(container.querySelector('.cloud-face')
+            ?.getAttribute('data-tracks-pointer'))
+            .toBeNull();
+
+        vi.advanceTimersByTime(2500);
+
+        expect(container.querySelector('.cloud-eyes')
+            ?.getAttribute('data-blinking'))
+            .toBe('true');
+        addListener.mockRestore();
+        vi.restoreAllMocks();
+        vi.useRealTimers();
     });
 
     it('stops listening to the pointer while it is off screen', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import { MASCOT_COLORS, MASCOT_FACE_COLORS, readMascotColor } from '../../shared/mascot.ts';
@@ -15,6 +15,8 @@ interface CloudMascotProps {
     state: MascotState;
     // Width and height in pixels. The cloud keeps its proportions.
     size?: number;
+    // True for the bot of the open conversation, the only one that follows the pointer and the caret.
+    isActive?: boolean;
 }
 
 interface CircleSpec {
@@ -273,21 +275,37 @@ function roundOffset(value: number): number {
     return Math.round(value * 10) / 10;
 }
 
+function eyeTransformFor(offset: Point): string {
+    return `translate(${String(offset.x)}px, ${String(offset.y)}px)`;
+}
+
+// The whole cloud leans and shifts a little with the look.
+function lookTransformFor(offset: Point): string {
+    const shiftX = roundOffset(offset.x * LOOK_SHIFT_PER_UNIT);
+    const shiftY = roundOffset(offset.y * LOOK_SHIFT_PER_UNIT);
+    const tilt = roundOffset(offset.x * LOOK_TILT_DEG_PER_UNIT);
+
+    return `translate(${String(shiftX)}px, ${String(shiftY)}px) rotate(${String(tilt)}deg)`;
+}
+
 // A random pause before the next blink, between the minimum and maximum delay.
 function pickBlinkDelayMs(randomValue: number): number {
     return BLINK_MIN_DELAY_MS + randomValue * (BLINK_MAX_DELAY_MS - BLINK_MIN_DELAY_MS);
 }
 
-function CloudMascot({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE }: CloudMascotProps): ReactElement {
+function CloudMascotView({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE, isActive = false }: CloudMascotProps): ReactElement {
     const svgRef = useRef<SVGSVGElement>(null);
-    const [eyeOffset, setEyeOffset] = useState<Point>({ x: 0, y: 0 });
-    const [isBlinking, setIsBlinking] = useState(false);
-    // A long chat holds many mascots. Only the ones on screen listen to the pointer and run a blink timer.
+    const lookRef = useRef<SVGGElement>(null);
+    const eyeShiftRef = useRef<SVGGElement>(null);
+    const eyesRef = useRef<SVGGElement>(null);
+    // A long chat holds many mascots. Only the ones on screen run a blink timer.
     const [isOnScreen, setIsOnScreen] = useState(true);
     // The eyes move and blink under reduced motion too. The stylesheet only drops the easing there.
     const hasMovingEyes = isPointerFace(state);
-    const isLooking = hasMovingEyes && isOnScreen;
-    const isBlinkShown = hasMovingEyes && isBlinking;
+    const isBlinkingAllowed = hasMovingEyes && isOnScreen;
+    // Only the bot of the open conversation follows the pointer and the caret.
+    const followsLook = hasMovingEyes && isActive;
+    const isLooking = followsLook && isOnScreen;
     const body = BODY_SPECS[shape];
     const knownColor = readMascotColor(color);
     const fill = MASCOT_COLORS[knownColor];
@@ -315,21 +333,32 @@ function CloudMascot({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE 
         };
     }, []);
 
-    // One shared listener serves every mascot. Each one turns the pointer into its own eye offset.
-    // While the owner types, the eyes follow the caret along the text box, through the shared typing listener.
+    // The look is written straight to the elements, so moving the pointer renders nothing and only the compositor works.
     useEffect(() => {
         if (!isLooking) {
             return undefined;
         }
 
+        const eyeShift = eyeShiftRef.current;
+        const look = lookRef.current;
+        let lastOffset = NO_EYE_OFFSET;
+
+        const writeOffset = (offset: Point): void => {
+            lastOffset = offset;
+            const eyeTransform = eyeTransformFor(offset);
+            const lookTransform = lookTransformFor(offset);
+
+            eyeShift?.style.setProperty('transform', eyeTransform);
+            look?.style.setProperty('transform', lookTransform);
+        };
+
+        // Offsets are kept to a tenth of a unit, so a pointer that has not moved much writes nothing.
         const applyOffset = (offset: Point): void => {
             const rounded = { x: roundOffset(offset.x), y: roundOffset(offset.y) };
 
-            setEyeOffset((previous) => {
-                const isSame = previous.x === rounded.x && previous.y === rounded.y;
-
-                return isSame ? previous : rounded;
-            });
+            if (rounded.x !== lastOffset.x || rounded.y !== lastOffset.y) {
+                writeOffset(rounded);
+            }
         };
 
         const lookAt = (point: Point): void => {
@@ -341,7 +370,6 @@ function CloudMascot({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE 
 
             const rect = element.getBoundingClientRect();
             const center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-
             const pointerOffset = computeEyeOffset(center, point, EYE_MAX_OFFSET);
 
             applyOffset(pointerOffset);
@@ -358,17 +386,26 @@ function CloudMascot({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE 
         return () => {
             stopListening();
             // Leaving the look resets the eyes to the middle, so they do not stay turned after the owner stops typing.
-            setEyeOffset(previous => (previous.x === 0 && previous.y === 0 ? previous : NO_EYE_OFFSET));
+            eyeShift?.style.removeProperty('transform');
+            look?.style.removeProperty('transform');
         };
     }, [isLooking, state]);
 
     // A blink after a random pause. No timer runs while the tab is hidden, and the next blink waits until it shows again.
     useEffect(() => {
-        if (!isLooking) {
+        if (!isBlinkingAllowed) {
             return undefined;
         }
 
         let timer: number | undefined;
+
+        const setBlinking = (isBlinking: boolean): void => {
+            if (isBlinking) {
+                eyesRef.current?.setAttribute('data-blinking', 'true');
+            } else {
+                eyesRef.current?.removeAttribute('data-blinking');
+            }
+        };
 
         const stopBlinking = (): void => {
             if (timer !== undefined) {
@@ -376,7 +413,7 @@ function CloudMascot({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE 
                 timer = undefined;
             }
 
-            setIsBlinking(false);
+            setBlinking(false);
         };
 
         const scheduleBlink = (): void => {
@@ -388,10 +425,10 @@ function CloudMascot({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE 
             const pauseMs = pickBlinkDelayMs(randomValue);
 
             timer = window.setTimeout(() => {
-                setIsBlinking(true);
+                setBlinking(true);
 
                 timer = window.setTimeout(() => {
-                    setIsBlinking(false);
+                    setBlinking(false);
                     scheduleBlink();
                 }, BLINK_DURATION_MS);
             }, pauseMs);
@@ -409,22 +446,12 @@ function CloudMascot({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE 
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             stopBlinking();
         };
-    }, [isLooking]);
-
-    const eyeTransform = hasMovingEyes
-        ? `translate(${String(eyeOffset.x)}px, ${String(eyeOffset.y)}px)`
-        : undefined;
-    const lookShiftX = roundOffset(eyeOffset.x * LOOK_SHIFT_PER_UNIT);
-    const lookShiftY = roundOffset(eyeOffset.y * LOOK_SHIFT_PER_UNIT);
-    const lookTilt = roundOffset(eyeOffset.x * LOOK_TILT_DEG_PER_UNIT);
-    const lookTransform = hasMovingEyes
-        ? `translate(${String(lookShiftX)}px, ${String(lookShiftY)}px) rotate(${String(lookTilt)}deg)`
-        : undefined;
+    }, [isBlinkingAllowed]);
 
     return (
         <span className={`cloud-mascot is-${state}`} data-state={state} data-shape={shape} data-color={color} data-eyes={eyes} style={{ width: size, height: size }}>
             <svg ref={svgRef} viewBox={VIEW_BOX} aria-hidden="true" focusable="false">
-                <g className="cloud-look" style={{ transform: lookTransform }}>
+                <g ref={lookRef} className="cloud-look">
                     <g className="cloud-body" fill={fill} stroke="none">
                         {body.circles.map(circle => (
                             <circle key={`${String(circle.cx)}-${String(circle.cy)}`} cx={circle.cx} cy={circle.cy} r={circle.r} />
@@ -433,9 +460,9 @@ function CloudMascot({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE 
                         {body.dots?.map(dot => <circle key={`${String(dot.cx)}-${String(dot.cy)}`} cx={dot.cx} cy={dot.cy} r={dot.r} />)}
                         {body.paths?.map(path => <path key={path} d={path} />)}
                     </g>
-                    <g className="cloud-face" data-face={state} data-tracks-pointer={hasMovingEyes ? 'true' : undefined}>
-                        <g style={{ transform: eyeTransform }}>
-                            <g className="cloud-eyes" data-blinking={isBlinkShown ? 'true' : undefined}>
+                    <g className="cloud-face" data-face={state} data-tracks-pointer={followsLook ? 'true' : undefined}>
+                        <g ref={eyeShiftRef}>
+                            <g ref={eyesRef} className="cloud-eyes">
                                 {renderFace(state, eyes, faceColor)}
                             </g>
                         </g>
@@ -446,5 +473,8 @@ function CloudMascot({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE 
     );
 }
 
-export { CloudMascot, pickBlinkDelayMs };
+// The props are plain values, so a parent render does not redraw the mascot.
+const memoizedMascot = memo(CloudMascotView);
+
+export { memoizedMascot as CloudMascot, pickBlinkDelayMs };
 export type { CloudMascotProps };
