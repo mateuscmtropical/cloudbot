@@ -13,6 +13,7 @@ All notable changes to this project are listed here. The format follows
 ### Changed
 
 - The clouds have moods. A quiet chat falls asleep with drifting letters. Some days a bot has a cold and sneezes small lightning bolts. Rain falls after an error, a question mark floats while a bot waits for you, and stars pop when a turn ends.
+- Messages between bots now look like messages. The bot that sent one shows beside it with its name, instead of a gray line of text.
 - Only the bot of the open conversation follows the pointer and the caret. The others still blink. Following the pointer no longer renders React on each frame, so it stays smooth.
 - The chat header's "..." menu is one panel with sections for provider, model and effort, and permissions. The provider in use is marked, and Connect is a quiet action. Every choice saves as soon as it is made, with no Save button. On a phone the panel is a bottom sheet. Menus and dialogs now animate when they open, and menus also when they close.
 - The provider and model are read when a chat opens and when the menu opens, not after every message.
