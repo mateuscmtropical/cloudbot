@@ -25,6 +25,7 @@ import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from '../agent/prepareAgentW
 import { UNSENT_UPLOAD_MAX_AGE_MS, readUploadRetentionMs, removeOldUploads } from '../attachments/cleanUploads.ts';
 import { describeAttachments, readTurnImages } from '../attachments/attachmentPrompt.ts';
 import { readImageSize } from '../attachments/readImageSize.ts';
+import { PREVIEW_IMAGE_TYPES } from '../../shared/previewImageTypes.ts';
 import { readMaxUploadBytes, removeFiles, saveFiles } from '../attachments/saveUpload.ts';
 import { readMaxShareBytes, shareWorkspaceFile } from '../files/shareFile.ts';
 import type { BrowserControl } from '../desktop/BrowserControl.ts';
@@ -410,6 +411,8 @@ const MAX_PENDING_FILES = 10;
 const SHARE_DIR_MODE = 0o700;
 const SHARE_FILE_MODE = 0o600;
 const FILE_ID_PATTERN = /^[0-9a-f-]{36}$/;
+// A subfolder of the share folder. The cleanup reads only the files right under a bot's folder, so sent images stay until the bot is deleted.
+const SENT_IMAGES_FOLDER = 'sent-images';
 // The turns of the bot's own chat that take a new owner message while they run. A hand-off answers another bot, a channel
 // turn speaks in the channel and a quiet check-in removes its messages, so those keep new messages in the queue.
 const INBOX_TURN_SOURCES = new Set<TurnSource>(['chat', 'routine', 'webhook']);
@@ -572,7 +575,7 @@ function isOverPendingLimit(uploads: SavedUpload[], maxBytes: number): boolean {
 }
 
 function toPendingUpload(upload: SavedUpload): PendingUpload {
-    return { id: upload.id, name: upload.name, sizeBytes: upload.sizeBytes };
+    return { id: upload.id, name: upload.name, mimeType: upload.mimeType, sizeBytes: upload.sizeBytes };
 }
 function toAttachmentSummary(upload: SavedUpload): AttachmentSummary {
     return { name: upload.name, mimeType: upload.mimeType, sizeBytes: upload.sizeBytes };
@@ -922,8 +925,84 @@ class ChatService {
         };
     }
 
-    // Shares one workspace file with the owner. Throws ShareFileError with a message for the model.
-    async shareFile(botId: string, requestedPath: string): Promise<{ name: string; sizeBytes: number }> {
+    // The kept copy of an image sent with a message. The message must belong to the bot and hold this file.
+    async findSentImage(botId: string, messageId: string, fileId: string): Promise<SharedFileDownload | undefined> {
+        const stored = await this.messageStore.getById(messageId);
+
+        if (stored === undefined || stored.botId !== botId || !FILE_ID_PATTERN.test(fileId)) {
+            return undefined;
+        }
+
+        const body = stored.content as MessageBody;
+        const attachment = body.kind === 'text' ? body.attachments?.find(candidate => candidate.fileId === fileId) : undefined;
+
+        if (attachment === undefined || !PREVIEW_IMAGE_TYPES.has(attachment.mimeType)) {
+            return undefined;
+        }
+
+        const sentImagesDir = this.sentImagesDirFor(botId);
+        const absolutePath = join(sentImagesDir, fileId);
+
+        return { absolutePath, name: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes };
+    }
+
+    // An image waiting for the next message, for its thumbnail. Other files have no thumbnail.
+    findPendingImage(botId: string, uploadId: string): SavedUpload | undefined {
+        const queuedUploads = this.pendingUploads.get(botId) ?? [];
+
+        return queuedUploads.find(upload => upload.id === uploadId && PREVIEW_IMAGE_TYPES.has(upload.mimeType));
+    }
+
+    // The stored copy behind a file post in a channel. It lies in the share folder of the bot that posted it.
+    async findChannelFile(channelId: string, postId: string): Promise<SharedFileDownload | undefined> {
+        const post = await this.channelStore?.getMessage(channelId, postId);
+
+        if (post?.authorBotId === undefined || post.body.kind !== 'file' || !FILE_ID_PATTERN.test(post.body.fileId)) {
+            return undefined;
+        }
+
+        const shareDir = this.shareDirFor(post.authorBotId);
+        const absolutePath = join(shareDir, post.body.fileId);
+
+        return { absolutePath, name: post.body.name, mimeType: post.body.mimeType, sizeBytes: post.body.sizeBytes };
+    }
+
+    private sentImagesDirFor(botId: string): string {
+        const shareDir = this.shareDirFor(botId);
+
+        return join(shareDir, SENT_IMAGES_FOLDER);
+    }
+
+    // Copies the images of a message out of the upload folder, which is cleaned after some days. A failed copy leaves that
+    // image as a plain file card, since the message itself must still go out.
+    private async keepSentImages(botId: string, uploads: SavedUpload[]): Promise<AttachmentSummary[]> {
+        const folder = this.sentImagesDirFor(botId);
+        const copies = uploads.map(async (upload) => {
+            const summary = toAttachmentSummary(upload);
+
+            if (!PREVIEW_IMAGE_TYPES.has(upload.mimeType) || !FILE_ID_PATTERN.test(upload.id)) {
+                return summary;
+            }
+
+            const copyPath = join(folder, upload.id);
+
+            try {
+                await mkdir(folder, { recursive: true, mode: SHARE_DIR_MODE });
+                await writeFile(copyPath, upload.bytes, { mode: SHARE_FILE_MODE });
+            } catch (error: unknown) {
+                console.error('Could not keep a sent image:', error);
+
+                return summary;
+            }
+
+            return { ...summary, fileId: upload.id, ...readImageSize(upload.bytes, upload.mimeType) };
+        });
+
+        return Promise.all(copies);
+    }
+
+    // Shares one workspace file with the owner. A channel turn posts it in the channel. Throws ShareFileError with a message for the model.
+    async shareFile(botId: string, requestedPath: string, channel?: ChannelTurnSource): Promise<{ name: string; sizeBytes: number }> {
         const shareDir = this.shareDirFor(botId);
 
         await mkdir(shareDir, { recursive: true, mode: SHARE_DIR_MODE });
@@ -935,23 +1014,13 @@ class ChatService {
             maxBytes: this.maxShareBytes,
             fileId: randomUUID(),
         });
-        const body: FileBody = { kind: 'file', name: copy.name, mimeType: copy.mimeType, sizeBytes: copy.sizeBytes, fileId: copy.id };
+        const copyPath = join(shareDir, copy.id);
+        // Only an image needs its bytes read here, for the pixel size that reserves its space in the chat.
+        const imageBytes = PREVIEW_IMAGE_TYPES.has(copy.mimeType) ? await readFile(copyPath) : undefined;
+        const imageSize = imageBytes === undefined ? undefined : readImageSize(imageBytes, copy.mimeType);
+        const body: FileBody = { kind: 'file', name: copy.name, mimeType: copy.mimeType, sizeBytes: copy.sizeBytes, fileId: copy.id, ...imageSize };
 
-        let storedMessage;
-
-        try {
-            storedMessage = await this.messageStore.add({ botId, role: 'assistant', kind: body.kind, content: body });
-        } catch (error: unknown) {
-            // Without its message nothing points to the copy, so it would stay on the disk for good.
-            const copyPath = join(shareDir, copy.id);
-
-            await rm(copyPath, { force: true });
-
-            throw error;
-        }
-
-        // Publishing stays outside the try, because the message is stored and the copy must stay.
-        this.publish(botId, { type: 'message', message: toChatMessage(storedMessage) });
+        await this.postSharedFile(botId, body, copyPath, channel);
 
         return { name: copy.name, sizeBytes: copy.sizeBytes };
     }
@@ -970,7 +1039,7 @@ class ChatService {
     }
 
     // Posts an image the model made, such as with the image generation of Codex, to the chat like a shared file.
-    async shareGeneratedImage(botId: string, imageBase64: string): Promise<void> {
+    async shareGeneratedImage(botId: string, imageBase64: string, channel?: ChannelTurnSource): Promise<void> {
         const image = Buffer.from(imageBase64, 'base64');
         const imageType = GENERATED_IMAGE_TYPES.find(candidate => readImageSize(image, candidate.mimeType) !== undefined);
 
@@ -981,7 +1050,7 @@ class ChatService {
         const createdAt = new Date();
         const imageName = buildTimestampName('image', createdAt, imageType.extension);
 
-        await this.storeSharedBytes(botId, imageName, imageType.mimeType, image);
+        await this.storeSharedBytes(botId, imageName, imageType.mimeType, image, channel);
     }
 
     // Exports the bot as a template file, shared in the chat. Only the template's fields go into it.
@@ -1347,7 +1416,7 @@ class ChatService {
     }
 
     // Stores bytes as a shared file and posts it to the chat. The copy is removed if its message cannot be saved.
-    private async storeSharedBytes(botId: string, name: string, mimeType: string, bytes: Buffer): Promise<void> {
+    private async storeSharedBytes(botId: string, name: string, mimeType: string, bytes: Buffer, channel?: ChannelTurnSource): Promise<void> {
         const shareDir = this.shareDirFor(botId);
         const fileId = randomUUID();
         const copyPath = join(shareDir, fileId);
@@ -1355,10 +1424,23 @@ class ChatService {
         await mkdir(shareDir, { recursive: true, mode: SHARE_DIR_MODE });
         await writeFile(copyPath, bytes, { flag: 'wx', mode: SHARE_FILE_MODE });
 
-        const body: FileBody = { kind: 'file', name, mimeType, sizeBytes: bytes.length, fileId };
+        const imageSize = readImageSize(bytes, mimeType);
+        const body: FileBody = { kind: 'file', name, mimeType, sizeBytes: bytes.length, fileId, ...imageSize };
+
+        await this.postSharedFile(botId, body, copyPath, channel);
+    }
+
+    // Posts a stored copy in the chat, or in the channel of a channel turn.
+    private async postSharedFile(botId: string, body: FileBody, copyPath: string, channel: ChannelTurnSource | undefined): Promise<void> {
         let storedMessage;
 
         try {
+            if (channel !== undefined) {
+                await this.appendChannelPost(botId, channel.channelId, 'assistant', body);
+
+                return;
+            }
+
             storedMessage = await this.messageStore.add({ botId, role: 'assistant', kind: body.kind, content: body });
         } catch (error: unknown) {
             // Without its message nothing points to the copy, so it would stay on the disk for good.
@@ -1367,6 +1449,7 @@ class ChatService {
             throw error;
         }
 
+        // Publishing stays outside the try, because the message is stored and the copy must stay.
         this.publish(botId, { type: 'message', message: toChatMessage(storedMessage) });
     }
 
@@ -2609,15 +2692,10 @@ class ChatService {
         // A hand-off takes no files. The files of the owner wait for the owner's next message.
         const takesUploads = source !== 'bot';
         const turnUploads = takesUploads ? (this.pendingUploads.get(botId) ?? []) : [];
-        const attachmentSummaries = turnUploads.map(toAttachmentSummary);
-        const userBody: TextBody = attachmentSummaries.length === 0
-            ? { kind: 'text', text }
-            : { kind: 'text', text, attachments: attachmentSummaries };
         // The owner's own text goes into the running turn when its engine can take it. Files and messages from anyone else wait,
         // and so does a message behind an owner message that already waits, so the owner's messages keep their order.
         const isForRunningTurn = isQueued && source === 'chat' && turnUploads.length === 0 && !this.hasQueuedChatTurn(botId)
             && this.turnInboxes.get(botId)?.deliver !== undefined;
-        const storedBody: TextBody = isQueued && !isForRunningTurn ? { ...userBody, isQueued: true } : userBody;
 
         if (takesUploads) {
             this.pendingUploads.delete(botId);
@@ -2630,6 +2708,12 @@ class ChatService {
             if (this.deletingBots.has(botId)) {
                 throw new BotDeletingError();
             }
+
+            const attachmentSummaries = turnUploads.length === 0 ? [] : await this.keepSentImages(botId, turnUploads);
+            const userBody: TextBody = attachmentSummaries.length === 0
+                ? { kind: 'text', text }
+                : { kind: 'text', text, attachments: attachmentSummaries };
+            const storedBody: TextBody = isQueued && !isForRunningTurn ? { ...userBody, isQueued: true } : userBody;
 
             userMessage = await this.saveAndPublish(botId, 'user', storedBody, emailDeliveryId);
         } catch (error: unknown) {
@@ -2867,7 +2951,11 @@ class ChatService {
         const bot = await this.botStore.getById(botId);
         const channel = await this.channelStore?.getById(round.channelId);
         const posts = (await this.channelStore?.listRecentMessages(round.channelId, CHANNEL_TRANSCRIPT_LIMIT)) ?? [];
-        const recentRows = posts.flatMap(post => (post.body.kind === 'text' ? [{ messageId: post.id, isOwner: post.role === 'user', authorName: post.authorName, text: post.body.text }] : []));
+        const recentRows = posts.flatMap((post) => {
+            const postText = post.body.kind === 'file' ? `(shared the file ${post.body.name})` : post.body.kind === 'text' ? post.body.text : undefined;
+
+            return postText === undefined ? [] : [{ messageId: post.id, isOwner: post.role === 'user', authorName: post.authorName, text: postText }];
+        });
 
         if (round.isStopped) {
             return 'the owner stopped the round';
@@ -3146,23 +3234,27 @@ class ChatService {
             return;
         }
 
+        await this.appendChannelPost(botId, channel.channelId, role, body);
+    }
+
+    private async appendChannelPost(botId: string, channelId: string, role: ChatRole, body: MessageBody): Promise<void> {
         const bot = await this.botStore.getById(botId);
 
         // A channel deleted during the turn has no place for its reply, so the reply is dropped.
-        const channelExists = (await this.channelStore?.getById(channel.channelId)) !== undefined;
+        const channelExists = (await this.channelStore?.getById(channelId)) !== undefined;
 
         if (bot === undefined || !channelExists) {
             return;
         }
 
-        await this.channelStore?.appendMessage(channel.channelId, {
+        await this.channelStore?.appendMessage(channelId, {
             authorBotId: botId,
             authorName: bot.name,
             authorColor: bot.mascotColor,
             authorShape: bot.mascotShape,
             authorEyes: bot.mascotEyes,
             role,
-            kind: 'text',
+            kind: body.kind,
             body,
         });
     }
@@ -3852,7 +3944,7 @@ class ChatService {
             const profileTools = createProfileTools(
                 this.botStore,
                 botId,
-                requestedPath => this.shareFile(botId, requestedPath),
+                requestedPath => this.shareFile(botId, requestedPath, turn.channel),
                 [...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...whatsappTools],
                 name => this.channelNameConflict(botId, name),
             );
@@ -4422,7 +4514,7 @@ class ChatService {
             }
             case 'image':
                 // A broken image is logged and the turn goes on, since the model's text still reaches the owner.
-                await this.shareGeneratedImage(botId, agentEvent.data)
+                await this.shareGeneratedImage(botId, agentEvent.data, channel)
                     .catch((error: unknown) => {
                         console.error('Could not post a generated image to the chat:', error);
                     });

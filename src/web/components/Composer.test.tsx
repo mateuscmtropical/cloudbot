@@ -107,18 +107,21 @@ describe('Composer', () => {
             .toHaveBeenCalledWith('next question');
     });
 
-    it('lists the attached files as chips and marks the ones still uploading', () => {
+    it('lists the attached files as thumbnails and marks the ones still uploading', () => {
         renderComposer({
             attachments: [
                 { id: '1', name: 'notes.txt', status: 'uploading' },
-                { id: '2', name: 'photo.png', status: 'ready' },
+                { id: '2', name: 'photo.png', status: 'ready', previewUrl: '/api/bots/b/uploads/2' },
             ],
         });
 
-        expect(screen.getByText('notes.txt (uploading)'))
+        expect(screen.getByRole('status', { name: 'Uploading notes.txt' }))
             .toBeTruthy();
-        expect(screen.getByText('photo.png'))
-            .toBeTruthy();
+        expect(screen.getByRole('img', { name: 'photo.png' })
+            .getAttribute('src'))
+            .toBe('/api/bots/b/uploads/2');
+        expect(screen.queryByRole('button', { name: 'Remove notes.txt' }))
+            .toBeNull();
     });
 
     it('does not send while a file is still uploading', () => {

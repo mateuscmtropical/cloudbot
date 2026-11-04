@@ -14,8 +14,8 @@ import { AppsGridIcon, BackIcon, LibraryIcon, MoreIcon, MonitorIcon, TrashIcon }
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
 import { MemoryPanel } from './MemoryPanel.tsx';
+import { PanelHeader } from './PanelHeader.tsx';
 import { PopoverMenu, PopoverMenuItem } from './PopoverMenu.tsx';
-import { RoundButton } from './RoundButton.tsx';
 
 // Each handler answers the reason the change was refused, or nothing when it was saved.
 type BotChangeHandler<Change> = (botId: string, change: Change) => Promise<string | undefined>;
@@ -228,8 +228,7 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
 
     return (
         <section className="bot-profile-panel" aria-label={`${bot.name} profile`}>
-            <header className="bot-profile-header">
-                <RoundButton label="Back to chat" onClick={onClose}><BackIcon /></RoundButton>
+            <PanelHeader className="bot-profile-header" closeLabel="Back to chat" closeIcon={<BackIcon />} onClose={onClose}>
                 <PopoverMenu label="Bot options" triggerLabel="More options" triggerIcon={<MoreIcon />} placement="below-end">
                     {close => (
                         <PopoverMenuItem
@@ -244,7 +243,7 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
                         />
                     )}
                 </PopoverMenu>
-            </header>
+            </PanelHeader>
 
             <div className="bot-profile-content">
                 <div className="bot-profile-hero">
@@ -253,15 +252,14 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
                         ? (
                                 <>
                                     <h1 id="bot-profile-name">{bot.name}</h1>
-                                    <button
-                                        type="button"
+                                    <Button
                                         className="bot-profile-edit"
                                         onClick={() => {
                                             setDraft({ name: bot.name, color: bot.mascotColor, shape: bot.mascotShape, eyes: bot.mascotEyes });
                                         }}
                                     >
                                         Edit
-                                    </button>
+                                    </Button>
                                 </>
                             )
                         : (

@@ -9,6 +9,7 @@ import type { ScreenHolderName, ScreenViewName } from '../../shared/chatTypes.ts
 import { getScreenHolder, getScreenView, releaseScreen, takeScreen } from '../apiClient.ts';
 import { hasTouchScreen, KEYSYMS, keysymOfCharacter } from '../softKeyboard.ts';
 import type { ScreenKeyName } from '../softKeyboard.ts';
+import { Button } from './Button.tsx';
 import { ScreencastView } from './ScreencastView.tsx';
 import type { ConnectionState, ScreencastInputMessage } from './ScreencastView.tsx';
 import { SoftKeyboardInput } from './SoftKeyboardInput.tsx';
@@ -356,14 +357,14 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
                     {holder === 'person' ? 'You have the screen. The bot is paused.' : 'The bot has the screen. You can watch.'}
                 </p>
                 <div className="desktop-actions">
-                    <button type="button" onClick={() => { changeHolder(handoffChange); }}>{handoffLabel}</button>
+                    <Button onClick={() => { changeHolder(handoffChange); }}>{handoffLabel}</Button>
                     {holder === 'person' && hasTouchScreen()
-                        ? <button type="button" onClick={() => { keyboardInputRef.current?.focus(); }}>Keyboard</button>
+                        ? <Button onClick={() => { keyboardInputRef.current?.focus(); }}>Keyboard</Button>
                         : null}
-                    <button type="button" aria-pressed={isExpanded} onClick={() => { setIsExpanded(!isExpanded); }}>
+                    <Button aria-pressed={isExpanded} onClick={() => { setIsExpanded(!isExpanded); }}>
                         {isExpanded ? 'Shrink' : 'Expand'}
-                    </button>
-                    <button type="button" onClick={handleClose}>Close</button>
+                    </Button>
+                    <Button onClick={handleClose}>Close</Button>
                 </div>
                 {handoffProblem === '' ? null : <p className="desktop-status" role="alert">{handoffProblem}</p>}
                 {connectionState === 'connecting' ? <p className="desktop-status">Connecting to the screen...</p> : null}
@@ -372,8 +373,7 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
                             <p className="desktop-status" role="alert">
                                 The screen is not available. The desktop may be starting.
                                 {' '}
-                                <button
-                                    type="button"
+                                <Button
                                     onClick={() => {
                                         autoRetriesRef.current = 0;
                                         setConnectionState('connecting');
@@ -381,7 +381,7 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
                                     }}
                                 >
                                     Try again
-                                </button>
+                                </Button>
                             </p>
                         )
                     : null}

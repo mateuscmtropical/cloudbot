@@ -1,7 +1,3 @@
-import { createReadStream } from 'node:fs';
-import { once } from 'node:events';
-import { Readable } from 'node:stream';
-
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -14,6 +10,7 @@ import { MAX_FILES_PER_UPLOAD, readMaxUploadBytes } from '../attachments/saveUpl
 import { DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError } from './ChatService.ts';
 import type { ChatService, DeleteBotOutcome, MessagePageOptions, SaveMemoryOutcome } from './ChatService.ts';
 import { BotDeletingError } from '../bots/BotDeletingError.ts';
+import { respondWithStoredFile, setStoredFileHeaders } from '../files/storedFileResponse.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
 import type { SetupAction } from '../setup/SetupConversation.ts';
 
@@ -60,14 +57,6 @@ interface ChatRoutesOptions {
 }
 
 // Only plain digits count. Anything else, including 0, a sign or a decimal, is rejected.
-// RFC 5987 leaves out the characters that encodeURIComponent keeps.
-function encodeHeaderFileName(name: string): string {
-    const encodedName = encodeURIComponent(name);
-
-    return encodedName.replaceAll(/['()*!]/g, character => `%${character.charCodeAt(0)
-        .toString(16)
-        .toUpperCase()}`);
-}
 
 function parsePositiveInteger(rawValue: string): number | undefined {
     if (!/^\d+$/.test(rawValue)) {
@@ -426,26 +415,42 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
             return context.json(NO_SHARED_FILE, 404);
         }
 
-        const fileStream = createReadStream(sharedFile.absolutePath);
-        const encodedName = encodeHeaderFileName(sharedFile.name);
-        const fallbackName = sharedFile.name.replaceAll(/[^\x20-\x7E]|["\\%]/g, '_');
+        const response = await respondWithStoredFile(context, sharedFile);
 
-        // An error such as a missing copy ends the stream before any byte, so it becomes a 404 below.
-        try {
-            await once(fileStream, 'open');
-        } catch {
+        return response ?? context.json(NO_SHARED_FILE, 404);
+    });
+
+    // An image the owner sent with this message.
+    routes.get('/api/bots/:id/messages/:mid/attachments/:fileId', async (context) => {
+        const botId = context.req.param('id');
+        const messageId = context.req.param('mid');
+        const fileId = context.req.param('fileId');
+        const sentImage = await chatService.findSentImage(botId, messageId, fileId);
+
+        if (sentImage === undefined) {
             return context.json(NO_SHARED_FILE, 404);
         }
 
-        context.header('content-type', sharedFile.mimeType);
-        const lengthText = String(sharedFile.sizeBytes);
+        const response = await respondWithStoredFile(context, sentImage);
 
-        context.header('content-length', lengthText);
-        context.header('content-disposition', `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodedName}`);
-        context.header('x-content-type-options', 'nosniff');
-        context.header('cache-control', 'private, no-store');
+        return response ?? context.json(NO_SHARED_FILE, 404);
+    });
 
-        return context.body(Readable.toWeb(fileStream) as ReadableStream);
+    // The thumbnail of an image that waits for the next message.
+    routes.get('/api/bots/:id/uploads/:uploadId', (context) => {
+        const botId = context.req.param('id');
+        const uploadId = context.req.param('uploadId');
+        const upload = chatService.findPendingImage(botId, uploadId);
+
+        if (upload === undefined) {
+            return context.json(NO_PENDING_UPLOAD, 404);
+        }
+
+        setStoredFileHeaders(context, upload);
+
+        const bytes = new Uint8Array(upload.bytes);
+
+        return context.body(bytes);
     });
 
     routes.get('/api/bots/:id/uploads', async (context) => {

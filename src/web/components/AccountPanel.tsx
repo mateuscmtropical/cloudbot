@@ -3,10 +3,10 @@ import type { ReactElement } from 'react';
 
 import { describePushResult, disablePushNotifications, enablePushNotifications, readPushState } from '../pushClient.ts';
 import type { PushEnableResult, PushSwitchState } from '../pushClient.ts';
-import { CloseIcon, PeopleIcon } from './icons.tsx';
+import { PeopleIcon } from './icons.tsx';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
-import { RoundButton } from './RoundButton.tsx';
+import { PanelHeader } from './PanelHeader.tsx';
 import { Switch } from './Switch.tsx';
 
 // The browser steps behind the notification switch. Tests replace them.
@@ -127,13 +127,14 @@ function AccountPanel({ onClose, onPeople, personName, personRole = 'Owner', isH
 
     return (
         <section className="people-panel" aria-labelledby="account-title">
-            <header className="people-panel-header settings-page-header">
-                <RoundButton label="Close account panel" onClick={onClose}><CloseIcon /></RoundButton>
-                <div className="settings-page-title">
-                    <h1 id="account-title">Account</h1>
-                    <p>{isHub ? 'How you sign in to this CloudBot and what it sends you.' : 'What this CloudBot sends you.'}</p>
-                </div>
-            </header>
+            <PanelHeader
+                className="people-panel-header settings-page-header"
+                closeLabel="Close account panel"
+                onClose={onClose}
+                title="Account"
+                titleId="account-title"
+                description={isHub ? 'How you sign in to this CloudBot and what it sends you.' : 'What this CloudBot sends you.'}
+            />
 
             <div className="account-panel-content">
                 <ListGroup ariaLabel="Account">
