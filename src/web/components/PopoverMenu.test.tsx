@@ -69,6 +69,28 @@ describe('PopoverMenu', () => {
             .toBeNull();
     });
 
+    it('tells its children when it opens, and a panel closes from its scrim', () => {
+        const seen: boolean[] = [];
+
+        render(
+            <PopoverMenu label="Options" triggerLabel="More options" triggerIcon={<MoreIcon />} variant="panel">
+                {(_close, isOpen) => {
+                    seen.push(isOpen);
+
+                    return null;
+                }}
+            </PopoverMenu>,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+        expect(seen.at(-1))
+            .toBe(true);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Close Options' }));
+        expect(seen.at(-1))
+            .toBe(false);
+    });
+
     it('keeps child state mounted while the popover is closed', () => {
         const view = render(
             <PopoverMenu label="Conversation options" triggerLabel="More options" triggerIcon={<MoreIcon />}>

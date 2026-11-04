@@ -1,19 +1,25 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotProviderSummary, ProviderChoiceSummary } from '../../shared/providerTypes.ts';
 import { readPermissionMode } from '../../shared/permissionModes.ts';
 import type { PermissionMode } from '../../shared/permissionModes.ts';
 import { getBotProvider, listProviders, savePermissionMode, saveProviderModel, startProviderConnect, switchBotProvider } from '../apiClient.ts';
+import { Button } from './Button.tsx';
+import { Field } from './Field.tsx';
+import { PopoverMenuSection } from './PopoverMenu.tsx';
+import { Select } from './Select.tsx';
 
 interface ProviderPickerProps {
     botId: string;
+    // True while the menu around the picker is open. Each open reads again, since a sign-in may have finished.
+    isOpen: boolean;
     // Goes up when the bot's provider may have changed outside the picker, such as by a card in the chat.
     changeCount?: number;
-    // A newly completed message can teach the server the provider's model list.
-    refreshCount?: number;
     // The sign-in of a provider runs in the chat of this bot. The app shows that chat.
     onOpenSetupChat: (setupBotId: string) => void;
+    // Closes the menu around the picker.
+    onClose: () => void;
 }
 
 type ListState = 'loading' | 'ready' | 'failed';
@@ -24,54 +30,30 @@ const PERMISSION_NOTES: Record<PermissionMode, string> = {
     yolo: 'Nothing is checked and your Block rules do not apply. A web page or a message can make the bot delete, send or spend. You take that risk.',
 };
 
-// Shows the provider and the model of the bot in the header. A tap opens the providers of the server.
-// A connected one switches the bot at once. One that is not connected starts its sign-in in the setup chat.
-function ProviderPicker({ botId, changeCount = 0, refreshCount = 0, onOpenSetupChat }: ProviderPickerProps): ReactElement | null {
+// The provider, model, effort and permissions of a bot. Every choice saves at once. The menu stays open, so the owner sees it land.
+function ProviderPicker({ botId, isOpen, changeCount = 0, onOpenSetupChat, onClose }: ProviderPickerProps): ReactElement {
     const [summary, setSummary] = useState<BotProviderSummary | undefined>(undefined);
+    const [summaryState, setSummaryState] = useState<ListState>('loading');
     const [providers, setProviders] = useState<ProviderChoiceSummary[]>([]);
     const [listState, setListState] = useState<ListState>('loading');
-    const [isOpen, setIsOpen] = useState(false);
     const [problem, setProblem] = useState<string | undefined>(undefined);
-    const [modelDraft, setModelDraft] = useState<string | null>(null);
-    const [effortDraft, setEffortDraft] = useState<string | null>(null);
-    const [isSavingModel, setIsSavingModel] = useState(false);
-    const [shownBotId, setShownBotId] = useState(botId);
-    const containerRef = useRef<HTMLDivElement>(null);
+    const lastChangeRef = useRef(0);
 
-    // React's pattern for state that follows a prop: another bot starts with a closed menu.
-    if (shownBotId !== botId) {
-        setShownBotId(botId);
-        setIsOpen(false);
-        setProblem(undefined);
-    }
-
-    // The label follows the bot and the changes made elsewhere. A failure leaves the header without it.
-    useEffect(() => {
+    const load = useCallback(() => {
         let isCurrent = true;
 
         getBotProvider(botId)
             .then((loaded) => {
                 if (isCurrent) {
                     setSummary(loaded);
-                    setModelDraft(loaded.selectedModel);
-                    setEffortDraft(loaded.selectedEffort);
+                    setSummaryState('ready');
                 }
             })
             .catch(() => {
                 if (isCurrent) {
-                    setSummary(undefined);
+                    setSummaryState('failed');
                 }
             });
-
-        return () => {
-            isCurrent = false;
-        };
-    }, [botId, changeCount, refreshCount]);
-
-    // The list is read when the header shows and each time the menu opens, since a sign-in may have finished since the last time.
-    // The server needs a while for the first check of the sign-ins, so reading early lets the menu open with the list ready.
-    useEffect(() => {
-        let isCurrent = true;
 
         listProviders()
             .then((loaded) => {
@@ -89,47 +71,33 @@ function ProviderPicker({ botId, changeCount = 0, refreshCount = 0, onOpenSetupC
         return () => {
             isCurrent = false;
         };
-    }, [isOpen]);
+    }, [botId]);
 
-    // A tap outside the menu, or Escape, closes it.
-    useEffect(() => {
-        if (!isOpen) {
-            return undefined;
-        }
+    // The server needs a while for the first check of the sign-ins, so reading early lets the menu open with the list ready.
+    useEffect(() => load(), [load, changeCount]);
 
-        function closeOnOutsideTap(event: PointerEvent): void {
-            if (event.target instanceof Node && containerRef.current?.contains(event.target) !== true) {
-                setIsOpen(false);
-            }
-        }
+    useEffect(() => (isOpen ? load() : undefined), [load, isOpen]);
 
-        function closeOnEscape(event: KeyboardEvent): void {
-            if (event.key === 'Escape') {
-                setIsOpen(false);
-            }
-        }
+    // Shows the choice at once and undoes it when the server refuses. Only the newest choice may touch the state.
+    function applyChange(shown: BotProviderSummary, request: Promise<BotProviderSummary>, failure: string): void {
+        const previous = summary;
+        const changeNumber = lastChangeRef.current + 1;
 
-        document.addEventListener('pointerdown', closeOnOutsideTap);
-        document.addEventListener('keydown', closeOnEscape);
-
-        return () => {
-            document.removeEventListener('pointerdown', closeOnOutsideTap);
-            document.removeEventListener('keydown', closeOnEscape);
-        };
-    }, [isOpen]);
-
-    function handleSwitch(providerId: string): void {
+        lastChangeRef.current = changeNumber;
         setProblem(undefined);
+        setSummary(shown);
 
-        switchBotProvider(botId, providerId)
-            .then((switched) => {
-                setSummary(switched);
-                setModelDraft(switched.selectedModel);
-                setEffortDraft(switched.selectedEffort);
-                setIsOpen(false);
+        request
+            .then((saved) => {
+                if (lastChangeRef.current === changeNumber) {
+                    setSummary(saved);
+                }
             })
             .catch(() => {
-                setProblem('The provider could not be changed.');
+                if (lastChangeRef.current === changeNumber) {
+                    setSummary(previous);
+                    setProblem(failure);
+                }
             });
     }
 
@@ -138,7 +106,7 @@ function ProviderPicker({ botId, changeCount = 0, refreshCount = 0, onOpenSetupC
 
         startProviderConnect()
             .then((started) => {
-                setIsOpen(false);
+                onClose();
                 onOpenSetupChat(started.botId);
             })
             .catch(() => {
@@ -146,153 +114,137 @@ function ProviderPicker({ botId, changeCount = 0, refreshCount = 0, onOpenSetupC
             });
     }
 
-    function handlePermissionMode(mode: PermissionMode): void {
-        setProblem(undefined);
-
-        savePermissionMode(botId, mode)
-            .then(setSummary)
-            .catch(() => {
-                setProblem('The permissions could not be changed.');
-            });
-    }
-
-    function handleSaveModel(): void {
-        setProblem(undefined);
-        setIsSavingModel(true);
-
-        saveProviderModel(botId, modelDraft, effortDraft)
-            .then((saved) => {
-                setSummary(saved);
-                setModelDraft(saved.selectedModel);
-                setEffortDraft(saved.selectedEffort);
-            })
-            .catch(() => {
-                setProblem('The model could not be changed.');
-            })
-            .finally(() => {
-                setIsSavingModel(false);
-            });
-    }
-
     if (summary === undefined) {
-        return null;
+        return (
+            <div className="provider-picker" role="group" aria-label="Model and provider">
+                <p className="provider-note">{summaryState === 'failed' ? 'The settings could not be loaded.' : 'Loading...'}</p>
+            </div>
+        );
     }
 
-    // A model the provider lists shows by its name alone, such as GPT-6 Luna. Any other model shows after the provider.
-    const modelOption = summary.modelOptions.find(option => option.id === summary.model);
+    const current = summary;
+    const connected = providers.filter(provider => provider.isConnected);
+    const notConnected = providers.filter(provider => !provider.isConnected);
+    const efforts = current.modelOptions.find(option => option.id === current.selectedModel)?.efforts ?? current.effortOptions;
+    // A model the provider lists shows by its name, such as GPT-6 Luna. Any other shows as the provider reports it.
+    const modelLabel = current.modelOptions.find(option => option.id === current.model)?.label ?? current.model;
+
+    function handleSwitch(provider: ProviderChoiceSummary): void {
+        if (provider.id === current.provider) {
+            return;
+        }
+
+        const request = switchBotProvider(botId, provider.id);
+        const shown = { ...current, provider: provider.id, label: provider.label, model: null, modelOptions: [], effortOptions: [], selectedModel: null, selectedEffort: null };
+
+        applyChange(shown, request, 'The provider could not be changed.');
+    }
+
+    function handleModel(model: string | null): void {
+        const options = current.modelOptions.find(option => option.id === model)?.efforts ?? current.effortOptions;
+        const effort = current.selectedEffort !== null && options.includes(current.selectedEffort) ? current.selectedEffort : null;
+        const request = saveProviderModel(botId, model, effort);
+
+        applyChange({ ...current, selectedModel: model, selectedEffort: effort }, request, 'The model could not be changed.');
+    }
+
+    function handleEffort(effort: string | null): void {
+        const request = saveProviderModel(botId, current.selectedModel, effort);
+
+        applyChange({ ...current, selectedEffort: effort }, request, 'The effort could not be changed.');
+    }
+
+    function handlePermissionMode(mode: PermissionMode): void {
+        const request = savePermissionMode(botId, mode);
+
+        applyChange({ ...current, permissionMode: mode }, request, 'The permissions could not be changed.');
+    }
 
     return (
-        <div className="provider-picker" ref={containerRef}>
-            <button
-                type="button"
-                className="provider-picker-button"
-                aria-label="AI provider"
-                aria-expanded={isOpen}
-                onClick={() => {
-                    setIsOpen(current => !current);
-                }}
-            >
-                {modelOption === undefined
-                    ? (
-                            <>
-                                <span>{summary.label}</span>
-                                {summary.model === null ? null : <span className="provider-picker-model">{summary.model}</span>}
-                            </>
-                        )
-                    : <span>{modelOption.label}</span>}
-            </button>
-            {isOpen
-                ? (
-                        <div className="provider-menu" role="dialog" aria-label="AI provider settings">
-                            {listState === 'loading' && providers.length === 0 ? <p className="provider-menu-note">Loading...</p> : null}
-                            {listState === 'failed' && providers.length === 0 ? <p className="provider-menu-note">The providers could not be loaded.</p> : null}
-                            {providers.map(provider => (
-                                <div key={provider.id} className="provider-menu-row">
-                                    {provider.isConnected
-                                        ? (
-                                                <button
-                                                    type="button"
-                                                    aria-pressed={provider.id === summary.provider}
-                                                    className="provider-menu-item"
-                                                    onClick={() => {
-                                                        handleSwitch(provider.id);
-                                                    }}
-                                                >
-                                                    {provider.label}
-                                                </button>
-                                            )
-                                        : (
-                                                <>
-                                                    <span className="provider-menu-item is-off">{provider.label}</span>
-                                                    <button type="button" className="provider-menu-connect" aria-label={`Connect ${provider.label}`} onClick={handleConnect}>
-                                                        Connect
-                                                    </button>
-                                                </>
-                                            )}
-                                </div>
-                            ))}
-                            {summary.modelOptions.length === 0
+        <div className="provider-picker" role="group" aria-label="Model and provider">
+            <PopoverMenuSection title="Provider">
+                {listState === 'loading' && providers.length === 0 ? <p className="provider-note">Loading...</p> : null}
+                {listState === 'failed' && providers.length === 0 ? <p className="provider-note">The providers could not be loaded.</p> : null}
+                {connected.map((provider) => {
+                    const isCurrent = provider.id === current.provider;
+
+                    return (
+                        <button
+                            key={provider.id}
+                            type="button"
+                            className="provider-row"
+                            aria-pressed={isCurrent}
+                            onClick={() => {
+                                handleSwitch(provider);
+                            }}
+                        >
+                            <span className="provider-radio" aria-hidden="true" />
+                            <span className="provider-row-name">{provider.label}</span>
+                            {isCurrent && modelLabel !== null ? <span className="provider-row-model">{modelLabel}</span> : null}
+                        </button>
+                    );
+                })}
+                {notConnected.map(provider => (
+                    <div key={provider.id} className="provider-row is-off">
+                        <span className="provider-radio" aria-hidden="true" />
+                        <span className="provider-row-name">{provider.label}</span>
+                        <Button tone="quiet" aria-label={`Connect ${provider.label}`} onClick={handleConnect}>Connect</Button>
+                    </div>
+                ))}
+            </PopoverMenuSection>
+            {current.modelOptions.length === 0
+                ? null
+                : (
+                        <PopoverMenuSection title="Model and effort">
+                            <Field label="Model" isInline>
+                                <Select
+                                    label="Model"
+                                    value={current.selectedModel ?? ''}
+                                    onChange={(event) => {
+                                        handleModel(event.currentTarget.value || null);
+                                    }}
+                                >
+                                    <option value="">Provider default</option>
+                                    {current.modelOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+                                </Select>
+                            </Field>
+                            {efforts.length === 0
                                 ? null
                                 : (
-                                        <div className="provider-model-settings" role="group" aria-label="Model settings">
-                                            <label className="provider-model-field">
-                                                <span>Model</span>
-                                                <select
-                                                    aria-label="Model"
-                                                    value={modelDraft ?? ''}
-                                                    onChange={(event) => {
-                                                        const model = event.currentTarget.value || null;
-                                                        const options = summary.modelOptions.find(option => option.id === model)?.efforts ?? summary.effortOptions;
-
-                                                        setModelDraft(model);
-                                                        setEffortDraft(current => current !== null && options.includes(current) ? current : null);
-                                                    }}
-                                                >
-                                                    <option value="">Provider default</option>
-                                                    {summary.modelOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
-                                                </select>
-                                            </label>
-                                            <label className="provider-model-field">
-                                                <span>Effort</span>
-                                                <select
-                                                    aria-label="Effort"
-                                                    value={effortDraft ?? ''}
-                                                    onChange={(event) => {
-                                                        setEffortDraft(event.currentTarget.value || null);
-                                                    }}
-                                                >
-                                                    <option value="">Provider default</option>
-                                                    {(summary.modelOptions.find(option => option.id === modelDraft)?.efforts ?? summary.effortOptions).map(effort => <option key={effort} value={effort}>{effort}</option>)}
-                                                </select>
-                                            </label>
-                                            <button type="button" className="provider-model-save" disabled={isSavingModel} onClick={handleSaveModel}>
-                                                {isSavingModel ? 'Saving...' : 'Save model'}
-                                            </button>
-                                        </div>
+                                        <Field label="Effort" isInline>
+                                            <Select
+                                                label="Effort"
+                                                value={current.selectedEffort ?? ''}
+                                                onChange={(event) => {
+                                                    handleEffort(event.currentTarget.value || null);
+                                                }}
+                                            >
+                                                <option value="">Provider default</option>
+                                                {efforts.map(effort => <option key={effort} value={effort}>{effort}</option>)}
+                                            </Select>
+                                        </Field>
                                     )}
-                            <div className="provider-model-settings" role="group" aria-label="Permission settings">
-                                <label className="provider-model-field">
-                                    <span>Permissions</span>
-                                    <select
-                                        aria-label="Permissions"
-                                        value={summary.permissionMode}
-                                        onChange={(event) => {
-                                            const mode = readPermissionMode(event.currentTarget.value);
+                        </PopoverMenuSection>
+                    )}
+            <PopoverMenuSection title="Permissions">
+                <Field label="Mode" isInline>
+                    <Select
+                        label="Permissions"
+                        value={current.permissionMode}
+                        onChange={(event) => {
+                            const mode = readPermissionMode(event.currentTarget.value);
 
-                                            handlePermissionMode(mode);
-                                        }}
-                                    >
-                                        <option value="ask">Ask</option>
-                                        <option value="auto">Auto</option>
-                                        <option value="yolo">YOLO</option>
-                                    </select>
-                                </label>
-                                <p className="provider-menu-note">{PERMISSION_NOTES[summary.permissionMode]}</p>
-                            </div>
-                            {problem === undefined ? null : <p className="provider-menu-note">{problem}</p>}
-                        </div>
-                    )
-                : null}
+                            handlePermissionMode(mode);
+                        }}
+                    >
+                        <option value="ask">Ask</option>
+                        <option value="auto">Auto</option>
+                        <option value="yolo">YOLO</option>
+                    </Select>
+                </Field>
+                <p className={current.permissionMode === 'yolo' ? 'provider-note is-warning' : 'provider-note'}>{PERMISSION_NOTES[current.permissionMode]}</p>
+            </PopoverMenuSection>
+            {problem === undefined ? null : <p className="provider-problem" role="alert">{problem}</p>}
         </div>
     );
 }

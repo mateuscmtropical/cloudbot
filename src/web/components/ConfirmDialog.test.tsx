@@ -39,7 +39,22 @@ describe('ConfirmDialog', () => {
         expect(alertText)
             .toContain('The last bot cannot be deleted.');
 
-        fireEvent.keyDown(document, { key: 'Escape' });
+        // A browser turns Escape on an open dialog into this event.
+        fireEvent(screen.getByRole('alertdialog'), new Event('cancel', { cancelable: true }));
+        expect(onCancel)
+            .toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels from a click on the backdrop but not from a click inside', () => {
+        const onCancel = vi.fn();
+
+        render(<ConfirmDialog title="Delete Ana?" message="The bot data will be removed for good." onConfirm={vi.fn()} onCancel={onCancel} />);
+
+        fireEvent.click(screen.getByText('The bot data will be removed for good.'));
+        expect(onCancel)
+            .not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('alertdialog'));
         expect(onCancel)
             .toHaveBeenCalledTimes(1);
     });

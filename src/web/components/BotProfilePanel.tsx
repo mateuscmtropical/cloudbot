@@ -6,11 +6,14 @@ import { MASCOT_COLORS, MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_PRESETS, MASCOT_
 import type { MascotChoice } from '../../shared/mascot.ts';
 import { NotificationsSection } from './AccountPanel.tsx';
 import type { PushControls } from './AccountPanel.tsx';
+import { Button } from './Button.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
-import { AppsGridIcon, BackIcon, MoreIcon, MonitorIcon } from './icons.tsx';
+import { Field } from './Field.tsx';
+import { AppsGridIcon, BackIcon, MoreIcon, MonitorIcon, TrashIcon } from './icons.tsx';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
+import { PopoverMenu, PopoverMenuItem } from './PopoverMenu.tsx';
 import { RoundButton } from './RoundButton.tsx';
 
 // Each handler answers the reason the change was refused, or nothing when it was saved.
@@ -90,8 +93,7 @@ function BotEditForm({ bot, draft, onDraftChange, onRenameBot, onChangeMascot, o
                 }
             }}
         >
-            <label className="bot-edit-field">
-                <span>Name</span>
+            <Field label="Name">
                 <input
                     type="text"
                     className="rename-input"
@@ -105,7 +107,7 @@ function BotEditForm({ bot, draft, onDraftChange, onRenameBot, onChangeMascot, o
                         setProblem(undefined);
                     }}
                 />
-            </label>
+            </Field>
             <fieldset className="bot-edit-choices">
                 <legend>Look</legend>
                 {MASCOT_PRESETS.map(preset => (
@@ -177,8 +179,8 @@ function BotEditForm({ bot, draft, onDraftChange, onRenameBot, onChangeMascot, o
             {' '}
             {problem === undefined ? null : <p className="bot-edit-problem" role="alert">{problem}</p>}
             <div className="bot-edit-actions">
-                <button type="button" className="choice-button" disabled={isSaving} onClick={onDone}>Cancel</button>
-                <button type="submit" className="choice-button is-selected" disabled={isSaving}>{isSaving ? 'Saving…' : 'Save'}</button>
+                <Button disabled={isSaving} onClick={onDone}>Cancel</Button>
+                <Button type="submit" tone="selected" disabled={isSaving}>{isSaving ? 'Saving…' : 'Save'}</Button>
             </div>
         </form>
     );
@@ -186,7 +188,6 @@ function BotEditForm({ bot, draft, onDraftChange, onRenameBot, onChangeMascot, o
 
 function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBot, onOpenConnectApps, onOpenScreen, computerState, pushControls }: BotProfilePanelProps): ReactElement {
     const [draft, setDraft] = useState<BotDraft | undefined>(undefined);
-    const [isMoreOpen, setIsMoreOpen] = useState(false);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [deleteError, setDeleteError] = useState<string | undefined>(undefined);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -216,26 +217,20 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
         <section className="bot-profile-panel" aria-label={`${bot.name} profile`}>
             <header className="bot-profile-header">
                 <RoundButton label="Back to chat" onClick={onClose}><BackIcon /></RoundButton>
-                <div className="bot-profile-more-wrap">
-                    <RoundButton label="More options" onClick={() => { setIsMoreOpen(current => !current); }}><MoreIcon /></RoundButton>
-                    {isMoreOpen
-                        ? (
-                                <div className="bot-profile-more-menu">
-                                    <button
-                                        type="button"
-                                        className="is-danger"
-                                        onClick={() => {
-                                            setIsMoreOpen(false);
-                                            setDeleteError(undefined);
-                                            setIsDeleteOpen(true);
-                                        }}
-                                    >
-                                        Delete bot
-                                    </button>
-                                </div>
-                            )
-                        : null}
-                </div>
+                <PopoverMenu label="Bot options" triggerLabel="More options" triggerIcon={<MoreIcon />} placement="below-end">
+                    {close => (
+                        <PopoverMenuItem
+                            label="Delete bot"
+                            icon={<TrashIcon />}
+                            tone="danger"
+                            close={close}
+                            onSelect={() => {
+                                setDeleteError(undefined);
+                                setIsDeleteOpen(true);
+                            }}
+                        />
+                    )}
+                </PopoverMenu>
             </header>
 
             <div className="bot-profile-content">

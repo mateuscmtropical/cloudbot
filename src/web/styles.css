@@ -827,7 +827,10 @@ svg {
     pointer-events: auto;
 }
 
+/* Stays in the page while closed. A closed popover animates to [hidden] and only then leaves the layout, through the
+   discrete display transition. @starting-style gives the open its first frame. A browser without them just snaps. */
 .popover-menu-popover {
+    --popover-closed: translateY(-6px) scale(0.97);
     position: absolute;
     z-index: 20;
     display: flex;
@@ -836,33 +839,127 @@ svg {
     min-width: 200px;
     max-width: min(280px, calc(100vw - 24px));
     padding: var(--space-2);
+    border: 1px solid var(--color-surface-border);
     border-radius: var(--radius-card);
     background: var(--color-surface-raised);
-    box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.36);
+    transform-origin: top right;
+    transition: opacity 140ms ease-out, transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1), display 200ms allow-discrete;
 }
 
 .popover-menu-popover[hidden] {
     display: none;
+    opacity: 0;
+    transform: var(--popover-closed);
+    pointer-events: none;
+    transition: opacity 110ms ease-in, transform 110ms ease-in, display 110ms allow-discrete;
+}
+
+@starting-style {
+    .popover-menu-popover:not([hidden]) {
+        opacity: 0;
+        transform: var(--popover-closed);
+    }
 }
 
 .popover-menu-anchor.is-above-start .popover-menu-popover {
+    --popover-closed: translateY(6px) scale(0.97);
     bottom: calc(100% + var(--space-2));
     left: 0;
+    transform-origin: bottom left;
 }
 
 .popover-menu-anchor.is-above-end .popover-menu-popover {
+    --popover-closed: translateY(6px) scale(0.97);
     right: 0;
     bottom: calc(100% + var(--space-2));
+    transform-origin: bottom right;
 }
 
 .popover-menu-anchor.is-below-start .popover-menu-popover {
     top: calc(100% + var(--space-2));
     left: 0;
+    transform-origin: top left;
 }
 
 .popover-menu-anchor.is-below-end .popover-menu-popover {
     top: calc(100% + var(--space-2));
     right: 0;
+}
+
+/* A panel holds settings sections. The sections bring their own spacing and the dividers run edge to edge. */
+.popover-menu-anchor.is-panel .popover-menu-popover {
+    gap: 0;
+    width: 320px;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - var(--size-round-button) - 32px);
+    padding: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    color: var(--color-text);
+}
+
+.popover-menu-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-3);
+}
+
+.popover-menu-section + .popover-menu-section {
+    border-top: 1px solid var(--color-surface-border);
+}
+
+.popover-menu-section-title {
+    margin: 0;
+    padding: 0 var(--space-2) var(--space-1);
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* Tapping beside a bottom sheet closes it. Only a phone shows the scrim. */
+.popover-menu-scrim {
+    transition: opacity 220ms ease-out, display 220ms allow-discrete;
+}
+
+.popover-menu-scrim[hidden] {
+    display: none;
+    opacity: 0;
+}
+
+@starting-style {
+    .popover-menu-scrim:not([hidden]) {
+        opacity: 0;
+    }
+}
+
+@media (max-width: 720px) {
+    .popover-menu-anchor.is-panel .popover-menu-popover {
+        --popover-closed: translateY(100%);
+        position: fixed;
+        top: auto;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        max-width: none;
+        max-height: 85dvh;
+        padding-bottom: var(--safe-bottom);
+        border-width: 1px 0 0;
+        border-radius: var(--radius-card) var(--radius-card) 0 0;
+        transition-duration: 140ms, 280ms, 280ms;
+    }
+
+    .popover-menu-anchor.is-panel .popover-menu-popover[hidden] {
+        transition-duration: 180ms;
+    }
+
+    /* iOS zooms the page when a smaller control takes focus. */
+    .select {
+        font-size: 1rem;
+    }
 }
 
 .popover-menu-item {
@@ -890,26 +987,6 @@ svg {
 .popover-menu-item.is-danger,
 .popover-menu-item.is-danger .popover-menu-item-icon {
     color: var(--color-danger);
-}
-
-.popover-provider-entry {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-}
-
-.popover-provider-label {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-2);
-    color: var(--color-text-muted);
-    font-size: 0.8125rem;
-}
-
-.popover-provider-entry .provider-picker-button {
-    justify-content: space-between;
-    width: 100%;
 }
 
 .icon-button {
@@ -1045,24 +1122,38 @@ button.list-row {
     white-space: nowrap;
 }
 
-.confirm-dialog-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 50;
-    display: grid;
-    place-items: center;
-    padding: var(--space-4);
-    background: rgb(0 0 0 / 0.56);
-}
-
-.confirm-dialog {
-    width: min(360px, 100%);
-    padding: var(--space-4);
+/* A native dialog in the top layer, so it needs no z-index and the browser holds the focus. */
+.modal {
+    width: min(360px, calc(100vw - 2 * var(--space-4)));
+    max-height: calc(100dvh - 2 * var(--space-4));
+    padding: 0;
+    overflow: auto;
     border: 1px solid var(--color-surface-border);
     border-radius: var(--radius-card);
     background: var(--color-surface-raised);
-    box-shadow: 0 8px 28px rgb(0 0 0 / 0.4);
+    box-shadow: 0 12px 36px rgb(0 0 0 / 0.4);
     color: var(--color-text);
+    transition: opacity 140ms ease-out, transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.modal::backdrop {
+    background: rgb(0 0 0 / 0.56);
+    transition: opacity 180ms ease-out;
+}
+
+@starting-style {
+    .modal[open] {
+        opacity: 0;
+        transform: translateY(8px) scale(0.97);
+    }
+
+    .modal[open]::backdrop {
+        opacity: 0;
+    }
+}
+
+.modal-content {
+    padding: var(--space-4);
 }
 
 .confirm-dialog h2 {
@@ -1091,6 +1182,84 @@ button.list-row {
     border-color: var(--color-danger);
     background: var(--color-danger);
     color: #fff;
+}
+
+/* A secondary action that should not compete with what is around it. */
+.choice-button.is-quiet {
+    padding: var(--space-1) var(--space-2);
+    border-color: transparent;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+}
+
+.choice-button.is-quiet:hover {
+    color: var(--color-text);
+}
+
+/* Field and Select */
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.field.is-inline {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: 36px;
+    padding: 0 var(--space-2);
+}
+
+.field-label {
+    flex: none;
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.field.is-inline .field-label {
+    color: var(--color-text);
+    font-weight: 400;
+}
+
+.select {
+    min-width: 0;
+    max-width: 100%;
+    padding: 6px 30px 6px var(--space-3);
+    overflow: hidden;
+    border: 1px solid var(--color-surface-border);
+    border-radius: var(--radius-control);
+    background: var(--color-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5l3-3' fill='none' stroke='%238e8e93' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 10px center / 12px;
+    color: var(--color-text);
+    font: inherit;
+    font-size: 0.8125rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    appearance: none;
+}
+
+/* Same width on each row, or each select would be as wide as its longest option. */
+.field.is-inline .select {
+    flex: none;
+    width: 180px;
+}
+
+.select option {
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+}
+
+.choice-button:focus-visible,
+.popover-menu-item:focus-visible,
+.provider-row:focus-visible,
+.select:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
 }
 
 /* Conversation */
@@ -1320,127 +1489,108 @@ button.list-row {
     font-size: 0.8125rem;
 }
 
-/* The provider and the model of the bot sit in the pill. A tap opens the list of providers under it. */
-.provider-picker {
-    position: relative;
-    flex: none;
+/* The provider, model and permissions of the bot, in the panel of the header's "..." menu. */
+.provider-picker > .provider-note {
+    padding: var(--space-4);
 }
 
-.provider-picker-button {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-3);
-    border: 0;
-    border-radius: var(--radius-control);
-    background: var(--color-hover);
-    color: var(--color-text);
-    font-size: 0.8125rem;
-    cursor: pointer;
-}
-
-.provider-picker-model {
-    color: var(--color-text-muted);
-}
-
-.provider-menu {
-    position: absolute;
-    top: calc(100% + var(--space-3));
-    right: 0;
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    min-width: 220px;
-    padding: var(--space-2);
-    border-radius: var(--radius-bubble);
-    background: var(--color-surface-raised);
-    box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
-}
-
-.provider-menu-row {
+.provider-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-}
-
-.provider-menu-item {
-    flex: 1;
-    padding: var(--space-2) var(--space-3);
+    gap: var(--space-3);
+    width: 100%;
+    min-height: 40px;
+    padding: var(--space-1) var(--space-2);
     border: 0;
     border-radius: var(--space-3);
     background: transparent;
     color: var(--color-text);
+    font-size: 0.875rem;
     text-align: left;
-    cursor: pointer;
 }
 
-.provider-menu-item[aria-checked='true'] {
+.provider-row[aria-pressed='true'] {
     background: var(--color-hover);
     font-weight: 600;
 }
 
-.provider-menu-item.is-off {
+.provider-row.is-off {
     color: var(--color-text-muted);
-    cursor: default;
 }
 
-.provider-menu-connect {
-    padding: var(--space-1) var(--space-3);
-    border: 0;
-    border-radius: var(--radius-control);
-    background: var(--color-accent);
-    color: #fff;
-    cursor: pointer;
+.provider-row-name {
+    flex: 1;
+    min-width: 0;
 }
 
-.provider-model-settings {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    margin-top: var(--space-2);
-    padding: var(--space-2) var(--space-3) var(--space-1);
-    border-top: 1px solid var(--color-surface-raised);
-}
-
-.provider-model-field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
+.provider-row-model {
+    min-width: 0;
+    overflow: hidden;
     color: var(--color-text-muted);
     font-size: 0.75rem;
+    font-weight: 400;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.provider-model-field select {
-    min-width: 0;
-    padding: var(--space-2);
-    border: 1px solid var(--color-surface-raised);
-    border-radius: var(--radius-control);
-    background: var(--color-surface);
-    color: var(--color-text);
-    font: inherit;
-    font-size: 0.8125rem;
+/* Only draws a radio. The row is a button with aria-pressed, so arrow keys do not switch providers by accident. */
+.provider-radio {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--color-text-muted);
+    border-radius: 50%;
+    transition: border-color 120ms ease-out;
 }
 
-.provider-model-save {
-    padding: var(--space-2) var(--space-3);
-    border: 0;
-    border-radius: var(--radius-control);
+.provider-radio::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
     background: var(--color-accent);
-    color: #fff;
-    cursor: pointer;
+    transform: scale(0);
+    transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.provider-model-save:disabled {
-    opacity: 0.6;
-    cursor: wait;
+.provider-row[aria-pressed='true'] .provider-radio {
+    border-color: var(--color-accent);
 }
 
-.provider-menu-note {
+.provider-row[aria-pressed='true'] .provider-radio::after {
+    transform: scale(1);
+}
+
+.provider-row.is-off .provider-radio {
+    opacity: 0.4;
+}
+
+.provider-note {
     margin: 0;
-    padding: var(--space-1) var(--space-3);
+    padding: var(--space-1) var(--space-2) 0;
     color: var(--color-text-muted);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+}
+
+.provider-note.is-warning {
+    margin-top: var(--space-1);
+    padding: var(--space-2);
+    border-radius: var(--space-2);
+    background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+    color: var(--color-text);
+}
+
+.provider-problem {
+    position: sticky;
+    bottom: 0;
+    margin: 0;
+    padding: var(--space-2) var(--space-4);
+    border-top: 1px solid var(--color-surface-border);
+    background: var(--color-surface-raised);
+    color: var(--color-danger);
     font-size: 0.8125rem;
 }
 
@@ -1882,7 +2032,16 @@ button.list-row {
     .link-card,
     .bot-list,
     .switch-track,
-    .switch-track::after {
+    .switch-track::after,
+    .popover-menu-popover,
+    .popover-menu-popover[hidden],
+    .popover-menu-anchor.is-panel .popover-menu-popover,
+    .popover-menu-anchor.is-panel .popover-menu-popover[hidden],
+    .popover-menu-scrim,
+    .modal,
+    .modal::backdrop,
+    .provider-radio,
+    .provider-radio::after {
         transition: none;
     }
 
@@ -2314,32 +2473,6 @@ button.list-row {
     margin: 0 auto var(--space-4);
 }
 
-.bot-profile-more-wrap {
-    position: relative;
-}
-
-.bot-profile-more-menu {
-    position: absolute;
-    z-index: 2;
-    top: calc(100% + var(--space-2));
-    right: 0;
-    min-width: 10rem;
-    overflow: hidden;
-    border: 1px solid var(--color-surface-border);
-    border-radius: var(--radius-bubble);
-    background: var(--color-surface-raised);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
-}
-
-.bot-profile-more-menu button {
-    width: 100%;
-    padding: var(--space-3) var(--space-4);
-    border: 0;
-    background: transparent;
-    color: var(--color-text);
-    text-align: left;
-}
-
 .bot-profile-content {
     display: flex;
     flex-direction: column;
@@ -2377,10 +2510,6 @@ button.list-row {
     color: var(--color-text);
 }
 
-.bot-profile-more-menu button.is-danger {
-    color: var(--color-danger);
-}
-
 .bot-edit-form {
     display: flex;
     flex-direction: column;
@@ -2389,13 +2518,6 @@ button.list-row {
     text-align: left;
 }
 
-.bot-edit-field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-}
-
-.bot-edit-field span,
 .bot-edit-choices legend {
     color: var(--color-text-muted);
     font-size: 0.875rem;

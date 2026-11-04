@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import type { ReactElement, SyntheticEvent } from 'react';
 
+import { Button } from './Button.tsx';
 import { ChatCard } from './ChatCard.tsx';
 
 // Another way to answer the form. Both answers are disabled while either one is pending.
@@ -97,16 +98,15 @@ function SecureForm({ prompt, secretName, submitted, onSubmit, alternative, site
                 </button>
             </form>
             {alternative !== undefined && (
-                <button
-                    type="button"
-                    className="choice-button setup-alternative"
+                <Button
+                    className="setup-alternative"
                     disabled={isPending}
                     onClick={() => {
                         handleAlternative(alternative);
                     }}
                 >
                     {alternative.label}
-                </button>
+                </Button>
             )}
         </ChatCard>
     );

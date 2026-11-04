@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { HubRole } from '../peopleClient.ts';
+import { Button } from './Button.tsx';
 
 interface PeopleHubHintProps {
     role: Exclude<HubRole, 'owner'>;
@@ -37,8 +38,8 @@ function PeopleHubHint({ role, onClose, onAccount }: PeopleHubHintProps): ReactE
                     <p>{isMember ? 'You are a person on a CloudBot hub.' : 'Give other people their own CloudBot.'}</p>
                 </div>
                 <div className="people-panel-actions">
-                    {onAccount === undefined ? null : <button type="button" className="choice-button" onClick={onAccount}>Account</button>}
-                    <button type="button" className="choice-button" aria-label="Close people panel" onClick={onClose}>Close</button>
+                    {onAccount === undefined ? null : <Button onClick={onAccount}>Account</Button>}
+                    <Button aria-label="Close people panel" onClick={onClose}>Close</Button>
                 </div>
             </header>
             <section className="setup-card people-hint-card" aria-label="Who adds people">
@@ -64,7 +65,7 @@ function PeopleHubHint({ role, onClose, onAccount }: PeopleHubHintProps): ReactE
                             <p>Run this on a Debian or Ubuntu server. The hub makes a separate CloudBot for each person and signs them in. You add people here once it runs.</p>
                             <div className="people-credential-row">
                                 <code>{INSTALL_COMMAND}</code>
-                                <button type="button" className="choice-button" onClick={() => { void copyCommand(); }}>{isCopied ? 'Copied' : 'Copy command'}</button>
+                                <Button onClick={() => { void copyCommand(); }}>{isCopied ? 'Copied' : 'Copy command'}</Button>
                             </div>
                             {copyProblem === undefined ? null : <p className="people-problem" role="alert">{copyProblem}</p>}
                             <p>

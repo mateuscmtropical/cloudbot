@@ -19,11 +19,24 @@ const CLAUDE_SUMMARY: BotProviderSummary = {
     provider: 'claude', label: 'Claude', model: 'sonnet', modelOptions: [], selectedModel: null, selectedEffort: null, effortOptions: [], permissionMode: 'auto',
 };
 
+const CHATGPT_SUMMARY: BotProviderSummary = {
+    provider: 'chatgpt', label: 'ChatGPT', model: 'gpt-6-luna',
+    modelOptions: [
+        { id: 'gpt-6-luna', label: 'GPT-6 Luna', efforts: ['low', 'medium'] },
+        { id: 'gpt-6-astra', label: 'GPT-6 Astra', efforts: ['high'] },
+    ],
+    selectedModel: 'gpt-6-luna', selectedEffort: 'low', effortOptions: ['low', 'medium'], permissionMode: 'auto',
+};
+
 const PROVIDERS: ProviderChoiceSummary[] = [
     { id: 'claude', label: 'Claude', isConnected: true },
     { id: 'gemini', label: 'Gemini', isConnected: true },
     { id: 'chatgpt', label: 'ChatGPT', isConnected: false },
 ];
+
+function renderPicker(onOpenSetupChat: (setupBotId: string) => void = () => {}, onClose: () => void = () => {}): void {
+    render(<ProviderPicker botId="bot-1" isOpen={true} onOpenSetupChat={onOpenSetupChat} onClose={onClose} />);
+}
 
 describe('ProviderPicker', () => {
     beforeEach(() => {
@@ -38,22 +51,23 @@ describe('ProviderPicker', () => {
         vi.resetAllMocks();
     });
 
-    it('shows the provider and the model of the bot', async () => {
-        render(<ProviderPicker botId="bot-1" onOpenSetupChat={() => {}} />);
+    it('shows the model the provider reports on the row in use', async () => {
+        renderPicker();
 
-        expect(await screen.findByText('Claude'))
-            .toBeTruthy();
-        expect(screen.getByText('sonnet'))
-            .toBeTruthy();
+        const current = await screen.findByRole('button', { pressed: true });
+
+        expect(current.textContent)
+            .toContain('Claude');
+        expect(current.textContent)
+            .toContain('sonnet');
     });
 
     it('saves the permission choice and warns about YOLO', async () => {
         vi.mocked(savePermissionMode)
             .mockResolvedValue({ ...CLAUDE_SUMMARY, permissionMode: 'yolo' });
 
-        render(<ProviderPicker botId="bot-1" onOpenSetupChat={() => {}} />);
+        renderPicker();
 
-        fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
         fireEvent.change(await screen.findByRole('combobox', { name: 'Permissions' }), { target: { value: 'yolo' } });
 
         expect(await screen.findByText(/You take that risk/))
@@ -62,26 +76,38 @@ describe('ProviderPicker', () => {
             .toHaveBeenCalledWith('bot-1', 'yolo');
     });
 
-    it('shows nothing when the provider cannot be read', async () => {
-        vi.mocked(getBotProvider)
-            .mockRejectedValue(new Error('offline'));
+    it('takes the permission choice back when the server refuses it', async () => {
+        vi.mocked(savePermissionMode)
+            .mockRejectedValue(new Error('refused'));
 
-        const { container } = render(<ProviderPicker botId="bot-1" onOpenSetupChat={() => {}} />);
+        renderPicker();
 
-        await waitFor(() => {
-            expect(getBotProvider)
-                .toHaveBeenCalled();
-        });
-        expect(container.querySelector('.provider-picker'))
+        const select = await screen.findByRole<HTMLSelectElement>('combobox', { name: 'Permissions' });
+
+        fireEvent.change(select, { target: { value: 'yolo' } });
+
+        expect(await screen.findByText('The permissions could not be changed.'))
+            .toBeTruthy();
+        expect(select.value)
+            .toBe('auto');
+        expect(screen.queryByText(/You take that risk/))
             .toBeNull();
     });
 
+    it('says so when the settings cannot be read', async () => {
+        vi.mocked(getBotProvider)
+            .mockRejectedValue(new Error('offline'));
+
+        renderPicker();
+
+        expect(await screen.findByText('The settings could not be loaded.'))
+            .toBeTruthy();
+    });
+
     it('lists the providers, marks the one in use and offers Connect for the others', async () => {
-        render(<ProviderPicker botId="bot-1" onOpenSetupChat={() => {}} />);
+        renderPicker();
 
-        fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
-
-        const current = await screen.findByRole('button', { name: 'Claude' });
+        const current = await screen.findByRole('button', { name: 'Claude sonnet' });
         const other = screen.getByRole('button', { name: 'Gemini' });
 
         expect(current.getAttribute('aria-pressed'))
@@ -92,95 +118,117 @@ describe('ProviderPicker', () => {
             .toBeTruthy();
     });
 
-    it('switches the bot to the provider the owner picks and closes the menu', async () => {
+    it('switches the bot to the provider the owner picks and keeps the panel open', async () => {
         vi.mocked(switchBotProvider)
             .mockResolvedValue({ ...CLAUDE_SUMMARY, provider: 'gemini', label: 'Gemini', model: null });
+        const onClose = vi.fn();
 
-        render(<ProviderPicker botId="bot-1" onOpenSetupChat={() => {}} />);
+        renderPicker(() => {}, onClose);
 
-        fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
         fireEvent.click(await screen.findByRole('button', { name: 'Gemini' }));
 
+        expect(screen.getByRole('button', { name: 'Gemini' })
+            .getAttribute('aria-pressed'))
+            .toBe('true');
         await waitFor(() => {
-            expect(screen.queryByRole('dialog'))
-                .toBeNull();
+            expect(switchBotProvider)
+                .toHaveBeenCalledWith('bot-1', 'gemini');
         });
-        expect(switchBotProvider)
-            .toHaveBeenCalledWith('bot-1', 'gemini');
-        expect(screen.getByRole('button', { name: 'AI provider' }).textContent)
-            .toBe('Gemini');
+        expect(onClose)
+            .not.toHaveBeenCalled();
     });
 
-    it('opens the setup chat when the owner connects a provider', async () => {
+    it('does nothing when the owner taps the provider in use', async () => {
+        renderPicker();
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Claude sonnet' }));
+
+        expect(switchBotProvider)
+            .not.toHaveBeenCalled();
+    });
+
+    it('opens the setup chat and closes the panel when the owner connects a provider', async () => {
         vi.mocked(startProviderConnect)
             .mockResolvedValue({ botId: 'setup-bot' });
         const onOpenSetupChat = vi.fn();
+        const onClose = vi.fn();
 
-        render(<ProviderPicker botId="bot-1" onOpenSetupChat={onOpenSetupChat} />);
+        renderPicker(onOpenSetupChat, onClose);
 
-        fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
         fireEvent.click(await screen.findByRole('button', { name: 'Connect ChatGPT' }));
 
         await waitFor(() => {
             expect(onOpenSetupChat)
                 .toHaveBeenCalledWith('setup-bot');
         });
+        expect(onClose)
+            .toHaveBeenCalledOnce();
     });
 
-    it('says when the provider could not be changed', async () => {
+    it('marks the old provider again when the change is refused', async () => {
         vi.mocked(switchBotProvider)
             .mockRejectedValue(new Error('refused'));
 
-        render(<ProviderPicker botId="bot-1" onOpenSetupChat={() => {}} />);
+        renderPicker();
 
-        fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
         fireEvent.click(await screen.findByRole('button', { name: 'Gemini' }));
 
         expect(await screen.findByText('The provider could not be changed.'))
             .toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Claude sonnet' })
+            .getAttribute('aria-pressed'))
+            .toBe('true');
     });
 
-    it('saves the selected model and effort offered by the current provider', async () => {
-        const chatgpt: BotProviderSummary = {
-            provider: 'chatgpt', label: 'ChatGPT', model: 'gpt-6-luna',
-            modelOptions: [
-                { id: 'gpt-6-luna', label: 'GPT-6 Luna', efforts: ['low', 'medium'] },
-                { id: 'gpt-6-astra', label: 'GPT-6 Astra', efforts: ['high'] },
-            ],
-            selectedModel: null, selectedEffort: null, effortOptions: ['low', 'medium'], permissionMode: 'auto',
-        };
-
+    it('saves the effort as soon as it changes', async () => {
         vi.mocked(getBotProvider)
-            .mockResolvedValue(chatgpt);
+            .mockResolvedValue(CHATGPT_SUMMARY);
         vi.mocked(saveProviderModel)
-            .mockResolvedValue({ ...chatgpt, selectedModel: 'gpt-6-luna', selectedEffort: 'low' });
+            .mockResolvedValue({ ...CHATGPT_SUMMARY, selectedEffort: 'medium' });
 
-        render(<ProviderPicker botId="bot-1" onOpenSetupChat={() => {}} />);
-        fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
-        fireEvent.change(await screen.findByRole('combobox', { name: 'Model' }), { target: { value: 'gpt-6-luna' } });
-        fireEvent.change(screen.getByRole('combobox', { name: 'Effort' }), { target: { value: 'low' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Save model' }));
+        renderPicker();
+        fireEvent.change(await screen.findByRole('combobox', { name: 'Effort' }), { target: { value: 'medium' } });
 
         await waitFor(() => {
             expect(saveProviderModel)
-                .toHaveBeenCalledWith('bot-1', 'gpt-6-luna', 'low');
+                .toHaveBeenCalledWith('bot-1', 'gpt-6-luna', 'medium');
         });
-        const pickerButton = await screen.findByRole('button', { name: 'AI provider' });
-
-        expect(pickerButton.textContent)
-            .toBe('GPT-6 Luna');
+        expect(screen.queryByRole('button', { name: 'Save model' }))
+            .toBeNull();
     });
 
-    it('closes the menu with Escape', async () => {
-        render(<ProviderPicker botId="bot-1" onOpenSetupChat={() => {}} />);
+    it('drops an effort the new model does not offer', async () => {
+        vi.mocked(getBotProvider)
+            .mockResolvedValue(CHATGPT_SUMMARY);
+        vi.mocked(saveProviderModel)
+            .mockResolvedValue({ ...CHATGPT_SUMMARY, selectedModel: 'gpt-6-astra', selectedEffort: null });
 
-        fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
-        await screen.findByRole('dialog', { name: 'AI provider settings' });
-        fireEvent.keyDown(document, { key: 'Escape' });
+        renderPicker();
+        fireEvent.change(await screen.findByRole('combobox', { name: 'Model' }), { target: { value: 'gpt-6-astra' } });
 
         await waitFor(() => {
-            expect(screen.queryByRole('dialog'))
-                .toBeNull();
+            expect(saveProviderModel)
+                .toHaveBeenCalledWith('bot-1', 'gpt-6-astra', null);
         });
+    });
+
+    it('reads when the bot shows and when the panel opens, not when a message arrives or it closes', async () => {
+        const view = render(<ProviderPicker botId="bot-1" isOpen={false} onOpenSetupChat={() => {}} onClose={() => {}} />);
+
+        await screen.findByRole('button', { name: 'Gemini' });
+        expect(getBotProvider)
+            .toHaveBeenCalledTimes(1);
+
+        view.rerender(<ProviderPicker botId="bot-1" isOpen={false} onOpenSetupChat={() => {}} onClose={() => {}} />);
+        expect(getBotProvider)
+            .toHaveBeenCalledTimes(1);
+
+        view.rerender(<ProviderPicker botId="bot-1" isOpen={true} onOpenSetupChat={() => {}} onClose={() => {}} />);
+        expect(getBotProvider)
+            .toHaveBeenCalledTimes(2);
+
+        view.rerender(<ProviderPicker botId="bot-1" isOpen={false} onOpenSetupChat={() => {}} onClose={() => {}} />);
+        expect(getBotProvider)
+            .toHaveBeenCalledTimes(2);
     });
 });
