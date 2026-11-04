@@ -4,7 +4,6 @@ import type { ReactElement } from 'react';
 import type { BotSummary, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
 import { nextTap } from '../doubleTap.ts';
 import type { Tap } from '../doubleTap.ts';
-import { findHandoffSender } from '../botHandoff.ts';
 import { renderMarkdown } from '../markdown.ts';
 import type { MascotState } from '../mascotState.ts';
 import { countProviderChanges } from '../providerChanges.ts';
@@ -445,7 +444,7 @@ function ConversationView({
                         <MessageItem
                             message={message}
                             actions={actions}
-                            handoffSender={findHandoffSender(bots ?? [], message)}
+                            bots={bots}
                         />
                     </div>
                 ))}

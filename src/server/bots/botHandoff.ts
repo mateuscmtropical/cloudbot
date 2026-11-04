@@ -1,8 +1,5 @@
-import { BOT_HANDOFF_PREFIX, NOT_OWNER_LINE } from '../../shared/botHandoffText.ts';
+import { BOT_HANDOFF_PREFIX, HANDOFF_REPLY_PREFIX, HANDOFF_SENT_PREFIX, NOT_OWNER_LINE } from '../../shared/botHandoffText.ts';
 
-// Fixed starts of the two notes a hand-off leaves in the sender's chat. The review context labels them by these.
-const HANDOFF_SENT_PREFIX = 'Sent to ';
-const HANDOFF_REPLY_PREFIX = 'Reply from ';
 // A chain of hand-offs allows this many hand-offs in a row, so one more bot ends the chain.
 const MAX_HANDOFF_DEPTH = 3;
 // A bot may start this many hand-offs in one turn, and a bot may have this many hand-offs waiting for it.
