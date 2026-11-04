@@ -6,6 +6,11 @@ All notable changes to this project are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A bot can run alone. Anything that stays inside its container runs without a card, such as commands, package installs and `sudo`. A message, a push or another outside action waits for the owner only when the owner did not ask for it and no Allow rule covers it. Money and deleting a bot always wait. The check reads what the owner wrote, not the pages the bot read, and it finds the owner's request across a long task. The command floor and Block rules still refuse a call.
+- The agent CLIs are updated: Codex 0.166.0, Gemini CLI 0.66.0, Copilot 1.0.105, Qwen Code 0.26.7, OpenCode 2.2.5 and Mistral Vibe 3.1.0. Claude, Cursor, Grok, Kimi and Antigravity get their latest versions on this build.
+
 ### Added
 
 - Bots have the twelve clouds of the mascot sheet. Each one is a ready look on the bot profile Edit page, with its color, shape and eyes. The owner can also pick each part alone, from 21 colors, seven shapes and eleven pairs of eyes, such as hearts, stars or a wink. The eyes are the face at rest. A bot at work still shows the face of what it does. The bot can change its eyes with the mascot tool too. New bots get one of the twelve looks at random, and old bots keep their look with the smile.

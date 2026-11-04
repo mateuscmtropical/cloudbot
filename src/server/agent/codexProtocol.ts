@@ -3,7 +3,7 @@
 // one JSON line on stdio. Answers carry the id of the request and no method.
 
 // The Codex version these shapes and the canary were checked against.
-const CODEX_PROTOCOL_VERSION = '0.163.0';
+const CODEX_PROTOCOL_VERSION = '0.166.0';
 
 // Every built-in tool that runs a command or edits a file asks first. "on-request" lets most commands run unasked.
 const CODEX_APPROVAL_POLICY = 'untrusted';

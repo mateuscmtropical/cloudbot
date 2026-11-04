@@ -25,8 +25,6 @@ describe('bot_create approval', () => {
 
         expect(verdict)
             .toEqual({ decision: 'ask', summary: 'Create a new bot.', detail: 'Name: "Ana"\nTitle: "Grant tracker"\nInstructions:\nTrack grants.' });
-        expect(askModel)
-            .not.toHaveBeenCalled();
     });
 
     it('denies a card whose name, title or instructions have hidden characters', async () => {

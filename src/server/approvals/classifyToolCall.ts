@@ -1,7 +1,10 @@
 import type { ToolCall } from '../agent/AgentRunner.ts';
 import { EMAIL_SEND_TOOL_FULL_NAME, EMAIL_SETUP_TOOL_FULL_NAME } from '../email/emailToolNames.ts';
 
-type ToolCallClass = 'skip' | 'always-ask' | 'review';
+const GITHUB_WRITE_TOOL_NAME = 'github_write';
+
+// owner-only always waits for the owner. always-ask waits unless the review sees that the owner asked for it.
+type ToolCallClass = 'skip' | 'owner-only' | 'always-ask' | 'review';
 
 // Tools that only read, look, hand a result to the owner or edit the bot's own profile, which the owner asks for in the chat. They never need a review.
 const SKIP_TOOL_NAMES = new Set([
@@ -76,6 +79,8 @@ const SKIP_TOOL_NAMES = new Set([
 // Letting the browser reach a private host always needs the owner's approval, whatever the rules say.
 // A new outside server, and the tools it brings, always need the owner's approval too.
 const ALWAYS_ASK_TOOL_NAMES = new Set([
+    // A write through the GitHub proxy, which is not a tool of the model. See ChatService.reviewGithubWrite.
+    GITHUB_WRITE_TOOL_NAME,
     // These calls have fixed cards, so an owner always sees the exact mail or mailbox settings.
     EMAIL_SEND_TOOL_FULL_NAME,
     EMAIL_SETUP_TOOL_FULL_NAME,
@@ -93,9 +98,8 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
     // A new or changed script runs with a secret, so the owner approves the file that is registered.
     'mcp__cloudbot__integration_create',
     'mcp__cloudbot__integration_update',
-    // Rules are permissions, and a deleted bot is gone for good, so the owner approves both in the chat.
+    // Rules are permissions, so a change the owner did not ask for waits for the owner.
     'mcp__cloudbot__rule_change',
-    'mcp__cloudbot__bot_delete',
     // A skill is steps the bot will follow, so the owner reads and approves the whole text, and each removal.
     'mcp__cloudbot__skill_add',
     'mcp__cloudbot__skill_remove',
@@ -114,6 +118,11 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
 
 // The tools of the bot itself have fixed names. Any other tool is an outside connector.
 const OWN_TOOL_PREFIX = 'mcp__cloudbot__';
+// A deleted bot takes its chats and files with it, and a rebuilt container does not bring them back.
+const BOT_DELETE_TOOL_NAME = `${OWN_TOOL_PREFIX}bot_delete`;
+// Words and stems of a tool name that mean money moves or a place is held. These never run without the owner.
+const MONEY_WORDS = new Set(['purchase', 'buy', 'pay', 'charge', 'transfer', 'checkout', 'book', 'booking', 'reserve', 'order']);
+const MONEY_STEMS = ['purchase', 'charge', 'transfer', 'checkout', 'reserve'];
 const DESKTOP_TYPE_TOOL_NAME = `${OWN_TOOL_PREFIX}desktop_type`;
 
 // A word in a tool name that means a message goes out, money moves or a place is held.
@@ -189,7 +198,18 @@ function isSensitiveWord(word: string): boolean {
     return isKnownWord || ALWAYS_ASK_STEMS.some(stem => word.startsWith(stem));
 }
 
+function isMoneyWord(word: string): boolean {
+    const singular = word.endsWith('s') ? word.slice(0, -1) : word;
+    const isKnownWord = MONEY_WORDS.has(word) || MONEY_WORDS.has(singular);
+
+    return isKnownWord || MONEY_STEMS.some(stem => word.startsWith(stem));
+}
+
 function classifyToolCall(call: ToolCall): ToolCallClass {
+    if (call.toolName === BOT_DELETE_TOOL_NAME) {
+        return 'owner-only';
+    }
+
     if (ALWAYS_ASK_TOOL_NAMES.has(call.toolName)) {
         return 'always-ask';
     }
@@ -220,10 +240,15 @@ function classifyToolCall(call: ToolCall): ToolCallClass {
         .slice(2)
         .join('__');
     const words = splitIntoWords(toolSegment);
+
+    if (words.some(isMoneyWord)) {
+        return 'owner-only';
+    }
+
     const isSensitive = words.some(isSensitiveWord);
 
     return isSensitive ? 'always-ask' : 'review';
 }
 
-export { classifyToolCall, isOutboundCommand };
+export { GITHUB_WRITE_TOOL_NAME, classifyToolCall, isOutboundCommand };
 export type { ToolCallClass };

@@ -80,7 +80,9 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # bot can write its own home, so the CLI runs from a root-owned copy instead. The installer runs as bot in a
 # temporary home, and the copy and the removal happen in the same step, so no layer keeps a second copy.
 # The build fails if any file named claude is left under the bot home.
-RUN install -d -o bot -g bot -m 0700 /tmp/claude-install \
+# The date only forces a new download of the latest CLI. Change it to update Claude. The CLIs installed by a script below update with any change to that step.
+RUN : cli-refresh-2026-11-04 \
+    && install -d -o bot -g bot -m 0700 /tmp/claude-install \
     && runuser -u bot -- env HOME=/tmp/claude-install bash -o pipefail -c 'curl -fsSL https://claude.ai/install.sh | bash' \
     && cp -L /tmp/claude-install/.local/bin/claude /usr/local/bin/claude \
     && chown root:root /usr/local/bin/claude \
@@ -91,7 +93,7 @@ RUN install -d -o bot -g bot -m 0700 /tmp/claude-install \
 
 # The Codex CLI for bots that run on a ChatGPT subscription. The version must match CODEX_PROTOCOL_VERSION in
 # src/server/agent/codexProtocol.ts. npm installs it as root, so the bot user cannot replace it.
-RUN npm install --global @openai/codex@0.163.0 \
+RUN npm install --global @openai/codex@0.166.0 \
     && npm cache clean --force \
     && /usr/local/bin/codex --version
 
@@ -113,7 +115,7 @@ RUN case "$(dpkg --print-architecture)" in \
         arm64) opencode_package=@opencode/cli-linux-arm64 ;; \
         *) echo "No OpenCode build for this architecture." >&2; exit 1 ;; \
     esac \
-    && npm install --global @google/gemini-cli@0.65.0 @github/copilot@1.0.102 @qwen-code/qwen-code@0.26.0 "$opencode_package@2.1.2" \
+    && npm install --global @google/gemini-cli@0.66.0 @github/copilot@1.0.105 @qwen-code/qwen-code@0.26.7 "$opencode_package@2.2.5" \
     && ln -sf "/usr/local/lib/node_modules/$opencode_package/bin/opencode" /usr/local/bin/opencode \
     && install -d -m 0755 /opt/cloudbot-agents \
     && export HOME=/opt/cloudbot-agents \
@@ -123,7 +125,7 @@ RUN case "$(dpkg --print-architecture)" in \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && curl -fsSL https://antigravity.google/cli/install.sh | bash \
     && UV_TOOL_DIR=/opt/cloudbot-agents/uv-tools UV_TOOL_BIN_DIR=/opt/cloudbot-agents/uv-bin UV_PYTHON_INSTALL_DIR=/opt/cloudbot-agents/python \
-        /opt/cloudbot-agents/.local/bin/uv tool install --python 3.12 mistral-vibe==3.0.1 \
+        /opt/cloudbot-agents/.local/bin/uv tool install --python 3.12 mistral-vibe==3.1.0 \
     && ln -sf /opt/cloudbot-agents/.local/bin/cursor-agent /usr/local/bin/cursor-agent \
     && ln -sf /opt/cloudbot-agents/.grok/bin/grok /usr/local/bin/grok \
     && ln -sf /opt/cloudbot-agents/.kimi-code/bin/kimi /usr/local/bin/kimi \

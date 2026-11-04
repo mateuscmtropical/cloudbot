@@ -20,8 +20,13 @@ interface ReviewContextSources {
     messageCount?: number;
 }
 
+const ROLE_LABELS_OWNER = 'Owner';
+const ROLE_LABELS = { user: ROLE_LABELS_OWNER, assistant: 'Bot', system: 'System' };
 const DEFAULT_MESSAGE_COUNT = 6;
-const ROLE_LABELS = { user: 'Owner', assistant: 'Bot', system: 'System' };
+// A long task fills the newest messages with tool activity, so the review looks further back for what the owner asked.
+const OWNER_SCAN_LIMIT = 200;
+const OWNER_LINE_COUNT = 3;
+const OWNER_LINE_START = `${ROLE_LABELS_OWNER}: `;
 const WEBHOOK_LABEL = 'Webhook (outside data)';
 const WATCH_LABEL = 'Page watch (outside data)';
 const EMAIL_LABEL = 'Email (outside data)';
@@ -97,9 +102,15 @@ function createReviewContextReader(sources: ReviewContextSources): (botId: strin
     const messageCount = sources.messageCount ?? DEFAULT_MESSAGE_COUNT;
 
     const readChatLines = async (botId: string): Promise<string[]> => {
-        const messages = await sources.messageStore.listByBot(botId, { limit: messageCount });
+        const messages = await sources.messageStore.listByBot(botId, { limit: OWNER_SCAN_LIMIT });
+        const recentLines = messages.slice(-messageCount)
+            .flatMap(toChatLine);
+        const olderLines = messages.slice(0, -messageCount)
+            .flatMap(toChatLine);
+        const olderOwnerLines = olderLines.filter(line => line.startsWith(OWNER_LINE_START))
+            .slice(-OWNER_LINE_COUNT);
 
-        return messages.flatMap(toChatLine);
+        return [...olderOwnerLines, ...recentLines];
     };
 
     const readChannelLines = async (channelId: string): Promise<string[]> => {

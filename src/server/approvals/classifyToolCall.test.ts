@@ -190,23 +190,27 @@ describe('classifyToolCall', () => {
 
     it.each([
         'mcp__mail__send_email',
-        'mcp__shop__purchase_item',
-        'mcp__travel__bookFlight',
         'mcp__chat__reply-to-thread',
-        'mcp__pay__checkout',
-        'mcp__food__order_pizza',
         'mcp__slack__post_message',
         'mcp__chat__sendmessage',
         'mcp__mail__send_messages',
         'mcp__blog__publish_post',
-        'mcp__bank__transfer_funds',
-        'mcp__bank__charge_card',
         'mcp__mail__emailuser',
         'mcp__slack__chat_post_message',
         'mcp__mail__GMAILSend',
-    ])('always asks for the connector tool %s', (toolName) => {
+    ])('asks unless the owner asked, for the connector tool %s', (toolName) => {
         expect(classify(toolName))
             .toBe('always-ask');
+    });
+
+    it.each(['mcp__shop__purchase_item', 'mcp__travel__bookFlight', 'mcp__pay__checkout', 'mcp__food__order_pizza', 'mcp__bank__transfer_funds', 'mcp__bank__charge_card'])('never runs the money tool %s without the owner', (toolName) => {
+        expect(classify(toolName))
+            .toBe('owner-only');
+    });
+
+    it('never runs a bot delete without the owner', () => {
+        expect(classify('mcp__cloudbot__bot_delete'))
+            .toBe('owner-only');
     });
 
     it.each([
