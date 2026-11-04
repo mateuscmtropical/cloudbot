@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotProviderSummary, ProviderChoiceSummary } from '../../shared/providerTypes.ts';
-import { getBotProvider, listProviders, saveProviderModel, startProviderConnect, switchBotProvider } from '../apiClient.ts';
+import { readPermissionMode } from '../../shared/permissionModes.ts';
+import type { PermissionMode } from '../../shared/permissionModes.ts';
+import { getBotProvider, listProviders, savePermissionMode, saveProviderModel, startProviderConnect, switchBotProvider } from '../apiClient.ts';
 
 interface ProviderPickerProps {
     botId: string;
@@ -15,6 +17,12 @@ interface ProviderPickerProps {
 }
 
 type ListState = 'loading' | 'ready' | 'failed';
+
+const PERMISSION_NOTES: Record<PermissionMode, string> = {
+    ask: 'The bot stops before tools, and each call is reviewed.',
+    auto: 'The AI runs what it judges safe by itself. Your Block rules only see what it still asks about.',
+    yolo: 'Nothing is checked and your Block rules do not apply. A web page or a message can make the bot delete, send or spend. You take that risk.',
+};
 
 // Shows the provider and the model of the bot in the header. A tap opens the providers of the server.
 // A connected one switches the bot at once. One that is not connected starts its sign-in in the setup chat.
@@ -138,6 +146,16 @@ function ProviderPicker({ botId, changeCount = 0, refreshCount = 0, onOpenSetupC
             });
     }
 
+    function handlePermissionMode(mode: PermissionMode): void {
+        setProblem(undefined);
+
+        savePermissionMode(botId, mode)
+            .then(setSummary)
+            .catch(() => {
+                setProblem('The permissions could not be changed.');
+            });
+    }
+
     function handleSaveModel(): void {
         setProblem(undefined);
         setIsSavingModel(true);
@@ -252,6 +270,25 @@ function ProviderPicker({ botId, changeCount = 0, refreshCount = 0, onOpenSetupC
                                             </button>
                                         </div>
                                     )}
+                            <div className="provider-model-settings" role="group" aria-label="Permission settings">
+                                <label className="provider-model-field">
+                                    <span>Permissions</span>
+                                    <select
+                                        aria-label="Permissions"
+                                        value={summary.permissionMode}
+                                        onChange={(event) => {
+                                            const mode = readPermissionMode(event.currentTarget.value);
+
+                                            handlePermissionMode(mode);
+                                        }}
+                                    >
+                                        <option value="ask">Ask</option>
+                                        <option value="auto">Auto</option>
+                                        <option value="yolo">YOLO</option>
+                                    </select>
+                                </label>
+                                <p className="provider-menu-note">{PERMISSION_NOTES[summary.permissionMode]}</p>
+                            </div>
                             {problem === undefined ? null : <p className="provider-menu-note">{problem}</p>}
                         </div>
                     )

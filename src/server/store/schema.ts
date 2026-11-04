@@ -24,6 +24,10 @@ const bots = sqliteTable('bots', {
         .primaryKey(),
     name: text('name')
         .notNull(),
+    // How freely the bot runs its tools: ask, auto or yolo. Only the owner changes it, in the web app.
+    permissionMode: text('permission_mode')
+        .notNull()
+        .default('auto'),
     title: text('title')
         .notNull(),
     description: text('description')

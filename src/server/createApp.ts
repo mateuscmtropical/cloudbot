@@ -329,7 +329,7 @@ function createApp(options: AppOptions): Hono {
 
     if (options.chatService !== undefined && options.modelStore !== undefined && options.providers !== undefined && options.setupBotId !== undefined) {
         const chatService = options.chatService;
-        const providerRoutes = createProviderRoutes({ providers: options.providers, modelStore: options.modelStore, modelCatalogs: options.providerModelCatalogs, hasBot: botId => chatService.hasBot(botId), setupBotId: options.setupBotId });
+        const providerRoutes = createProviderRoutes({ providers: options.providers, modelStore: options.modelStore, modelCatalogs: options.providerModelCatalogs, hasBot: botId => chatService.hasBot(botId), permissionModes: { get: botId => chatService.getPermissionMode(botId), set: (botId, mode) => chatService.setPermissionMode(botId, mode) }, setupBotId: options.setupBotId });
 
         app.route('/', providerRoutes);
     }

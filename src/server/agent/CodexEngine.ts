@@ -10,7 +10,7 @@ import { answerCodexRequest } from './answerCodexRequest.ts';
 import type { CodexAnswer } from './answerCodexRequest.ts';
 import { signalProcessTree } from './ClaudeCliEngine.ts';
 import type { SignalAction, SpawnFunction } from './ClaudeCliEngine.ts';
-import { CODEX_APPROVAL_POLICY, CODEX_LOCKED_CONFIG, CODEX_SANDBOX_MODE, CODEX_TOOL_TOKEN_VARIABLE, isFileChangeItem, isMcpToolCallItem } from './codexProtocol.ts';
+import { CODEX_LOCKED_CONFIG, CODEX_THREAD_MODES, CODEX_TOOL_TOKEN_VARIABLE, isFileChangeItem, isMcpToolCallItem } from './codexProtocol.ts';
 import type { CodexFileChange, CodexMessage, CodexRequestId, CodexThreadItem, CodexTurn } from './codexProtocol.ts';
 import type { LoopbackToolServer, LoopbackTurn } from './createLoopbackToolServer.ts';
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
@@ -545,8 +545,7 @@ class CodexEngine implements AgentRunner {
 
             const threadSettings = {
                 cwd: request.workspaceDir,
-                approvalPolicy: CODEX_APPROVAL_POLICY,
-                sandbox: CODEX_SANDBOX_MODE,
+                ...CODEX_THREAD_MODES[request.permissionMode ?? 'ask'],
                 ...(request.systemPrompt === undefined ? {} : { developerInstructions: request.systemPrompt }),
                 ...(selectedModel === undefined ? {} : { model: selectedModel }),
             };

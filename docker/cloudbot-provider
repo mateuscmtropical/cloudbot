@@ -20,6 +20,18 @@ export KIMI_DISABLE_CRON=1
 # A CLI that wants to open a browser prints the link instead, which the server reads from the sign-in output.
 export BROWSER=/usr/local/bin/cloudbot-print-url NO_BROWSER=true NO_OPEN_BROWSER=1
 LOGIN=/usr/local/lib/cloudbot/acp-login.js
+# The owner's choice for this bot. Anything but auto or yolo asks. Auto is the native auto mode of the CLI or the closest
+# one it has. Whatever the CLI still asks about goes to the CloudBot review.
+case "${CLOUDBOT_PERMISSION_MODE:-}" in
+    auto|yolo) mode="$CLOUDBOT_PERMISSION_MODE" ;;
+    *) mode=ask ;;
+esac
+# OpenCode has no auto mode, so auto allows what stays in files and keeps asking about commands and the network.
+case "$mode" in
+    auto) opencode_permission='{"*":"ask","read":"allow","edit":"allow","glob":"allow","grep":"allow","list":"allow","todowrite":"allow"}' ;;
+    yolo) opencode_permission='{"*":"allow"}' ;;
+    *) opencode_permission='{"*":"ask"}' ;;
+esac
 
 case "$provider:$action" in
     gemini:acp) exec /usr/local/bin/gemini --acp ;;
@@ -68,6 +80,11 @@ case "$provider:$action" in
         case "${CLOUDBOT_AGY_EFFORT:-}" in
             low|medium|high|xhigh|max) set -- "$@" --effort "$CLOUDBOT_AGY_EFFORT" ;;
         esac
+        # The hook stays in every mode. It answers yes at once for yolo, so it never holds up a turn.
+        case "$mode" in
+            auto) set -- "$@" --mode auto ;;
+            yolo) set -- "$@" --dangerously-skip-permissions ;;
+        esac
         exec /usr/local/bin/agy --input-format stream-json --output-format stream-json --print-timeout 0 "$@"
         ;;
     # The tool call review when Claude is not signed in. The hook gets no review address, so it refuses every tool and
@@ -84,20 +101,41 @@ case "$provider:$action" in
         esac
         exec /usr/local/bin/agy --input-format stream-json --output-format stream-json --print-timeout 60s --disable-slash-commands --mode plan "$@"
         ;;
-    copilot:acp) exec /usr/local/bin/copilot --acp --stdio ;;
+    # Copilot has no auto mode for ACP, so auto allows file edits and keeps asking about commands.
+    copilot:acp)
+        set --
+        case "$mode" in
+            auto) set -- --allow-tool=write ;;
+            yolo) set -- --yolo ;;
+        esac
+        exec /usr/local/bin/copilot --acp --stdio "$@"
+        ;;
     copilot:login) exec /usr/local/bin/copilot login --device-code ;;
-    cursor:acp) exec /usr/local/bin/cursor-agent acp ;;
+    cursor:acp)
+        set --
+        case "$mode" in
+            auto) set -- --auto-review ;;
+            yolo) set -- --yolo ;;
+        esac
+        exec /usr/local/bin/cursor-agent "$@" acp
+        ;;
     cursor:login) exec /usr/local/bin/cursor-agent login ;;
-    grok:acp) exec /usr/local/bin/grok --permission-mode default --no-auto-update agent stdio ;;
+    grok:acp)
+        case "$mode" in
+            auto) grok_mode=auto ;;
+            yolo) grok_mode=bypassPermissions ;;
+            *) grok_mode=default ;;
+        esac
+        exec /usr/local/bin/grok --permission-mode "$grok_mode" --no-auto-update agent stdio
+        ;;
     grok:login) exec /usr/local/bin/grok login --device-auth ;;
     mistral:acp) exec /usr/local/bin/vibe-acp ;;
     mistral:login) exec /usr/local/bin/node "$LOGIN" browser-auth /usr/local/bin/vibe-acp ;;
     kimi:acp) exec /usr/local/bin/kimi acp ;;
     kimi:login) exec /usr/local/bin/kimi login ;;
     qwen:acp) exec /usr/local/bin/qwen --acp --auth-type openai ;;
-    # OpenCode asks before every tool, so each call goes to the CloudBot review.
     opencode:acp)
-        export OPENCODE_CONFIG_CONTENT='{"permission":{"*":"ask"},"autoupdate":false,"enabled_providers":["opencode"]}'
+        export OPENCODE_CONFIG_CONTENT="{\"permission\":$opencode_permission,\"autoupdate\":false,\"enabled_providers\":[\"opencode\"]}"
         exec /usr/local/bin/opencode acp
         ;;
     opencode:acp-key-zen|opencode:acp-key-go)
@@ -121,10 +159,10 @@ case "$provider:$action" in
         fi
         case "$action" in
             acp-key-zen)
-                export OPENCODE_CONFIG_CONTENT="{\"permission\":{\"*\":\"ask\"},\"autoupdate\":false,\"enabled_providers\":[\"cloudbot-opencode-zen\"],\"model\":\"cloudbot-opencode-zen/cloudbot-default\",\"providers\":{\"cloudbot-opencode-zen\":{\"env\":[\"OPENCODE_API_KEY\"],\"package\":\"@opencode/ai/providers/openai-compatible\",\"settings\":{\"baseURL\":\"http://127.0.0.1:$port/inference/openai/v1\"},\"models\":{\"cloudbot-default\":{\"name\":\"DeepSeek V4.1 Flash\",\"modelID\":\"deepseek-v4.1-flash\"}}}}}"
+                export OPENCODE_CONFIG_CONTENT="{\"permission\":$opencode_permission,\"autoupdate\":false,\"enabled_providers\":[\"cloudbot-opencode-zen\"],\"model\":\"cloudbot-opencode-zen/cloudbot-default\",\"providers\":{\"cloudbot-opencode-zen\":{\"env\":[\"OPENCODE_API_KEY\"],\"package\":\"@opencode/ai/providers/openai-compatible\",\"settings\":{\"baseURL\":\"http://127.0.0.1:$port/inference/openai/v1\"},\"models\":{\"cloudbot-default\":{\"name\":\"DeepSeek V4.1 Flash\",\"modelID\":\"deepseek-v4.1-flash\"}}}}}"
                 ;;
             acp-key-go)
-                export OPENCODE_CONFIG_CONTENT="{\"permission\":{\"*\":\"ask\"},\"autoupdate\":false,\"enabled_providers\":[\"cloudbot-opencode-go\"],\"model\":\"cloudbot-opencode-go/cloudbot-default\",\"providers\":{\"cloudbot-opencode-go\":{\"env\":[\"OPENCODE_API_KEY\"],\"package\":\"@opencode/ai/providers/openai-compatible\",\"settings\":{\"baseURL\":\"http://127.0.0.1:$port/inference/go/openai/v1\"},\"models\":{\"cloudbot-default\":{\"name\":\"DeepSeek V4.1 Flash\",\"modelID\":\"deepseek-v4.1-flash\"}}}}}"
+                export OPENCODE_CONFIG_CONTENT="{\"permission\":$opencode_permission,\"autoupdate\":false,\"enabled_providers\":[\"cloudbot-opencode-go\"],\"model\":\"cloudbot-opencode-go/cloudbot-default\",\"providers\":{\"cloudbot-opencode-go\":{\"env\":[\"OPENCODE_API_KEY\"],\"package\":\"@opencode/ai/providers/openai-compatible\",\"settings\":{\"baseURL\":\"http://127.0.0.1:$port/inference/go/openai/v1\"},\"models\":{\"cloudbot-default\":{\"name\":\"DeepSeek V4.1 Flash\",\"modelID\":\"deepseek-v4.1-flash\"}}}}}"
                 ;;
         esac
         exec /usr/local/bin/opencode acp

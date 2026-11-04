@@ -64,6 +64,9 @@ interface AcpProviderSpec {
     protectedFolders: string[];
     // The session mode that asks before each tool, when the default mode does not.
     askModeId?: string | undefined;
+    // The session modes for the owner's auto and yolo choices. A CLI without them takes flags in docker/cloudbot-provider.
+    // ponytail: local mode has no wrapper, so a CLI without runModeIds stays in its asking mode there. Docker is the real target.
+    runModeIds?: { auto: string; yolo: string } | undefined;
     signIn?: AcpSignInSpec | undefined;
     apiKey?: AcpApiKeySpec | undefined;
 }
@@ -132,6 +135,8 @@ const ACP_PROVIDERS: AcpProviderSpec[] = [
         label: 'Gemini',
         protectedFolders: ['.gemini'],
         askModeId: 'default',
+        // The Gemini CLI has no real auto mode. Accepting edits is the closest, and commands still reach the review.
+        runModeIds: { auto: 'autoEdit', yolo: 'yolo' },
         // Google refuses the Gemini CLI for a personal subscription now, so the sign-in runs the Antigravity CLI (agy).
         signIn: { site: 'Google', needsCode: true, usesAgy: true },
         apiKey: {
@@ -177,6 +182,8 @@ const ACP_PROVIDERS: AcpProviderSpec[] = [
         label: 'Mistral',
         protectedFolders: ['.vibe'],
         askModeId: 'ask',
+        // Vibe does not offer its smart-approve agent over ACP. Accepting edits is the closest, and commands still reach the review.
+        runModeIds: { auto: 'accept-edits', yolo: 'auto-approve' },
         signIn: { site: 'Mistral AI Studio' },
         apiKey: {
             site: 'Mistral AI Studio',
@@ -197,6 +204,7 @@ const ACP_PROVIDERS: AcpProviderSpec[] = [
         protectedFolders: ['.qwen'],
         // Qwen Code starts in auto, where a model approves calls by itself.
         askModeId: 'default',
+        runModeIds: { auto: 'auto', yolo: 'yolo' },
         apiKey: {
             site: 'Alibaba Cloud Model Studio',
             secretName: 'DASHSCOPE_API_KEY',
@@ -211,6 +219,8 @@ const ACP_PROVIDERS: AcpProviderSpec[] = [
         label: 'Kimi',
         protectedFolders: ['.kimi', '.kimi-code'],
         askModeId: 'default',
+        // The names cross over in Kimi Code. Its yolo is Ask When Needed, which asks about risky actions. Its auto is Never Ask.
+        runModeIds: { auto: 'yolo', yolo: 'auto' },
         signIn: { site: 'Kimi' },
         apiKey: {
             site: 'the Moonshot AI platform',
@@ -357,7 +367,7 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
                     label: spec.label, command, args, homeFor: () => home, loopback: options.loopback, launch,
                     provider: spec.id, modelCatalogs: options.modelCatalogs,
                     authMethodId: spec.signIn.authMethodId, headlessAuth: spec.signIn.headlessAuth,
-                    askModeId: spec.askModeId, protectedFolders: spec.protectedFolders,
+                    askModeId: spec.askModeId, runModeIds: spec.runModeIds, protectedFolders: spec.protectedFolders,
                 });
         const keySpec = spec.apiKey;
         const canUseKey = keySpec !== undefined;
@@ -383,6 +393,7 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
                         headlessAuth: keySpec.headlessAuth,
                         environment: variant.environment(proxy.url),
                         askModeId: spec.askModeId,
+                        runModeIds: spec.runModeIds,
                         protectedFolders: spec.protectedFolders,
                     });
 

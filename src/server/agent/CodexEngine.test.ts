@@ -214,6 +214,22 @@ describe('CodexEngine', () => {
             .toThrow('absolute');
     });
 
+    it.each([
+        ['auto', { approvalPolicy: 'on-request', sandbox: 'workspace-write', approvalsReviewer: 'auto_review' }],
+        ['yolo', { approvalPolicy: 'never', sandbox: 'danger-full-access' }],
+    ] as const)('starts the thread for the %s choice', async (permissionMode, expected) => {
+        const { engine, servers } = makeEngine((server) => {
+            completeTurn(server);
+        });
+
+        await collect(engine.runTurn(makeRequest({ permissionMode })));
+
+        const threadStart = servers[0]?.sent.find(message => message.method === 'thread/start');
+
+        expect(threadStart?.params)
+            .toMatchObject(expected);
+    });
+
     it('starts a thread that asks before every call, streams the turn and reports the thread as the session', async () => {
         const { engine, servers, spawnOptions, home } = makeEngine((server) => {
             server.say({ method: 'item/agentMessage/delta', params: { itemId: 'm', delta: 'Hi' } });

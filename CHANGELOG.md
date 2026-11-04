@@ -6,6 +6,10 @@ All notable changes to this project are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Each bot has a Permissions choice in the provider menu. Auto is the new default and uses the auto mode of each CLI, or the closest one it has. Ask keeps the old behavior. YOLO starts each CLI with its skip flag and stops all checks, at the owner's risk. Only the owner can change it, in the web app.
+
 ### Changed
 
 - A bot can run alone. Anything that stays inside its container runs without a card, such as commands, package installs and `sudo`. A message, a push or another outside action waits for the owner only when the owner did not ask for it and no Allow rule covers it. Money and deleting a bot always wait. The check reads what the owner wrote, not the pages the bot read, and it finds the owner's request across a long task. The command floor and Block rules still refuse a call.

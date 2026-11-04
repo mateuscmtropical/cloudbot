@@ -1425,10 +1425,35 @@ Two things always wait for the owner: money (a purchase or booking, by tool name
 model's category) and deleting a bot. `browser_fill_login` and the people tools keep their
 own card too. Outbound card and ID numbers are refused for every engine.
 
-The CLIs are not started with their skip-permission flags, such as `--dangerously-skip-permissions`
-or `--yolo`. Their permission question, or the PreToolUse hook of agy, is how a call reaches the
-review. With the flag, the floor, the owner rules and the checks above would not run. No
-question of a CLI reaches the owner unless the review asks for it.
+All of this applies to what reaches the review, and the owner picks how much reaches it with the
+Permissions choice of each bot, in the provider menu. A permission question of a CLI, or the
+PreToolUse hook of agy, is how a call reaches the review. No question of a CLI reaches the owner
+unless the review asks for it.
+
+- **Ask**: the CLI asks before its tools, so the floor, the owner rules and the checks above see each call.
+- **Auto**, the default: the CLI runs what it judges safe. Only what it still asks about, and the bot
+  tools, reach the review, so those checks do not see the rest.
+- **YOLO**: the CLI starts with its skip flag and the review answers yes to anything that still reaches it.
+  This covers money, deleting a bot and GitHub writes. Only blocked tools, `browser_fill_login` and the
+  people cards remain. A prompt injection can do anything the bot can, and the owner takes that risk.
+
+Only the owner changes it, through a route behind the session check. No bot tool reaches it.
+
+| CLI | Auto | YOLO |
+| --- | --- | --- |
+| Claude | `--permission-mode auto` | `--dangerously-skip-permissions` |
+| Codex | `on-request` with `auto_review` | `never` with `danger-full-access` |
+| agy | `--mode auto`, which falls back to the default mode without a terminal sandbox | `--dangerously-skip-permissions` |
+| Cursor | `--auto-review` | `--yolo` |
+| Grok | `--permission-mode auto` | `--permission-mode bypassPermissions` |
+| Qwen | session mode `auto` | session mode `yolo` |
+| Kimi | session mode `yolo`, which Kimi calls Ask When Needed | session mode `auto`, which Kimi calls Never Ask |
+| Gemini CLI | session mode `autoEdit`, the closest it has | session mode `yolo` |
+| Mistral | session mode `accept-edits`, the closest over ACP | session mode `auto-approve` |
+| Copilot | `--allow-tool=write`, an imitation | `--yolo` |
+| OpenCode | a permission config that allows file tools, an imitation | a permission config that allows all |
+
+Local mode has no wrapper, so the CLIs that take flags stay in their asking mode there.
 
 The always-ask rule is a name and pattern check, not a proof. A built in tool
 that sends something in a way the patterns miss relies on the model's category.

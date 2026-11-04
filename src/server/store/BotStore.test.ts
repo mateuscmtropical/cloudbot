@@ -95,6 +95,7 @@ describe('BotStore', () => {
                 mascotColor: expect.any(String) as string,
                 mascotShape: expect.any(String) as string,
                 mascotEyes: expect.any(String) as string,
+                permissionMode: 'auto',
             });
     });
 

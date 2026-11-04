@@ -3,6 +3,7 @@ import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
 
+import type { PermissionMode } from '../../shared/permissionModes.ts';
 import type { AgentEvent, TurnErrorEvent } from './AgentEvent.ts';
 import type { AgentRunner, ToolCallDecision, TurnRequest } from './AgentRunner.ts';
 import { validateAgentIsolation } from './buildClaudeCommand.ts';
@@ -106,6 +107,7 @@ function buildCliArguments(request: TurnRequest, files: CliTurnFiles): string[] 
     const disallowed = [APPROVE_TOOL_FULL_NAME, ...buildCliDisallowedTools(request.disallowedTools ?? [])];
     const directories = request.additionalDirectories ?? [];
     const directoryArgs = directories.length === 0 ? [] : ['--add-dir', ...directories];
+    const permissionArgs = CLAUDE_PERMISSION_ARGS[request.permissionMode ?? 'ask'];
 
     return [
         '-p',
@@ -118,6 +120,7 @@ function buildCliArguments(request: TurnRequest, files: CliTurnFiles): string[] 
         '--setting-sources', '',
         '--settings', files.settingsPath,
         '--permission-prompt-tool', APPROVE_TOOL_FULL_NAME,
+        ...permissionArgs,
         '--tools', BUILTIN_TOOLS.join(','),
         ...resumeArgs,
         ...modelArgs,
@@ -130,6 +133,13 @@ function buildCliArguments(request: TurnRequest, files: CliTurnFiles): string[] 
         ...directoryArgs,
     ];
 }
+
+// What the CLI still asks about reaches --permission-prompt-tool in every mode.
+const CLAUDE_PERMISSION_ARGS: Record<PermissionMode, string[]> = {
+    ask: [],
+    auto: ['--permission-mode', 'auto'],
+    yolo: ['--dangerously-skip-permissions'],
+};
 
 function parseCliLine(line: string): CliMessage | undefined {
     if (line.trim() === '') {
