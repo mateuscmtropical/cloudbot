@@ -205,6 +205,18 @@ async function uploadAttachments(botId: string, files: File[]): Promise<void> {
     }
 }
 
+// Sends a recording and answers the words in it. The server keeps the audio only until the text is ready.
+async function transcribeVoice(audio: Blob, language: string, signal: AbortSignal): Promise<string> {
+    const encodedLanguage = encodeURIComponent(language);
+    const formData = new FormData();
+
+    formData.append('file', audio, 'voice');
+
+    const body = await requestJson<{ text: string }>(`${API_ROOT}/voice/transcribe?language=${encodedLanguage}`, { method: 'POST', body: formData, signal });
+
+    return body.text;
+}
+
 function listUploads(botId: string): Promise<PendingUpload[]> {
     const path = botPath(botId, '/uploads');
 
@@ -636,6 +648,7 @@ export {
     submitSecret,
     subscribeToEvents,
     subscribeToAllBotEvents,
+    transcribeVoice,
     uploadAttachments,
     listUploads,
     removeUpload,

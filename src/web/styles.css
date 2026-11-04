@@ -3095,6 +3095,68 @@ button.list-row {
     opacity: 0.8;
 }
 
+.read-aloud-button {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    margin-top: 2px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+}
+
+.read-aloud-button svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentcolor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.read-aloud-button:hover,
+.read-aloud-button.is-reading {
+    color: var(--color-accent);
+}
+
+/* With a mouse the button waits in the corner of the message until it is hovered, so it takes no room between messages.
+   A touch screen has no hover, so there it always shows below the message. */
+@media (hover: hover) {
+    .message-assistant .text-message {
+        position: relative;
+    }
+
+    .read-aloud-button {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        margin: 0;
+        background: var(--color-surface);
+    }
+
+    .read-aloud-button:not(.is-reading, :focus-visible) {
+        opacity: 0;
+        transition: opacity 120ms ease;
+    }
+
+    .text-message:hover .read-aloud-button {
+        opacity: 1;
+    }
+}
+
+.auto-read-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    cursor: pointer;
+}
+
 .voice-status {
     margin: 4px 0 0;
     color: var(--color-text);

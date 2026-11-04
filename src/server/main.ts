@@ -1,5 +1,6 @@
 import type { Server } from 'node:http';
 import { chmodSync, mkdirSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { serve } from '@hono/node-server';
 import { filterOwnerEnvironment, localClaudeConfigDir, validateAgentIsolation } from './agent/buildClaudeCommand.ts';
 
@@ -88,6 +89,7 @@ import { AppOAuth } from './apps/AppOAuth.ts';
 import { AppOAuthTokens } from './apps/AppOAuthTokens.ts';
 import { readGoogleHubRoute } from './apps/googleEndpoints.ts';
 import { readGoogleClientEnv } from '../shared/googleClientEnv.ts';
+import { createVoiceTranscriber, readVoicePrograms } from './voice/transcribeAudio.ts';
 import { BitwardenAccountStore } from './bitwarden/bitwardenAccount.ts';
 import { BitwardenVault } from './bitwarden/BitwardenVault.ts';
 import { ConnectedApps } from './apps/ConnectedApps.ts';
@@ -655,7 +657,14 @@ const cleanupTimer = setInterval(cleanUploads, CLEANUP_INTERVAL_MS);
 
 cleanupTimer.unref();
 
-const app = createApp({ push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, bitwardenVault, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+// A job that a stop cut short leaves its audio behind, so that folder is cleared at each start.
+const voiceWorkDir = join(dataDir, 'voice-jobs');
+
+await rm(voiceWorkDir, { recursive: true, force: true });
+
+const voicePrograms = readVoicePrograms(process.env);
+const transcribeVoice = createVoiceTranscriber({ workDir: voiceWorkDir, programs: voicePrograms });
+const app = createApp({ transcribeVoice, push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, bitwardenVault, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

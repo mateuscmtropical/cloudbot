@@ -14,6 +14,7 @@ import { CloudMascot } from './CloudMascot.tsx';
 import { ChatCard } from './ChatCard.tsx';
 import { CodeField } from './CodeField.tsx';
 import { LinkCard } from './LinkCard.tsx';
+import { ReadAloudButton } from './ReadAloudButton.tsx';
 import { SecureForm } from './SecureForm.tsx';
 
 // Raster images only. An img tag never runs scripts, so a file with another content under these types just fails to show.
@@ -58,6 +59,7 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
                                 </ul>
                             )}
                     {body.isQueued === true ? <span className="queued-label">Queued</span> : null}
+                    {message.role === 'assistant' ? <ReadAloudButton messageId={message.id} text={body.text} /> : null}
                 </div>
             );
         case 'choice':

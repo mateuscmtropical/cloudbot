@@ -533,5 +533,5 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
     return routes;
 }
 
-export { createChatRoutes };
+export { createChatRoutes, readUploadedFiles };
 export type { ChatRoutesOptions };

@@ -11,6 +11,7 @@ class FakeSpeechRecognition {
     lang = '';
     continuous = false;
     interimResults = false;
+    onstart: (() => void) | null = null;
     onresult: ((event: SpeechResultEvent) => void) | null = null;
     onerror: ((event: { readonly error: string }) => void) | null = null;
     onend: (() => void) | null = null;
@@ -24,6 +25,7 @@ class FakeSpeechRecognition {
 
     start(): void {
         this.isStarted = true;
+        this.onstart?.();
     }
 
     stop(): void {
@@ -136,22 +138,20 @@ describe('useVoiceInput', () => {
         return { result: rendered.result, onStart, onTranscript, unmount: rendered.unmount };
     }
 
-    it('reports no support, and does nothing, when the browser has no speech recognition', () => {
-        const { result, onStart } = renderVoiceInput();
+    it('says why when the browser can neither recognize nor record', () => {
+        const { result } = renderVoiceInput();
 
         act(() => {
             result.current.toggle();
         });
 
-        expect(result.current.isSupported)
-            .toBe(false);
-        expect(onStart)
-            .not.toHaveBeenCalled();
         expect(result.current.isListening)
             .toBe(false);
+        expect(result.current.statusText)
+            .toMatch(/cannot record voice|secure connection/);
     });
 
-    it('starts listening in the browser language, for one phrase at a time, and reports the words heard', () => {
+    it('starts listening in the browser language, in continuous mode, and reports the words heard', () => {
         vi.stubGlobal('SpeechRecognition', fakeSpeech);
         const { result, onStart, onTranscript } = renderVoiceInput();
 
@@ -161,14 +161,12 @@ describe('useVoiceInput', () => {
 
         const recognition = lastRecognition();
 
-        expect(result.current.isSupported)
-            .toBe(true);
         expect(recognition.isStarted)
             .toBe(true);
         expect(recognition.lang)
             .toBe('pt-BR');
         expect(recognition.continuous)
-            .toBe(false);
+            .toBe(true);
         expect(recognition.interimResults)
             .toBe(true);
         expect(onStart)
@@ -185,6 +183,236 @@ describe('useVoiceInput', () => {
 
         expect(onTranscript)
             .toHaveBeenLastCalledWith('book a table');
+    });
+
+    it('keeps listening when the recognizer ends by itself, and keeps the words heard so far', () => {
+        vi.useFakeTimers();
+        vi.stubGlobal('SpeechRecognition', fakeSpeech);
+        const { result, onStart, onTranscript } = renderVoiceInput();
+
+        act(() => {
+            result.current.toggle();
+        });
+        act(() => {
+            lastRecognition()
+                .hear('first part');
+            vi.advanceTimersByTime(5000);
+            lastRecognition()
+                .finish();
+        });
+
+        expect(FakeSpeechRecognition.instances)
+            .toHaveLength(2);
+        expect(result.current.isListening)
+            .toBe(true);
+
+        act(() => {
+            lastRecognition()
+                .hear('second part');
+        });
+
+        expect(onTranscript)
+            .toHaveBeenLastCalledWith('first part second part');
+        expect(onStart)
+            .toHaveBeenCalledTimes(1);
+    });
+
+    it('does not start again after a stop, an error or an instant end', () => {
+        vi.useFakeTimers();
+        vi.stubGlobal('SpeechRecognition', fakeSpeech);
+        const { result } = renderVoiceInput();
+
+        act(() => {
+            result.current.toggle();
+        });
+        act(() => {
+            lastRecognition()
+                .finish();
+        });
+
+        expect(FakeSpeechRecognition.instances)
+            .toHaveLength(1);
+
+        act(() => {
+            result.current.toggle();
+        });
+        act(() => {
+            vi.advanceTimersByTime(5000);
+            result.current.toggle();
+            lastRecognition()
+                .finish();
+        });
+
+        expect(FakeSpeechRecognition.instances)
+            .toHaveLength(2);
+
+        act(() => {
+            result.current.toggle();
+        });
+        act(() => {
+            vi.advanceTimersByTime(5000);
+            lastRecognition()
+                .fail('audio-capture');
+            lastRecognition()
+                .finish();
+        });
+
+        expect(FakeSpeechRecognition.instances)
+            .toHaveLength(3);
+        expect(result.current.isListening)
+            .toBe(false);
+    });
+
+    function stubRecording(): { stopTrack: ReturnType<typeof vi.fn> } {
+        const stopTrack = vi.fn();
+
+        class FakeRecorder extends EventTarget {
+            static isTypeSupported = (type: string): boolean => type === 'audio/webm;codecs=opus';
+            state = 'inactive';
+            mimeType = 'audio/webm';
+
+            start(): void {
+                this.state = 'recording';
+            }
+
+            stop(): void {
+                this.state = 'inactive';
+                const dataEvent = Object.assign(new Event('dataavailable'), { data: new Blob(['sound']) });
+
+                this.dispatchEvent(dataEvent);
+                const stopEvent = new Event('stop');
+
+                this.dispatchEvent(stopEvent);
+            }
+        }
+
+        vi.stubGlobal('MediaRecorder', FakeRecorder);
+        vi.stubGlobal('navigator', {
+            language: 'pt-BR',
+            mediaDevices: { getUserMedia: () => Promise.resolve({ getTracks: () => [{ stop: stopTrack }] }) },
+        });
+
+        return { stopTrack };
+    }
+
+    it('records and adds the text from the server when the browser has no speech recognition', async () => {
+        const { stopTrack } = stubRecording();
+        const fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ text: 'said on the server' }))));
+
+        vi.stubGlobal('fetch', fetchMock);
+        const { result, onTranscript } = renderVoiceInput();
+
+        await act(async () => {
+            result.current.toggle();
+            await Promise.resolve();
+        });
+
+        expect(result.current.statusText)
+            .toBe('Recording. Press again to finish.');
+
+        await act(async () => {
+            result.current.toggle();
+            await new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        });
+
+        expect(stopTrack)
+            .toHaveBeenCalled();
+        expect(fetchMock)
+            .toHaveBeenCalledWith(expect.stringContaining('/api/voice/transcribe?language=pt-BR'), expect.anything());
+        expect(onTranscript)
+            .toHaveBeenLastCalledWith('said on the server');
+        expect(result.current.isListening)
+            .toBe(false);
+        expect(result.current.isTranscribing)
+            .toBe(false);
+    });
+
+    it('moves to the recording when the speech service is out of reach, and shows no error', async () => {
+        stubRecording();
+        vi.stubGlobal('SpeechRecognition', fakeSpeech);
+        const { result, onStart } = renderVoiceInput();
+
+        act(() => {
+            result.current.toggle();
+        });
+
+        await act(async () => {
+            lastRecognition()
+                .fail('network');
+            lastRecognition()
+                .finish();
+            await Promise.resolve();
+        });
+
+        expect(result.current.statusText)
+            .toBe('Recording. Press again to finish.');
+        expect(onStart)
+            .toHaveBeenCalledTimes(1);
+
+        act(() => {
+            result.current.stopListening();
+        });
+
+        const recognizersBefore = FakeSpeechRecognition.instances.length;
+
+        await act(async () => {
+            result.current.toggle();
+            await Promise.resolve();
+        });
+
+        expect(FakeSpeechRecognition.instances)
+            .toHaveLength(recognizersBefore);
+    });
+
+    it('moves to the recording when the recognizer ends without ever starting, as in Opera', async () => {
+        class SilentRecognition extends FakeSpeechRecognition {
+            override start(): void {
+                this.isStarted = true;
+            }
+        }
+
+        stubRecording();
+        vi.stubGlobal('SpeechRecognition', SilentRecognition);
+        const { result } = renderVoiceInput();
+
+        act(() => {
+            result.current.toggle();
+        });
+
+        await act(async () => {
+            lastRecognition()
+                .finish();
+            await Promise.resolve();
+        });
+
+        expect(result.current.statusText)
+            .toBe('Recording. Press again to finish.');
+    });
+
+    it('turns the microphone off and drops the audio when listening is cancelled', async () => {
+        const { stopTrack } = stubRecording();
+        const fetchMock = vi.fn();
+
+        vi.stubGlobal('fetch', fetchMock);
+        const { result } = renderVoiceInput();
+
+        await act(async () => {
+            result.current.toggle();
+            await new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        });
+        await act(async () => {
+            result.current.stopListening();
+            await Promise.resolve();
+        });
+
+        expect(stopTrack)
+            .toHaveBeenCalled();
+        expect(fetchMock)
+            .not.toHaveBeenCalled();
     });
 
     it('calls the newest callback after a rerender, not the one from the first render', () => {

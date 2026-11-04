@@ -21,6 +21,8 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Voice input keeps listening until you press stop, and browsers without a working speech service, such as Firefox, record instead. The recording goes to your own server, which turns it into text with ffmpeg and whisper.cpp and deletes the audio. The image grows by about 250 MB.
+- Bot replies have a button that reads them aloud with the browser's voices, and the conversation options can read each new reply.
 - Each bot has a Permissions choice in the provider menu. Auto is the new default and uses the auto mode of each CLI, or the closest one it has. Ask keeps the old behavior. YOLO starts each CLI with its skip flag and stops all checks, at the owner's risk. Only the owner can change it, in the web app.
 
 ### Changed

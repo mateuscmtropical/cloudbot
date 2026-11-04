@@ -163,9 +163,11 @@ with CloudBot.
 
 ## Voice input
 
-In browsers with speech recognition, such as Chrome and Edge, the composer offers voice input. With an empty draft, press the waveform button to speak. With text in the field, use the microphone button to add spoken words. Press the active control again to stop. Use the plus button to choose a file, take a photo or add a photo or video.
+With an empty draft, press the waveform button to speak. With text in the field, use the microphone button to add spoken words. Listening goes on until you press the active control again. Use the plus button to choose a file, take a photo or add a photo or video.
 
-Chrome and Edge send the audio to their speech service to turn it into text. The app never receives the audio. The browser asks for microphone permission only when you press the button.
+Chrome and Edge send the audio to their speech service to turn it into text, and the app never receives it. In a browser without a working speech service, such as Firefox, the composer records up to five minutes instead. The recording goes to your own server, which turns it into text with ffmpeg and whisper.cpp and deletes the audio when the job ends. The programs run as the server user, on one recording at a time, so the bot user cannot read the audio and no model stays in memory. The browser asks for microphone permission only when you press the button.
+
+Press the speaker on a reply to hear it, with the voices of your browser. To hear each new reply, turn on **Read replies aloud** in the conversation options.
 
 ## Development
 

@@ -1,7 +1,7 @@
 import type { Context, MiddlewareHandler } from 'hono';
 
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const UPLOAD_PATH_PATTERN = /^\/api\/bots\/[^/]+\/attachments$/;
+const UPLOAD_PATH_PATTERN = /^\/api\/(?:bots\/[^/]+\/attachments|voice\/transcribe)$/;
 const JSON_MEDIA_TYPE = 'application/json';
 const MULTIPART_MEDIA_TYPE = 'multipart/form-data';
 const SAME_ORIGIN = 'same-origin';

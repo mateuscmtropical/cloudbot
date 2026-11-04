@@ -57,6 +57,8 @@ import { createWebhookHookRoutes } from './webhooks/createWebhookHookRoutes.ts';
 import { createWebhookRoutes } from './webhooks/createWebhookRoutes.ts';
 import { DeliveryMemory, WebhookRefusalLog } from './webhooks/webhookMemory.ts';
 import type { WhatsAppStore } from './store/WhatsAppStore.ts';
+import { createVoiceRoutes } from './voice/createVoiceRoutes.ts';
+import type { TranscribeAudio } from './voice/transcribeAudio.ts';
 import { createWhatsAppWebhookRoutes } from './whatsapp/createWhatsAppWebhookRoutes.ts';
 import type { WhatsAppSecretReader } from './whatsapp/whatsappSecrets.ts';
 
@@ -116,6 +118,8 @@ interface AppOptions {
     screenView?: ScreenViewName;
     // The browsers that turned notifications on, and the public key they subscribe with. Without it the push routes are not served.
     push?: PushRoutesOptions;
+    // Turns a recording into text for browsers without speech recognition. Without it the voice route is not served.
+    transcribeVoice?: TranscribeAudio;
 }
 
 const DEFAULT_WEB_ROOT = 'dist/web';
@@ -266,6 +270,12 @@ function createApp(options: AppOptions): Hono {
         const chatRoutes = createChatRoutes(options.chatService);
 
         app.route('/', chatRoutes);
+    }
+
+    if (options.transcribeVoice !== undefined) {
+        const voiceRoutes = createVoiceRoutes({ transcribe: options.transcribeVoice });
+
+        app.route('/', voiceRoutes);
     }
 
     if (options.channelStore !== undefined && options.botStore !== undefined) {

@@ -145,9 +145,10 @@ describe('requireSameOrigin', () => {
         const multipartUpload = await upload('/api/bots/abc/attachments', 'multipart/form-data; boundary=x');
         const jsonUpload = await upload('/api/bots/abc/attachments', 'application/json');
         const multipartElsewhere = await upload('/api/bots/abc/messages', 'multipart/form-data; boundary=x');
+        const voiceUpload = await upload('/api/voice/transcribe', 'multipart/form-data; boundary=x');
 
-        expect([multipartUpload.status, jsonUpload.status, multipartElsewhere.status])
-            .toEqual([200, 415, 415]);
+        expect([multipartUpload.status, jsonUpload.status, multipartElsewhere.status, voiceUpload.status])
+            .toEqual([200, 415, 415, 200]);
     });
 
     it('checks the origin before the content type', async () => {

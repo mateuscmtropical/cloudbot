@@ -271,7 +271,7 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
                         }}
                         onKeyDown={handleKeyDown}
                     />
-                    {trimmedDraft.length === 0 || !voice.isSupported
+                    {trimmedDraft.length === 0
                         ? null
                         : (
                                 <button
@@ -279,6 +279,7 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
                                     className={voice.isListening ? 'composer-mic is-listening' : 'composer-mic'}
                                     aria-label="Voice input"
                                     aria-pressed={voice.isListening}
+                                    disabled={voice.isTranscribing}
                                     onClick={voice.toggle}
                                 >
                                     <MicIcon />
@@ -300,7 +301,7 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
                                     className={voice.isListening ? 'send-button is-listening' : 'send-button'}
                                     aria-label="Voice input"
                                     aria-pressed={voice.isListening}
-                                    disabled={!voice.isSupported}
+                                    disabled={voice.isTranscribing}
                                     onClick={voice.toggle}
                                 >
                                     <WaveformIcon />
