@@ -4,6 +4,8 @@ import type { ReactElement, SyntheticEvent } from 'react';
 import { DEFAULT_BITWARDEN_SERVER_URL } from '../../shared/bitwarden.ts';
 import type { BitwardenStatus } from '../../shared/bitwarden.ts';
 import { forgetBitwardenAccount, getBitwardenStatus, saveBitwardenAccount, testBitwardenAccount } from '../apiClient.ts';
+import { Button } from './Button.tsx';
+import { Field } from './Field.tsx';
 
 interface BitwardenSetupFormProps {
     botId: string;
@@ -138,62 +140,62 @@ function BitwardenSetupForm({ botId, onClose }: BitwardenSetupFormProps): ReactE
                 ? (
                         <div className="google-setup-saved" role="status">
                             <span>{`Saved for ${status.serverUrl}.`}</span>
-                            <button type="button" className="connect-app-action" disabled={isBusy} onClick={handleTest}>Test connection</button>
-                            <button type="button" className="connect-app-action" disabled={isBusy} onClick={handleForget}>Forget</button>
+                            <Button tone="compact" disabled={isBusy} onClick={handleTest}>Test connection</Button>
+                            <Button tone="compact" disabled={isBusy} onClick={handleForget}>Forget</Button>
                         </div>
                     )
                 : (
                         <form className="google-setup-fields" onSubmit={handleSave}>
-                            <label htmlFor="bitwarden-server-url">Server address</label>
-                            <input
-                                id="bitwarden-server-url"
-                                type="url"
-                                autoComplete="off"
-                                spellCheck={false}
-                                placeholder={DEFAULT_BITWARDEN_SERVER_URL}
-                                value={serverUrl}
-                                onChange={(event) => {
-                                    setServerUrl(event.currentTarget.value);
-                                }}
-                            />
-                            <label htmlFor="bitwarden-client-id">API client ID</label>
-                            <input
-                                id="bitwarden-client-id"
-                                type="text"
-                                autoComplete="off"
-                                spellCheck={false}
-                                placeholder="user.00000000-0000-0000-0000-000000000000"
-                                value={clientId}
-                                onChange={(event) => {
-                                    setClientId(event.currentTarget.value);
-                                }}
-                            />
-                            <label htmlFor="bitwarden-client-secret">API client secret</label>
-                            <input
-                                id="bitwarden-client-secret"
-                                type="password"
-                                autoComplete="off"
-                                value={clientSecret}
-                                onChange={(event) => {
-                                    setClientSecret(event.currentTarget.value);
-                                }}
-                            />
-                            <label htmlFor="bitwarden-master-password">Master password</label>
-                            <input
-                                id="bitwarden-master-password"
-                                type="password"
-                                autoComplete="off"
-                                value={masterPassword}
-                                onChange={(event) => {
-                                    setMasterPassword(event.currentTarget.value);
-                                }}
-                            />
-                            <button type="submit" className="connect-app-action" disabled={!canSave}>Save</button>
+                            <Field label="Server address">
+                                <input
+                                    type="url"
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                    placeholder={DEFAULT_BITWARDEN_SERVER_URL}
+                                    value={serverUrl}
+                                    onChange={(event) => {
+                                        setServerUrl(event.currentTarget.value);
+                                    }}
+                                />
+                            </Field>
+                            <Field label="API client ID">
+                                <input
+                                    type="text"
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                    placeholder="user.00000000-0000-0000-0000-000000000000"
+                                    value={clientId}
+                                    onChange={(event) => {
+                                        setClientId(event.currentTarget.value);
+                                    }}
+                                />
+                            </Field>
+                            <Field label="API client secret">
+                                <input
+                                    type="password"
+                                    autoComplete="off"
+                                    value={clientSecret}
+                                    onChange={(event) => {
+                                        setClientSecret(event.currentTarget.value);
+                                    }}
+                                />
+                            </Field>
+                            <Field label="Master password">
+                                <input
+                                    type="password"
+                                    autoComplete="off"
+                                    value={masterPassword}
+                                    onChange={(event) => {
+                                        setMasterPassword(event.currentTarget.value);
+                                    }}
+                                />
+                            </Field>
+                            <Button type="submit" tone="compact" disabled={!canSave}>Save</Button>
                         </form>
                     )}
             {testNote === undefined ? null : <p role="status">{testNote}</p>}
             {problem === undefined ? null : <p className="connect-app-problem" role="alert">{problem}</p>}
-            <button type="button" className="connect-app-action" onClick={onClose}>Close Bitwarden setup</button>
+            <Button tone="compact" onClick={onClose}>Close Bitwarden setup</Button>
         </section>
     );
 }

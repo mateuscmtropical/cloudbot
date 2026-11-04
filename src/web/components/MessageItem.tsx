@@ -9,6 +9,7 @@ import type { HandoffView } from '../botHandoff.ts';
 import { getRoutineSystemText } from '../messageList.ts';
 import { renderMarkdown } from '../markdown.ts';
 import { AttachmentGrid } from './AttachmentGrid.tsx';
+import { Button } from './Button.tsx';
 import { ChoiceButtons } from './ChoiceButtons.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
 import { ChatCard } from './ChatCard.tsx';
@@ -111,15 +112,13 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
         case 'screenLink':
             return (
                 <ChatCard text={body.text}>
-                    <button
-                        type="button"
-                        className="choice-button"
+                    <Button
                         onClick={() => {
                             actions.onOpenScreen();
                         }}
                     >
                         Open the screen
-                    </button>
+                    </Button>
                 </ChatCard>
             );
         case 'codeField':

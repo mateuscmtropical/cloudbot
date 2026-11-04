@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ReactElement, SyntheticEvent } from 'react';
 
+import { Button } from './Button.tsx';
 import { ChatCard } from './ChatCard.tsx';
 
 interface CodeFieldProps {
@@ -42,7 +43,7 @@ function CodeField({ prompt, placeholder, submitted, onSubmit }: CodeFieldProps)
                                     setCode(event.target.value);
                                 }}
                             />
-                            <button type="submit" disabled={trimmedCode.length === 0}>Send code</button>
+                            <Button type="submit" disabled={trimmedCode.length === 0}>Send code</Button>
                         </form>
                     )}
         </ChatCard>

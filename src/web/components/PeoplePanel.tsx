@@ -5,8 +5,8 @@ import type { Person, PersonWithPassword } from '../../shared/peopleTypes.ts';
 import { RequestFailedError } from '../apiClient.ts';
 import { addPerson, deactivatePerson, deletePerson, listPeople, reactivatePerson, resetPersonPassword } from '../peopleClient.ts';
 import { Button } from './Button.tsx';
-import { CloseIcon } from './icons.tsx';
-import { RoundButton } from './RoundButton.tsx';
+import { Field } from './Field.tsx';
+import { PanelHeader } from './PanelHeader.tsx';
 
 interface PeoplePanelProps {
     onClose: () => void;
@@ -183,13 +183,14 @@ function PeoplePanel({ onClose }: PeoplePanelProps): ReactElement {
 
     return (
         <section className="people-panel" aria-labelledby="people-title">
-            <header className="people-panel-header settings-page-header">
-                <RoundButton label="Close people panel" onClick={onClose}><CloseIcon /></RoundButton>
-                <div className="settings-page-title">
-                    <h1 id="people-title">People</h1>
-                    <p>Manage access to this CloudBot server.</p>
-                </div>
-            </header>
+            <PanelHeader
+                className="people-panel-header settings-page-header"
+                closeLabel="Close people panel"
+                onClose={onClose}
+                title="People"
+                titleId="people-title"
+                description="Manage access to this CloudBot server."
+            />
 
             {problem === undefined ? null : <p className="people-problem" role="alert">{problem}</p>}
 
@@ -228,10 +229,11 @@ function PeoplePanel({ onClose }: PeoplePanelProps): ReactElement {
 
             <form className="setup-card people-add-form" onSubmit={handleAdd}>
                 <h2>Add person</h2>
-                <label htmlFor="people-name">Name</label>
                 <div className="setup-form">
-                    <input id="people-name" autoComplete="off" value={name} onChange={(event) => { setName(event.currentTarget.value); }} />
-                    <button type="submit" disabled={isWorking || name.length === 0}>Add person</button>
+                    <Field label="Name">
+                        <input autoComplete="off" value={name} onChange={(event) => { setName(event.currentTarget.value); }} />
+                    </Field>
+                    <Button type="submit" disabled={isWorking || name.length === 0}>Add person</Button>
                 </div>
             </form>
 
@@ -294,19 +296,13 @@ function PeoplePanel({ onClose }: PeoplePanelProps): ReactElement {
                             {isConfirmingDelete
                                 ? (
                                         <div className="people-delete-confirmation">
-                                            <label htmlFor={`confirm-delete-${person.name}`}>
-                                                Type
-                                                {' '}
-                                                {person.name}
-                                                {' '}
-                                                to confirm deletion
-                                            </label>
-                                            <input
-                                                id={`confirm-delete-${person.name}`}
-                                                autoComplete="off"
-                                                value={deleteConfirmation}
-                                                onChange={(event) => { setDeleteConfirmation(event.currentTarget.value); }}
-                                            />
+                                            <Field label={`Type ${person.name} to confirm deletion`}>
+                                                <input
+                                                    autoComplete="off"
+                                                    value={deleteConfirmation}
+                                                    onChange={(event) => { setDeleteConfirmation(event.currentTarget.value); }}
+                                                />
+                                            </Field>
                                             <Button disabled={!canDelete || isWorking} onClick={() => { handleDelete(person); }}>Confirm delete</Button>
                                         </div>
                                     )
