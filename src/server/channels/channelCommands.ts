@@ -1,3 +1,4 @@
+import type { ChannelSettings } from '../../shared/channelTypes.ts';
 import type { BotStore } from '../store/BotStore.ts';
 import { ChannelError } from '../store/ChannelStore.ts';
 import type { Channel, ChannelStore } from '../store/ChannelStore.ts';
@@ -117,6 +118,106 @@ function findNameClash(channels: Channel[], bots: Bot[], botId: string, name: st
     return clashingChannel === undefined
         ? undefined
         : `${name.trim()} is already the name of a member of ${clashingChannel}. Pick another name.`;
+}
+
+// The bots this one can message outside a channel round. A member of an isolated channel reaches only the members of its
+// isolated channels, and any other bot reaches every bot that is in none. This limits messages only. All the bots of a
+// person run as one system user, so it is not a security boundary.
+function reachableBots(bots: Bot[], channels: Channel[], botId: string): Bot[] {
+    const isolated = channels.filter(channel => channel.isIsolated);
+    const own = isolated.filter(channel => isMember(channel, botId));
+    const isolatedIds = isolated.flatMap(channel => channel.members.map(member => member.botId));
+    const walledOff = new Set(isolatedIds);
+    const mateIds = own.flatMap(channel => channel.members.map(member => member.botId));
+    const mates = new Set(mateIds);
+
+    return bots.filter(bot => bot.id !== botId && (own.length > 0 ? mates.has(bot.id) : !walledOff.has(bot.id)));
+}
+
+// Why the owner's settings cannot be used, or undefined. Names route the turns, so two members cannot share one.
+async function findSettingsProblem(bots: BotStore, settings: ChannelSettings): Promise<string | undefined> {
+    const allBots = await bots.list();
+    const members = allBots.filter(bot => settings.memberIds.includes(bot.id));
+    const lowerNames = members.map(bot => bot.name.toLowerCase());
+    const uniqueIds = new Set(settings.memberIds);
+    const uniqueNames = new Set(lowerNames);
+
+    if (settings.memberIds.length > MAX_MEMBERS_PER_CALL) {
+        return `A channel takes at most ${String(MAX_MEMBERS_PER_CALL)} members.`;
+    }
+
+    if (members.length !== uniqueIds.size) {
+        return 'One of the bots no longer exists.';
+    }
+
+    if (uniqueNames.size !== lowerNames.length) {
+        return 'Two members of a channel cannot share a name. Rename one of them first.';
+    }
+
+    return uniqueIds.has(settings.managerId) ? undefined : 'The manager must be one of the channel members.';
+}
+
+// The owner makes a channel in the web app. The ids come from the bot picker, since bot names are not unique.
+async function createOwnerChannel(deps: ChannelCommandDeps, settings: ChannelSettings): Promise<Resolved<Channel>> {
+    const problem = await findSettingsProblem(deps.bots, settings);
+
+    if (problem !== undefined) {
+        return { error: problem };
+    }
+
+    const memberIds = [...new Set(settings.memberIds)];
+
+    try {
+        const channel = await deps.channels.create({ ...settings, memberIds });
+
+        return { value: channel };
+    } catch (error) {
+        if (error instanceof ChannelError) {
+            return { error: error.message };
+        }
+
+        throw error;
+    }
+}
+
+// The owner changes a channel. Everything is checked first, and a new manager takes over before the old one can leave.
+// Returns the reason it was refused.
+async function updateOwnerChannel(deps: ChannelCommandDeps, channel: Channel, settings: ChannelSettings): Promise<string | undefined> {
+    const problem = await findSettingsProblem(deps.bots, settings);
+
+    if (problem !== undefined) {
+        return problem;
+    }
+
+    const uniqueIds = new Set(settings.memberIds);
+
+    try {
+        await deps.channels.rename(channel.id, settings.name);
+    } catch (error) {
+        if (error instanceof ChannelError) {
+            return error.message;
+        }
+
+        throw error;
+    }
+
+    const currentIds = channel.members.map(member => member.botId);
+    const added = [...uniqueIds].filter(botId => !currentIds.includes(botId));
+    const removed = currentIds.filter(botId => !uniqueIds.has(botId));
+    const additions = added.map(botId => deps.channels.addMember(channel.id, botId));
+
+    await Promise.all(additions);
+    await deps.channels.setManager(channel.id, settings.managerId);
+
+    const removals = removed.map(async (botId) => {
+        await deps.channels.removeMember(channel.id, botId);
+        await deps.memberLeft?.(channel.id, botId);
+    });
+
+    await Promise.all(removals);
+    await deps.channels.setIsolated(channel.id, settings.isIsolated);
+
+    return undefined;
 }
 
 // Makes a channel with the calling bot as its manager. The owner approves the call before it runs.
@@ -264,5 +365,5 @@ async function deleteChannel(deps: ChannelCommandDeps, input: { channel: string 
     return done(`Deleted the channel ${channel.value.name}.`);
 }
 
-export { MAX_MEMBERS_PER_CALL, addMember, createChannel, deleteChannel, findNameClash, listChannels, removeMember, setManager };
+export { MAX_MEMBERS_PER_CALL, addMember, createChannel, createOwnerChannel, deleteChannel, findNameClash, listChannels, reachableBots, removeMember, setManager, updateOwnerChannel };
 export type { ChannelCommandDeps, ChannelCommandResult };

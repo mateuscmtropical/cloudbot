@@ -25,6 +25,7 @@ interface ChannelMember {
 interface Channel {
     id: string;
     name: string;
+    isIsolated: boolean;
     createdAt: number;
     members: ChannelMember[];
 }
@@ -33,6 +34,7 @@ interface NewChannel {
     name: string;
     managerId: string;
     memberIds: string[];
+    isIsolated?: boolean;
 }
 
 // The author is copied into the row, so the history still shows who wrote a message after the bot is deleted.
@@ -73,6 +75,21 @@ function toChannelMessage(row: typeof channelMessages.$inferSelect): ChannelMess
     };
 }
 
+// Drizzle wraps the SQLite error, so the original text is in the cause.
+function isUniqueNameError(error: unknown): boolean {
+    return error instanceof Error && `${error.message} ${String(error.cause)}`.includes('UNIQUE constraint failed');
+}
+
+function readValidName(rawName: string): string {
+    const name = rawName.trim();
+
+    if (name === '' || name.length > CHANNEL_NAME_MAX_LENGTH || /[\r\n]/.test(name)) {
+        throw new ChannelError(`A channel name must be one line of 1 to ${String(CHANNEL_NAME_MAX_LENGTH)} characters.`);
+    }
+
+    return name;
+}
+
 class ChannelStore {
     private readonly database: AppDatabase;
     private readonly now: () => number;
@@ -83,11 +100,7 @@ class ChannelStore {
     }
 
     async create(newChannel: NewChannel): Promise<Channel> {
-        const name = newChannel.name.trim();
-
-        if (name === '' || name.length > CHANNEL_NAME_MAX_LENGTH || /[\r\n]/.test(name)) {
-            throw new ChannelError(`A channel name must be one line of 1 to ${String(CHANNEL_NAME_MAX_LENGTH)} characters.`);
-        }
+        const name = readValidName(newChannel.name);
 
         if (!newChannel.memberIds.includes(newChannel.managerId)) {
             throw new ChannelError('The manager must be one of the channel members.');
@@ -104,10 +117,9 @@ class ChannelStore {
         // The unique index on the name also catches two creates that race past the check above.
         try {
             await this.database.insert(channels)
-                .values({ id: channelId, name, createdAt });
+                .values({ id: channelId, name, isIsolated: newChannel.isIsolated ?? false, createdAt });
         } catch (error: unknown) {
-            // Drizzle wraps the SQLite error, so the original text is in the cause.
-            if (error instanceof Error && `${error.message} ${String(error.cause)}`.includes('UNIQUE constraint failed')) {
+            if (isUniqueNameError(error)) {
                 throw new ChannelError(`A channel named ${name} already exists.`);
             }
 
@@ -236,6 +248,32 @@ class ChannelStore {
         await this.database.update(channelMembers)
             .set({ isManager: isNewManager })
             .where(inChannel);
+    }
+
+    // The unique index refuses a name that another channel has. A channel can change the case of its own name.
+    async rename(channelId: string, rawName: string): Promise<void> {
+        const name = readValidName(rawName);
+        const match = eq(channels.id, channelId);
+
+        try {
+            await this.database.update(channels)
+                .set({ name })
+                .where(match);
+        } catch (error: unknown) {
+            if (isUniqueNameError(error)) {
+                throw new ChannelError(`A channel named ${name} already exists.`);
+            }
+
+            throw error;
+        }
+    }
+
+    async setIsolated(channelId: string, isIsolated: boolean): Promise<void> {
+        const match = eq(channels.id, channelId);
+
+        await this.database.update(channels)
+            .set({ isIsolated })
+            .where(match);
     }
 
     // Deleting the channel removes its messages too. The owner asks for this in the chat and approves it.

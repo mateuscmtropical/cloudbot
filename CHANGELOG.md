@@ -25,6 +25,8 @@ All notable changes to this project are listed here. The format follows
 - Each bot has a Memory page in its profile. It lists what the bot wrote in its memory file, and the owner can delete a line or edit the whole text.
 - Attachments look good now. Images waiting to be sent show as small thumbnails, and each one has its own remove button. Sent images show in the message as one large picture or a mosaic, and open in a viewer with arrows, swipe, Escape and download. Other files show as a card with an icon, the name and the size. Sent images stay after the upload cleanup, and every JPEG is drawn again in the browser, which drops its EXIF data such as the GPS position.
 - A bot's images show in the chat up to 30 MB, and an image made in a channel turn is posted in the channel. Files shared there show in the channel too.
+- Groups of bots can be made, renamed, changed and deleted in the web app. A group opens with the normal message box, and its posts show Markdown with the mascot and name of each bot. Replies arrive through the event stream instead of a 2 second poll.
+- A group can be isolated. Its members message only each other, other bots cannot message them, and the bot list each bot sees follows the same rule. This limits messages only and is not a security boundary, since all the bots of a person share one system user.
 - Each bot has a Permissions choice in the provider menu. Auto is the new default and uses the auto mode of each CLI, or the closest one it has. Ask keeps the old behavior. YOLO starts each CLI with its skip flag and stops all checks, at the owner's risk. Only the owner can change it, in the web app.
 
 ### Changed

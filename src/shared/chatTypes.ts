@@ -210,7 +210,13 @@ interface ChatMessagesRemovedEvent {
     messageIds: string[];
 }
 
-type ChatEvent = ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent | ChatToolStartedEvent | ChatWebhookUrlEvent | ChatPersonCredentialsEvent | ChatScreenEvent | ChatBotDeletedEvent | ChatMessagesRemovedEvent;
+// A channel got a post, or its round started or ended. The web app reloads the channel if it is open.
+interface ChatChannelEvent {
+    type: 'channel';
+    channelId: string;
+}
+
+type ChatEvent = ChatChannelEvent | ChatMessageEvent | ChatTurnEvent | ChatTextDeltaEvent | ChatToolStartedEvent | ChatWebhookUrlEvent | ChatPersonCredentialsEvent | ChatScreenEvent | ChatBotDeletedEvent | ChatMessagesRemovedEvent;
 
 // A rule the owner set for a bot. Block rules may name tools the bot cannot use.
 interface BotRule {

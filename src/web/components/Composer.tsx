@@ -29,6 +29,8 @@ interface ComposerProps {
     sentHistory?: string[] | undefined;
     // Reports whether the draft has text, so the bot's mascot can look at the message box.
     onTypingChange?: ((isTyping: boolean) => void) | undefined;
+    // False hides the button that attaches files.
+    canAttach?: boolean;
 }
 
 const NO_HISTORY: string[] = [];
@@ -39,7 +41,7 @@ function readIsTouchKeyboard(): boolean {
     return typeof window.matchMedia === 'function' && window.matchMedia(TOUCH_KEYBOARD_QUERY).matches;
 }
 
-function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop, onAttach, onRemoveAttachment, onTypingChange, sentHistory = NO_HISTORY }: ComposerProps): ReactElement {
+function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop, onAttach, onRemoveAttachment, onTypingChange, sentHistory = NO_HISTORY, canAttach = true }: ComposerProps): ReactElement {
     const [draft, setDraft] = useState('');
     const [isTouchKeyboard] = useState(readIsTouchKeyboard);
     // The message the arrow keys show, counted in sentHistory. Undefined while the person types their own text.
@@ -217,21 +219,25 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
         <>
             <AttachmentTray attachments={attachments} onRemove={onRemoveAttachment} />
             <div className="composer">
-                <PopoverMenu
-                    label="Attachment options"
-                    triggerLabel="Attach files"
-                    triggerIcon={<PlusIcon />}
-                    placement="above-start"
-                    disabled={isRunning}
-                >
-                    {close => (
-                        <>
-                            <PopoverMenuItem label="Choose file" icon={<FolderIcon />} close={close} onSelect={() => { openFilePicker(); }} />
-                            <PopoverMenuItem label="Take photo" icon={<CameraIcon />} close={close} onSelect={() => { openFilePicker('image/*', 'environment'); }} />
-                            <PopoverMenuItem label="Photo or video" icon={<ImageIcon />} close={close} onSelect={() => { openFilePicker('image/*,video/*'); }} />
-                        </>
-                    )}
-                </PopoverMenu>
+                {canAttach
+                    ? (
+                            <PopoverMenu
+                                label="Attachment options"
+                                triggerLabel="Attach files"
+                                triggerIcon={<PlusIcon />}
+                                placement="above-start"
+                                disabled={isRunning}
+                            >
+                                {close => (
+                                    <>
+                                        <PopoverMenuItem label="Choose file" icon={<FolderIcon />} close={close} onSelect={() => { openFilePicker(); }} />
+                                        <PopoverMenuItem label="Take photo" icon={<CameraIcon />} close={close} onSelect={() => { openFilePicker('image/*', 'environment'); }} />
+                                        <PopoverMenuItem label="Photo or video" icon={<ImageIcon />} close={close} onSelect={() => { openFilePicker('image/*,video/*'); }} />
+                                    </>
+                                )}
+                            </PopoverMenu>
+                        )
+                    : null}
                 <input ref={fileInputRef} className="composer-file-input" type="file" multiple hidden onChange={handleFilesChosen} />
                 <PillField className="composer-field">
                     <textarea

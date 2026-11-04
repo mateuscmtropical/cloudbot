@@ -112,6 +112,7 @@ describe('BotList', () => {
             {
                 id: 'channel-1',
                 name: 'Project',
+                isIsolated: false,
                 members: [
                     { botId: 'bot-a', name: 'Ana', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', isManager: true },
                     { botId: 'bot-b', name: 'Bia', mascotColor: 'pink', mascotShape: 'bubble', mascotEyes: 'smile', isManager: false },
@@ -133,9 +134,27 @@ describe('BotList', () => {
             .toHaveBeenCalledWith('channel-1');
     });
 
+    it('offers a new group even with none yet, and marks an isolated group', () => {
+        const onNewGroup = vi.fn();
+        const channels: ChannelSummary[] = [{ id: 'channel-1', name: 'Project', isIsolated: true, members: [{ botId: 'bot-a', name: 'Ana', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', isManager: true }] }];
+        const { getByRole, getByText, rerender } = render(
+            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onNewGroup={onNewGroup} onConnectApps={vi.fn()} onPeople={vi.fn()} />,
+        );
+
+        fireEvent.click(getByRole('button', { name: 'New group' }));
+        rerender(
+            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={channels} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onNewGroup={onNewGroup} onConnectApps={vi.fn()} onPeople={vi.fn()} />,
+        );
+
+        expect(onNewGroup)
+            .toHaveBeenCalledOnce();
+        expect(getByText('Isolated. Ana (manager)'))
+            .toBeDefined();
+    });
+
     it('opens a bot menu on right click without adding actions to channels', () => {
         const onSelectBot = vi.fn();
-        const channels: ChannelSummary[] = [{ id: 'channel-1', name: 'Project', members: [] }];
+        const channels: ChannelSummary[] = [{ id: 'channel-1', name: 'Project', isIsolated: false, members: [] }];
 
         render(
             <BotList

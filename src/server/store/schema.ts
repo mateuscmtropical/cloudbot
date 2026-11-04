@@ -486,6 +486,10 @@ const channels = sqliteTable('channels', {
         .primaryKey(),
     name: text('name')
         .notNull(),
+    // Members of an isolated channel message only each other, and other bots cannot message them.
+    isIsolated: integer('is_isolated', { mode: 'boolean' })
+        .notNull()
+        .default(false),
     createdAt: integer('created_at')
         .notNull(),
 }, table => [

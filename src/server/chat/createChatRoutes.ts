@@ -506,7 +506,7 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
 
             const writeEvent = createEventWriter(stream);
             const unsubscribe = chatService.subscribeToAllBots((event) => {
-                if (event.type === 'message' || event.type === 'botDeleted') {
+                if (event.type === 'message' || event.type === 'botDeleted' || event.type === 'channel') {
                     writeEvent(event);
                 }
             });
