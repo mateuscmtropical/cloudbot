@@ -13,7 +13,7 @@ vi.mock('../apiClient.ts', async (importOriginal) => {
     return { ...original, getBotMemory: vi.fn(), saveBotMemory: vi.fn() };
 });
 
-const BOT: BotSummary = { id: 'bot-1', name: 'Ana', title: '', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'dots', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
+const BOT: BotSummary = { id: 'bot-1', name: 'Ana', title: '', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'dots', mascotWeather: 'auto', mascotBolt: 'down', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
 const REFUSAL = 'The bot changed its memory.';
 
 function forget(lineText: string): void {
