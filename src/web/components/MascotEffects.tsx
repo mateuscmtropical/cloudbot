@@ -21,13 +21,15 @@ const QUESTION = 'M4 5 A4 4 0 1 1 9 9 Q8 10 8 12 M8 15 V15.2';
 const STAR = 'M8 0 Q8 8 16 8 Q8 8 8 16 Q8 8 0 8 Q8 8 8 0 Z';
 
 const EFFECT_PIECES: Record<MascotEffect, EffectPiece[]> = {
+    // The nod before sleep moves the cloud itself.
+    dozing: [],
     sleeping: [
         { className: 'fx-z fx-first', path: LETTER_Z, left: 72, top: 4, width: 16 },
         { className: 'fx-z fx-second', path: LETTER_Z, left: 72, top: 4, width: 22 },
         { className: 'fx-z fx-third', path: LETTER_Z, left: 72, top: 4, width: 28 },
     ],
     cold: [
-        { className: 'fx-drop', path: DROP, left: 44, top: 66, width: 12, isFilled: true },
+        { className: 'fx-drop', path: DROP, left: 44, top: 90, width: 12, isFilled: true },
         { className: 'fx-bolt fx-first', path: BOLT, left: 2, top: 52, width: 20, isFilled: true },
         { className: 'fx-bolt fx-second', path: BOLT, left: 40, top: 70, width: 16, isFilled: true },
         { className: 'fx-bolt fx-third', path: BOLT, left: 78, top: 52, width: 20, isFilled: true },

@@ -4,22 +4,21 @@ import type { BotSummary } from '../../shared/chatTypes.ts';
 import type { MascotState } from '../mascotState.ts';
 import { formatBotActivityTime } from '../formatBotActivityTime.ts';
 import { usePressHold } from '../usePressHold.ts';
-import { pickMascotMood, readSneezeDelaySeconds } from '../mascotMood.ts';
+import { readSneezeDelaySeconds } from '../mascotMood.ts';
+import { useMascotMood } from '../useMascotMood.ts';
 import { CloudMascot } from './CloudMascot.tsx';
 
 interface BotListItemProps {
     bot: BotSummary;
     isSelected: boolean;
     mascotState: MascotState;
-    // The time the moods are worked out from. Without it the bot shows no mood.
-    moodNow?: number | undefined;
     onPointerUp: (event: PointerEvent<HTMLButtonElement>) => void;
     onClick: (event: MouseEvent<HTMLButtonElement>) => void;
     actions?: ReactElement | undefined;
     onOpenActions?: (() => void) | undefined;
 }
 
-function BotListItem({ bot, isSelected, mascotState, moodNow, onPointerUp, onClick, actions, onOpenActions }: BotListItemProps): ReactElement {
+function BotListItem({ bot, isSelected, mascotState, onPointerUp, onClick, actions, onOpenActions }: BotListItemProps): ReactElement {
     const selectedClassName = isSelected ? 'bot-item is-selected' : 'bot-item';
     const itemClassName = bot.hasUnread ? `${selectedClassName} is-unread` : selectedClassName;
     const activityLabel = formatBotActivityTime(bot.lastActivityAt);
@@ -28,7 +27,7 @@ function BotListItem({ bot, isSelected, mascotState, moodNow, onPointerUp, onCli
         : new Date(bot.lastActivityAt)
                 .toISOString();
     const pressHold = usePressHold(onOpenActions, onOpenActions);
-    const mood = moodNow === undefined ? undefined : pickMascotMood({ botId: bot.id, lastActivityAt: bot.lastActivityAt, isSelected, now: moodNow });
+    const mood = useMascotMood({ botId: bot.id, lastActivityAt: bot.lastActivityAt, isSelected });
     const moodDelaySeconds = readSneezeDelaySeconds(bot.id);
 
     function handlePointerUp(event: PointerEvent<HTMLButtonElement>): void {
