@@ -34,9 +34,17 @@
     --safe-right: env(safe-area-inset-right, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     --safe-left: env(safe-area-inset-left, 0px);
+    /* A settling spring for things that arrive. It overshoots by about 7%, so keep it off anything that must stop at an edge. */
+    --ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1);
     font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     color: var(--color-text);
     background: var(--color-background);
+}
+
+@supports (animation-timing-function: linear(0, 1)) {
+    :root {
+        --ease-spring: linear(0, 0.323, 0.597, 0.801, 0.938, 1.018, 1.056, 1.067, 1.062, 1.049, 1.035, 1.022, 1.012, 1.005, 1, 0.998, 0.997, 0.997, 0.998, 0.998, 0.999, 0.999, 1, 1, 1);
+    }
 }
 
 * {
@@ -254,32 +262,39 @@ svg {
     pointer-events: none;
     transform-origin: center;
     will-change: transform;
-    animation: mascot-hop var(--mascot-hop-duration) cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    animation: mascot-hop var(--mascot-hop-duration) linear forwards;
 }
 
+/* Easing runs per interval, so each hop slows going up and speeds up coming down. The last curve falls, lands and settles. */
 @keyframes mascot-hop {
     0% {
         transform: translate(0, 0) scale(1);
+        animation-timing-function: ease-out;
     }
 
     10% {
         transform: translate(var(--mascot-hop-row-first-x), calc(var(--mascot-hop-row-first-y) - 14px)) scale(1.04);
+        animation-timing-function: ease-in;
     }
 
     20% {
         transform: translate(var(--mascot-hop-row-second-x), var(--mascot-hop-row-second-y)) scale(1);
+        animation-timing-function: ease-out;
     }
 
     30% {
         transform: translate(var(--mascot-hop-row-edge-x), calc(var(--mascot-hop-row-edge-y) - 14px)) scale(1.04);
+        animation-timing-function: ease-in;
     }
 
     40% {
         transform: translate(var(--mascot-hop-row-edge-x), var(--mascot-hop-row-edge-y)) scale(1);
+        animation-timing-function: ease-out;
     }
 
     70% {
         transform: translate(var(--mascot-hop-landing-middle-x), calc(var(--mascot-hop-landing-middle-y) - 48px)) scale(var(--mascot-hop-landing-middle-scale));
+        animation-timing-function: linear(0, 0.04 15%, 0.16 30%, 0.38 45%, 0.72 60%, 1.03 70%, 1.04 78%, 1.01 88%, 1);
     }
 
     100% {
@@ -1703,6 +1718,15 @@ button.list-row {
     margin-bottom: 0;
 }
 
+/* A streamed reply is cut into blocks that parse on their own. They lay out as one, so only the last block ends flush. */
+.markdown-part {
+    display: contents;
+}
+
+.markdown-part:not(:last-child) p:last-child {
+    margin-bottom: 8px;
+}
+
 .markdown a {
     color: var(--color-accent);
 }
@@ -1959,7 +1983,7 @@ button.list-row {
    ConversationView marks live messages only, so a loaded page of history does not move. */
 .message-list > .is-entering,
 .message.is-draft {
-    animation: rise-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: rise-in 320ms var(--ease-spring);
 }
 
 /* A sent message comes up from the text box and grows into place. */
@@ -1972,12 +1996,12 @@ button.list-row {
 
 .message-list > .is-entering:has(> .message-user) {
     transform-origin: bottom right;
-    animation: send-rise 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: send-rise 420ms var(--ease-spring);
 }
 
 .desktop-panel,
 .webhook-created {
-    animation: drop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: drop-in 320ms var(--ease-spring);
 }
 
 /* A short press gives the tap some weight. */
@@ -2861,9 +2885,10 @@ button.list-row {
     }
 }
 /* Status line (#130, #403). Shown under the last message while a turn runs.
-   The small mascot spins in, then its eyes look around and blink. A shine
-   sweeps the text. The line changes from a timer in ThinkingBubble.tsx, so it
-   still changes under reduced motion, which stops the movement. */
+   The small mascot spins in, then its eyes look around and blink. The text
+   pulses with opacity alone, which needs no repaint while a reply streams. The
+   line changes from a timer in ThinkingBubble.tsx, so it still changes under
+   reduced motion, which stops the movement. */
 .thinking-status {
     display: inline-flex;
     align-items: center;
@@ -2874,7 +2899,7 @@ button.list-row {
 }
 
 .thinking-status .cloud-mascot {
-    animation: status-spin-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: status-spin-in 480ms var(--ease-spring);
 }
 
 .cloud-mascot.is-working .cloud-eyes {
@@ -2882,11 +2907,7 @@ button.list-row {
 }
 
 .thinking-line {
-    background: linear-gradient(90deg, var(--color-text-muted) 0%, var(--color-text-muted) 40%, var(--color-text) 50%, var(--color-text-muted) 60%, var(--color-text-muted) 100%);
-    background-size: 250% 100%;
-    background-clip: text;
-    color: transparent;
-    animation: text-shine 1.8s linear infinite;
+    animation: thinking-pulse 1.8s ease-in-out infinite;
 }
 
 @keyframes status-spin-in {
@@ -2925,13 +2946,9 @@ button.list-row {
     }
 }
 
-@keyframes text-shine {
-    from {
-        background-position: 100% 0;
-    }
-
-    to {
-        background-position: 0 0;
+@keyframes thinking-pulse {
+    50% {
+        opacity: 0.45;
     }
 }
 
@@ -2942,12 +2959,17 @@ button.list-row {
     }
 
     .thinking-line {
-        background: none;
-        color: inherit;
         animation: none;
     }
 }
 /* End of status line (#130, #403). */
+
+/* Shows only when a panel takes a moment to load, so a fast load never flashes it. */
+.panel-loading {
+    margin: auto;
+    color: var(--color-text-muted);
+    animation: fade-in 200ms ease-out 300ms backwards;
+}
 
 /* Channel list heading in the sidebar. */
 .channel-section-title {

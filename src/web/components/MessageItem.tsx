@@ -199,8 +199,10 @@ function MessageItemView({ message, actions, bots }: MessageItemProps): ReactEle
     return <div className={className}>{renderBody(message, actions)}</div>;
 }
 
-// A streamed reply renders the list on every delta. Memo keeps the stored messages from parsing their markdown again.
-const memoizedMessageItem = memo(MessageItemView);
+// Stored messages render only when they change. The bot list only matters to a row that may be a message between bots, and a bot's own reply never is.
+const memoizedMessageItem = memo(MessageItemView, (previous, next) => previous.message === next.message
+    && previous.actions === next.actions
+    && (previous.bots === next.bots || previous.message.role === 'assistant'));
 
 export { memoizedMessageItem as MessageItem };
 export type { MessageActions, MessageItemProps };

@@ -7,6 +7,7 @@ import type { BotSummary, ChatMessage, MessageBody } from '../../shared/chatType
 import { ConversationView } from './ConversationView.tsx';
 import type { ConversationViewProps } from './ConversationView.tsx';
 import type * as apiClientTypes from '../apiClient.ts';
+import { createDraftStore } from '../draftStore.ts';
 import { BUBBLE_DELAY_MS } from '../thinkingBubble.ts';
 
 function createMessage(id: string, role: ChatMessage['role'], body: MessageBody): ChatMessage {
@@ -53,12 +54,11 @@ const noopActions = {
     onOpenScreen: vi.fn(),
 };
 
-function conversationElement(messages: ChatMessage[], draftText: string): ReactElement {
+function conversationElement(messages: ChatMessage[]): ReactElement {
     return (
         <ConversationView
             bot={undefined}
             messages={messages}
-            draftText={draftText}
             isRunning={false}
             attachments={[]}
             isUploading={false}
@@ -73,7 +73,7 @@ function conversationElement(messages: ChatMessage[], draftText: string): ReactE
 }
 
 function renderConversation(messages: ChatMessage[]): void {
-    render(conversationElement(messages, ''));
+    render(conversationElement(messages));
 }
 
 type ApiClientModule = typeof apiClientTypes;
@@ -113,22 +113,6 @@ vi.mock('@novnc/novnc', () => ({
 describe('ConversationView message list', () => {
     afterEach(() => {
         cleanup();
-    });
-
-    it('shows the draft text as an assistant bubble until the finished message replaces it', () => {
-        const view = render(conversationElement([], 'Partial **reply**'));
-
-        expect(screen.getByText('reply').tagName)
-            .toBe('STRONG');
-        expect(view.container.querySelector('.message-assistant.is-draft'))
-            .not.toBeNull();
-
-        view.rerender(conversationElement([createMessage('m7', 'assistant', { kind: 'text', text: 'Partial reply' })], ''));
-
-        expect(view.container.querySelector('.is-draft'))
-            .toBeNull();
-        expect(screen.getByText('Partial reply'))
-            .toBeTruthy();
     });
 
     it('renders every message kind', () => {
@@ -192,7 +176,6 @@ function historyElement(
         <ConversationView
             bot={bot}
             messages={messages}
-            draftText=""
             isRunning={false}
             actions={noopActions}
             onOpenBotList={vi.fn()}
@@ -285,7 +268,6 @@ describe('ConversationView older messages', () => {
             <ConversationView
                 bot={undefined}
                 messages={[...newerMessages]}
-                draftText=""
                 isRunning={false}
                 actions={noopActions}
                 hasOlderMessages
@@ -314,7 +296,6 @@ describe('ConversationView older messages', () => {
             <ConversationView
                 bot={undefined}
                 messages={[createSequencedMessage(1), createSequencedMessage(2), ...newerMessages]}
-                draftText=""
                 isRunning={false}
                 actions={noopActions}
                 hasOlderMessages
@@ -626,7 +607,7 @@ describe('ConversationView thinking bubble', () => {
             <ConversationView
                 bot={bot}
                 messages={options.messages ?? [createMessage('u1', 'user', { kind: 'text', text: 'Hi' })]}
-                draftText={options.draftText}
+                draftStore={createDraftStore({ botId: bot.id, text: options.draftText, afterSequence: 0 })}
                 isRunning={options.isRunning}
                 activeToolName={options.activeToolName}
                 attachments={[]}

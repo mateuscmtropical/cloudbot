@@ -19,7 +19,6 @@ function renderConversation(onRenameBot?: (botId: string, name: string) => Promi
         <ConversationView
             bot={BOT}
             messages={[]}
-            draftText=""
             isRunning={false}
             attachments={[]}
             isUploading={false}
