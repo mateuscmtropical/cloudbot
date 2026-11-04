@@ -4,19 +4,22 @@ import type { BotSummary } from '../../shared/chatTypes.ts';
 import type { MascotState } from '../mascotState.ts';
 import { formatBotActivityTime } from '../formatBotActivityTime.ts';
 import { usePressHold } from '../usePressHold.ts';
+import { pickMascotMood, readSneezeDelaySeconds } from '../mascotMood.ts';
 import { CloudMascot } from './CloudMascot.tsx';
 
 interface BotListItemProps {
     bot: BotSummary;
     isSelected: boolean;
     mascotState: MascotState;
+    // The time the moods are worked out from. Without it the bot shows no mood.
+    moodNow?: number | undefined;
     onPointerUp: (event: PointerEvent<HTMLButtonElement>) => void;
     onClick: (event: MouseEvent<HTMLButtonElement>) => void;
     actions?: ReactElement | undefined;
     onOpenActions?: (() => void) | undefined;
 }
 
-function BotListItem({ bot, isSelected, mascotState, onPointerUp, onClick, actions, onOpenActions }: BotListItemProps): ReactElement {
+function BotListItem({ bot, isSelected, mascotState, moodNow, onPointerUp, onClick, actions, onOpenActions }: BotListItemProps): ReactElement {
     const selectedClassName = isSelected ? 'bot-item is-selected' : 'bot-item';
     const itemClassName = bot.hasUnread ? `${selectedClassName} is-unread` : selectedClassName;
     const activityLabel = formatBotActivityTime(bot.lastActivityAt);
@@ -25,6 +28,8 @@ function BotListItem({ bot, isSelected, mascotState, onPointerUp, onClick, actio
         : new Date(bot.lastActivityAt)
                 .toISOString();
     const pressHold = usePressHold(onOpenActions, onOpenActions);
+    const mood = moodNow === undefined ? undefined : pickMascotMood({ botId: bot.id, lastActivityAt: bot.lastActivityAt, isSelected, now: moodNow });
+    const moodDelaySeconds = readSneezeDelaySeconds(bot.id);
 
     function handlePointerUp(event: PointerEvent<HTMLButtonElement>): void {
         const didHold = pressHold.didTrigger();
@@ -50,7 +55,7 @@ function BotListItem({ bot, isSelected, mascotState, onPointerUp, onClick, actio
                 onContextMenu={pressHold.onContextMenu}
                 onClick={onClick}
             >
-                <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} eyes={bot.mascotEyes} state={mascotState} size={44} isActive={isSelected} />
+                <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} eyes={bot.mascotEyes} state={mascotState} size={44} isActive={isSelected} mood={mood} moodDelaySeconds={moodDelaySeconds} />
                 <span className="bot-text">
                     <span className="bot-name-line">
                         <span className="bot-name">{bot.name}</span>

@@ -302,7 +302,7 @@ svg {
     filter: drop-shadow(0 1px 3px rgb(15 30 60 / 30%));
 }
 
-.cloud-mascot svg {
+.cloud-mascot > svg {
     width: 100%;
     height: 100%;
     overflow: visible;
@@ -311,12 +311,12 @@ svg {
     transition: transform 160ms ease-out;
 }
 
-.cloud-mascot:hover svg,
-.cloud-mascot:active svg {
+.cloud-mascot:hover > svg,
+.cloud-mascot:active > svg {
     transform: scale(1.06, 0.94);
 }
 
-.cloud-mascot.is-thinking svg {
+.cloud-mascot.is-thinking > svg {
     animation: cloud-bounce 900ms ease-in-out infinite;
 }
 
@@ -360,7 +360,7 @@ svg {
 
 /* Under reduced motion only the easing goes. The eyes still move and blink, and they jump to the new spot. */
 @media (prefers-reduced-motion: reduce) {
-    .cloud-mascot svg {
+    .cloud-mascot > svg {
         animation: none !important;
         transition: none !important;
         transform: none !important;

@@ -1,11 +1,14 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { CSSProperties, ReactElement } from 'react';
 
 import { MASCOT_COLORS, MASCOT_FACE_COLORS, readMascotColor } from '../../shared/mascot.ts';
 import type { MascotColorName, MascotEyes, MascotShape } from '../../shared/mascot.ts';
 import { computeEyeOffset, computeTypingEyeOffset, subscribeToPointer, subscribeToTyping } from '../mascotPointer.ts';
 import type { Point } from '../mascotPointer.ts';
+import { pickMascotEffect } from '../mascotMood.ts';
+import type { MascotMood } from '../mascotMood.ts';
 import type { MascotState } from '../mascotState.ts';
+import { MascotEffects } from './MascotEffects.tsx';
 
 interface CloudMascotProps {
     color: MascotColorName;
@@ -17,6 +20,10 @@ interface CloudMascotProps {
     size?: number;
     // True for the bot of the open conversation, the only one that follows the pointer and the caret.
     isActive?: boolean;
+    // What the bot does while idle, such as sleeping. A real state wins over it.
+    mood?: MascotMood | undefined;
+    // Where in its cycle the mood starts, in seconds, so bots do not move in step.
+    moodDelaySeconds?: number | undefined;
 }
 
 interface CircleSpec {
@@ -293,7 +300,7 @@ function pickBlinkDelayMs(randomValue: number): number {
     return BLINK_MIN_DELAY_MS + randomValue * (BLINK_MAX_DELAY_MS - BLINK_MIN_DELAY_MS);
 }
 
-function CloudMascotView({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE, isActive = false }: CloudMascotProps): ReactElement {
+function CloudMascotView({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE, isActive = false, mood, moodDelaySeconds = 0 }: CloudMascotProps): ReactElement {
     const svgRef = useRef<SVGSVGElement>(null);
     const lookRef = useRef<SVGGElement>(null);
     const eyeShiftRef = useRef<SVGGElement>(null);
@@ -301,7 +308,10 @@ function CloudMascotView({ color, shape, eyes = 'smile', state, size = DEFAULT_S
     // A long chat holds many mascots. Only the ones on screen run a blink timer.
     const [isOnScreen, setIsOnScreen] = useState(true);
     // The eyes move and blink under reduced motion too. The stylesheet only drops the easing there.
-    const hasMovingEyes = isPointerFace(state);
+    const effect = pickMascotEffect(state, mood);
+    // A sleeping bot keeps its eyes shut, so it neither blinks nor looks around.
+    const faceState = state === 'idle' && effect === 'sleeping' ? 'sleepy' : state;
+    const hasMovingEyes = isPointerFace(faceState);
     const isBlinkingAllowed = hasMovingEyes && isOnScreen;
     // Only the bot of the open conversation follows the pointer and the caret.
     const followsLook = hasMovingEyes && isActive;
@@ -449,7 +459,15 @@ function CloudMascotView({ color, shape, eyes = 'smile', state, size = DEFAULT_S
     }, [isBlinkingAllowed]);
 
     return (
-        <span className={`cloud-mascot is-${state}`} data-state={state} data-shape={shape} data-color={color} data-eyes={eyes} style={{ width: size, height: size }}>
+        <span
+            className={`cloud-mascot is-${state}`}
+            data-state={state}
+            data-shape={shape}
+            data-color={color}
+            data-eyes={eyes}
+            data-effect={effect}
+            style={{ width: size, height: size, ...(effect === 'cold' ? { '--mood-delay': `${String(moodDelaySeconds)}s` } as CSSProperties : {}) }}
+        >
             <svg ref={svgRef} viewBox={VIEW_BOX} aria-hidden="true" focusable="false">
                 <g ref={lookRef} className="cloud-look">
                     <g className="cloud-body" fill={fill} stroke="none">
@@ -460,15 +478,16 @@ function CloudMascotView({ color, shape, eyes = 'smile', state, size = DEFAULT_S
                         {body.dots?.map(dot => <circle key={`${String(dot.cx)}-${String(dot.cy)}`} cx={dot.cx} cy={dot.cy} r={dot.r} />)}
                         {body.paths?.map(path => <path key={path} d={path} />)}
                     </g>
-                    <g className="cloud-face" data-face={state} data-tracks-pointer={followsLook ? 'true' : undefined}>
+                    <g className="cloud-face" data-face={faceState} data-tracks-pointer={followsLook ? 'true' : undefined}>
                         <g ref={eyeShiftRef}>
                             <g ref={eyesRef} className="cloud-eyes">
-                                {renderFace(state, eyes, faceColor)}
+                                {renderFace(faceState, eyes, faceColor)}
                             </g>
                         </g>
                     </g>
                 </g>
             </svg>
+            {effect === undefined ? null : <MascotEffects effect={effect} />}
         </span>
     );
 }
