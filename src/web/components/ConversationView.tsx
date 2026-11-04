@@ -1,11 +1,12 @@
-import { Suspense, createElement, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, createElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
 import { nextTap } from '../doubleTap.ts';
 import type { Tap } from '../doubleTap.ts';
 import { findHandoffSender } from '../botHandoff.ts';
-import { renderMarkdown } from '../markdown.ts';
+import type { DraftStore } from '../draftStore.ts';
+import { lazyPanel } from '../lazyPanel.ts';
 import type { MascotState } from '../mascotState.ts';
 import { countProviderChanges } from '../providerChanges.ts';
 import { sentMessageTexts } from '../sentHistory.ts';
@@ -13,6 +14,7 @@ import { BUBBLE_DELAY_MS, isThinkingBubbleShown } from '../thinkingBubble.ts';
 import { useDelayedFlag } from '../useDelayedFlag.ts';
 import { CloudMascot } from './CloudMascot.tsx';
 import { Composer } from './Composer.tsx';
+import { DraftBubble } from './DraftBubble.tsx';
 import type { DraftAttachment } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
 import { PopoverMenu } from './PopoverMenu.tsx';
@@ -32,10 +34,10 @@ const LOAD_OLDER_THRESHOLD_PX = 40;
 const NEAR_BOTTOM_PX = 40;
 
 // Loaded on first use, because noVNC is large and only needed when the owner opens the screen.
-const lazyDesktopPanel = lazy(async () => {
+const lazyDesktopPanel = lazyPanel(async () => {
     const panelModule = await import('./DesktopPanel.tsx');
 
-    return { default: panelModule.DesktopPanel };
+    return panelModule.DesktopPanel;
 });
 
 interface ConversationViewProps {
@@ -45,7 +47,8 @@ interface ConversationViewProps {
     // The face of the bot's mascot while it is the live bot. Idle when not given.
     mascotState?: MascotState | undefined;
     messages: ChatMessage[];
-    draftText: string;
+    // The reply being streamed. Without it the view shows no draft.
+    draftStore?: DraftStore | undefined;
     isRunning: boolean;
     // The tool the bot is using now, named in the thinking bubble. Unset when no tool runs.
     activeToolName?: string | undefined;
@@ -111,7 +114,7 @@ function ConversationView({
     bots,
     mascotState = 'idle',
     messages,
-    draftText,
+    draftStore,
     isRunning,
     activeToolName,
     onTypingChange,
@@ -150,6 +153,11 @@ function ConversationView({
     const botName = bot?.name ?? 'CloudBot';
     const sentHistory = useMemo(() => sentMessageTexts(messages), [messages]);
     const providerChangeCount = useMemo(() => countProviderChanges(messages), [messages]);
+    const handoffSenders = useMemo(() => {
+        const senderEntries = messages.map(message => [message.id, findHandoffSender(bots ?? [], message)] as const);
+
+        return new Map(senderEntries);
+    }, [messages, bots]);
     const isBubbleDue = isThinkingBubbleShown({ isRunning, messages });
     const isThinkingShown = useDelayedFlag(isBubbleDue, BUBBLE_DELAY_MS);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
@@ -235,7 +243,24 @@ function ConversationView({
         previousIsLoadingRef.current = isLoadingOlder;
         previousScrollHeightRef.current = messageListElement.scrollHeight;
         // The working bubble shows up after a delay, so its arrival scrolls the list too.
-    }, [messages, draftText, botId, isLoadingOlder, isThinkingShown]);
+    }, [messages, botId, isLoadingOlder, isThinkingShown]);
+
+    // Each frame of a streamed reply keeps a reader at the bottom there, with no render of this view.
+    const followDraft = useCallback(() => {
+        const messageListElement = messageListRef.current;
+
+        if (messageListElement === null) {
+            return;
+        }
+
+        const distanceFromBottom = previousScrollHeightRef.current - messageListElement.scrollTop - messageListElement.clientHeight;
+
+        if (distanceFromBottom <= NEAR_BOTTOM_PX) {
+            messageListElement.scrollTop = messageListElement.scrollHeight;
+        }
+
+        previousScrollHeightRef.current = messageListElement.scrollHeight;
+    }, []);
 
     // Back on the app, after the screen was off or another app was open, the chat follows the newest message. The
     // reload that the event stream does then lands at the bottom too, since the list counts as near the bottom.
@@ -445,17 +470,11 @@ function ConversationView({
                         <MessageItem
                             message={message}
                             actions={actions}
-                            handoffSender={findHandoffSender(bots ?? [], message)}
+                            handoffSender={handoffSenders.get(message.id)}
                         />
                     </div>
                 ))}
-                {draftText === ''
-                    ? null
-                    : (
-                            <div className="message message-assistant is-draft">
-                                <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(draftText) }} />
-                            </div>
-                        )}
+                {draftStore === undefined ? null : <DraftBubble store={draftStore} botId={botId} onTextChange={followDraft} />}
                 {isThinkingShown && bot !== undefined
                     ? <ThinkingBubble activeToolName={activeToolName} mascotColor={bot.mascotColor} mascotShape={bot.mascotShape} />
                     : null}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useOptimistic, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatEvent, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../shared/chatTypes.ts';
@@ -15,7 +15,6 @@ import type { MascotHop, MascotHopPoint } from './mascotHop.ts';
 import { useAppUpdate } from './useAppUpdate.ts';
 import { usePullToRefresh } from './usePullToRefresh.ts';
 import { announceAppReturn, describeAppReturn, readAppReturn } from './appReturn.ts';
-import { ConnectAppsPanel } from './components/ConnectAppsPanel.tsx';
 import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
 import { PullIndicator } from './components/PullIndicator.tsx';
@@ -34,18 +33,24 @@ import { DISABLE_NOTIFICATIONS_CHOICE_ID, ENABLE_NOTIFICATIONS_CHOICE_ID } from 
 import { ADD_PASSKEY_CHOICE_ID, REMOVE_PASSKEY_CHOICE_ID } from '../shared/passkeyTypes.ts';
 import { addPasskey, describePasskeyResult, removePasskey } from './passkeyClient.ts';
 import { SignInScreen } from './components/SignInScreen.tsx';
-import { AccountPanel } from './components/AccountPanel.tsx';
-import { BotProfilePanel } from './components/BotProfilePanel.tsx';
 import { PeopleHubHint } from './components/PeopleHubHint.tsx';
-import { PeoplePanel } from './components/PeoplePanel.tsx';
+import { createDraftStore, EMPTY_DRAFT } from './draftStore.ts';
+import { AccountPanel, BotProfilePanel, ConnectAppsPanel, PeoplePanel } from './components/lazyPanels.tsx';
 import { getHubContext } from './peopleClient.ts';
 import type { HubRole } from './peopleClient.ts';
 
-interface DraftState {
-    botId: string;
-    text: string;
-    // The highest message sequence known when the draft started. Older replies never clear it.
-    afterSequence: number;
+// An answer equal to the state keeps the old reference, so nothing that depends on it runs again.
+function keepIfSame<Value>(previous: Value, next: Value): Value {
+    const previousJson = JSON.stringify(previous);
+
+    return previousJson === JSON.stringify(next) ? previous : next;
+}
+
+// The row of a finished channel tool. It may have made, changed or deleted a channel.
+function isChannelToolRow(event: ChatEvent): boolean {
+    return event.type === 'message'
+        && event.message.body.kind === 'toolActivity'
+        && event.message.body.toolName.includes('channel');
 }
 
 interface OlderPagingState {
@@ -78,7 +83,6 @@ interface MascotHopRequest {
     rowEdge: MascotHopPoint;
 }
 
-const emptyDraft: DraftState = { botId: '', text: '', afterSequence: 0 };
 const emptyChatState: ChatState = { messages: [], olderPaging: {} };
 const OLDER_ERROR_TEXT = 'Could not load older messages.';
 const UPLOADS_LOAD_ERROR_TEXT = 'Could not load the attached files.';
@@ -122,6 +126,7 @@ const REFRESH_DELAY_MS = 400;
 function App(): ReactElement {
     const [bots, setBots] = useState<BotSummary[]>([]);
     const [selectedBotId, setSelectedBotId] = useState<string | undefined>(undefined);
+    const [highlightedBotId, highlightBot] = useOptimistic(selectedBotId);
     // The newest message of each bot that the owner has seen. A closed chat with a newer one shows as unread.
     const [seenSequences, setSeenSequences] = useState(loadSeen);
     const nextSeenSequences = updateSeen(seenSequences, bots, selectedBotId);
@@ -134,9 +139,12 @@ function App(): ReactElement {
     // A channel replaces the bot's conversation while it is selected. Only one of the two is shown.
     const [selectedChannelId, setSelectedChannelId] = useState<string | undefined>(undefined);
     const [channels, setChannels] = useState<ChannelSummary[]>([]);
+    const [channelListVersion, setChannelListVersion] = useState(0);
+    const botIdList = bots.map(bot => bot.id);
+    const botIdsKey = botIdList.join(',');
     const [channelDetail, setChannelDetail] = useState<ChannelDetail | undefined>(undefined);
     const [chatState, setChatState] = useState<ChatState>(emptyChatState);
-    const [draft, setDraft] = useState<DraftState>(emptyDraft);
+    const [draftStore] = useState(() => createDraftStore());
     const [runningBotId, setRunningBotId] = useState<string | undefined>(undefined);
     // The bot whose turn is running, read by the turn event handler. The state above is for rendering.
     const runningBotIdRef = useRef<string | undefined>(undefined);
@@ -256,7 +264,7 @@ function App(): ReactElement {
     const refreshBotsAfterDeletion = useCallback((): Promise<void> => {
         return listBots()
             .then((loadedBots) => {
-                setBots(loadedBots);
+                setBots(previousBots => keepIfSame(previousBots, loadedBots));
 
                 if (!loadedBots.some(bot => bot.id === selectedBotIdRef.current)) {
                     setSelectedBotId(loadedBots[0]?.id);
@@ -355,7 +363,7 @@ function App(): ReactElement {
             refreshTimer = setTimeout(() => {
                 listBots()
                     .then((loadedBots) => {
-                        setBots(loadedBots);
+                        setBots(previousBots => keepIfSame(previousBots, loadedBots));
 
                         if (!loadedBots.some(bot => bot.id === selectedBotIdRef.current)) {
                             setSelectedBotId(loadedBots[0]?.id);
@@ -368,7 +376,14 @@ function App(): ReactElement {
             if (event.type === 'message' || event.type === 'botDeleted') {
                 refreshBots();
             }
-        }, refreshBots);
+
+            if (isChannelToolRow(event)) {
+                setChannelListVersion(current => current + 1);
+            }
+        }, () => {
+            refreshBots();
+            setChannelListVersion(current => current + 1);
+        });
 
         return () => {
             clearTimeout(refreshTimer);
@@ -383,7 +398,7 @@ function App(): ReactElement {
                 const target = readNotificationTarget(window.location.search);
                 const targetBot = loadedBots.find(bot => bot.id === target?.botId);
 
-                setBots(loadedBots);
+                setBots(previousBots => keepIfSame(previousBots, loadedBots));
                 setSelectedBotId(targetBot?.id ?? loadedBots[0]?.id);
 
                 if (targetBot !== undefined) {
@@ -402,14 +417,17 @@ function App(): ReactElement {
             });
     }, []);
 
-    // The channel list follows the bot list, so a deleted bot's channels are dropped from the roster.
+    // The channel list follows the ids of the bots, so a deleted bot's channels are dropped from the roster.
+    // A bot changes channels with its tools, which bumps the version. A plain message costs no request.
     useEffect(() => {
         listChannels()
-            .then(setChannels)
+            .then((loadedChannels) => {
+                setChannels(previousChannels => keepIfSame(previousChannels, loadedChannels));
+            })
             .catch(() => {
                 setErrorText('Could not load the channels.');
             });
-    }, [bots]);
+    }, [botIdsKey, channelListVersion]);
 
     useEffect(() => {
         if (selectedChannelId === undefined) {
@@ -510,15 +528,14 @@ function App(): ReactElement {
             const knownSequences = messagesRef.current.map(message => message.sequence);
             const knownSequence = Math.max(0, ...knownSequences);
 
-            pendingDraftText = '';
-            setDraft((previousDraft) => {
-                const isNewDraft = previousDraft.botId !== deltaBotId;
+            const previousDraft = draftStore.get();
+            const isNewDraft = previousDraft.botId !== deltaBotId;
 
-                return {
-                    botId: deltaBotId,
-                    text: (isNewDraft ? '' : previousDraft.text) + deltaText,
-                    afterSequence: isNewDraft ? knownSequence : previousDraft.afterSequence,
-                };
+            pendingDraftText = '';
+            draftStore.set({
+                botId: deltaBotId,
+                text: (isNewDraft ? '' : previousDraft.text) + deltaText,
+                afterSequence: isNewDraft ? knownSequence : previousDraft.afterSequence,
             });
         };
 
@@ -564,11 +581,12 @@ function App(): ReactElement {
                     flushPendingDraft();
 
                     // A reply stored after the draft started means the draft is already written, as a message event would.
-                    setDraft((previousDraft) => {
-                        const hasNewerReply = replies.some(reply => reply.sequence > previousDraft.afterSequence);
+                    const shownDraft = draftStore.get();
+                    const hasNewerReply = replies.some(reply => reply.sequence > shownDraft.afterSequence);
 
-                        return previousDraft.botId === selectedBotId && hasNewerReply ? emptyDraft : previousDraft;
-                    });
+                    if (shownDraft.botId === selectedBotId && hasNewerReply) {
+                        draftStore.set(EMPTY_DRAFT);
+                    }
 
                     const loadedSequences = loadedMessages.map(message => message.sequence);
                     const newestLoadedSequence = Math.max(0, ...loadedSequences);
@@ -670,7 +688,7 @@ function App(): ReactElement {
             // A stored message ends the block being written, so its draft goes away.
             if (event.type === 'message') {
                 dropPendingDraft();
-                setDraft(emptyDraft);
+                draftStore.set(EMPTY_DRAFT);
 
                 setActiveTool(current => (current?.botId === event.message.botId ? undefined : current));
 
@@ -688,7 +706,7 @@ function App(): ReactElement {
             }
 
             dropPendingDraft();
-            setDraft(emptyDraft);
+            draftStore.set(EMPTY_DRAFT);
             setActiveTool(current => (current?.botId === event.botId ? undefined : current));
             const wasRunning = runningBotIdRef.current === event.botId;
             const wasStopped = stoppedBotIdRef.current === event.botId;
@@ -709,10 +727,11 @@ function App(): ReactElement {
             // A finished turn may have put files back in the queue, and may have renamed the bot.
             if (!event.isRunning) {
                 loadPendingUploads(selectedBotId);
+                setChannelListVersion(current => current + 1);
 
                 listBots()
                     .then((loadedBots) => {
-                        setBots(loadedBots);
+                        setBots(previousBots => keepIfSame(previousBots, loadedBots));
 
                         // The bot may have deleted itself in this turn. Then the selection moves to the first bot left.
                         const isSelectedGone = !loadedBots.some(bot => bot.id === selectedBotIdRef.current);
@@ -733,7 +752,7 @@ function App(): ReactElement {
             flushPendingDraft();
             unsubscribe();
         };
-    }, [selectedBotId, loadPendingUploads, refreshBotsAfterDeletion]);
+    }, [selectedBotId, loadPendingUploads, refreshBotsAfterDeletion, draftStore]);
 
     const showMessageResult = useCallback((resultPromise: Promise<ChatMessage>): void => {
         resultPromise
@@ -852,26 +871,28 @@ function App(): ReactElement {
     ): void {
         mascotHopRef.current?.cancel();
         mascotHopRef.current = undefined;
-        setMascotHopRequest(undefined);
 
-        if ((botId !== selectedBotId || selectedChannelId !== undefined)
-            && sourceMascot !== null
-            && rowEdge !== undefined) {
+        const isOtherChat = botId !== selectedBotId || selectedChannelId !== undefined;
+        let pendingHop: MascotHopRequest | undefined;
+
+        if (isOtherChat && sourceMascot !== null && rowEdge !== undefined) {
             mascotHopRequestIdRef.current += 1;
-            const requestId = mascotHopRequestIdRef.current;
-            const pendingHop: MascotHopRequest = { requestId, targetBotId: botId, sourceMascot, rowEdge };
-
-            setMascotHopRequest(pendingHop);
+            pendingHop = { requestId: mascotHopRequestIdRef.current, targetBotId: botId, sourceMascot, rowEdge };
         }
 
-        // The older-load error belongs to the bot it was for, so another bot starts clean.
-        setErrorText(previousError => (previousError === OLDER_ERROR_TEXT ? undefined : previousError));
-        setSelectedChannelId(undefined);
-        setSelectedBotId(botId);
-        setIsPeopleOpen(false);
-        setIsAccountOpen(false);
-        setIsBotProfileOpen(false);
+        // The list closes and the row lights up at once. The new chat renders behind them, without holding up that frame.
         setIsBotListOpen(false);
+        startTransition(() => {
+            highlightBot(botId);
+            setMascotHopRequest(pendingHop);
+            // The older-load error belongs to the bot it was for, so another bot starts clean.
+            setErrorText(previousError => (previousError === OLDER_ERROR_TEXT ? undefined : previousError));
+            setSelectedChannelId(undefined);
+            setSelectedBotId(botId);
+            setIsPeopleOpen(false);
+            setIsAccountOpen(false);
+            setIsBotProfileOpen(false);
+        });
     }
 
     // The new name shows in the list and in the header at once. A refusal comes back as text for the field to show.
@@ -1240,8 +1261,11 @@ function App(): ReactElement {
     }), [selectedBotId, showMessageResult]);
 
     const selectedBot = bots.find(bot => bot.id === selectedBotId);
-    const selectedMessages = messages.filter(message => message.botId === selectedBotId);
-    const visibleMessages = withoutToolRows(selectedMessages);
+    const visibleMessages = useMemo(() => {
+        const selectedMessages = messages.filter(message => message.botId === selectedBotId);
+
+        return withoutToolRows(selectedMessages);
+    }, [messages, selectedBotId]);
     const activeToolName = activeTool?.botId === selectedBotId ? activeTool?.toolName : undefined;
     const isRunning = selectedBotId !== undefined && runningBotId === selectedBotId;
     const isJustFinished = selectedBotId !== undefined && finishedTurn?.botId === selectedBotId;
@@ -1270,7 +1294,7 @@ function App(): ReactElement {
             <PullIndicator distance={pullToRefresh.distance} isRefreshing={pullToRefresh.isRefreshing} />
             <BotList
                 bots={botsWithUnread}
-                selectedBotId={selectedBotId}
+                selectedBotId={highlightedBotId}
                 selectedMascotState={liveMascotState}
                 channels={channels}
                 selectedChannelId={selectedChannelId}
@@ -1428,7 +1452,7 @@ function App(): ReactElement {
                                     mascotState={liveMascotState}
                                     onTypingChange={setIsOwnerTyping}
                                     messages={visibleMessages}
-                                    draftText={draft.botId === selectedBotId ? draft.text : ''}
+                                    draftStore={draftStore}
                                     isRunning={isRunning}
                                     activeToolName={activeToolName}
                                     attachments={botAttachments}

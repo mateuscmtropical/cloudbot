@@ -15,7 +15,7 @@ interface ThinkingBubbleProps {
 
 const STATUS_MASCOT_SIZE = 24;
 
-// A status line under the last message, with the mascot looking around and a shine that sweeps the text.
+// A status line under the last message, with the mascot looking around and text that gently pulses.
 // The lines change on a timer, not in CSS, so they still change when reduced motion is on.
 function ThinkingBubble({ activeToolName, mascotColor, mascotShape }: ThinkingBubbleProps): ReactElement {
     const [lineIndex, setLineIndex] = useState(0);
@@ -37,7 +37,7 @@ function ThinkingBubble({ activeToolName, mascotColor, mascotShape }: ThinkingBu
             <div className="thinking-status">
                 <CloudMascot color={mascotColor} shape={mascotShape} state="working" size={STATUS_MASCOT_SIZE} />
                 {/* The line changes every few seconds, so it stays silent. The label above is what a screen reader gets.
-                    The key starts the shine again on each new line. */}
+                    The key starts the pulse again on each new line. */}
                 <span key={line} className="thinking-line" aria-live="off">{line}</span>
             </div>
         </div>

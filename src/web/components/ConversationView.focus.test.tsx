@@ -15,7 +15,6 @@ function conversationElement(messages: ChatMessage[], focusMessageId: string | u
         <ConversationView
             bot={undefined}
             messages={messages}
-            draftText=""
             isRunning={false}
             attachments={[]}
             isUploading={false}

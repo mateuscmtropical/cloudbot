@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotSummary, ChatEvent, ChatMessage, PendingUpload } from '../shared/chatTypes.ts';
 import { App } from './App.tsx';
-import { listBots, listMessages, listUploads, RequestFailedError, sendMessage, stopTurn, subscribeToEvents, uploadAttachments } from './apiClient.ts';
+import { listBots, listChannels, listMessages, listUploads, RequestFailedError, sendMessage, stopTurn, subscribeToAllBotEvents, subscribeToEvents, uploadAttachments } from './apiClient.ts';
 import { APP_SIGN_IN_CHANNEL } from './appReturn.ts';
 import { MESSAGE_PAGE_SIZE } from './messageList.ts';
 import { getHubContext } from './peopleClient.ts';
@@ -697,6 +697,50 @@ describe('App mascot', () => {
             .toBeNull();
         expect(container.querySelector('.cloud-mascot.is-idle'))
             .not.toBeNull();
+    });
+});
+
+describe('App channel list', () => {
+    function toolRow(toolName: string): ChatMessage {
+        return { id: toolName, botId: 'bot-1', role: 'assistant', createdAt: 1, sequence: 1, body: { kind: 'toolActivity', toolName, status: 'done', summary: '' } };
+    }
+
+    it('reloads after a channel tool, and not after any other message', async () => {
+        const stream: { onEvent?: (event: ChatEvent) => void } = {};
+
+        vi.mocked(listBots)
+            .mockResolvedValue([createBot('CloudBot')]);
+        vi.mocked(listMessages)
+            .mockResolvedValue([]);
+        vi.mocked(subscribeToEvents)
+            .mockReturnValue(() => undefined);
+        vi.mocked(subscribeToAllBotEvents)
+            .mockImplementation((onEvent) => {
+                stream.onEvent = onEvent;
+
+                return () => undefined;
+            });
+
+        render(<App />);
+        await screen.findByRole('textbox');
+        await waitFor(() => {
+            expect(vi.mocked(listChannels).mock.calls.length)
+                .toBeGreaterThan(0);
+        });
+        vi.mocked(listChannels)
+            .mockClear();
+
+        act(() => {
+            stream.onEvent?.({ type: 'message', message: toolRow('Bash') });
+        });
+        expect(listChannels)
+            .not.toHaveBeenCalled();
+
+        act(() => {
+            stream.onEvent?.({ type: 'message', message: toolRow('mcp__cloudbot__channel_create') });
+        });
+        expect(listChannels)
+            .toHaveBeenCalledTimes(1);
     });
 });
 

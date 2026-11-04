@@ -195,8 +195,16 @@ function MessageItemView({ message, actions, handoffSender }: MessageItemProps):
     return <div className={className}>{renderBody(message, actions)}</div>;
 }
 
-// A streamed reply renders the list on every delta. Memo keeps the stored messages from parsing their markdown again.
-const memoizedMessageItem = memo(MessageItemView);
+function isSameLook(first: MessageItemProps['handoffSender'], second: MessageItemProps['handoffSender']): boolean {
+    return first?.mascotColor === second?.mascotColor
+        && first?.mascotShape === second?.mascotShape
+        && first?.mascotEyes === second?.mascotEyes;
+}
+
+// Stored messages render only when they change. A reloaded bot list brings new objects, but a sender only counts by its look.
+const memoizedMessageItem = memo(MessageItemView, (previous, next) => previous.message === next.message
+    && previous.actions === next.actions
+    && isSameLook(previous.handoffSender, next.handoffSender));
 
 export { memoizedMessageItem as MessageItem };
 export type { MessageActions, MessageItemProps };
