@@ -97,7 +97,17 @@ describe('resetPassword', () => {
         };
         const people = new FakePeopleStore([person]);
 
-        const password = await resetPassword(people, 'maria');
+        const endedSessions: string[] = [];
+        const sessions = {
+            deletePerson: (name: string): void => {
+                endedSessions.push(name);
+            },
+        };
+
+        const password = await resetPassword(people, sessions, 'maria');
+
+        expect(endedSessions)
+            .toEqual(['maria']);
 
         expect(password)
             .toMatch(/^[a-zA-Z2-9]{16}$/);

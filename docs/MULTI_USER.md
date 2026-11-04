@@ -200,7 +200,7 @@ Sessions live in the hub database as hashes of random tokens. A session ends aft
 
 When `CLOUDBOT_LOGIN_ALLOWED_IPS` is set, the hub checks the client address from Caddy before serving the sign-in page or accepting password and passkey sign-ins. It also checks password changes. Existing sessions can still use the site. Keep the hub behind Caddy so the forwarded client address is trusted.
 
-Five failed sign-ins lock the name and the address for 15 minutes. The sign-in page never says whether the name or the password was wrong.
+Five failed sign-ins from one address lock that address for that name for 15 minutes. Fifty failed sign-ins from any addresses lock the name for 15 minutes, so a stranger cannot easily block a person. Passkey sign-in is not affected. The sign-in page never says whether the name or the password was wrong.
 
 When the instance is not running, the hub starts it and shows the loading page, which asks `/__hub/status` until the instance is ready. A start that does not fit the memory budget shows a busy page.
 

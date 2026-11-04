@@ -95,12 +95,18 @@ const OWNER_HEADERS: Record<string, string> = {
     [INSTANCE_SECRET_HEADER]: OWNER.instanceSecret,
 };
 
-function makeRoutes(records: PersonRecord[] = [OWNER, MEMBER]): { app: ReturnType<typeof createAdminRoutes>; people: FakePeopleStore; instances: FakeInstanceManager } {
+function makeRoutes(records: PersonRecord[] = [OWNER, MEMBER]): { app: ReturnType<typeof createAdminRoutes>; people: FakePeopleStore; instances: FakeInstanceManager; endedSessions: string[] } {
     const people = new FakePeopleStore(records);
     const instances = new FakeInstanceManager();
-    const app = createAdminRoutes({ people, instances, domain: 'example.com', secure: true });
+    const endedSessions: string[] = [];
+    const sessions = {
+        deletePerson: (name: string): void => {
+            endedSessions.push(name);
+        },
+    };
+    const app = createAdminRoutes({ people, instances, sessions, domain: 'example.com', secure: true });
 
-    return { app, people, instances };
+    return { app, people, instances, endedSessions };
 }
 
 async function readResponseBody(response: Response): Promise<unknown> {
@@ -171,7 +177,7 @@ describe('createAdminRoutes', () => {
     it('lists plain local addresses without a port when the domain is localhost', async () => {
         const people = new FakePeopleStore([OWNER, MEMBER]);
         const instances = new FakeInstanceManager();
-        const app = createAdminRoutes({ people, instances, domain: 'localhost', secure: false });
+        const app = createAdminRoutes({ people, instances, sessions: { deletePerson: () => undefined }, domain: 'localhost', secure: false });
         const response = await app.request('/internal/people', { headers: OWNER_HEADERS });
         const answer = await readResponseBody(response);
         const addresses = (answer as TestRecord[]).map(person => person.address);
@@ -274,6 +280,34 @@ describe('createAdminRoutes', () => {
             .toBe(true);
         expect(logSpy).not.toHaveBeenCalled();
         expect(errorSpy).not.toHaveBeenCalled();
+    });
+
+    it('ends the sessions of a person whose password was reset', async () => {
+        const { app, endedSessions } = makeRoutes();
+
+        await app.request('/internal/people/maria/reset-password', { method: 'POST', headers: OWNER_HEADERS });
+
+        expect(endedSessions)
+            .toEqual(['maria']);
+    });
+
+    it('keeps the session of an owner who resets their own password, so the new password stays on the page', async () => {
+        const { app, endedSessions } = makeRoutes();
+        const response = await app.request('/internal/people/owner/reset-password', { method: 'POST', headers: OWNER_HEADERS });
+
+        expect(response.status)
+            .toBe(200);
+        expect(endedSessions)
+            .toEqual([]);
+    });
+
+    it('ends the sessions of a removed person, so the name can be given again', async () => {
+        const { app, endedSessions } = makeRoutes();
+
+        await app.request('/internal/people/maria?confirm=maria', { method: 'DELETE', headers: OWNER_HEADERS });
+
+        expect(endedSessions)
+            .toEqual(['maria']);
     });
 
     it('requires matching confirmation and prevents owner removal', async () => {

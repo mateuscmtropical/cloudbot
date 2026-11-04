@@ -22,11 +22,14 @@ const HUB_PEOPLE_PATH = '/internal/people';
 //   GET /api/hub/activity   answers InstanceActivity
 const HUB_ACTIVITY_PATH = '/api/hub/activity';
 
+// Meta calls this path on the person's address, so the hub lets it through without a session.
+const WHATSAPP_CALLBACK_PATH = '/whatsapp';
+
 interface InstanceActivity {
     isBusy: boolean;
     // Short reasons, for logs and for the owner. For example "turn running" or "routine enabled".
     reasons: string[];
 }
 
-export { HUB_ACTIVITY_PATH, HUB_PEOPLE_PATH, HUB_TRUST_HEADER, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER };
+export { HUB_ACTIVITY_PATH, HUB_PEOPLE_PATH, HUB_TRUST_HEADER, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER, WHATSAPP_CALLBACK_PATH };
 export type { InstanceActivity };

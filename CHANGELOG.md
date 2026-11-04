@@ -6,6 +6,19 @@ All notable changes to this project are listed here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- A stranger can no longer block a person's password sign-in with five wrong tries. One address gets five tries at one person, and the person is locked only after fifty wrong tries in all.
+- The sign-in, setup and password forms refuse a body over 16 KB.
+- Resetting a person's password or removing a person ends that person's sessions. An owner who resets their own password stays signed in until the forced change, which ends the other sessions.
+- The hub runs with no Linux capabilities, with no-new-privileges and with a 1 GB memory limit. Every container has a process limit of 4096 and log rotation. An instance that exists already gets these when its container is made again.
+- The site sends `Strict-Transport-Security` with a one day lifetime and no longer offers HTTP/3, which never worked because UDP 443 is not published.
+- The hub and server databases are mode 600.
+
+### Fixed
+
+- Webhooks and the WhatsApp callback work behind the hub. The hub refused them because they have no browser headers and no session. Only `POST /hooks/<token>` and `GET` and `POST /whatsapp` pass, and a call to a stopped instance gets a 503 without waking it.
+
 ### Added
 
 - Each bot has a Permissions choice in the provider menu. Auto is the new default and uses the auto mode of each CLI, or the closest one it has. Ask keeps the old behavior. YOLO starts each CLI with its skip flag and stops all checks, at the owner's risk. Only the owner can change it, in the web app.

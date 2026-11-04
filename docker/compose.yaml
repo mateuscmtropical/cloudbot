@@ -1,5 +1,11 @@
 name: cloudbot
 
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
 services:
   hub:
     build:
@@ -23,6 +29,14 @@ services:
       CLOUDBOT_GOOGLE_CLIENT_ID: ${CLOUDBOT_GOOGLE_CLIENT_ID:-}
       CLOUDBOT_GOOGLE_CLIENT_SECRET: ${CLOUDBOT_GOOGLE_CLIENT_SECRET:-}
     restart: unless-stopped
+    # The hub runs as the cloudbot user, owns its data and listens on a high port, so it needs no capability.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    pids_limit: 4096
+    logging: *logging
     volumes:
       - hub-data:/var/lib/cloudbot-hub
     networks:
@@ -41,6 +55,8 @@ services:
   docker-proxy:
     image: tecnativa/docker-socket-proxy:0.3.0
     restart: unless-stopped
+    pids_limit: 4096
+    logging: *logging
     environment:
       AUTH: "0"
       SECRETS: "0"
@@ -75,6 +91,8 @@ services:
     image: caddy:2
     entrypoint: ["/bin/sh", "-c"]
     restart: unless-stopped
+    pids_limit: 4096
+    logging: *logging
     depends_on:
       hub:
         condition: service_healthy

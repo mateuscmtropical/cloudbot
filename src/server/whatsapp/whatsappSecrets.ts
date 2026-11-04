@@ -1,3 +1,5 @@
+import { WHATSAPP_CALLBACK_PATH } from '../../shared/hubProtocol.ts';
+
 // The names the bot reads and writes in the vault. They stay the same in the setup forms and the webhook route.
 const WHATSAPP_APP_SECRET_NAME = 'WHATSAPP_APP_SECRET';
 const WHATSAPP_VERIFY_TOKEN_NAME = 'WHATSAPP_VERIFY_TOKEN';
@@ -8,7 +10,6 @@ type WhatsAppSecretName = typeof WHATSAPP_SECRET_NAMES[number];
 
 // Meta signs each call with the app secret. The secret and the verify token belong to this API site.
 const WHATSAPP_API_SITE = 'https://graph.facebook.com';
-const WHATSAPP_CALLBACK_PATH = '/whatsapp';
 
 const APP_SECRET_PATTERN = /^[0-9a-f]{32}$/i;
 const PHONE_NUMBER_ID_PATTERN = /^\d{1,32}$/;

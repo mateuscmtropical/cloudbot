@@ -2,6 +2,8 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import { restrictDatabaseFiles } from '../../server/store/restrictDatabaseFiles.ts';
+
 const HUB_DATABASE_FILE = 'hub.db';
 const IN_MEMORY_PATH = ':memory:';
 
@@ -32,6 +34,11 @@ function openHubDatabase(dataDir: string): DatabaseSync {
 
     database.exec('PRAGMA journal_mode = WAL');
     database.exec('PRAGMA foreign_keys = ON');
+
+    if (!isInMemory) {
+        restrictDatabaseFiles(databasePath);
+    }
+
     database.exec(CREATE_PEOPLE_TABLE);
 
     return database;
