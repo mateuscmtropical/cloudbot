@@ -1,5 +1,6 @@
 // A phone photo can be several MB and larger than a model takes. Before the upload, a big photo is drawn smaller in
 // the browser and saved as JPEG, so it stays far below the 5 MB image limit of the server. GIFs keep their frames.
+// Every JPEG is drawn again, even a small one, because that drops its EXIF data such as the GPS position.
 const COMPRESSED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_SIDE_PIXELS = 2048;
 const MAX_KEPT_BYTES = 1_500_000;
@@ -46,7 +47,8 @@ async function compressImage(file: File): Promise<File> {
     try {
         const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
         const size = scaleToFit(bitmap.width, bitmap.height);
-        const isSmallEnough = size.width === bitmap.width && file.size <= MAX_KEPT_BYTES;
+        const isJpeg = file.type === 'image/jpeg';
+        const isSmallEnough = !isJpeg && size.width === bitmap.width && file.size <= MAX_KEPT_BYTES;
 
         if (isSmallEnough) {
             bitmap.close();
@@ -58,7 +60,7 @@ async function compressImage(file: File): Promise<File> {
 
         bitmap.close();
 
-        if (blob === null || blob.size >= file.size) {
+        if (blob === null || (!isJpeg && blob.size >= file.size)) {
             return file;
         }
 

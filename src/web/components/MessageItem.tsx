@@ -1,25 +1,24 @@
 import { memo } from 'react';
 import type { ReactElement } from 'react';
 
-import type { BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
+import type { AttachmentSummary, BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
 import { TASK_LABELS, TASK_STATUSES } from '../../shared/taskTypes.ts';
+import { PREVIEW_IMAGE_TYPES } from '../../shared/previewImageTypes.ts';
 import { readHandoff } from '../botHandoff.ts';
 import type { HandoffView } from '../botHandoff.ts';
-import { formatFileSize } from '../formatFileSize.ts';
 import { getRoutineSystemText } from '../messageList.ts';
 import { renderMarkdown } from '../markdown.ts';
+import { AttachmentGrid } from './AttachmentGrid.tsx';
 import { Button } from './Button.tsx';
 import { ChoiceButtons } from './ChoiceButtons.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
 import { ChatCard } from './ChatCard.tsx';
 import { CodeField } from './CodeField.tsx';
+import { FileCard } from './FileCard.tsx';
 import { LinkCard } from './LinkCard.tsx';
 import { SecureForm } from './SecureForm.tsx';
+import { SharedFile } from './SharedFile.tsx';
 
-// Raster images only. An img tag never runs scripts, so a file with another content under these types just fails to show.
-const PREVIEW_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
-// Larger images keep only the download link, so opening the chat does not fetch big files.
-const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
 const HANDOFF_MASCOT_SIZE = 28;
 
 interface MessageActions {
@@ -38,6 +37,27 @@ interface MessageItemProps {
     bots?: BotSummary[] | undefined;
 }
 
+// Sent images show as a grid, and every other file, or an image from before copies were kept, as a card.
+function renderAttachments(message: ChatMessage, attachments: AttachmentSummary[]): ReactElement {
+    const sentImages = attachments.flatMap((file) => {
+        if (file.fileId === undefined || !PREVIEW_IMAGE_TYPES.has(file.mimeType)) {
+            return [];
+        }
+
+        const url = `/api/bots/${encodeURIComponent(message.botId)}/messages/${encodeURIComponent(message.id)}/attachments/${encodeURIComponent(file.fileId)}`;
+
+        return [{ url, name: file.name, width: file.width, height: file.height }];
+    });
+    const otherFiles = attachments.filter(file => file.fileId === undefined || !PREVIEW_IMAGE_TYPES.has(file.mimeType));
+
+    return (
+        <div className="message-attachments">
+            {sentImages.length === 0 ? null : <AttachmentGrid images={sentImages} />}
+            {otherFiles.map((file, index) => <FileCard key={`${String(index)}-${file.name}`} name={file.name} sizeBytes={file.sizeBytes} />)}
+        </div>
+    );
+}
+
 function renderBody(message: ChatMessage, actions: MessageActions): ReactElement | null {
     const body = message.body;
 
@@ -45,18 +65,8 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
         case 'text':
             return (
                 <div className="text-message">
+                    {body.attachments === undefined || body.attachments.length === 0 ? null : renderAttachments(message, body.attachments)}
                     <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(body.text) }} />
-                    {body.attachments === undefined || body.attachments.length === 0
-                        ? null
-                        : (
-                                <ul className="attachment-list">
-                                    {body.attachments.map((file, index) => (
-                                        <li key={`${String(index)}-${file.name}`} className="attachment-item">
-                                            {file.name}
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
                     {body.isQueued === true ? <span className="queued-label">Queued</span> : null}
                 </div>
             );
@@ -138,17 +148,7 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
         case 'file': {
             const fileUrl = `/api/bots/${encodeURIComponent(message.botId)}/messages/${encodeURIComponent(message.id)}/file`;
 
-            return (
-                <ChatCard className="file-card">
-                    {PREVIEW_IMAGE_TYPES.has(body.mimeType) && body.sizeBytes <= MAX_PREVIEW_BYTES
-                        ? <img className="file-preview" src={fileUrl} alt={body.name} loading="lazy" />
-                        : null}
-                    <a className="link-card" href={fileUrl} download={body.name}>
-                        {`Download ${body.name}`}
-                    </a>
-                    <span className="file-size">{formatFileSize(body.sizeBytes)}</span>
-                </ChatCard>
-            );
+            return <SharedFile file={body} url={fileUrl} />;
         }
         case 'toolActivity':
             return (

@@ -56,6 +56,23 @@ interface ChannelMessage extends NewChannelMessage {
 
 const CHANNEL_NAME_MAX_LENGTH = 40;
 
+function toChannelMessage(row: typeof channelMessages.$inferSelect): ChannelMessage {
+    return {
+        id: row.id,
+        channelId: row.channelId,
+        sequence: row.sequence,
+        createdAt: row.createdAt,
+        authorBotId: row.authorBotId ?? undefined,
+        authorName: row.authorName,
+        authorColor: readMascotColor(row.authorColor),
+        authorShape: readMascotShape(row.authorShape),
+        authorEyes: readMascotEyes(row.authorEyes),
+        role: row.role,
+        kind: row.kind,
+        body: row.content,
+    };
+}
+
 class ChannelStore {
     private readonly database: AppDatabase;
     private readonly now: () => number;
@@ -280,21 +297,20 @@ class ChannelStore {
             .limit(limit);
 
         return rows
-            .map(row => ({
-                id: row.id,
-                channelId: row.channelId,
-                sequence: row.sequence,
-                createdAt: row.createdAt,
-                authorBotId: row.authorBotId ?? undefined,
-                authorName: row.authorName,
-                authorColor: readMascotColor(row.authorColor),
-                authorShape: readMascotShape(row.authorShape),
-                authorEyes: readMascotEyes(row.authorEyes),
-                role: row.role,
-                kind: row.kind,
-                body: row.content,
-            }))
+            .map(toChannelMessage)
             .reverse();
+    }
+
+    async getMessage(channelId: string, messageId: string): Promise<ChannelMessage | undefined> {
+        const inChannel = eq(channelMessages.channelId, channelId);
+        const withId = eq(channelMessages.id, messageId);
+        const inChannelWithId = and(inChannel, withId);
+        const rows = await this.database.select()
+            .from(channelMessages)
+            .where(inChannelWithId);
+        const row = rows[0];
+
+        return row === undefined ? undefined : toChannelMessage(row);
     }
 
     private async membersOf(channelId: string): Promise<ChannelMember[]> {

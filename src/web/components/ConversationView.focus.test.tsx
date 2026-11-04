@@ -5,12 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatMessage } from '../../shared/chatTypes.ts';
 import { ConversationView } from './ConversationView.tsx';
+import type { ConversationViewProps } from './ConversationView.tsx';
 
 function createMessage(id: string, sequence: number): ChatMessage {
     return { id, botId: 'bot-1', role: 'assistant', createdAt: 1, sequence, body: { kind: 'text', text: `Message ${id}` } };
 }
 
-function conversationElement(messages: ChatMessage[], focusMessageId: string | undefined, onFocusHandled: () => void): ReactElement {
+function conversationElement(messages: ChatMessage[], focusMessageId: string | undefined, onFocusHandled: () => void, paging: Partial<ConversationViewProps> = {}): ReactElement {
     return (
         <ConversationView
             bot={undefined}
@@ -26,6 +27,7 @@ function conversationElement(messages: ChatMessage[], focusMessageId: string | u
             onAttach={vi.fn()}
             focusMessageId={focusMessageId}
             onFocusHandled={onFocusHandled}
+            {...paging}
         />
     );
 }
@@ -58,6 +60,43 @@ describe('ConversationView focus message', () => {
             .toEqual(['m2']);
         expect(onFocusHandled)
             .toHaveBeenCalledTimes(1);
+    });
+
+    it('loads older pages until a search hit shows, then scrolls to it', () => {
+        const onFocusHandled = vi.fn();
+        const onLoadOlder = vi.fn();
+        const searchView = (messages: ChatMessage[], hasOlderMessages: boolean, isLoadingOlder: boolean): ReactElement => conversationElement(messages, 'm1', onFocusHandled, { focusSequence: 1, hasOlderMessages, isLoadingOlder, onLoadOlder });
+        const view = render(searchView([createMessage('m5', 5)], true, false));
+
+        expect(onLoadOlder)
+            .toHaveBeenCalledTimes(1);
+
+        view.rerender(searchView([createMessage('m5', 5)], true, true));
+
+        expect(onFocusHandled)
+            .not.toHaveBeenCalled();
+
+        view.rerender(searchView([createMessage('m1', 1), createMessage('m5', 5)], false, false));
+
+        expect(scrolledIds)
+            .toEqual(['m1']);
+        expect(onFocusHandled)
+            .toHaveBeenCalled();
+    });
+
+    it('gives up on a search hit when the older page fails to load', () => {
+        const onFocusHandled = vi.fn();
+        const onLoadOlder = vi.fn();
+        const searchView = (isLoadingOlder: boolean): ReactElement => conversationElement([createMessage('m5', 5)], 'm1', onFocusHandled, { focusSequence: 1, hasOlderMessages: true, isLoadingOlder, onLoadOlder });
+        const view = render(searchView(false));
+
+        view.rerender(searchView(true));
+        view.rerender(searchView(false));
+
+        expect(onLoadOlder)
+            .toHaveBeenCalledTimes(1);
+        expect(onFocusHandled)
+            .toHaveBeenCalled();
     });
 
     it('reports a message that is not in the list as handled, without scrolling', () => {

@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 
 import type { ChannelDetail } from '../../shared/channelTypes.ts';
 import { CloudMascot } from './CloudMascot.tsx';
+import { SharedFile } from './SharedFile.tsx';
 
 const ROSTER_MASCOT_SIZE = 22;
 const POST_MASCOT_SIZE = 28;
@@ -66,7 +67,9 @@ function ChannelView({ channel, onPost, onStop, onOpenBotList }: ChannelViewProp
                             : <CloudMascot color={post.authorColor} shape={post.authorShape} eyes={post.authorEyes} state="idle" size={POST_MASCOT_SIZE} />}
                         <div className="channel-post-body">
                             <span className="channel-post-author">{post.authorName}</span>
-                            <p className="channel-post-text">{post.body.kind === 'text' ? post.body.text : ''}</p>
+                            {post.body.kind === 'file'
+                                ? <SharedFile file={post.body} url={`/api/channels/${encodeURIComponent(channel.id)}/messages/${encodeURIComponent(post.id)}/file`} />
+                                : <p className="channel-post-text">{post.body.kind === 'text' ? post.body.text : ''}</p>}
                         </div>
                     </article>
                 ))}

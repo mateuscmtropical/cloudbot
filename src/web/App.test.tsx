@@ -354,7 +354,7 @@ describe('App bot list', () => {
             .mockResolvedValue([]);
         vi.mocked(listUploads)
             .mockResolvedValueOnce([])
-            .mockResolvedValueOnce([{ id: 'upload-9', name: 'notes.txt', sizeBytes: 5 }]);
+            .mockResolvedValueOnce([{ id: 'upload-9', name: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5 }]);
         vi.mocked(subscribeToEvents)
             .mockImplementation((_botId, onEvent) => {
                 emitEvent.current = onEvent;
@@ -493,7 +493,7 @@ describe('App pending files', () => {
 
     it('keeps a restored file when the send response arrives after the turn-end list', async () => {
         const emitEvent: { current: ((event: ChatEvent) => void) | undefined } = { current: undefined };
-        const notes: PendingUpload = { id: 'server-1', name: 'notes.txt', sizeBytes: 5 };
+        const notes: PendingUpload = { id: 'server-1', name: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5 };
         const sentMessage: ChatMessage = {
             id: 'm1',
             botId: 'bot-1',
@@ -573,7 +573,7 @@ describe('App pending files', () => {
         vi.mocked(listUploads)
             .mockResolvedValueOnce([])
             .mockReturnValueOnce(staleList)
-            .mockResolvedValueOnce([{ id: 'fresh-1', name: 'fresh.txt', sizeBytes: 5 }]);
+            .mockResolvedValueOnce([{ id: 'fresh-1', name: 'fresh.txt', mimeType: 'text/plain', sizeBytes: 5 }]);
         vi.mocked(uploadAttachments)
             .mockResolvedValueOnce(undefined);
         vi.mocked(subscribeToEvents)
@@ -627,7 +627,7 @@ describe('App pending files', () => {
             .mockResolvedValue([]);
         vi.mocked(listUploads)
             .mockResolvedValueOnce([])
-            .mockResolvedValueOnce([{ id: 'queued-1', name: 'queued.txt', sizeBytes: 5 }]);
+            .mockResolvedValueOnce([{ id: 'queued-1', name: 'queued.txt', mimeType: 'text/plain', sizeBytes: 5 }]);
         vi.mocked(uploadAttachments)
             .mockRejectedValueOnce(new Error('connection lost'));
         vi.mocked(subscribeToEvents)

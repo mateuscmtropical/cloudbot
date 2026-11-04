@@ -33,6 +33,19 @@ class ReplyingRunner implements AgentRunner {
     }
 }
 
+// A turn that makes an image, as Codex does.
+class ImageRunner implements AgentRunner {
+    runTurn(): AsyncIterable<AgentEvent> {
+        return imageEvents();
+    }
+}
+
+async function* imageEvents(): AsyncGenerator<AgentEvent> {
+    await Promise.resolve();
+    yield { type: 'image', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' };
+    yield { type: 'turn_finished' };
+}
+
 // A turn that works until it is stopped, so the round stays alive and later turns wait behind it.
 class HoldingRunner implements AgentRunner {
     runTurn(request: TurnRequest): AsyncIterable<AgentEvent> {
@@ -139,6 +152,30 @@ describe('ChatService channel rounds', () => {
     function buildService(runner: AgentRunner): ChatService {
         return new ChatService({ botStore, messageStore, runner, dataDir, channelStore });
     }
+
+    it('posts an image made in a channel turn in the channel, not in the private chat', async () => {
+        const service = buildService(new ImageRunner());
+
+        await service.startChannelRound(channel.id, 'Draw the logo');
+        await waitFor(async () => (await channelStore.listRecentMessages(channel.id, 10)).some(post => post.body.kind === 'file'));
+
+        const posts = await channelStore.listRecentMessages(channel.id, 10);
+        const filePost = posts.find(post => post.body.kind === 'file');
+        const anaChat = await messageStore.listByBot(anaId, { limit: 50 });
+        const found = await service.findChannelFile(channel.id, filePost?.id ?? '');
+        const fromOtherChannel = await service.findChannelFile('other', filePost?.id ?? '');
+
+        expect(filePost?.authorName)
+            .toBe('Ana');
+        expect(filePost?.body)
+            .toMatchObject({ width: 1, height: 1 });
+        expect(anaChat.filter(message => message.kind === 'file'))
+            .toEqual([]);
+        expect(found?.mimeType)
+            .toBe('image/png');
+        expect(fromOtherChannel)
+            .toBeUndefined();
+    });
 
     it('answers an owner post in the channel, and keeps the reply out of the bot chat', async () => {
         const runner = new ReplyingRunner('Here is the plan.');

@@ -15,6 +15,7 @@ interface ChoiceOption {
 interface PendingUpload {
     id: string;
     name: string;
+    mimeType: string;
     sizeBytes: number;
 }
 
@@ -22,6 +23,10 @@ interface AttachmentSummary {
     name: string;
     mimeType: string;
     sizeBytes: number;
+    // The kept copy of a sent image. Older messages and other files have none, and show only as a card.
+    fileId?: string;
+    width?: number;
+    height?: number;
 }
 
 interface TextBody {
@@ -83,6 +88,9 @@ interface FileBody {
     sizeBytes: number;
     // The stored copy. The web app downloads it through the message id.
     fileId: string;
+    // The pixel size of an image, so the chat can reserve its space before it loads.
+    width?: number;
+    height?: number;
 }
 
 interface ToolActivityBody {
@@ -132,6 +140,12 @@ interface BotSummary {
     hasUnread: boolean;
     // The sequence of the latest message the owner can read, not counting the owner's own and tool lines. Zero when there is none.
     lastMessageSequence: number;
+}
+
+// A bot's memory file as the owner sees it. A cut one is longer than 64 KB and cannot be edited in the web app.
+interface BotMemory {
+    text: string;
+    isCut: boolean;
 }
 
 interface ChatMessageEvent {
@@ -215,6 +229,7 @@ type ScreenHolderName = 'bot' | 'person';
 type ScreenViewName = 'vnc' | 'screencast';
 
 export type {
+    BotMemory,
     ScreenHolderName,
     ScreenViewName,
     AttachmentSummary,

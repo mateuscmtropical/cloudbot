@@ -142,7 +142,7 @@ describe('ConversationView message list', () => {
         expect(userMessage?.className)
             .toContain('message-user');
     });
-    it('lists the files attached to a user message under its text', () => {
+    it('shows the files attached to a user message as cards', () => {
         renderConversation([
             createMessage('m7', 'user', {
                 kind: 'text',
@@ -152,7 +152,7 @@ describe('ConversationView message list', () => {
         ]);
 
         expect(screen.getByText('notes.txt').className)
-            .toBe('attachment-item');
+            .toBe('file-chip-name');
     });
 });
 
