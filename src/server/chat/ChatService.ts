@@ -56,6 +56,8 @@ import { TurnDeadline } from '../limits/TurnDeadline.ts';
 import { STALL_MESSAGE, StallWatchdog } from './StallWatchdog.ts';
 import { NO_LIMIT, chooseTurnLimit, describeLimitStop } from '../limits/turnLimits.ts';
 import type { TurnLimit } from '../../shared/limitTypes.ts';
+import { readPermissionMode } from '../../shared/permissionModes.ts';
+import type { PermissionMode } from '../../shared/permissionModes.ts';
 import type { LimitStore } from '../store/LimitStore.ts';
 import { WEBHOOK_TOOL_FULL_NAMES, createWebhookTools } from '../webhooks/createWebhookTools.ts';
 import type { WebhookCreation } from '../webhooks/createWebhookTools.ts';
@@ -376,6 +378,7 @@ interface TurnContext {
     tools: CloudbotTool[];
     disallowedTools: string[];
     reviewToolCall?: TurnRequest['reviewToolCall'];
+    permissionMode: PermissionMode;
     additionalDirectories: string[];
     model?: string;
     // The effort level of this turn. Unset keeps the CLI default.
@@ -3804,7 +3807,8 @@ class ChatService {
             const skills = this.skillStore === undefined ? undefined : await this.skillStore.list(botId);
             const blockedToolNames = ownerRules.flatMap(rule => rule.blockedTools);
             const disallowedTools = [...new Set(blockedToolNames)];
-            const reviewToolCall = this.createToolCallReview(botId, turn.channel?.channelId);
+            const permissionMode = readPermissionMode(bot.permissionMode);
+            const reviewToolCall = this.createToolCallReview(botId, permissionMode, turn.channel?.channelId);
             // The model and effort choices are read for each turn, so a change in the web app applies to the next message.
             const modelChoices = this.modelStore === undefined ? undefined : await this.modelStore.get(botId);
             const efforts = this.modelStore === undefined ? undefined : await this.modelStore.getEfforts(botId);
@@ -3862,6 +3866,7 @@ class ChatService {
                 systemPrompt: memoryBlock === undefined ? profilePrompt : `${profilePrompt}\n\n${memoryBlock}`,
                 disallowedTools,
                 reviewToolCall,
+                permissionMode,
                 ...modelOption,
                 ...effortOption,
                 limit: turnLimit,
@@ -3967,8 +3972,13 @@ class ChatService {
 
     // Every turn has a review, because the CLI refuses any call without one. Without an approval gate the owner cannot be
     // asked, so only the profile tools and the rule list run, the same list that allowedToolNames offers up front.
-    private createToolCallReview(botId: string, channelId?: string): NonNullable<TurnRequest['reviewToolCall']> {
+    private createToolCallReview(botId: string, permissionMode: PermissionMode, channelId?: string): NonNullable<TurnRequest['reviewToolCall']> {
         const approvals = this.approvals;
+
+        // The owner chose to run with no checks. A call that still reaches the review, such as a bot tool, runs at once.
+        if (permissionMode === 'yolo') {
+            return () => Promise.resolve({ isAllowed: true });
+        }
 
         if (approvals === undefined) {
             const noGateTools = this.allowedToolNames();
@@ -3988,6 +3998,16 @@ class ChatService {
 
             return approvals.review(botId, call, signal, channelId);
         };
+    }
+
+    async getPermissionMode(botId: string): Promise<PermissionMode> {
+        const bot = await this.botStore.getById(botId);
+
+        return readPermissionMode(bot?.permissionMode);
+    }
+
+    async setPermissionMode(botId: string, mode: PermissionMode): Promise<void> {
+        await this.botStore.setPermissionMode(botId, mode);
     }
 
     // Asks the owner in the chat about an action the proxy holds, such as a push. Only a running turn can be asked, so without one the action is refused.
@@ -4010,6 +4030,12 @@ class ChatService {
 
         if (approvals === undefined || runningTurn === undefined) {
             return false;
+        }
+
+        const bot = await this.botStore.getById(botId);
+
+        if (readPermissionMode(bot?.permissionMode) === 'yolo') {
+            return true;
         }
 
         const decision = await approvals.review(botId, { toolName: GITHUB_WRITE_TOOL_NAME, input: { summary, detail } }, runningTurn.signal);
@@ -4197,6 +4223,7 @@ class ChatService {
             // The tools of the connected servers are listed here so they reach the review hook. The review still decides each call.
             allowedTools: hasHelpers ? [...this.allowedToolNames(), ...remoteToolPatterns, AGENT_TOOL_NAME] : [...this.allowedToolNames(), ...remoteToolPatterns],
             disallowedTools: turnContext.disallowedTools,
+            permissionMode: turnContext.permissionMode,
             additionalDirectories: turnContext.additionalDirectories,
             ...(hasHelpers ? { agents: turnContext.agents } : {}),
             ...(turnContext.model === undefined ? {} : { model: turnContext.model }),

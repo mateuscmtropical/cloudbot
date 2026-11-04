@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
 
+import { isPermissionMode } from '../../shared/permissionModes.ts';
+import type { PermissionMode } from '../../shared/permissionModes.ts';
 import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse } from '../../shared/providerTypes.ts';
 import { isClaudeModel } from '../models/modelChoices.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
@@ -18,6 +20,11 @@ interface ProviderRoutesOptions {
     modelStore: Pick<ModelStore, 'get' | 'getProviderChoice' | 'setProviderChoice'>;
     modelCatalogs?: ProviderModelCatalogs | undefined;
     hasBot: (botId: string) => Promise<boolean>;
+    // Only the owner changes the mode, here behind the session check. No bot tool reaches it, so a page cannot talk a bot into YOLO.
+    permissionModes: {
+        get: (botId: string) => Promise<PermissionMode>;
+        set: (botId: string, mode: PermissionMode) => Promise<void>;
+    };
     // The bot whose chat holds the sign-in of a provider.
     setupBotId: string;
 }
@@ -29,6 +36,7 @@ const NOT_CONNECTED: ProviderErrorResponse = { error: 'That provider is not conn
 const NO_MODEL_OPTIONS: ProviderErrorResponse = { error: 'This provider does not advertise selectable models.' };
 const INVALID_MODEL_CHOICE: ProviderErrorResponse = { error: 'Choose a model from the current provider list.' };
 const INVALID_EFFORT_CHOICE: ProviderErrorResponse = { error: 'Choose an effort offered for the selected model.' };
+const INVALID_PERMISSION_MODE: ProviderErrorResponse = { error: 'Send a JSON body with a mode: ask, auto or yolo.' };
 
 // Only the models a provider takes are shown. The claude models belong to Claude, and gemini- models to Gemini.
 function modelFor(provider: ProviderId, chatModel: string | null): string | null {
@@ -60,6 +68,7 @@ async function summarize(options: ProviderRoutesOptions, botId: string): Promise
             ? null
             : providerChoice === undefined ? legacyGemini ?? providerDefaultModel : selectedModel ?? providerDefaultModel;
     const selectedOption = catalog?.models.find(option => option.id === (selectedModel ?? providerDefaultModel));
+    const permissionMode = await options.permissionModes.get(botId);
 
     return {
         provider,
@@ -69,6 +78,7 @@ async function summarize(options: ProviderRoutesOptions, botId: string): Promise
         selectedModel,
         selectedEffort: providerChoice?.effort ?? null,
         effortOptions: selectedOption?.efforts ?? [],
+        permissionMode,
     };
 }
 
@@ -171,6 +181,28 @@ function createProviderRoutes(options: ProviderRoutesOptions): Hono {
         }
 
         await options.providers.setProvider(botId, requested);
+        const summary = await summarize(options, botId);
+
+        return context.json(summary);
+    });
+
+    routes.put('/api/bots/:id/provider/permission-mode', async (context) => {
+        const botId = context.req.param('id');
+        const isKnownBot = await options.hasBot(botId);
+
+        if (!isKnownBot) {
+            return context.json(BOT_NOT_FOUND, 404);
+        }
+
+        const payload: unknown = await context.req.json()
+            .catch(() => undefined);
+        const mode = (payload as { mode?: unknown } | undefined)?.mode;
+
+        if (!isPermissionMode(mode)) {
+            return context.json(INVALID_PERMISSION_MODE, 400);
+        }
+
+        await options.permissionModes.set(botId, mode);
         const summary = await summarize(options, botId);
 
         return context.json(summary);

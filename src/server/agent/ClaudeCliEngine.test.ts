@@ -223,6 +223,23 @@ describe('buildCliArguments', () => {
             .toEqual(['mcp__cloudbot__approve', ...buildCliDisallowedTools([])]);
     });
 
+    it.each([
+        ['auto', ['--permission-mode', 'auto']],
+        ['yolo', ['--dangerously-skip-permissions']],
+    ] as const)('starts the CLI for the %s choice and keeps the prompt tool', (permissionMode, expected) => {
+        const args = buildCliArguments(makeRequest({ permissionMode }), files);
+
+        expect(args)
+            .toEqual(expect.arrayContaining([...expected, '--permission-prompt-tool']));
+    });
+
+    it('adds no permission flag when no mode is chosen', () => {
+        const args = buildCliArguments(makeRequest(), files);
+
+        expect(args).not.toContain('--permission-mode');
+        expect(args).not.toContain('--dangerously-skip-permissions');
+    });
+
     it('sends every call through the permission prompt tool and loads no user or project settings', () => {
         const args = buildCliArguments(makeRequest(), files);
 

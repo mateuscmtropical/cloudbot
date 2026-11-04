@@ -137,7 +137,7 @@ class FakeAcpAgent extends EventEmitter {
     }
 }
 
-function makeEngine(options: FakeOptions = {}, authMethodId?: string, askModeId?: string, headlessAuth = false): { engine: AcpEngine; agents: FakeAcpAgent[] } {
+function makeEngine(options: FakeOptions = {}, authMethodId?: string, askModeId?: string, headlessAuth = false, runModeIds?: { auto: string; yolo: string }): { engine: AcpEngine; agents: FakeAcpAgent[] } {
     const agents: FakeAcpAgent[] = [];
     const home = join(mkdtempSync(join(tmpdir(), 'cloudbot-acp-test-')), 'home');
     const engine = new AcpEngine({
@@ -150,6 +150,7 @@ function makeEngine(options: FakeOptions = {}, authMethodId?: string, askModeId?
         authMethodId,
         headlessAuth,
         askModeId,
+        runModeIds,
         spawnFunction: () => {
             const agent = new FakeAcpAgent(options);
 
@@ -577,6 +578,27 @@ describe('AcpEngine', () => {
 
         expect(reviewToolCall.mock.calls.map(call => (call as unknown[])[0]))
             .toEqual([{ toolName: 'Bash', input: { command: 'Requesting approval to Running: touch /tmp/x' } }]);
+    });
+
+    it.each([['auto', 'autoEdit'], ['yolo', 'yolo']] as const)('switches to the session mode of the %s choice', async (permissionMode, modeId) => {
+        const sessionResult = { sessionId: 'session-1', modes: { currentModeId: 'default', availableModes: [{ id: 'default' }, { id: 'autoEdit' }, { id: 'yolo' }] } };
+        const { engine, agents } = makeEngine({ sessionResult }, undefined, 'default', false, { auto: 'autoEdit', yolo: 'yolo' });
+
+        await collect(engine.runTurn(makeRequest({ permissionMode })));
+
+        const setMode = agents[0]?.sent.find(message => message.method === 'session/set_mode');
+
+        expect(setMode?.params)
+            .toEqual({ sessionId: 'session-1', modeId });
+    });
+
+    it('runs a turn in a self-approving start mode when the owner chose it', async () => {
+        const { engine, agents } = makeEngine({ sessionResult: { sessionId: 'session-1', modes: { currentModeId: 'yolo', availableModes: [] } } });
+
+        await collect(engine.runTurn(makeRequest({ permissionMode: 'yolo' })));
+
+        expect(agents[0]?.sent.some(message => message.method === 'session/prompt'))
+            .toBe(true);
     });
 
     it('stops a turn when the session starts in a mode that approves calls by itself', async () => {

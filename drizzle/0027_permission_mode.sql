@@ -1,0 +1,1 @@
+ALTER TABLE `bots` ADD `permission_mode` text DEFAULT 'auto' NOT NULL;

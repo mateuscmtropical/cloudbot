@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { asc, eq } from 'drizzle-orm';
 
 import { randomMascot, readMascotColor, readMascotEyes, readMascotShape } from '../../shared/mascot.ts';
+import type { PermissionMode } from '../../shared/permissionModes.ts';
 import type { MascotChoice } from '../../shared/mascot.ts';
 import { bots, turnQueue, turnWaits } from './schema.ts';
 import type { StoredUploadRecord } from './schema.ts';
@@ -127,6 +128,14 @@ class BotStore {
         }
 
         return this.getById(botId);
+    }
+
+    async setPermissionMode(botId: string, permissionMode: PermissionMode): Promise<void> {
+        const botCondition = eq(bots.id, botId);
+
+        await this.database.update(bots)
+            .set({ permissionMode })
+            .where(botCondition);
     }
 
     async setSessionId(botId: string, sessionId: string | null): Promise<Bot | undefined> {

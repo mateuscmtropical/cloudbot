@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { PermissionMode } from '../../shared/permissionModes.ts';
 import type { ModelChoices } from '../models/modelChoices.ts';
 import { createProviderRoutes, modelFor } from './createProviderRoutes.ts';
 import { ProviderModelCatalogs } from './ProviderModelCatalogs.ts';
@@ -16,6 +17,15 @@ interface TestApp {
 
 function createTestApp(connected: ProviderId[], chat: string | null = null, provider: ProviderId = 'claude', modelCatalogs?: ProviderModelCatalogs): TestApp {
     const providerChoices = new Map<string, ProviderModelChoice>();
+    let storedMode: PermissionMode = 'auto';
+    const permissionModes = {
+        get: () => Promise.resolve(storedMode),
+        set: (_botId: string, mode: PermissionMode) => {
+            storedMode = mode;
+
+            return Promise.resolve();
+        },
+    };
     const dependencies: ProviderToolDependencies = {
         available: ['claude', 'chatgpt', 'gemini'],
         connected: () => Promise.resolve(connected),
@@ -36,6 +46,7 @@ function createTestApp(connected: ProviderId[], chat: string | null = null, prov
         },
         modelCatalogs,
         hasBot: botId => Promise.resolve(botId === 'bot-1'),
+        permissionModes,
         setupBotId: 'setup-bot',
     });
 
@@ -47,6 +58,34 @@ function putJson(body: unknown): RequestInit {
 }
 
 describe('provider routes', () => {
+    it('saves the permission mode of a bot and answers with it', async () => {
+        const { request } = createTestApp(['claude']);
+
+        const saved = await request('/api/bots/bot-1/provider/permission-mode', putJson({ mode: 'yolo' }));
+        const body = await saved.json() as { permissionMode: string };
+
+        expect(body.permissionMode)
+            .toBe('yolo');
+    });
+
+    it.each([{ mode: 'everything' }, {}])('refuses a permission mode that is not known: %j', async (payload) => {
+        const { request } = createTestApp(['claude']);
+
+        const refused = await request('/api/bots/bot-1/provider/permission-mode', putJson(payload));
+
+        expect(refused.status)
+            .toBe(400);
+    });
+
+    it('refuses a permission mode for a bot that does not exist', async () => {
+        const { request } = createTestApp(['claude']);
+
+        const refused = await request('/api/bots/nobody/provider/permission-mode', putJson({ mode: 'yolo' }));
+
+        expect(refused.status)
+            .toBe(404);
+    });
+
     it('answers the provider of a bot and its model', async () => {
         const { request } = createTestApp(['claude'], 'sonnet');
 
@@ -55,7 +94,7 @@ describe('provider routes', () => {
         expect(response.status)
             .toBe(200);
         expect(await response.json())
-            .toEqual({ provider: 'claude', label: 'Claude', model: 'sonnet', modelOptions: [], selectedModel: null, selectedEffort: null, effortOptions: [] });
+            .toEqual({ provider: 'claude', label: 'Claude', model: 'sonnet', modelOptions: [], selectedModel: null, selectedEffort: null, effortOptions: [], permissionMode: 'auto' });
     });
 
     it('lists the providers of the server with the state of each', async () => {

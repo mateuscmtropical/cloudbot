@@ -1,3 +1,4 @@
+import type { PermissionMode } from '../../shared/permissionModes.ts';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { chmodSync, mkdirSync } from 'node:fs';
@@ -28,6 +29,8 @@ interface AcpEngineOptions {
     protectedFolders?: string[] | undefined;
     // The session mode that asks before each tool, for an agent whose default mode accepts some calls by itself.
     askModeId?: string | undefined;
+    // The session modes of the owner's other choices, for a CLI that takes them over ACP. Others read CLOUDBOT_PERMISSION_MODE in docker/cloudbot-provider.
+    runModeIds?: Partial<Record<PermissionMode, string>> | undefined;
     // The provider whose catalog this agent reports after creating or loading a session.
     provider?: ProviderId | undefined;
     modelCatalogs?: ProviderModelCatalogs | undefined;
@@ -372,7 +375,8 @@ class AcpEngine implements AgentRunner {
             preparePrivateFolder(home);
         }
 
-        const environment = { PATH: process.env.PATH ?? '', ...this.options.environment, ...request.extraEnvironment, ...(home === undefined ? {} : { HOME: home }) };
+        const permissionMode = request.permissionMode ?? 'ask';
+        const environment = { PATH: process.env.PATH ?? '', ...this.options.environment, ...request.extraEnvironment, CLOUDBOT_PERMISSION_MODE: permissionMode, ...(home === undefined ? {} : { HOME: home }) };
         const spawnFunction = launch?.spawnFunction ?? this.options.spawnFunction ?? spawn;
         const signalChild = this.options.signalProcess ?? launch?.signalProcess ?? ((target: ChildProcess, action: SignalAction) => {
             signalProcessTree(target, action, undefined);
@@ -505,7 +509,7 @@ class AcpEngine implements AgentRunner {
             // question, so the process is killed before it runs one.
             const newMode = kind === 'current_mode_update' ? readString(update, 'currentModeId') : (kind === 'config_option_update' ? readModeId(update) : undefined);
 
-            if (newMode !== undefined && newMode !== this.options.askModeId && SELF_APPROVING_MODE.test(newMode)) {
+            if (permissionMode === 'ask' && newMode !== undefined && newMode !== this.options.askModeId && SELF_APPROVING_MODE.test(newMode)) {
                 push({ type: 'turn_error', message: `${this.options.label} switched to a mode that runs tools without asking, so the turn was stopped.`, isUsageLimit: false });
                 queue.end();
                 signalChild(child, 'KILL');
@@ -709,13 +713,20 @@ class AcpEngine implements AgentRunner {
             currentSessionId = sessionId;
 
             // A CLI whose asking mode is not known yet must not run a turn in a mode that approves calls by itself.
-            if (this.options.askModeId === undefined && startMode !== undefined && SELF_APPROVING_MODE.test(startMode)) {
+            if (permissionMode === 'ask' && this.options.askModeId === undefined && startMode !== undefined && SELF_APPROVING_MODE.test(startMode)) {
                 push({ type: 'turn_error', message: `${this.options.label} started in a mode that runs tools without asking, so the turn was stopped.`, isUsageLimit: false });
 
                 return;
             }
 
-            if (this.options.askModeId !== undefined) {
+            const runModeId = this.options.runModeIds?.[permissionMode];
+
+            // A mode the CLI does not list any more leaves the mode it started in. What that mode asks about still gets reviewed.
+            if (permissionMode !== 'ask' && runModeId !== undefined && listedModeIds.includes(runModeId)) {
+                await call('session/set_mode', { sessionId, modeId: runModeId });
+            }
+
+            if (permissionMode === 'ask' && this.options.askModeId !== undefined) {
                 const askModeId = pickAskModeId(this.options.askModeId, listedModeIds);
                 const modeSet = await call('session/set_mode', { sessionId, modeId: askModeId });
 

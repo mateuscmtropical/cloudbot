@@ -1,4 +1,5 @@
 import type { AgentEvent } from './AgentEvent.ts';
+import type { PermissionMode } from '../../shared/permissionModes.ts';
 import type { LoopbackTool } from './createLoopbackToolServer.ts';
 
 // A helper agent of the main turn, written to the CLI as one entry of its --agents file.
@@ -55,6 +56,8 @@ interface TurnRequest {
     allowedTools?: string[];
     // Tools the owner blocked. The CLI refuses them even when allowedTools names them.
     disallowedTools?: string[];
+    // How freely the CLI runs tools. Unset asks, as a turn no owner chose a mode for should.
+    permissionMode?: PermissionMode;
     // Called before each tool call. It may wait, for example for the owner. The signal fires when the turn stops.
     reviewToolCall?: (call: ToolCall, signal: AbortSignal) => Promise<ToolCallDecision>;
     images?: TurnImage[];

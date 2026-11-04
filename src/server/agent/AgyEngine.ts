@@ -257,6 +257,7 @@ class AgyEngine implements AgentRunner {
             ...request.extraEnvironment,
             CLOUDBOT_TOOLS_TOKEN: toolTurn.token,
             CLOUDBOT_AGY_REVIEW_URL: toolTurn.mcpUrl,
+            CLOUDBOT_PERMISSION_MODE: request.permissionMode ?? 'ask',
             ...(sessionId === undefined ? {} : { CLOUDBOT_AGY_CONVERSATION: sessionId }),
             ...(model === undefined ? {} : { CLOUDBOT_AGY_MODEL: model }),
             ...(effort === undefined ? {} : { CLOUDBOT_AGY_EFFORT: effort }),

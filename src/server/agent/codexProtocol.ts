@@ -1,3 +1,5 @@
+import type { PermissionMode } from '../../shared/permissionModes.ts';
+
 // The parts of the Codex app-server protocol that CloudBot uses. The shapes come from the bindings that
 // `codex app-server generate-ts` writes for codex-cli 0.163.0, cut down to the fields read here. Every message is
 // one JSON line on stdio. Answers carry the id of the request and no method.
@@ -6,8 +8,12 @@
 const CODEX_PROTOCOL_VERSION = '0.166.0';
 
 // Every built-in tool that runs a command or edits a file asks first. "on-request" lets most commands run unasked.
-const CODEX_APPROVAL_POLICY = 'untrusted';
-const CODEX_SANDBOX_MODE = 'workspace-write';
+// Auto lets the Codex reviewer answer what the policy would ask about. YOLO asks nothing, and the container is the only limit.
+const CODEX_THREAD_MODES: Record<PermissionMode, { approvalPolicy: string; sandbox: string; approvalsReviewer?: string }> = {
+    ask: { approvalPolicy: 'untrusted', sandbox: 'workspace-write' },
+    auto: { approvalPolicy: 'on-request', sandbox: 'workspace-write', approvalsReviewer: 'auto_review' },
+    yolo: { approvalPolicy: 'never', sandbox: 'danger-full-access' },
+};
 
 // The variable that holds the loopback token for Codex.
 const CODEX_TOOL_TOKEN_VARIABLE = 'CLOUDBOT_TOOLS_TOKEN';
@@ -122,5 +128,5 @@ interface CodexMessage {
     error?: { code: number; message: string };
 }
 
-export { CODEX_APPROVAL_POLICY, CODEX_LOCKED_CONFIG, CODEX_PROTOCOL_VERSION, CODEX_SANDBOX_MODE, CODEX_TOOL_TOKEN_VARIABLE, isAgentMessageItem, isCommandItem, isFileChangeItem, isImageGenerationItem, isMcpToolCallItem };
+export { CODEX_LOCKED_CONFIG, CODEX_PROTOCOL_VERSION, CODEX_THREAD_MODES, CODEX_TOOL_TOKEN_VARIABLE, isAgentMessageItem, isCommandItem, isFileChangeItem, isImageGenerationItem, isMcpToolCallItem };
 export type { CodexCommandItem, CodexFileChange, CodexFileChangeItem, CodexImageGenerationItem, CodexMcpToolCallItem, CodexMessage, CodexRequestId, CodexThreadItem, CodexTurn, CodexTurnError };

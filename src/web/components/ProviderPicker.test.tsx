@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotProviderSummary, ProviderChoiceSummary } from '../../shared/providerTypes.ts';
-import { getBotProvider, listProviders, saveProviderModel, startProviderConnect, switchBotProvider } from '../apiClient.ts';
+import { getBotProvider, listProviders, savePermissionMode, saveProviderModel, startProviderConnect, switchBotProvider } from '../apiClient.ts';
 import { ProviderPicker } from './ProviderPicker.tsx';
 
 vi.mock('../apiClient.ts', () => ({
@@ -12,10 +12,11 @@ vi.mock('../apiClient.ts', () => ({
     startProviderConnect: vi.fn(),
     switchBotProvider: vi.fn(),
     saveProviderModel: vi.fn(),
+    savePermissionMode: vi.fn(),
 }));
 
 const CLAUDE_SUMMARY: BotProviderSummary = {
-    provider: 'claude', label: 'Claude', model: 'sonnet', modelOptions: [], selectedModel: null, selectedEffort: null, effortOptions: [],
+    provider: 'claude', label: 'Claude', model: 'sonnet', modelOptions: [], selectedModel: null, selectedEffort: null, effortOptions: [], permissionMode: 'auto',
 };
 
 const PROVIDERS: ProviderChoiceSummary[] = [
@@ -44,6 +45,21 @@ describe('ProviderPicker', () => {
             .toBeTruthy();
         expect(screen.getByText('sonnet'))
             .toBeTruthy();
+    });
+
+    it('saves the permission choice and warns about YOLO', async () => {
+        vi.mocked(savePermissionMode)
+            .mockResolvedValue({ ...CLAUDE_SUMMARY, permissionMode: 'yolo' });
+
+        render(<ProviderPicker botId="bot-1" onOpenSetupChat={() => {}} />);
+
+        fireEvent.click(await screen.findByRole('button', { name: 'AI provider' }));
+        fireEvent.change(await screen.findByRole('combobox', { name: 'Permissions' }), { target: { value: 'yolo' } });
+
+        expect(await screen.findByText(/You take that risk/))
+            .toBeTruthy();
+        expect(savePermissionMode)
+            .toHaveBeenCalledWith('bot-1', 'yolo');
     });
 
     it('shows nothing when the provider cannot be read', async () => {
@@ -131,7 +147,7 @@ describe('ProviderPicker', () => {
                 { id: 'gpt-6-luna', label: 'GPT-6 Luna', efforts: ['low', 'medium'] },
                 { id: 'gpt-6-astra', label: 'GPT-6 Astra', efforts: ['high'] },
             ],
-            selectedModel: null, selectedEffort: null, effortOptions: ['low', 'medium'],
+            selectedModel: null, selectedEffort: null, effortOptions: ['low', 'medium'], permissionMode: 'auto',
         };
 
         vi.mocked(getBotProvider)

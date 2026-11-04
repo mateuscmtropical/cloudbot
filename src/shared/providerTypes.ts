@@ -1,3 +1,5 @@
+import type { PermissionMode } from './permissionModes.ts';
+
 // One AI provider the server can run, and whether the owner connected it.
 interface ProviderChoiceSummary {
     id: string;
@@ -18,6 +20,8 @@ interface BotProviderSummary {
     selectedEffort: string | null;
     // Efforts reported for the selected model, or the provider default model.
     effortOptions: string[];
+    // How freely the bot runs tools. It belongs to the bot, so it stays when the provider changes.
+    permissionMode: PermissionMode;
 }
 
 interface ProviderModelOptionSummary {
