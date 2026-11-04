@@ -26,7 +26,7 @@ const SET_MASCOT_TOOL_SHAPE = {
 const UPDATE_PROFILE_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${UPDATE_PROFILE_TOOL_NAME}`;
 const SHARE_FILE_TOOL_NAME = 'share_file';
 const SHARE_FILE_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${SHARE_FILE_TOOL_NAME}`;
-const SHARE_FILE_DESCRIPTION = 'Send a file from your workspace to the owner in the chat, as a download. Pass the path of the file, relative to your workspace or absolute inside it. Only regular files inside your workspace can be shared.';
+const SHARE_FILE_DESCRIPTION = 'Send a file from your workspace to the owner in the chat. PNG, JPEG, GIF and WebP images show in the chat, and other files come as a download. Pass the path of the file, relative to your workspace or absolute inside it. Only regular files inside your workspace can be shared.';
 const UPDATE_PROFILE_DESCRIPTION = 'Change this bot\'s name, title or description. Only the fields you pass change.';
 
 // The limits keep a profile short enough to sit in the system prompt without crowding it.

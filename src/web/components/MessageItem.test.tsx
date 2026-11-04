@@ -175,9 +175,65 @@ describe('file messages', () => {
             .toBeTruthy();
     });
 
+    it('previews an image of a few MB, as a generated image often is', () => {
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
+        const body: MessageBody = { kind: 'file', name: 'made.png', mimeType: 'image/png', sizeBytes: 6 * 1024 * 1024, fileId: 'f5', width: 1024, height: 1024 };
+        const message = { id: 'm5', botId: 'bot', role: 'assistant' as const, sequence: 7, createdAt: 7, body };
+
+        render(<MessageItem message={message} actions={actions} />);
+
+        expect(screen.getByRole('img', { name: 'made.png' })
+            .getAttribute('decoding'))
+            .toBe('async');
+    });
+
+    it('shows sent images in a grid that opens the lightbox, and an old attachment as a card', () => {
+        const showModal = vi.fn();
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
+        const body: MessageBody = {
+            kind: 'text',
+            text: 'look',
+            attachments: [
+                { name: 'one.png', mimeType: 'image/png', sizeBytes: 10, fileId: 'a1', width: 10, height: 10 },
+                { name: 'two.png', mimeType: 'image/png', sizeBytes: 10, fileId: 'a2' },
+                { name: 'old.png', mimeType: 'image/png', sizeBytes: 2048 },
+                { name: 'notes.pdf', mimeType: 'application/octet-stream', sizeBytes: 2048 },
+            ],
+        };
+        const message = { id: 'm6', botId: 'bot', role: 'user' as const, sequence: 8, createdAt: 8, body };
+
+        HTMLDialogElement.prototype.showModal = showModal;
+        render(<MessageItem message={message} actions={actions} />);
+
+        expect(screen.getByRole('img', { name: 'two.png' })
+            .getAttribute('src'))
+            .toBe('/api/bots/bot/messages/m6/attachments/a2');
+        expect(screen.queryByRole('img', { name: 'old.png' }))
+            .toBeNull();
+        expect(screen.getByText('old.png'))
+            .toBeTruthy();
+        expect(screen.getByText('notes.pdf'))
+            .toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Open two.png' }));
+
+        expect(showModal)
+            .toHaveBeenCalledOnce();
+        expect(screen.getByText('2 / 2'))
+            .toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Next image', hidden: true }));
+
+        expect(screen.getByText('1 / 2'))
+            .toBeTruthy();
+        expect(screen.getByRole('link', { name: 'Download one.png', hidden: true })
+            .getAttribute('href'))
+            .toBe('/api/bots/bot/messages/m6/attachments/a1');
+    });
+
     it('does not preview a large image', () => {
         const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
-        const body: MessageBody = { kind: 'file', name: 'huge.png', mimeType: 'image/png', sizeBytes: 6 * 1024 * 1024, fileId: 'f4' };
+        const body: MessageBody = { kind: 'file', name: 'huge.png', mimeType: 'image/png', sizeBytes: 40 * 1024 * 1024, fileId: 'f4' };
         const message = { id: 'm4', botId: 'bot', role: 'assistant' as const, sequence: 6, createdAt: 6, body };
 
         render(<MessageItem message={message} actions={actions} />);

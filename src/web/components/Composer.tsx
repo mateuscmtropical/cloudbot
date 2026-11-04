@@ -3,6 +3,7 @@ import type { ChangeEvent, KeyboardEvent, ReactElement } from 'react';
 
 import { stepBack, stepForward } from '../sentHistory.ts';
 import { joinVoiceText, useVoiceInput } from '../voiceInput.ts';
+import { AttachmentTray } from './AttachmentTray.tsx';
 import { PillField } from './PillField.tsx';
 import { PopoverMenu, PopoverMenuItem } from './PopoverMenu.tsx';
 import { CameraIcon, FolderIcon, ImageIcon, MicIcon, PlusIcon, SendArrowIcon, WaveformIcon } from './icons.tsx';
@@ -11,6 +12,8 @@ interface DraftAttachment {
     id: string;
     name: string;
     status: 'uploading' | 'ready';
+    // The thumbnail of a ready image. Other files show an icon.
+    previewUrl?: string | undefined;
 }
 
 interface ComposerProps {
@@ -212,31 +215,7 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
 
     return (
         <>
-            {attachments.length === 0
-                ? null
-                : (
-                        <ul className="attachment-chips" aria-label="Attached files">
-                            {attachments.map(attachment => (
-                                <li key={attachment.id} className={`attachment-chip is-${attachment.status}`}>
-                                    <span>{attachment.status === 'uploading' ? `${attachment.name} (uploading)` : attachment.name}</span>
-                                    {attachment.status === 'ready'
-                                        ? (
-                                                <button
-                                                    type="button"
-                                                    className="attachment-remove"
-                                                    aria-label={`Remove ${attachment.name}`}
-                                                    onClick={() => {
-                                                        onRemoveAttachment(attachment.id);
-                                                    }}
-                                                >
-                                                    &times;
-                                                </button>
-                                            )
-                                        : null}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
+            <AttachmentTray attachments={attachments} onRemove={onRemoveAttachment} />
             <div className="composer">
                 <PopoverMenu
                     label="Attachment options"

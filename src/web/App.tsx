@@ -293,7 +293,7 @@ function App(): ReactElement {
                 }
 
                 appliedListRequest.current[botId] = requestNumber;
-                setAttachmentsByBot(previous => ({ ...previous, [botId]: mergeLoadedUploads(previous[botId] ?? [], uploads) }));
+                setAttachmentsByBot(previous => ({ ...previous, [botId]: mergeLoadedUploads(previous[botId] ?? [], uploads, botId) }));
                 setErrorText(currentError => currentError === UPLOADS_LOAD_ERROR_TEXT ? undefined : currentError);
             })
             .catch(() => {
