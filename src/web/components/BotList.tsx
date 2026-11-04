@@ -4,7 +4,6 @@ import type { ReactElement } from 'react';
 import type { BotSummary } from '../../shared/chatTypes.ts';
 import type { ChannelSummary } from '../../shared/channelTypes.ts';
 import type { MascotState } from '../mascotState.ts';
-import { useMoodClock } from '../useMoodClock.ts';
 import { nextTap } from '../doubleTap.ts';
 import type { Tap } from '../doubleTap.ts';
 import type { MascotHopPoint } from '../mascotHop.ts';
@@ -56,7 +55,6 @@ function initialsFromName(name: string): string {
 }
 
 function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, onSelectBot, onSelectChannel, onNewBot, onConnectApps, personName, onAccount, onPeople, onRenameBot, onDeleteBot }: BotListProps): ReactElement {
-    const moodNow = useMoodClock();
     const [renamingBotId, setRenamingBotId] = useState<string | undefined>(undefined);
     const [actionsBotId, setActionsBotId] = useState<string | undefined>(undefined);
     const [deletingBotId, setDeletingBotId] = useState<string | undefined>(undefined);
@@ -176,7 +174,6 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
                                 bot={bot}
                                 isSelected={isSelected}
                                 mascotState={mascotState}
-                                moodNow={moodNow}
                                 actions={botActions}
                                 onOpenActions={canManageBots
                                     ? () => {

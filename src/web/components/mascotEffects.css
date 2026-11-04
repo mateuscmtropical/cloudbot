@@ -76,6 +76,65 @@
     }
 }
 
+/* Falling asleep: the eyes get heavy and the cloud nods twice. The length matches DOZE_MS in mascotMood.ts. */
+.cloud-mascot[data-effect='dozing'] > svg {
+    transform-origin: 50% 90%;
+    animation: cloud-doze 5s ease-in-out both;
+}
+
+.cloud-mascot[data-effect='dozing'] .cloud-eyes {
+    animation: eyes-doze 5s ease-in-out both;
+}
+
+@keyframes cloud-doze {
+    0%,
+    100% {
+        transform: none;
+    }
+
+    28% {
+        transform: translateY(2%) rotate(-3deg);
+    }
+
+    36% {
+        transform: none;
+    }
+
+    70% {
+        transform: translateY(4%) rotate(-5deg);
+    }
+
+    78% {
+        transform: translateY(1%) rotate(-1deg);
+    }
+}
+
+@keyframes eyes-doze {
+    0% {
+        transform: scaleY(1);
+    }
+
+    28% {
+        transform: scaleY(0.35);
+    }
+
+    36% {
+        transform: scaleY(0.9);
+    }
+
+    70% {
+        transform: scaleY(0.2);
+    }
+
+    78% {
+        transform: scaleY(0.6);
+    }
+
+    100% {
+        transform: scaleY(0.1);
+    }
+}
+
 /* A cold: the cloud holds its breath, then sneezes out small lightning bolts. The cycles share one length and one delay. */
 .cloud-mascot[data-effect='cold'] > svg {
     transform-origin: 50% 90%;
@@ -273,7 +332,6 @@
     }
 
     .fx-z.fx-first,
-    .fx-drop,
     .fx-question,
     .fx-rain {
         opacity: 0.9;
@@ -281,5 +339,11 @@
 
     .cloud-mascot[data-effect] > svg {
         animation: none !important;
+    }
+
+    /* Half shut for the moment before sleep, standing still. */
+    .cloud-mascot[data-effect='dozing'] .cloud-eyes {
+        animation: none;
+        transform: scaleY(0.4);
     }
 }

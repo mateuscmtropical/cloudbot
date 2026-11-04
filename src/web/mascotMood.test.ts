@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { pickMascotEffect, pickMascotMood, readSneezeDelaySeconds } from './mascotMood.ts';
+import { pickMascotEffect, pickMascotMood, readNextMoodChangeAt, readSneezeDelaySeconds } from './mascotMood.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
 const NOW = 1_000 * 24 * HOUR_MS;
@@ -64,5 +64,41 @@ describe('readSneezeDelaySeconds', () => {
             .toBeLessThanOrEqual(0);
         expect(delay)
             .toBeGreaterThan(-14);
+    });
+});
+
+describe('falling asleep after leaving a chat', () => {
+    const HOUR_MS = 60 * 60 * 1000;
+    // A bot id and a day with no cold, so only the sleep shows.
+    const quietChat = (now: number, leftAt: number): Parameters<typeof pickMascotMood>[0] => ({ botId: 'a', lastActivityAt: now - 5 * HOUR_MS, isSelected: false, now, leftAt });
+
+    it('stays awake, then nods, then sleeps', () => {
+        const leftAt = 1000 * HOUR_MS;
+        const moods = [leftAt, leftAt + 54_000, leftAt + 55_000, leftAt + 59_999, leftAt + 60_000].map(now => pickMascotMood(quietChat(now, leftAt)));
+
+        expect(moods[0])
+            .not.toBe('sleeping');
+        expect(moods[1])
+            .not.toBe('dozing');
+        expect(moods.slice(2))
+            .toEqual(['dozing', 'dozing', 'sleeping']);
+    });
+
+    it('is asleep at once when the chat was not just left', () => {
+        const now = 1000 * HOUR_MS;
+
+        expect(pickMascotMood({ botId: 'a', lastActivityAt: now - 2 * HOUR_MS, isSelected: false, now }))
+            .toBe('sleeping');
+    });
+
+    it('wakes the timer at each step and then only for the next day', () => {
+        const leftAt = 1000 * HOUR_MS;
+
+        expect(readNextMoodChangeAt(quietChat(leftAt, leftAt)))
+            .toBe(leftAt + 55_000);
+        expect(readNextMoodChangeAt(quietChat(leftAt + 55_000, leftAt)))
+            .toBe(leftAt + 60_000);
+        expect(readNextMoodChangeAt(quietChat(leftAt + 60_000, leftAt)) % (24 * HOUR_MS))
+            .toBe(0);
     });
 });
