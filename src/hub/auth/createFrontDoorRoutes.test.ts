@@ -7,6 +7,7 @@ import type { Hono } from 'hono';
 
 import type { ActivityTracker, InstanceManager, PersonRecord, PersonUpdate, StartResult } from '../contract.ts';
 import type { InstanceStatus } from '../../shared/peopleTypes.ts';
+import { createWebhookToken } from '../../server/webhooks/webhookToken.ts';
 import { hashPassword } from '../passwords.ts';
 import { createFrontDoorRoutes } from './createFrontDoorRoutes.ts';
 import type { FrontDoorRoutesOptions, UpstreamTarget } from './createFrontDoorRoutes.ts';
@@ -189,6 +190,10 @@ async function login(app: Hono, password = INITIAL_PASSWORD, name = PERSON_NAME,
     };
 
     return app.request(`https://${name}.example.test/__hub/login`, { method: 'POST', headers, body });
+}
+
+function send(app: Hono, url: string, init?: RequestInit): Promise<Response> {
+    return Promise.resolve(app.request(url, init));
 }
 
 function cookieFrom(response: Response): string {
@@ -471,16 +476,97 @@ describe('createFrontDoorRoutes', () => {
         const joao: PersonRecord = { ...maria, name: 'joao' };
 
         harness.people.add(joao);
-        const addressLockedAttempt = await login(harness.app, INITIAL_PASSWORD, 'joao');
+        const otherPersonAttempt = await login(harness.app, INITIAL_PASSWORD, 'joao');
 
-        expect(addressLockedAttempt.status)
-            .toBe(401);
+        expect(otherPersonAttempt.status)
+            .toBe(303);
 
         harness.advance(15 * 60 * 1000);
         const afterLockout = await login(harness.app);
 
         expect(afterLockout.status)
             .toBe(303);
+    });
+
+    it('keeps the right password working from another address while one address is locked', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        const wrongTries = Array.from({ length: 5 }, () => login(harness.app, 'wrong password', PERSON_NAME, '198.51.100.7'));
+
+        await Promise.all(wrongTries);
+        const lockedAddress = await login(harness.app, INITIAL_PASSWORD, PERSON_NAME, '198.51.100.7');
+        const otherAddress = await login(harness.app, INITIAL_PASSWORD, PERSON_NAME, '203.0.113.8');
+
+        expect(lockedAddress.status)
+            .toBe(401);
+        expect(otherAddress.status)
+            .toBe(303);
+    });
+
+    it('locks the person after fifty wrong tries from many addresses', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        const wrongTries = Array.from({ length: 50 }, (_unused, index) => login(harness.app, 'wrong password', PERSON_NAME, `198.51.100.${String(index % 10)}`));
+
+        await Promise.all(wrongTries);
+        const locked = await login(harness.app, INITIAL_PASSWORD, PERSON_NAME, '203.0.113.8');
+
+        harness.advance(15 * 60 * 1000);
+        const afterLockout = await login(harness.app, INITIAL_PASSWORD, PERSON_NAME, '203.0.113.8');
+
+        expect(locked.status)
+            .toBe(401);
+        expect(afterLockout.status)
+            .toBe(303);
+    }, 30_000);
+
+    it('refuses a form body over 16 KB and leaves a normal sign-in working', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        const headers = { 'content-type': 'application/x-www-form-urlencoded', 'origin': `https://${PERSON_NAME}.example.test` };
+        const bigBody = new URLSearchParams({ password: 'x'.repeat(17 * 1024) });
+        const requests = ['/__hub/login', '/__hub/setup', '/__hub/password'].map(path => send(harness.app, `https://${PERSON_NAME}.example.test${path}`, {
+            method: 'POST',
+            headers: { ...headers, 'content-length': String(bigBody.toString().length) },
+            body: bigBody.toString(),
+        }));
+        const answers = await Promise.all(requests);
+        const statuses = answers.map(answer => answer.status);
+        const signIn = await login(harness.app);
+
+        expect(statuses)
+            .toEqual([413, 413, 413]);
+        expect(signIn.status)
+            .toBe(303);
+    });
+
+    it('stops reading a chunked form body at the limit and does not sign in', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        let sentBytes = 0;
+        const chunk = new TextEncoder()
+            .encode(`password=${'x'.repeat(8 * 1024)}`);
+        const body = new ReadableStream<Uint8Array>({
+            pull: (controller) => {
+                sentBytes += chunk.length;
+                controller.enqueue(chunk);
+            },
+        });
+        const response = await harness.app.request(`https://${PERSON_NAME}.example.test/__hub/login`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded', 'origin': `https://${PERSON_NAME}.example.test` },
+            body,
+            duplex: 'half',
+        });
+
+        expect(response.status)
+            .not.toBe(303);
+        expect(sentBytes)
+            .toBeLessThan(1024 * 1024);
     });
 
     it('refuses cross-site POST requests before processing a password', async () => {
@@ -743,6 +829,120 @@ describe('createFrontDoorRoutes', () => {
             .toContain('<form');
         expect(await postResponse.text())
             .toContain('<form');
+    });
+
+    it('lets a webhook call and the WhatsApp callback reach the instance without a session or browser headers', async () => {
+        const upstream = await startLocalServer((request, response) => {
+            const body = JSON.stringify({ method: request.method ?? '', path: request.url ?? '', cookie: readHeaderValue(request.headers.cookie) });
+
+            response.writeHead(202, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+            response.end(body);
+        });
+
+        localServers.push(upstream.server);
+        const harness = await createHarness({ upstreamFor: () => upstream.target });
+
+        harnesses.push(harness);
+        const base = `https://${PERSON_NAME}.example.test`;
+        const token = createWebhookToken();
+        const hook = await harness.app.request(`${base}/hooks/${token}`, { method: 'POST', body: '{"event":"push"}', headers: { 'content-type': 'application/json', 'cookie': 'cloudbot_hub_session=stale' } });
+        const whatsappPost = await harness.app.request(`${base}/whatsapp`, { method: 'POST', body: '{}' });
+        const handshake = await harness.app.request(`${base}/whatsapp?hub.mode=subscribe&hub.challenge=7`);
+
+        expect(hook.status)
+            .toBe(202);
+        expect(await hook.json())
+            .toEqual({ method: 'POST', path: `/hooks/${token}`, cookie: '' });
+        expect(await whatsappPost.json())
+            .toMatchObject({ method: 'POST', path: '/whatsapp' });
+        expect(await handshake.json())
+            .toMatchObject({ method: 'GET', path: '/whatsapp?hub.mode=subscribe&hub.challenge=7' });
+        // A stranger's call must not count as the person using the app.
+        expect(harness.activity.touches)
+            .toEqual([]);
+    });
+
+    it('keeps every other path and method behind the origin check and the session', async () => {
+        let upstreamCalls = 0;
+        const upstream = await startLocalServer((_request, response) => {
+            upstreamCalls += 1;
+            response.end('reached the instance');
+        });
+
+        localServers.push(upstream.server);
+        const harness = await createHarness({ upstreamFor: () => upstream.target });
+
+        harnesses.push(harness);
+        const base = `https://${PERSON_NAME}.example.test`;
+        const refusedPosts = [
+            '/',
+            '/api/bots',
+            '/api/hub/activity',
+            '/hooks',
+            '/hooks/',
+            '/hooks/abc/',
+            '/hooks/abc/def',
+            '/hooks/..',
+            '/hooks/%2e%2e',
+            '/hooks/%2e%2e%2fapi%2fbots',
+            '/hooks/abc%2Fdef',
+            '/hooks/abc.def',
+            '/hooks/../api/bots',
+            '/hookss/abc',
+            '/whatsapp/',
+            '/whatsapp/abc',
+            '/whatsapp/../api/bots',
+            '/WHATSAPP',
+            '/%77hatsapp',
+        ];
+        const postRequests = refusedPosts.map(path => send(harness.app, `${base}${path}`, { method: 'POST', body: '{}' }));
+        const postAnswers = await Promise.all(postRequests);
+        const postStatuses = postAnswers.map(answer => answer.status);
+        const otherMethodRequests = [
+            send(harness.app, `${base}/hooks/abc`),
+            send(harness.app, `${base}/hooks/abc`, { method: 'PUT', body: '{}' }),
+            send(harness.app, `${base}/hooks/abc`, { method: 'DELETE' }),
+            send(harness.app, `${base}/whatsapp`, { method: 'PUT', body: '{}' }),
+            send(harness.app, `${base}/whatsapp`, { method: 'DELETE' }),
+        ];
+        const otherMethodAnswers = await Promise.all(otherMethodRequests);
+        const otherMethodTexts = await Promise.all(otherMethodAnswers.map(answer => answer.text()));
+
+        expect(new Set(postStatuses))
+            .toEqual(new Set([403]));
+        otherMethodTexts.forEach((text) => {
+            expect(text)
+                .toContain('<form');
+        });
+        expect(upstreamCalls)
+            .toBe(0);
+    });
+
+    it('answers a webhook call with 503 and does not wake a stopped instance', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        harness.instances.setStatus(PERSON_NAME, 'stopped');
+        const response = await harness.app.request(`https://${PERSON_NAME}.example.test/hooks/abc`, { method: 'POST', body: '{}' });
+
+        expect(response.status)
+            .toBe(503);
+        expect(harness.instances.startCalls)
+            .toEqual([]);
+    });
+
+    it('sends the public paths nowhere on the apex or for an inactive person', async () => {
+        const harness = await createHarness();
+
+        harnesses.push(harness);
+        harness.people.update(PERSON_NAME, { state: 'inactive' });
+        const inactive = await harness.app.request(`https://${PERSON_NAME}.example.test/hooks/abc`, { method: 'POST', body: '{}' });
+        const apex = await harness.app.request('https://example.test/whatsapp', { method: 'POST', body: '{}' });
+
+        expect(inactive.status)
+            .toBe(404);
+        expect(apex.status)
+            .toBe(404);
     });
 
     it('sends the owner to the page when the instance is not running for a sign-in return', async () => {

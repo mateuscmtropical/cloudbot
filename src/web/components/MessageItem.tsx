@@ -3,8 +3,8 @@ import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
 import { TASK_LABELS, TASK_STATUSES } from '../../shared/taskTypes.ts';
-import { parseBotHandoffText } from '../../shared/botHandoffText.ts';
-import type { ParsedBotHandoff } from '../../shared/botHandoffText.ts';
+import { readHandoff } from '../botHandoff.ts';
+import type { HandoffView } from '../botHandoff.ts';
 import { formatFileSize } from '../formatFileSize.ts';
 import { getRoutineSystemText } from '../messageList.ts';
 import { renderMarkdown } from '../markdown.ts';
@@ -33,8 +33,8 @@ interface MessageActions {
 interface MessageItemProps {
     message: ChatMessage;
     actions: MessageActions;
-    // The bot that sent a hand-off. Its mascot shows beside the message, and the default mascot when it is gone.
-    handoffSender?: Pick<BotSummary, 'mascotColor' | 'mascotShape' | 'mascotEyes'> | undefined;
+    // Used to show a message between two bots as a message of that bot. A stable list keeps the memo below working.
+    bots?: BotSummary[] | undefined;
 }
 
 function renderBody(message: ChatMessage, actions: MessageActions): ReactElement | null {
@@ -164,28 +164,32 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
     }
 }
 
-// A message from another bot is stored as a user message. It shows on the bot side with the name of the sender above the text.
-function renderHandoff(sender: ParsedBotHandoff, handoffSender: MessageItemProps['handoffSender']): ReactElement {
+// A message between two bots sits on the bot side, with the mascot beside it and the label above the text. A bot that is gone shows the default mascot.
+function renderHandoff(handoff: HandoffView): ReactElement {
     return (
         <div className="message message-handoff has-mascot">
-            {handoffSender === undefined
-                ? <span className="mascot-gap" style={{ width: HANDOFF_MASCOT_SIZE }} aria-hidden="true" />
-                : <CloudMascot color={handoffSender.mascotColor} shape={handoffSender.mascotShape} eyes={handoffSender.mascotEyes} state="idle" size={HANDOFF_MASCOT_SIZE} />}
+            <CloudMascot
+                color={handoff.bot?.mascotColor ?? 'blue'}
+                shape={handoff.bot?.mascotShape ?? 'puff'}
+                eyes={handoff.bot?.mascotEyes ?? 'smile'}
+                state="idle"
+                size={HANDOFF_MASCOT_SIZE}
+            />
             <div className="text-message">
-                <div className="handoff-sender">{sender.senderName}</div>
-                <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(sender.text) }} />
+                <div className="handoff-sender">{handoff.label}</div>
+                <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(handoff.text) }} />
             </div>
         </div>
     );
 }
 
-function MessageItemView({ message, actions, handoffSender }: MessageItemProps): ReactElement {
+function MessageItemView({ message, actions, bots }: MessageItemProps): ReactElement {
     const className = `message message-${message.role}`;
     const routineSystemText = getRoutineSystemText(message);
-    const handoff = message.role === 'user' && message.body.kind === 'text' ? parseBotHandoffText(message.body.text) : undefined;
+    const handoff = readHandoff(bots ?? [], message);
 
     if (handoff !== undefined) {
-        return renderHandoff(handoff, handoffSender);
+        return renderHandoff(handoff);
     }
 
     if (routineSystemText !== undefined) {
@@ -195,16 +199,10 @@ function MessageItemView({ message, actions, handoffSender }: MessageItemProps):
     return <div className={className}>{renderBody(message, actions)}</div>;
 }
 
-function isSameLook(first: MessageItemProps['handoffSender'], second: MessageItemProps['handoffSender']): boolean {
-    return first?.mascotColor === second?.mascotColor
-        && first?.mascotShape === second?.mascotShape
-        && first?.mascotEyes === second?.mascotEyes;
-}
-
-// Stored messages render only when they change. A reloaded bot list brings new objects, but a sender only counts by its look.
+// Stored messages render only when they change. The bot list only matters to a row that may be a message between bots, and a bot's own reply never is.
 const memoizedMessageItem = memo(MessageItemView, (previous, next) => previous.message === next.message
     && previous.actions === next.actions
-    && isSameLook(previous.handoffSender, next.handoffSender));
+    && (previous.bots === next.bots || previous.message.role === 'assistant'));
 
 export { memoizedMessageItem as MessageItem };
 export type { MessageActions, MessageItemProps };

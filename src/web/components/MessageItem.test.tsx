@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MessageBody } from '../../shared/chatTypes.ts';
 import { NOT_OWNER_LINE } from '../../shared/botHandoffText.ts';
+import type { BotSummary } from '../../shared/chatTypes.ts';
 import { MessageItem } from './MessageItem.tsx';
 
 describe('answered setup messages', () => {
@@ -42,12 +43,33 @@ describe('answered setup messages', () => {
             .toHaveBeenCalledWith('key-form', 'subscription');
     });
 
+    it('shows the reply of another bot as a message of that bot, and keeps other notes plain', () => {
+        const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
+        const bots = [{ id: 'news', name: 'News', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile' }] as BotSummary[];
+        const reply = { id: 'reply', botId: 'bot', role: 'system' as const, sequence: 4, createdAt: 4, body: { kind: 'text' as const, text: 'Reply from News:\n\nDone.' } };
+        const refusal = { id: 'refusal', botId: 'bot', role: 'system' as const, sequence: 5, createdAt: 5, body: { kind: 'text' as const, text: 'The hand-off to News was not sent: too many.' } };
+
+        const { container } = render(
+            <>
+                <MessageItem message={reply} actions={actions} bots={bots} />
+                <MessageItem message={refusal} actions={actions} bots={bots} />
+            </>,
+        );
+
+        expect(container.querySelector('.message-handoff .handoff-sender')?.textContent)
+            .toBe('News');
+        expect(container.querySelector('.message-handoff .bubble')?.textContent)
+            .toContain('Done.');
+        expect(container.querySelector('.message-system')?.textContent)
+            .toContain('was not sent');
+    });
+
     it('shows a hand-off from another bot as that bot, with its name and only the task', () => {
         const actions = { onChoose: vi.fn(() => Promise.resolve()), onSubmitCode: vi.fn(), onSubmitSecret: vi.fn(() => Promise.resolve()), onOpenScreen: vi.fn() };
         const text = [`Message from bot News`, NOT_OWNER_LINE, '', 'Find the top video today.'].join('\n');
         const message = { id: 'handoff', botId: 'bot', role: 'user' as const, sequence: 3, createdAt: 3, body: { kind: 'text' as const, text } };
 
-        const { container } = render(<MessageItem message={message} actions={actions} handoffSender={{ mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile' }} />);
+        const { container } = render(<MessageItem message={message} actions={actions} />);
 
         expect(screen.getByText('News'))
             .toBeTruthy();

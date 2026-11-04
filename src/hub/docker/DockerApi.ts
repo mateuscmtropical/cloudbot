@@ -24,6 +24,13 @@ interface DockerContainerHostConfig {
     RestartPolicy: DockerRestartPolicy;
     Privileged: false;
     Mounts: DockerApiMount[];
+    PidsLimit: number;
+    LogConfig: DockerLogConfig;
+}
+
+interface DockerLogConfig {
+    Type: 'json-file';
+    Config: Record<string, string>;
 }
 
 interface DockerRestartPolicy {
@@ -78,6 +85,10 @@ interface DockerRequestOptions {
 interface DockerUnknownRecord {
     [key: string]: unknown;
 }
+
+// A fork bomb in one instance cannot take down the host, and the logs of one instance cannot fill its disk.
+const INSTANCE_PIDS_LIMIT = 4096;
+const INSTANCE_LOG_CONFIG: DockerLogConfig = { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } };
 
 class DockerApiError extends Error {
     readonly status: number;
@@ -171,6 +182,8 @@ class DockerApi implements DockerApiClient {
             RestartPolicy: { Name: 'no' },
             Privileged: false,
             Mounts: mounts,
+            PidsLimit: INSTANCE_PIDS_LIMIT,
+            LogConfig: INSTANCE_LOG_CONFIG,
         };
         const endpointConfig: DockerEndpointConfig = { Aliases: [options.containerAlias] };
         const endpointsConfig: Record<string, DockerEndpointConfig> = { [options.networkName]: endpointConfig };

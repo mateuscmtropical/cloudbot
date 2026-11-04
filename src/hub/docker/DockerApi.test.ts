@@ -109,6 +109,8 @@ describe('DockerApi', () => {
                     RestartPolicy: { Name: 'no' },
                     Privileged: false,
                     Mounts: [{ Type: 'volume', Source: 'cbi-maria-data', Target: '/var/lib/cloudbot' }],
+                    PidsLimit: 4096,
+                    LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } },
                 },
                 NetworkingConfig: { EndpointsConfig: { 'cloudbot-net-maria': { Aliases: ['cloudbot-i-maria'] } } },
             });

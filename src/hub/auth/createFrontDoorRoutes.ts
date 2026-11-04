@@ -4,9 +4,10 @@ import type { IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http';
 import { Readable } from 'node:stream';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 
 import { APP_OAUTH_CALLBACK_PATH } from '../../shared/connectedApps.ts';
-import { HUB_TRUST_HEADER } from '../../shared/hubProtocol.ts';
+import { HUB_TRUST_HEADER, WHATSAPP_CALLBACK_PATH } from '../../shared/hubProtocol.ts';
 import { checkPersonName } from '../../shared/peopleTypes.ts';
 import type { ActivityTracker, InstanceManager, PeopleStore, PersonRecord, StartResult } from '../contract.ts';
 import { hashPassword, verifyPassword } from '../passwords.ts';
@@ -51,6 +52,11 @@ interface FrontDoorRoutesOptions {
     upstreamFor?: (name: string) => UpstreamTarget;
 }
 
+interface AttemptKey {
+    key: string;
+    limit: number;
+}
+
 interface FailureState {
     failures: number;
     lockedUntil: number;
@@ -72,7 +78,10 @@ interface SignInDeniedResponse {
     error: string;
 }
 
-const FAILURE_LIMIT = 5;
+// One address gets few tries at one person. Many addresses together get more, so a stranger cannot lock the person out
+// of the password sign-in with a handful of wrong tries.
+const NAME_AND_ADDRESS_FAILURE_LIMIT = 5;
+const PERSON_FAILURE_LIMIT = 50;
 const LOCKOUT_MS = 15 * 60 * 1000;
 const UPSTREAM_PORT = 3000;
 const UPSTREAM_CONNECT_FAILURE_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT']);
@@ -80,38 +89,58 @@ const HOP_BY_HOP_HEADERS = new Set(['connection', 'keep-alive', 'proxy-authentic
 const INSTANCE_STARTING_MESSAGE = 'The instance is starting.';
 const LOGIN_FAILURE_MESSAGE = 'Sign-in failed. Check your password and try again.';
 const TOO_MANY_TRIES_MESSAGE = 'Too many wrong tries. Try again in a few minutes.';
+const MAX_FORM_BODY_BYTES = 16 * 1024;
+const FORM_PATHS = ['/__hub/login', '/__hub/setup', '/__hub/password'];
+// The token of createWebhookToken is base64url text. No dot, slash or percent sign fits, so no other path can pass.
+const WEBHOOK_PATH_PATTERN = /^\/hooks\/[A-Za-z0-9_-]+$/;
 
 function nowFor(options: FrontDoorRoutesOptions): number {
     return options.now?.() ?? Date.now();
 }
 
-function makeAttemptKeys(name: string, clientAddress: string): string[] {
-    return [`person:${name}`, `address:${clientAddress}`];
+function makeAttemptKeys(name: string, clientAddress: string): AttemptKey[] {
+    return [
+        { key: `person:${name}`, limit: PERSON_FAILURE_LIMIT },
+        { key: `address:${name}:${clientAddress}`, limit: NAME_AND_ADDRESS_FAILURE_LIMIT },
+    ];
 }
 
-function isLocked(keys: string[], failures: Map<string, FailureState>, now: number): boolean {
-    return keys.some((key) => {
+function isLocked(keys: AttemptKey[], failures: Map<string, FailureState>, now: number): boolean {
+    return keys.some(({ key }) => {
         const state = failures.get(key);
 
         return state !== undefined && state.lockedUntil > now;
     });
 }
 
-function recordFailure(keys: string[], failures: Map<string, FailureState>, now: number): void {
-    keys.forEach((key) => {
+function recordFailure(keys: AttemptKey[], failures: Map<string, FailureState>, now: number): void {
+    keys.forEach(({ key, limit }) => {
         const current = failures.get(key);
         const currentFailures = current !== undefined && current.lockedUntil > 0 && current.lockedUntil <= now ? 0 : current?.failures ?? 0;
         const failureCount = currentFailures + 1;
-        const lockedUntil = failureCount >= FAILURE_LIMIT ? now + LOCKOUT_MS : 0;
+        const lockedUntil = failureCount >= limit ? now + LOCKOUT_MS : 0;
 
         failures.set(key, { failures: failureCount, lockedUntil });
     });
 }
 
-function clearFailures(keys: string[], failures: Map<string, FailureState>): void {
-    keys.forEach((key) => {
+function clearFailures(keys: AttemptKey[], failures: Map<string, FailureState>): void {
+    keys.forEach(({ key }) => {
         failures.delete(key);
     });
+}
+
+// Webhook senders and Meta are not browsers, so they have no session and no origin headers. Each route checks its own
+// token or signature on the instance. The path is read the same way proxyRequest reads it.
+function isPublicInstanceCall(context: Context): boolean {
+    const method = context.req.method;
+    const requestUrl = new URL(context.req.url);
+
+    if (requestUrl.pathname === WHATSAPP_CALLBACK_PATH) {
+        return method === 'GET' || method === 'POST';
+    }
+
+    return method === 'POST' && WEBHOOK_PATH_PATTERN.test(requestUrl.pathname);
 }
 
 function readFormField(form: ParsedFormFields, key: string): string {
@@ -443,6 +472,14 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
     const pendingStarts = new Map<string, Promise<void>>();
     const busyPeople = new Set<string>();
     const setupState: OwnerSetupState = { isClaiming: false };
+    const limitFormBody = bodyLimit({
+        maxSize: MAX_FORM_BODY_BYTES,
+        onError: context => context.text('The request is too large.', 413),
+    });
+
+    FORM_PATHS.forEach((path) => {
+        app.post(path, limitFormBody);
+    });
 
     app.all('*', async (context, next) => {
         if (context.req.path === '/internal' || context.req.path.startsWith('/internal/')) {
@@ -466,7 +503,9 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
             }
         }
 
-        if (context.req.method === 'POST' && !requestHasSameOrigin(context, options.secure)) {
+        const isPublicCall = isPublicInstanceCall(context);
+
+        if (context.req.method === 'POST' && !isPublicCall && !requestHasSameOrigin(context, options.secure)) {
             return context.text('This request did not come from this page.', 403);
         }
 
@@ -579,6 +618,20 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
             const redirectPath = person.mustChangePassword ? '/__hub/password' : readAfterLoginPath(name, options, context);
 
             return context.redirect(redirectPath, 303);
+        }
+
+        // A stranger's call does not wake an instance. One with a webhook or WhatsApp is not stopped for being idle, so this
+        // only happens after a restart of the server, and the sender can try again.
+        if (isPublicCall) {
+            const publicCallStatus = await options.instances.status(name)
+                .catch(() => undefined);
+            const publicCallResponse = publicCallStatus === 'running'
+                ? await proxyRequest(context, person, options)
+                        .catch(() => undefined)
+                : undefined;
+            const startingError: InstanceStartingResponse = { error: INSTANCE_STARTING_MESSAGE };
+
+            return publicCallResponse ?? context.json(startingError, 503);
         }
 
         // A connected app's sign-in page sends the owner back from another site, which may arrive without the hub cookie.

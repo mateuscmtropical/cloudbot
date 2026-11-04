@@ -6,6 +6,19 @@ All notable changes to this project are listed here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- A stranger can no longer block a person's password sign-in with five wrong tries. One address gets five tries at one person, and the person is locked only after fifty wrong tries in all.
+- The sign-in, setup and password forms refuse a body over 16 KB.
+- Resetting a person's password or removing a person ends that person's sessions. An owner who resets their own password stays signed in until the forced change, which ends the other sessions.
+- The hub runs with no Linux capabilities, with no-new-privileges and with a 1 GB memory limit. Every container has a process limit of 4096 and log rotation. An instance that exists already gets these when its container is made again.
+- The site sends `Strict-Transport-Security` with a one day lifetime and no longer offers HTTP/3, which never worked because UDP 443 is not published.
+- The hub and server databases are mode 600.
+
+### Fixed
+
+- Webhooks and the WhatsApp callback work behind the hub. The hub refused them because they have no browser headers and no session. Only `POST /hooks/<token>` and `GET` and `POST /whatsapp` pass, and a call to a stopped instance gets a 503 without waking it.
+
 ### Added
 
 - Each bot has a Permissions choice in the provider menu. Auto is the new default and uses the auto mode of each CLI, or the closest one it has. Ask keeps the old behavior. YOLO starts each CLI with its skip flag and stops all checks, at the owner's risk. Only the owner can change it, in the web app.
@@ -13,6 +26,7 @@ All notable changes to this project are listed here. The format follows
 ### Changed
 
 - The clouds have moods. A quiet chat falls asleep with drifting letters. Some days a bot has a cold and sneezes small lightning bolts. Rain falls after an error, a question mark floats while a bot waits for you, and stars pop when a turn ends.
+- Messages between bots now look like messages. The bot that sent one shows beside it with its name, instead of a gray line of text.
 - Only the bot of the open conversation follows the pointer and the caret. The others still blink. Following the pointer no longer renders React on each frame, so it stays smooth.
 - The chat header's "..." menu is one panel with sections for provider, model and effort, and permissions. The provider in use is marked, and Connect is a quiet action. Every choice saves as soon as it is made, with no Save button. On a phone the panel is a bottom sheet. Menus and dialogs now animate when they open, and menus also when they close.
 - The provider and model are read when a chat opens and when the menu opens, not after every message.

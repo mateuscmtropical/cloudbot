@@ -8,6 +8,7 @@ import { drizzle } from 'drizzle-orm/sqlite-proxy';
 import { migrate } from 'drizzle-orm/sqlite-proxy/migrator';
 
 import { findMigrationsFolder } from './findMigrationsFolder.ts';
+import { restrictDatabaseFiles } from './restrictDatabaseFiles.ts';
 import * as schema from './schema.ts';
 import type { AppDatabase } from './types.ts';
 
@@ -99,6 +100,10 @@ async function openDatabase(filePath: string, options: OpenDatabaseOptions = {})
     sqlite.exec('PRAGMA foreign_keys = ON');
     // The setup-link command writes the same file as the server, so a write waits instead of failing.
     sqlite.exec('PRAGMA busy_timeout = 5000');
+
+    if (filePath !== IN_MEMORY_PATH) {
+        restrictDatabaseFiles(filePath);
+    }
 
     const remoteCallback = createRemoteCallback(sqlite);
     const db = drizzle(remoteCallback, { schema });

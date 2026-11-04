@@ -4,7 +4,6 @@ import type { ReactElement } from 'react';
 import type { BotSummary, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
 import { nextTap } from '../doubleTap.ts';
 import type { Tap } from '../doubleTap.ts';
-import { findHandoffSender } from '../botHandoff.ts';
 import type { DraftStore } from '../draftStore.ts';
 import { lazyPanel } from '../lazyPanel.ts';
 import type { MascotState } from '../mascotState.ts';
@@ -153,11 +152,6 @@ function ConversationView({
     const botName = bot?.name ?? 'CloudBot';
     const sentHistory = useMemo(() => sentMessageTexts(messages), [messages]);
     const providerChangeCount = useMemo(() => countProviderChanges(messages), [messages]);
-    const handoffSenders = useMemo(() => {
-        const senderEntries = messages.map(message => [message.id, findHandoffSender(bots ?? [], message)] as const);
-
-        return new Map(senderEntries);
-    }, [messages, bots]);
     const isBubbleDue = isThinkingBubbleShown({ isRunning, messages });
     const isThinkingShown = useDelayedFlag(isBubbleDue, BUBBLE_DELAY_MS);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
@@ -470,7 +464,7 @@ function ConversationView({
                         <MessageItem
                             message={message}
                             actions={actions}
-                            handoffSender={handoffSenders.get(message.id)}
+                            bots={bots}
                         />
                     </div>
                 ))}
