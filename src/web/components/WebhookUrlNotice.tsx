@@ -1,5 +1,7 @@
 import type { ReactElement } from 'react';
 
+import { Button } from './Button.tsx';
+
 interface WebhookUrlNoticeProps {
     name: string;
     url: string;
@@ -22,7 +24,7 @@ function WebhookUrlNotice({ name, url, onHide }: WebhookUrlNoticeProps): ReactEl
                     event.currentTarget.select();
                 }}
             />
-            <button type="button" onClick={onHide}>Hide URL</button>
+            <Button onClick={onHide}>Hide URL</Button>
         </div>
     );
 }

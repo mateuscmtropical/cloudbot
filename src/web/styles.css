@@ -442,17 +442,24 @@ svg {
     color: var(--color-text);
 }
 
-.connect-apps-header {
+.panel-header {
     display: flex;
     align-items: center;
     gap: var(--space-3);
     min-width: 0;
 }
 
-.connect-apps-header h1 {
+.panel-header-title {
     flex: 1;
     min-width: 0;
+}
+
+.panel-header-title h1,
+.panel-header-title p {
     margin: 0;
+}
+
+.connect-apps-header h1 {
     overflow: hidden;
     font-size: 1.125rem;
     font-weight: 500;
@@ -634,7 +641,7 @@ svg {
     -webkit-line-clamp: 2;
 }
 
-.connect-app-card > .connect-app-action {
+.connect-app-card > .choice-button {
     grid-column: 1 / -1;
     justify-self: end;
 }
@@ -680,22 +687,12 @@ svg {
     stroke-width: 1.8;
 }
 
-.connect-app-action {
+.choice-button.is-compact {
     min-height: 32px;
     padding: var(--space-1) var(--space-3);
     border: 0;
-    border-radius: var(--radius-control);
-    background: var(--color-surface-raised);
-    color: var(--color-text);
-    cursor: pointer;
-    font: inherit;
     font-size: 0.9375rem;
     white-space: nowrap;
-}
-
-.connect-app-action:disabled {
-    cursor: default;
-    opacity: 0.55;
 }
 
 .connect-app-custom-form {
@@ -713,11 +710,6 @@ svg {
     min-width: 0;
 }
 
-.connect-app-custom-copy label {
-    color: var(--color-text-muted);
-    font-size: 0.875rem;
-}
-
 .connect-app-custom-copy input {
     width: 100%;
     min-width: 0;
@@ -730,7 +722,7 @@ svg {
     font: inherit;
 }
 
-.connect-app-custom-form > .connect-app-action {
+.connect-app-custom-form > .choice-button {
     flex: none;
     margin-top: var(--space-3);
 }
@@ -744,7 +736,7 @@ svg {
     color: var(--color-text-muted);
 }
 
-.connect-app-message > .connect-app-action {
+.connect-app-message > .choice-button {
     margin-left: var(--space-2);
 }
 
@@ -790,7 +782,7 @@ svg {
         display: none;
     }
 
-    .connect-app-card > .connect-app-action {
+    .connect-app-card > .choice-button {
         grid-column: auto;
         justify-self: stretch;
         min-height: 40px;
@@ -1747,7 +1739,6 @@ button.list-row {
 }
 
 .choice-button,
-.setup-form button,
 .link-card {
     padding: 8px 14px;
     border: 1px solid var(--color-surface-raised);
@@ -1779,10 +1770,15 @@ button.list-row {
     align-items: center;
 }
 
-.setup-form label {
-    width: 100%;
-    font-size: 0.875rem;
-    color: var(--color-text-muted);
+/* The label takes its own line and the input shares the next one with the button, so the field itself has no box. */
+.setup-form .field,
+.people-delete-confirmation .field {
+    display: contents;
+}
+
+.setup-form .field-label,
+.people-delete-confirmation .field-label {
+    flex-basis: 100%;
 }
 
 .setup-form input {
@@ -2199,16 +2195,17 @@ button.list-row {
     background: var(--color-background);
 }
 
-.person-credentials-created label {
-    display: flex;
+.person-credentials-created .field {
     flex: 1 1 240px;
-    flex-direction: column;
-    gap: var(--space-1);
     min-width: 0;
-    color: var(--color-muted);
 }
 
-.webhook-created button {
+/* The field is a column, so the flex size of the other notices would become the height of the input. */
+.person-credentials-created input {
+    flex: none;
+}
+
+.webhook-created .choice-button {
     padding: 4px 12px;
     border: none;
     border-radius: 999px;
@@ -2267,13 +2264,9 @@ button.list-row {
 }
 
 /* The panel buttons look like the buttons in a chat card. The browser default is a light gray box. */
-.desktop-actions button,
-.desktop-status button {
+.desktop-actions .choice-button,
+.desktop-status .choice-button {
     padding: var(--space-2) var(--space-4);
-    border: 1px solid var(--color-surface-raised);
-    border-radius: var(--radius-control);
-    background: var(--color-surface-raised);
-    color: var(--color-text);
 }
 
 .desktop-screen {
@@ -2388,20 +2381,6 @@ button.list-row {
     gap: var(--space-3);
 }
 
-.settings-page-title {
-    min-width: 0;
-}
-
-.settings-page-title h1,
-.settings-page-title p {
-    margin: 0;
-}
-
-.settings-page-title p {
-    margin-top: var(--space-1);
-    color: var(--color-text-muted);
-}
-
 .account-panel-content {
     display: flex;
     flex-direction: column;
@@ -2490,8 +2469,6 @@ button.list-row {
 }
 
 .bot-profile-header {
-    display: flex;
-    align-items: center;
     justify-content: space-between;
     width: min(38rem, 100%);
     margin: 0 auto var(--space-4);
@@ -2529,9 +2506,6 @@ button.list-row {
 .bot-profile-edit {
     padding: var(--space-2) var(--space-4);
     border: 0;
-    border-radius: var(--radius-control);
-    background: var(--color-surface-raised);
-    color: var(--color-text);
 }
 
 .bot-edit-form {
@@ -2648,12 +2622,10 @@ button.list-row {
     gap: var(--space-2);
 }
 
-.people-add-form h2,
-.people-add-form label {
+.people-add-form h2 {
     flex-basis: 100%;
 }
 
-.people-add-form label,
 .people-field-label,
 .people-details dt {
     color: var(--color-text-muted);
@@ -2735,12 +2707,15 @@ button.list-row {
     gap: var(--space-2);
 }
 
-.people-delete-confirmation label {
-    flex-basis: 100%;
-}
-
 .people-delete-confirmation input {
     flex: 1;
+}
+
+/* This label is the instruction to follow, so it stays as loud as the text around it. */
+.people-delete-confirmation .field-label {
+    color: var(--color-text);
+    font-size: 1rem;
+    font-weight: 400;
 }
 
 .people-credential > p:first-child {
@@ -3199,11 +3174,6 @@ button.list-row {
     gap: var(--space-1);
 }
 
-.google-setup-fields label {
-    color: var(--color-text-muted);
-    font-size: 0.875rem;
-}
-
 .google-setup-fields input {
     width: 100%;
     min-width: 0;
@@ -3215,7 +3185,7 @@ button.list-row {
     font: inherit;
 }
 
-.google-setup-fields > .connect-app-action,
-.google-setup > .connect-app-action {
+.google-setup-fields > .choice-button,
+.google-setup > .choice-button {
     align-self: flex-start;
 }
