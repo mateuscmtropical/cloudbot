@@ -31,8 +31,6 @@ const APPROVAL_CATEGORY_CASES: ApprovalCategoryCase[] = [
     { name: 'purchases', category: 'purchase', toolName: 'Bash', input: { command: 'echo local' } },
     { name: 'bookings', category: 'booking', toolName: 'Bash', input: { command: 'echo local' } },
     { name: 'git pushes and remote service writes', category: 'remote_write', toolName: 'Bash', input: { command: 'git push origin main' } },
-    { name: 'deleting or overwriting outside the workspace', category: 'outside_workspace_change', toolName: 'Write', input: { file_path: '/etc/service.conf', content: 'changed' } },
-    { name: 'system package installs and sudo', category: 'system_change', toolName: 'Bash', input: { command: 'sudo apt-get install example' } },
     { name: 'new connectors', category: 'connector_change', toolName: 'mcp__future__connect_account', input: {} },
     { name: 'rule, limit and provider changes', category: 'owner_setting_change', toolName: 'Bash', input: { command: 'echo local' } },
 ];
@@ -64,7 +62,7 @@ function createReviewer(modelText: string | Error): { reviewer: ToolCallReviewer
 
 describe('createToolCallReviewer', () => {
     it('shows the full sanitized pasted import draft and asks the owner', async () => {
-        const { reviewer, askModel } = createReviewer('unused');
+        const { reviewer } = createReviewer('unused');
         const call = {
             toolName: 'mcp__cloudbot__bot_import_text',
             input: {
@@ -85,8 +83,6 @@ describe('createToolCallReviewer', () => {
             .toContain('CloudBot rules and permissions are not changed.');
         expect(verdict.decision === 'ask' ? verdict.detail : '')
             .not.toContain('secret-value-123');
-        expect(askModel)
-            .not.toHaveBeenCalled();
     });
 
     it('refuses a pasted import draft the approval card cannot show safely', async () => {
@@ -135,19 +131,17 @@ describe('createToolCallReviewer', () => {
             .not.toHaveBeenCalled();
     });
 
-    it('always asks for a connector tool that sends, without asking the model', async () => {
-        const { reviewer, askModel } = createReviewer('unused');
+    it('asks about a connector tool that sends when the model gives no answer', async () => {
+        const { reviewer } = createReviewer('unused');
 
         const verdict = await reviewer('bot-1', { toolName: 'mcp__mail__send_email', input: {} });
 
         expect(verdict.decision)
             .toBe('ask');
-        expect(askModel)
-            .not.toHaveBeenCalled();
     });
 
-    it('always asks for email with every recipient and the full approved text on the card', async () => {
-        const { reviewer, askModel } = createReviewer('unused');
+    it('asks about email with every recipient and the full approved text on the card', async () => {
+        const { reviewer } = createReviewer('unused');
         const input = {
             to: ['to@example.com'],
             cc: ['cc@example.com'],
@@ -164,12 +158,10 @@ describe('createToolCallReviewer', () => {
                 summary: 'Send an email.',
                 detail: 'To: to@example.com\nCc: cc@example.com\nBcc: bcc@example.com\nSubject: "Hello"\n\nText:\nThe complete body.\nKeep every line.',
             });
-        expect(askModel)
-            .not.toHaveBeenCalled();
     });
 
-    it('always asks before connecting an email account, without exposing a password', async () => {
-        const { reviewer, askModel } = createReviewer('unused');
+    it('asks before connecting an email account, without exposing a password', async () => {
+        const { reviewer } = createReviewer('unused');
 
         const verdict = await reviewer('bot-1', {
             toolName: 'mcp__cloudbot__email_setup',
@@ -194,19 +186,15 @@ describe('createToolCallReviewer', () => {
             expect(verdict.detail)
                 .not.toContain('password-value');
         }
-        expect(askModel)
-            .not.toHaveBeenCalled();
     });
 
     it('asks for a private host the browser should reach, and names the host', async () => {
-        const { reviewer, askModel } = createReviewer('unused');
+        const { reviewer } = createReviewer('unused');
 
         const verdict = await reviewer('bot-1', { toolName: 'mcp__cloudbot__browser_allow_host', input: { host: '10.0.0.5' } });
 
         expect(verdict)
             .toEqual({ decision: 'ask', summary: 'Let the browser reach the private host 10.0.0.5, any port.' });
-        expect(askModel)
-            .not.toHaveBeenCalled();
     });
 
     it('names the normalized host and the port on the card', async () => {
@@ -218,26 +206,22 @@ describe('createToolCallReviewer', () => {
             .toEqual({ decision: 'ask', summary: 'Let the browser reach the private host intranet.test, port 8080.' });
     });
 
-    it('asks before connecting a new app server without consulting the model', async () => {
-        const { reviewer, askModel } = createReviewer('unused');
+    it('asks before connecting a new app server the owner did not ask for', async () => {
+        const { reviewer } = createReviewer('unused');
 
         const verdict = await reviewer('bot-1', { toolName: 'mcp__cloudbot__app_connect', input: {} });
 
         expect(verdict)
             .toEqual({ decision: 'ask', summary: 'Connect a new app server.' });
-        expect(askModel)
-            .not.toHaveBeenCalled();
     });
 
-    it('asks before switching the bot to another provider without consulting the model', async () => {
-        const { reviewer, askModel } = createReviewer('unused');
+    it('asks before switching the bot to a provider the owner did not ask for', async () => {
+        const { reviewer } = createReviewer('unused');
 
         const verdict = await reviewer('bot-1', { toolName: 'mcp__cloudbot__provider_use', input: { provider: 'chatgpt' } });
 
         expect(verdict)
             .toEqual({ decision: 'ask', summary: 'Switch this bot to another AI provider.' });
-        expect(askModel)
-            .not.toHaveBeenCalled();
     });
 
     it('allows a call the model allows', async () => {
@@ -295,7 +279,7 @@ describe('createToolCallReviewer', () => {
     });
 
     it('uses a default summary when the model gives none', async () => {
-        const { reviewer } = createReviewer(answer({ decision: 'ask' }));
+        const { reviewer } = createReviewer(answer({ decision: 'ask', category: 'send_message' }));
 
         const verdict = await reviewer('bot-1', BASH_CALL);
 
@@ -350,20 +334,66 @@ describe('createToolCallReviewer', () => {
             .toThrow('stopped');
     });
 
-    it('throws when the answer is not valid', async () => {
+    it('runs an ordinary call when the answer is not valid', async () => {
         const { reviewer } = createReviewer('I think it is fine.');
 
         await expect(reviewer('bot-1', BASH_CALL))
-            .rejects
-            .toThrow('no JSON');
+            .resolves.toEqual({ decision: 'allow' });
     });
 
-    it('throws on an unknown decision', async () => {
+    it('runs an ordinary call on an unknown decision', async () => {
         const { reviewer } = createReviewer(answer({ decision: 'maybe' }));
 
         await expect(reviewer('bot-1', BASH_CALL))
-            .rejects
-            .toThrow('unknown');
+            .resolves.toEqual({ decision: 'allow' });
+    });
+
+    it.each(['outside_workspace_change', 'system_change', 'other'])('runs a %s call without a card, since it stays in the container', async (category) => {
+        const { reviewer } = createReviewer(answer({ decision: 'ask', category }));
+
+        await expect(reviewer('bot-1', { toolName: 'Bash', input: { command: 'sudo apt-get install example' } }))
+            .resolves.toEqual({ decision: 'allow' });
+    });
+
+    it('still denies a call inside the container when an owner rule forbids it', async () => {
+        const { reviewer } = createReviewer(answer({ decision: 'deny', category: 'system_change', reason: 'A rule forbids it.' }));
+
+        await expect(reviewer('bot-1', BASH_CALL))
+            .resolves.toEqual({ decision: 'deny', reason: 'A rule forbids it.' });
+    });
+
+    it('runs a call with a fixed card without the card when the model sees the owner asked for it', async () => {
+        const { reviewer, askModel } = createReviewer(answer({ decision: 'allow', category: 'send_message' }));
+
+        await expect(reviewer('bot-1', { toolName: 'mcp__mail__send_email', input: {} }))
+            .resolves.toEqual({ decision: 'allow' });
+        expect(askModel)
+            .toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the fixed card, not the model summary, when the owner did not ask for the call', async () => {
+        const { reviewer } = createReviewer(answer({ decision: 'ask', category: 'connector_change', summary: 'From the model.' }));
+
+        await expect(reviewer('bot-1', { toolName: 'mcp__cloudbot__app_connect', input: {} }))
+            .resolves.toEqual({ decision: 'ask', summary: 'Connect a new app server.' });
+    });
+
+    it('asks about money without the model, even when the owner asked for it', async () => {
+        const { reviewer, askModel } = createReviewer(answer({ decision: 'allow', category: 'other' }));
+
+        const verdict = await reviewer('bot-1', { toolName: 'mcp__shop__purchase_item', input: {} });
+
+        expect(verdict.decision)
+            .toBe('ask');
+        expect(askModel)
+            .not.toHaveBeenCalled();
+    });
+
+    it('keeps the summary and detail of a GitHub write on its card', async () => {
+        const { reviewer } = createReviewer(answer({ decision: 'ask', category: 'remote_write' }));
+
+        await expect(reviewer('bot-1', { toolName: 'github_write', input: { summary: 'Push to main.', detail: 'owner/repo' } }))
+            .resolves.toEqual({ decision: 'ask', summary: 'Push to main.', detail: 'owner/repo' });
     });
 
     it('asks without the model when the input is too long to review whole', async () => {
@@ -455,15 +485,9 @@ describe('buildReviewPrompt', () => {
         const prompt = buildReviewPrompt(BASH_CALL, CONTEXT);
 
         expect(prompt)
-            .toContain('local commands in the bot\'s workspace that only read, build or test');
-        expect(prompt)
-            .toContain('edits inside that workspace');
-        expect(prompt)
-            .toContain('outside_workspace_change');
+            .toContain('Allow anything that stays inside it');
         expect(prompt)
             .toContain('remote_write');
-        expect(prompt)
-            .toContain('system_change');
         expect(prompt)
             .toContain('connector_change');
         expect(prompt)

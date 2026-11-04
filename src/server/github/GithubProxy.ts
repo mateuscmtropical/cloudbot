@@ -13,7 +13,7 @@ type GithubFetch = (url: URL, init: RequestInit) => Promise<Response>;
 interface GithubProxyOptions {
     // The bot's saved token, or undefined when none is saved. Throws when the saved token is for another site.
     readToken: (botId: string) => string | undefined;
-    // Asks the owner about a write. Resolves true only when the owner approves.
+    // Reviews a write, and asks the owner when the owner did not ask for it. Resolves true only when the write may go.
     approve: (botId: string, summary: string, detail: string | undefined) => Promise<boolean>;
     key: string;
     cert: string;

@@ -193,7 +193,28 @@ describe('createReviewContextReader', () => {
         await readContext('bot-9');
 
         expect(listByBot)
-            .toHaveBeenCalledWith('bot-9', { limit: 3 });
+            .toHaveBeenCalledWith('bot-9', { limit: 200 });
+    });
+
+    it('keeps what the owner asked for when a long task pushed it out of the newest messages', async () => {
+        const text = (body: string): unknown => ({ kind: 'text', text: body });
+        const activity = { kind: 'toolActivity', toolName: 'Bash', status: 'done', summary: 'ok' };
+        const listByBot = vi.fn()
+            .mockResolvedValue([
+                { role: 'assistant', content: text('An older bot line.') },
+                { role: 'user', content: text('Please send the report to Ana.') },
+                { role: 'assistant', content: activity },
+                { role: 'assistant', content: activity },
+                { role: 'assistant', content: text('Almost done.') },
+            ]);
+        const list = vi.fn()
+            .mockResolvedValue([]);
+        const readContext = createReviewContextReader({ ruleStore: { list }, messageStore: { listByBot }, modelStore: createModelStore(), messageCount: 3 });
+
+        const context = await readContext('bot-9');
+
+        expect(context.recentMessages)
+            .toEqual(['Owner: Please send the report to Ana.', 'Bot: Almost done.']);
     });
 
     it('reads the channel posts for a channel turn, with the channel labels, and never the bot chat', async () => {

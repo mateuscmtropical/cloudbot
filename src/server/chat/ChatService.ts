@@ -6,6 +6,7 @@ import { z } from 'zod/v4';
 
 import { ApprovalGate } from '../approvals/ApprovalGate.ts';
 import type { ToolCallReviewer, ToolCallVerdict } from '../approvals/ApprovalGate.ts';
+import { GITHUB_WRITE_TOOL_NAME } from '../approvals/classifyToolCall.ts';
 import type { BotDeleteCheck } from '../approvals/createToolCallReviewer.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnImage, TurnInbox, TurnRequest } from '../agent/AgentRunner.ts';
@@ -3999,6 +4000,21 @@ class ChatService {
         }
 
         return approvals.ask(botId, summary, detail, runningTurn.signal);
+    }
+
+    // A write the GitHub proxy holds, such as a push. It takes the same review as a tool call, so a push the owner asked for
+    // runs without a card. Only a running turn can be asked, so without one the write is refused.
+    async reviewGithubWrite(botId: string, summary: string, detail: string | undefined): Promise<boolean> {
+        const approvals = this.approvals;
+        const runningTurn = this.runningTurns.get(botId);
+
+        if (approvals === undefined || runningTurn === undefined) {
+            return false;
+        }
+
+        const decision = await approvals.review(botId, { toolName: GITHUB_WRITE_TOOL_NAME, input: { summary, detail } }, runningTurn.signal);
+
+        return decision.isAllowed;
     }
 
     // request_secret needs the vault. browser_type_secret also needs the browser.

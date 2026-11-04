@@ -16,7 +16,7 @@ describe('gallery approvals', () => {
             .toBe('always-ask');
     });
 
-    it('takes the install and share cards from the stores, and never sends them to the review model', async () => {
+    it('takes the install and share cards from the stores, and the review model only decides whether the card shows', async () => {
         const askModel = vi.fn(() => Promise.resolve('{}'));
         const reviewer = createToolCallReviewer({
             askModel,
@@ -33,8 +33,6 @@ describe('gallery approvals', () => {
             .toEqual({ decision: 'ask', summary: 'Install card.', detail: 'Name: "Ana"' });
         expect(shareVerdict)
             .toEqual({ decision: 'ask', summary: 'Share card.', detail: 'File: templates/ana.json' });
-        expect(askModel)
-            .not.toHaveBeenCalled();
     });
 
     it('refuses a gallery change when its card cannot be built', async () => {

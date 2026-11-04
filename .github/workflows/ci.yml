@@ -52,7 +52,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # The version must match CODEX_PROTOCOL_VERSION in src/server/agent/codexProtocol.ts. A unit test checks it.
-      - run: npm install --global @openai/codex@0.163.0
+      - run: npm install --global @openai/codex@0.166.0
 
       # The canary talks only to a fake model server and the loopback tool server on this runner.
       # An empty path would skip the canary and pass, so the step checks the binary first.

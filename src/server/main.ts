@@ -387,8 +387,8 @@ const githubProxy: GithubProxy | undefined = githubCertificate === undefined
     ? undefined
     : new GithubProxy({
             readToken: botId => readGithubToken(botSecrets, botId),
-            // The approval card is answered in the chat. chatService is set below, before any turn can run.
-            approve: (botId, summary, detail) => chatService.requestOwnerApproval(botId, summary, detail),
+            // The review and any card run in the chat service. chatService is set below, before any turn can run.
+            approve: (botId, summary, detail) => chatService.reviewGithubWrite(botId, summary, detail),
             key: githubCertificate.key,
             cert: githubCertificate.cert,
             caFile: githubCertificate.caFile,

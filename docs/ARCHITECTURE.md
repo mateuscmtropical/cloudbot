@@ -1401,26 +1401,34 @@ lines, and answers with a JSON object: `category`, `decision`, `summary` and
 `outside_workspace_change`, `system_change`, `connector_change` or
 `owner_setting_change` becomes `ask` unless the decision is `deny`. A deny stays
 a deny. A hand-off to another bot of the owner keeps the #295 exception. An
-answer that is not valid JSON, a failed call and a timeout of 60 seconds all
-throw, and the approval gate then asks the owner.
+answer that is not valid JSON, a failed call and a timeout of 60 seconds run
+the call, unless the tool has a fixed card or a money check, which then asks.
 
 ### What asks and what does not
 
-No approval card is needed to read files or web pages, browse without sending
-or submitting anything, run local workspace commands that only read, build or
-test, or edit files inside the workspace. The bot's own notes and tasks also
-run without a card. An ordinary hand-off to another bot of the owner runs
-without a card when the reviewer allows it. The review prompt includes the
-workspace path, and relative file paths count as inside it.
+A bot must be able to run alone, so a card is the exception. The design follows the
+Agents Rule of Two: an agent is dangerous when it reads untrusted input, reaches private
+data and acts outside at once. A bot keeps the first two, so the review guards only the third.
 
-The owner is asked before sending a message or post to another person or
-service, spending money, booking something, deleting or overwriting something
-outside the workspace, pushing to git or writing to a remote service, or
-installing system packages or running with `sudo`. Connecting a new service
-through `app_connect` and changing rules, limits or the bot's active provider
-also require approval. `provider_connect` only posts the setup choices. The
-owner then picks and connects a provider in the setup chat.
-Existing owner rules still apply, and a review denial remains a denial.
+Anything that stays inside the bot's container runs without a card, whatever the review
+model answers: any command, package installs, `sudo`, edits and deletes. The container can
+be rebuilt. The command floor and a denial from an owner rule still refuse a call.
+
+A call that leaves the container waits for the owner only when the owner did not ask for
+it and no Allow rule covers it. This covers sending a message or post, pushing to git or
+writing to a remote service, connecting a service, and changing rules, limits or the provider.
+The review model decides this. It reads the tool call and the chat lines, and never the pages or files the
+bot read, so an instruction hidden in a page does not reach it. Only lines labeled Owner count as the owner. Those
+lines are found across the last 200 messages, so a long task does not lose what the owner asked for.
+
+Two things always wait for the owner: money (a purchase or booking, by tool name or by the
+model's category) and deleting a bot. `browser_fill_login` and the people tools keep their
+own card too. Outbound card and ID numbers are refused for every engine.
+
+The CLIs are not started with their skip-permission flags, such as `--dangerously-skip-permissions`
+or `--yolo`. Their permission question, or the PreToolUse hook of agy, is how a call reaches the
+review. With the flag, the floor, the owner rules and the checks above would not run. No
+question of a CLI reaches the owner unless the review asks for it.
 
 The always-ask rule is a name and pattern check, not a proof. A built in tool
 that sends something in a way the patterns miss relies on the model's category.
@@ -1440,9 +1448,8 @@ by a small Gemini model. A review model that fails is skipped for ten minutes
 (`skipAfterFailure`), so a provider without a sign-in does not slow every call.
 
 When no review model answers, for example on a bot that only uses opencode, the
-call runs, like in auto mode. The command floor and the always-ask tools were
-checked before the review, so they still hold. An answer that cannot be read
-still asks the owner, since a page could have confused the model.
+call runs, like in auto mode. The command floor was checked before the review,
+and a call with a fixed card or a money check still asks the owner.
 
 ## Command floor
 
