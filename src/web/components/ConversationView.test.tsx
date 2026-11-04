@@ -587,7 +587,7 @@ describe('ConversationView header', () => {
         render(historyElement([], {}, ana, undefined, undefined, onOpenSetupChat));
         fireEvent.click(screen.getByRole('button', { name: 'More options' }));
 
-        expect(screen.getByText('Model and provider'))
+        expect(screen.getByRole('group', { name: 'Model and provider' }))
             .toBeTruthy();
     });
 

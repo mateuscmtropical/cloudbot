@@ -4,6 +4,7 @@ import type { ReactElement, SyntheticEvent } from 'react';
 import type { Person, PersonWithPassword } from '../../shared/peopleTypes.ts';
 import { RequestFailedError } from '../apiClient.ts';
 import { addPerson, deactivatePerson, deletePerson, listPeople, reactivatePerson, resetPersonPassword } from '../peopleClient.ts';
+import { Button } from './Button.tsx';
 import { CloseIcon } from './icons.tsx';
 import { RoundButton } from './RoundButton.tsx';
 
@@ -202,27 +203,25 @@ function PeoplePanel({ onClose }: PeoplePanelProps): ReactElement {
                                     <span className="people-field-label">Address</span>
                                     <code>{credential.address}</code>
                                 </div>
-                                <button type="button" className="choice-button" onClick={() => { void copyValue(credential.address); }}>Copy address</button>
+                                <Button onClick={() => { void copyValue(credential.address); }}>Copy address</Button>
                             </div>
                             <div className="people-credential-row">
                                 <div>
                                     <span className="people-field-label">Password</span>
                                     <code>{credential.password}</code>
                                 </div>
-                                <button type="button" className="choice-button" onClick={() => { void copyValue(credential.password); }}>Copy password</button>
+                                <Button onClick={() => { void copyValue(credential.password); }}>Copy password</Button>
                             </div>
                             {copyProblem === undefined ? null : <p className="people-problem" role="alert">{copyProblem}</p>}
                             <div className="choice-buttons">
-                                <button
-                                    type="button"
-                                    className="choice-button"
+                                <Button
                                     onClick={() => {
                                         setCredential(undefined);
                                         setCopyProblem(undefined);
                                     }}
                                 >
                                     I saved it
-                                </button>
+                                </Button>
                             </div>
                         </section>
                     )}
@@ -272,17 +271,15 @@ function PeoplePanel({ onClose }: PeoplePanelProps): ReactElement {
                                 {isOwner
                                     ? null
                                     : (
-                                            <button type="button" className="choice-button" disabled={isWorking} onClick={() => { handlePersonState(person); }}>
+                                            <Button disabled={isWorking} onClick={() => { handlePersonState(person); }}>
                                                 {person.state === 'active' ? 'Deactivate' : 'Reactivate'}
-                                            </button>
+                                            </Button>
                                         )}
-                                <button type="button" className="choice-button" disabled={isWorking} onClick={() => { handleResetPassword(person); }}>Reset password</button>
+                                <Button disabled={isWorking} onClick={() => { handleResetPassword(person); }}>Reset password</Button>
                                 {isOwner
                                     ? null
                                     : (
-                                            <button
-                                                type="button"
-                                                className="choice-button"
+                                            <Button
                                                 disabled={isWorking}
                                                 onClick={() => {
                                                     setDeleteName(isConfirmingDelete ? undefined : person.name);
@@ -291,7 +288,7 @@ function PeoplePanel({ onClose }: PeoplePanelProps): ReactElement {
                                                 }}
                                             >
                                                 {isConfirmingDelete ? 'Cancel delete' : 'Delete'}
-                                            </button>
+                                            </Button>
                                         )}
                             </div>
                             {isConfirmingDelete
@@ -310,7 +307,7 @@ function PeoplePanel({ onClose }: PeoplePanelProps): ReactElement {
                                                 value={deleteConfirmation}
                                                 onChange={(event) => { setDeleteConfirmation(event.currentTarget.value); }}
                                             />
-                                            <button type="button" className="choice-button" disabled={!canDelete || isWorking} onClick={() => { handleDelete(person); }}>Confirm delete</button>
+                                            <Button disabled={!canDelete || isWorking} onClick={() => { handleDelete(person); }}>Confirm delete</Button>
                                         </div>
                                     )
                                 : null}

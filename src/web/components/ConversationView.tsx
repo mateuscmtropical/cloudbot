@@ -22,7 +22,7 @@ import { RenameField } from './RenameField.tsx';
 import { ThinkingBubble } from './ThinkingBubble.tsx';
 import { WebhookUrlNotice } from './WebhookUrlNotice.tsx';
 import { PersonCredentialsNotice } from './PersonCredentialsNotice.tsx';
-import { BackIcon, CodeIcon, MoreIcon } from './icons.tsx';
+import { BackIcon, MoreIcon } from './icons.tsx';
 import type { MessageActions } from './MessageItem.tsx';
 import { useBackButton } from '../useBackButton.ts';
 
@@ -394,18 +394,10 @@ function ConversationView({
                                 </span>
                             </button>
                         )}
-                <PopoverMenu label="Conversation options" triggerLabel="More options" triggerIcon={<MoreIcon />} placement="below-end">
-                    {() => bot === undefined || onOpenSetupChat === undefined
+                <PopoverMenu label="Conversation options" triggerLabel="More options" triggerIcon={<MoreIcon />} placement="below-end" variant="panel">
+                    {(close, isOptionsOpen) => bot === undefined || onOpenSetupChat === undefined
                         ? null
-                        : (
-                                <div className="popover-provider-entry">
-                                    <span className="popover-provider-label">
-                                        <CodeIcon />
-                                        <span>Model and provider</span>
-                                    </span>
-                                    <ProviderPicker botId={bot.id} changeCount={providerChangeCount} refreshCount={messages.length} onOpenSetupChat={onOpenSetupChat} />
-                                </div>
-                            )}
+                        : <ProviderPicker key={bot.id} botId={bot.id} isOpen={isOptionsOpen} changeCount={providerChangeCount} onOpenSetupChat={onOpenSetupChat} onClose={close} />}
                 </PopoverMenu>
             </header>
             {/* Notices and the Screen panel sit below the pill, so their title and Close stay clear of it. Empty when none show. */}

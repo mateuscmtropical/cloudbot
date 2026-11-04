@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 
 import type { ChoiceOption } from '../../shared/chatTypes.ts';
+import { Button } from './Button.tsx';
 
 interface ChoiceButtonsProps {
     options: ChoiceOption[];
@@ -14,21 +15,19 @@ function ChoiceButtons({ options, chosenId, onChoose }: ChoiceButtonsProps): Rea
     return (
         <div className="choice-buttons">
             {options.map((option) => {
-                const isSelected = option.id === chosenId;
-                const className = isSelected ? 'choice-button is-selected' : 'choice-button';
+                const tone = option.id === chosenId ? 'selected' : 'default';
 
                 return (
-                    <button
+                    <Button
                         key={option.id}
-                        type="button"
-                        className={className}
+                        tone={tone}
                         disabled={isChosen}
                         onClick={() => {
                             onChoose(option.id);
                         }}
                     >
                         {option.label}
-                    </button>
+                    </Button>
                 );
             })}
         </div>

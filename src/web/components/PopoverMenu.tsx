@@ -5,12 +5,16 @@ import { RoundButton } from './RoundButton.tsx';
 
 type PopoverMenuPlacement = 'above-start' | 'above-end' | 'below-start' | 'below-end';
 
+// A menu is a short list of actions. A panel has settings sections, is wider, scrolls and is a bottom sheet on a phone.
+type PopoverMenuVariant = 'menu' | 'panel';
+
 interface PopoverMenuProps {
     label: string;
     triggerLabel: string;
     triggerIcon: ReactNode;
-    children: (close: () => void) => ReactNode;
+    children: (close: () => void, isOpen: boolean) => ReactNode;
     placement?: PopoverMenuPlacement;
+    variant?: PopoverMenuVariant;
     disabled?: boolean;
     isOpen?: boolean;
     onOpenChange?: (isOpen: boolean) => void;
@@ -44,7 +48,22 @@ function PopoverMenuItem({ label, icon, onSelect, close, tone = 'default' }: Pop
     );
 }
 
-function PopoverMenu({ label, triggerLabel, triggerIcon, children, placement = 'below-end', disabled = false, isOpen: controlledIsOpen, onOpenChange }: PopoverMenuProps): ReactElement {
+interface PopoverMenuSectionProps {
+    title: string;
+    children: ReactNode;
+}
+
+function PopoverMenuSection({ title, children }: PopoverMenuSectionProps): ReactElement {
+    return (
+        <section className="popover-menu-section" aria-label={title}>
+            <h3 className="popover-menu-section-title">{title}</h3>
+            {children}
+        </section>
+    );
+}
+
+// The popover stays mounted while closed, so its children keep their state and the close can animate.
+function PopoverMenu({ label, triggerLabel, triggerIcon, children, placement = 'below-end', variant = 'menu', disabled = false, isOpen: controlledIsOpen, onOpenChange }: PopoverMenuProps): ReactElement {
     const [localIsOpen, setLocalIsOpen] = useState(false);
     const isOpen = !disabled && (controlledIsOpen ?? localIsOpen);
     const menuId = useId();
@@ -96,7 +115,7 @@ function PopoverMenu({ label, triggerLabel, triggerIcon, children, placement = '
     }, [close, disabled, isOpen, updateIsOpen]);
 
     return (
-        <div className={`popover-menu-anchor is-${placement}`} ref={containerRef}>
+        <div className={`popover-menu-anchor is-${placement} is-${variant}`} ref={containerRef}>
             <RoundButton
                 label={triggerLabel}
                 id={triggerId}
@@ -110,12 +129,24 @@ function PopoverMenu({ label, triggerLabel, triggerIcon, children, placement = '
             >
                 {triggerIcon}
             </RoundButton>
+            {variant === 'panel'
+                ? (
+                        <button
+                            type="button"
+                            className="scrim popover-menu-scrim"
+                            aria-label={`Close ${label}`}
+                            tabIndex={-1}
+                            hidden={!isOpen}
+                            onClick={close}
+                        />
+                    )
+                : null}
             <div id={menuId} className="popover-menu-popover" role="dialog" aria-label={label} hidden={!isOpen}>
-                {children(close)}
+                {children(close, isOpen)}
             </div>
         </div>
     );
 }
 
-export { PopoverMenu, PopoverMenuItem };
-export type { PopoverMenuItemProps, PopoverMenuItemTone, PopoverMenuPlacement, PopoverMenuProps };
+export { PopoverMenu, PopoverMenuItem, PopoverMenuSection };
+export type { PopoverMenuItemProps, PopoverMenuItemTone, PopoverMenuPlacement, PopoverMenuProps, PopoverMenuSectionProps, PopoverMenuVariant };
