@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, ReactElement, Ref } from 'react';
 
-type ButtonTone = 'default' | 'selected' | 'danger' | 'quiet';
+type ButtonTone = 'default' | 'selected' | 'danger' | 'quiet' | 'compact';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
     tone?: ButtonTone;
@@ -12,6 +12,7 @@ const TONE_CLASSES: Record<ButtonTone, string> = {
     selected: 'choice-button is-selected',
     danger: 'choice-button is-danger',
     quiet: 'choice-button is-quiet',
+    compact: 'choice-button is-compact',
 };
 
 // The text button of the app. It is type="button" unless a form asks for submit.

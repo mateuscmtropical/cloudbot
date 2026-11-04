@@ -1,8 +1,9 @@
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import type { ReactElement, SyntheticEvent } from 'react';
 
 import { Button } from './Button.tsx';
 import { ChatCard } from './ChatCard.tsx';
+import { Field } from './Field.tsx';
 
 // Another way to answer the form. Both answers are disabled while either one is pending.
 interface SecureFormAlternative {
@@ -27,7 +28,6 @@ interface SecureFormProps {
 function SecureForm({ prompt, secretName, submitted, onSubmit, alternative, site }: SecureFormProps): ReactElement {
     const [value, setValue] = useState('');
     const [pendingAnswer, setPendingAnswer] = useState<PendingAnswer | undefined>(undefined);
-    const inputId = useId();
     const isEmpty = value.length === 0;
     const isPending = pendingAnswer !== undefined;
 
@@ -82,20 +82,20 @@ function SecureForm({ prompt, secretName, submitted, onSubmit, alternative, site
                 ? null
                 : <p className="secret-site">{`The bot asks for this. It is for ${site}, and the bot never sees the value.`}</p>}
             <form className="setup-form" onSubmit={handleSubmit}>
-                <label htmlFor={inputId}>{secretName}</label>
-                <input
-                    id={inputId}
-                    type="password"
-                    autoComplete="off"
-                    value={value}
-                    disabled={isPending}
-                    onChange={(event) => {
-                        setValue(event.target.value);
-                    }}
-                />
-                <button type="submit" disabled={isEmpty || isPending}>
+                <Field label={secretName}>
+                    <input
+                        type="password"
+                        autoComplete="off"
+                        value={value}
+                        disabled={isPending}
+                        onChange={(event) => {
+                            setValue(event.target.value);
+                        }}
+                    />
+                </Field>
+                <Button type="submit" disabled={isEmpty || isPending}>
                     {pendingAnswer === 'submit' ? 'Checking...' : 'Save secret'}
-                </button>
+                </Button>
             </form>
             {alternative !== undefined && (
                 <Button

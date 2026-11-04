@@ -9,9 +9,12 @@ import type { AppCategory, CatalogApp } from '../appCatalog.ts';
 import { APP_SIGN_IN_CHANNEL, describeAppReturn, readAppReturnMessage } from '../appReturn.ts';
 import { APP_LOGOS, getLogoGlyphColor } from '../appLogos.ts';
 import { BitwardenSetupForm } from './BitwardenSetupForm.tsx';
+import { Button } from './Button.tsx';
+import { Field } from './Field.tsx';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
-import { CloseIcon, FilterIcon, SearchIcon } from './icons.tsx';
+import { PanelHeader } from './PanelHeader.tsx';
+import { FilterIcon, SearchIcon } from './icons.tsx';
 import { PillField } from './PillField.tsx';
 import { RoundButton } from './RoundButton.tsx';
 
@@ -380,13 +383,11 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
 
     return (
         <section aria-label="Connect apps" className="connect-apps-panel">
-            <header className="connect-apps-header">
-                <RoundButton label="Close connect apps" onClick={onClose}><CloseIcon /></RoundButton>
-                <h1>Connect apps</h1>
+            <PanelHeader className="connect-apps-header" closeLabel="Close connect apps" onClose={onClose} title="Connect apps">
                 <span className="connect-app-installed-count" aria-label={installedCountAccessibleLabel}>
                     {installedCountLabel}
                 </span>
-            </header>
+            </PanelHeader>
             <div className="connect-app-search-row">
                 <PillField leftIcon={<SearchIcon />} className="connect-app-search-field">
                     <input
@@ -430,7 +431,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                 : (
                         <p className="connect-app-message" role="status">
                             {`Finish signing in to ${signInLabel} in the other window.`}
-                            <button type="button" className="connect-app-action" aria-label="Cancel sign-in" onClick={stopWaiting}>Cancel</button>
+                            <Button tone="compact" aria-label="Cancel sign-in" onClick={stopWaiting}>Cancel</Button>
                         </p>
                     )}
             {isGoogleMissing
@@ -462,9 +463,8 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                 const { description, isConnected } = describeCard(catalogApp, cardConnections);
                                 const cardIds = cardConnections.map(connection => connection.id);
                                 const setUpButton = (
-                                    <button
-                                        type="button"
-                                        className="connect-app-action"
+                                    <Button
+                                        tone="compact"
                                         disabled={selectedBotId === undefined}
                                         aria-label={`Set up ${catalogApp.displayName}`}
                                         onClick={() => {
@@ -472,13 +472,12 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                         }}
                                     >
                                         Set up
-                                    </button>
+                                    </Button>
                                 );
                                 const connectOrRemoveButton = !isConnected
                                     ? (
-                                            <button
-                                                type="button"
-                                                className="connect-app-action"
+                                            <Button
+                                                tone="compact"
                                                 disabled={selectedBotId === undefined || startingAppName !== undefined}
                                                 aria-label={`Connect ${catalogApp.displayName}`}
                                                 onClick={() => {
@@ -486,12 +485,11 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                                 }}
                                             >
                                                 {isStarting ? startingLabel : 'Connect'}
-                                            </button>
+                                            </Button>
                                         )
                                     : (
-                                            <button
-                                                type="button"
-                                                className="connect-app-action"
+                                            <Button
+                                                tone="compact"
                                                 disabled={cardIds.some(cardId => removingIds.includes(cardId))}
                                                 aria-label={`Remove ${catalogApp.displayName}`}
                                                 onClick={() => {
@@ -499,7 +497,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                                 }}
                                             >
                                                 Remove
-                                            </button>
+                                            </Button>
                                         );
                                 // Bitwarden is no connection. Its button opens the setup form, which also forgets the account.
                                 const actionButton = catalogApp.serverName === BITWARDEN_SERVER_NAME ? setUpButton : connectOrRemoveButton;
@@ -523,9 +521,8 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                         {filteredCustomApps.map((app) => {
                             const displayName = getCustomDisplayName(app);
                             const removeButton = (
-                                <button
-                                    type="button"
-                                    className="connect-app-action"
+                                <Button
+                                    tone="compact"
                                     disabled={removingIds.includes(app.id)}
                                     aria-label={`Remove ${displayName}`}
                                     onClick={() => {
@@ -533,7 +530,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                     }}
                                 >
                                     Remove
-                                </button>
+                                </Button>
                             );
 
                             return (
@@ -553,9 +550,8 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                             description="Connect any app by its address."
                             leadingIcon={<CustomAppIcon />}
                             trailingControl={(
-                                <button
-                                    type="button"
-                                    className="connect-app-action"
+                                <Button
+                                    tone="compact"
                                     aria-label="Add custom app"
                                     aria-expanded={isCustomFormOpen}
                                     onClick={() => {
@@ -563,7 +559,7 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                     }}
                                 >
                                     {isCustomFormOpen ? 'Cancel' : 'Add'}
-                                </button>
+                                </Button>
                             )}
                         />
                         {isCustomFormOpen
@@ -572,25 +568,25 @@ function ConnectAppsPanel({ onClose, selectedBotId, notice }: ConnectAppsPanelPr
                                         <CustomAppIcon />
                                         <div className="connect-app-custom-copy">
                                             <strong>Custom app</strong>
-                                            <label htmlFor="custom-app-address">Connect any app by its address.</label>
-                                            <input
-                                                id="custom-app-address"
-                                                type="url"
-                                                placeholder="https://example.com/mcp"
-                                                value={customAddress}
-                                                onChange={(event) => {
-                                                    setCustomAddress(event.currentTarget.value);
-                                                }}
-                                            />
+                                            <Field label="Connect any app by its address.">
+                                                <input
+                                                    type="url"
+                                                    placeholder="https://example.com/mcp"
+                                                    value={customAddress}
+                                                    onChange={(event) => {
+                                                        setCustomAddress(event.currentTarget.value);
+                                                    }}
+                                                />
+                                            </Field>
                                         </div>
-                                        <button
+                                        <Button
                                             type="submit"
-                                            className="connect-app-action"
+                                            tone="compact"
                                             aria-label="Connect custom app"
                                             disabled={selectedBotId === undefined || startingAppName !== undefined}
                                         >
                                             {startingAppName?.startsWith('custom-') ? startingLabel : 'Connect'}
-                                        </button>
+                                        </Button>
                                     </form>
                                 )
                             : null}

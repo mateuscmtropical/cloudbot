@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import type { ReactElement } from 'react';
 
+import { Button } from './Button.tsx';
+import { Field } from './Field.tsx';
+
 interface PersonCredentialsNoticeProps {
     name: string;
     address: string;
@@ -26,8 +29,7 @@ function PersonCredentialsNotice({ name, address, password, onHide }: PersonCred
         <section className="webhook-created person-credentials-created" role="status" aria-label="One-time sign-in details">
             <p><strong>{`Sign-in details for ${name}`}</strong></p>
             <p>Save this now. It is not shown again.</p>
-            <label>
-                Address
+            <Field label="Address">
                 <input
                     type="text"
                     readOnly
@@ -37,9 +39,8 @@ function PersonCredentialsNotice({ name, address, password, onHide }: PersonCred
                         event.currentTarget.select();
                     }}
                 />
-            </label>
-            <label>
-                Password
+            </Field>
+            <Field label="Password">
                 <input
                     type="text"
                     readOnly
@@ -49,9 +50,9 @@ function PersonCredentialsNotice({ name, address, password, onHide }: PersonCred
                         event.currentTarget.select();
                     }}
                 />
-            </label>
-            <button type="button" onClick={() => { void copySignInDetails(); }}>{copyLabel}</button>
-            <button type="button" onClick={onHide}>Hide details</button>
+            </Field>
+            <Button onClick={() => { void copySignInDetails(); }}>{copyLabel}</Button>
+            <Button onClick={onHide}>Hide details</Button>
         </section>
     );
 }
