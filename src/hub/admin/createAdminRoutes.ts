@@ -5,12 +5,14 @@ import type { Context } from 'hono';
 import { HUB_PEOPLE_PATH, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER } from '../../shared/hubProtocol.ts';
 import { checkPersonName } from '../../shared/peopleTypes.ts';
 import type { Person, PersonWithPassword, ResetPasswordResult } from '../../shared/peopleTypes.ts';
+import type { LoginSessions } from '../auth/LoginSessions.ts';
 import type { InstanceManager, PeopleStore, PersonRecord } from '../contract.ts';
 import { generatePassword, hashPassword } from '../passwords.ts';
 
 interface CreateAdminRoutesOptions {
     people: PeopleStore;
     instances: InstanceManager;
+    sessions: Pick<LoginSessions, 'deletePerson'>;
     domain: string;
     secure: boolean;
 }
@@ -235,6 +237,13 @@ async function resetPersonPassword(context: Context, options: CreateAdminRoutesO
     const passwordHash = await hashPassword(password);
 
     options.people.update(name, { passwordHash, mustChangePassword: true });
+
+    // An owner who resets their own password keeps this session, since the new password shows on that page. The forced
+    // change that follows ends every other session.
+    if (name !== owner.name) {
+        options.sessions.deletePerson(name);
+    }
+
     const answer: ResetPasswordResult = { password };
 
     return context.json(answer);
@@ -269,6 +278,7 @@ async function removePerson(context: Context, options: CreateAdminRoutesOptions)
 
     await options.instances.remove(name);
     options.people.remove(name);
+    options.sessions.deletePerson(name);
 
     return context.body(null, 204);
 }

@@ -2,12 +2,18 @@
     on_demand_tls {
         ask http://hub:3001/internal/tls-ask
     }
+    # Only TCP 443 is published, so HTTP/3 over UDP is not offered.
+    servers {
+        protocols h1 h2
+    }
 }
 
 {$CLOUDBOT_DOMAIN}, *.{$CLOUDBOT_DOMAIN} {
     tls {
         on_demand
     }
+    # One day for now. Raise it once the site has run a while with it.
+    header Strict-Transport-Security "max-age=86400"
     encode gzip
     reverse_proxy hub:3001
 }

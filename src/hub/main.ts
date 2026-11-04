@@ -12,6 +12,7 @@ import { DockerApi } from './docker/DockerApi.ts';
 import { DockerInstanceManager } from './instances/DockerInstanceManager.ts';
 import { createFetchActivity, createIdleWatcher } from './idle/IdleWatcher.ts';
 import { createLoginSessionTables, SqliteLoginSessions } from './auth/LoginSessions.ts';
+import type { LoginSessions } from './auth/LoginSessions.ts';
 import { attachUpgradeProxy } from './proxy/attachUpgradeProxy.ts';
 import { createHubPasskeyTables, SqliteHubPasskeyStore } from './passkeys/HubPasskeyStore.ts';
 import { HubPasskeyService } from './passkeys/HubPasskeyService.ts';
@@ -55,7 +56,7 @@ async function createOwner(options: CreateOwnerOptions): Promise<void> {
     await options.instances.create(ownerRecord);
     options.people.add(ownerRecord);
 }
-async function resetPassword(people: PeopleStore, name: string): Promise<string> {
+async function resetPassword(people: PeopleStore, sessions: Pick<LoginSessions, 'deletePerson'>, name: string): Promise<string> {
     const person = people.find(name);
 
     if (person === undefined) {
@@ -66,6 +67,7 @@ async function resetPassword(people: PeopleStore, name: string): Promise<string>
     const passwordHash = await hashPassword(password);
 
     people.update(name, { passwordHash, mustChangePassword: true });
+    sessions.deletePerson(name);
 
     return password;
 }
@@ -137,7 +139,7 @@ async function main(): Promise<void> {
             throw new Error('A person name is required.');
         }
 
-        const password = await resetPassword(people, name);
+        const password = await resetPassword(people, sessions, name);
 
         console.log(`Password for ${name}: ${password}`);
         database.close();
