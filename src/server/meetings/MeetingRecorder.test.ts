@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CdpConnection } from '../desktop/CdpConnection.ts';
+import { pageUrl } from '../desktop/page/pageLocation.ts';
+import { pageTakeMeetingRecording } from '../desktop/page/pageMeetingRecording.ts';
 import { MeetingRecorder, formatOffset, isMeetingUrl, transcriptFileName } from './MeetingRecorder.ts';
 import type { MeetingRecorderOptions } from './MeetingRecorder.ts';
 
@@ -25,7 +27,11 @@ function fakePage(url: string, liveTracks: () => number): FakePage {
     const close = vi.fn();
     const takes: string[] = [];
     const call = vi.fn((method: string, params: Record<string, unknown> = {}) => {
-        const expression = typeof params.expression === 'string' ? params.expression : '';
+        const declaration = typeof params.functionDeclaration === 'string' ? params.functionDeclaration : '';
+
+        if (method === 'Runtime.evaluate' && params.expression === 'globalThis') {
+            return Promise.resolve({ result: { objectId: 'global-1' } });
+        }
 
         if (method === 'Page.getFrameTree') {
             return Promise.resolve({ frameTree: { frame: { id: 'frame' } } });
@@ -35,12 +41,12 @@ function fakePage(url: string, liveTracks: () => number): FakePage {
             return Promise.resolve({ executionContextId: 7 });
         }
 
-        if (expression === 'location.href') {
+        if (declaration === pageUrl.toString()) {
             return Promise.resolve({ result: { value: url } });
         }
 
-        if (expression.includes('.take(')) {
-            takes.push(expression);
+        if (declaration === pageTakeMeetingRecording.toString()) {
+            takes.push(JSON.stringify(params.arguments));
 
             return Promise.resolve({ result: { value: { audio: AUDIO, liveTracks: liveTracks() } } });
         }
@@ -113,7 +119,7 @@ describe('MeetingRecorder', () => {
         expect(saved.get('/uploads/bot-1/meeting-2026-11-05-1430.md'))
             .toContain('[00:01] hello there');
         expect(fake.takes.at(-1))
-            .toContain('take(false)');
+            .toBe(JSON.stringify([{ value: false }]));
         expect(fake.close)
             .toHaveBeenCalled();
         expect(recorder.status('bot-1'))

@@ -1,5 +1,15 @@
 import { CdpConnection, CdpError } from './CdpConnection.ts';
 import type { CdpSocketFactory } from './CdpConnection.ts';
+import { evaluateInPage } from './evaluateInPage.ts';
+import { pageActiveElement } from './page/pageActiveElement.ts';
+import { pageClickFocus } from './page/pageClickFocus.ts';
+import { pageClickableElements } from './page/pageClickableElements.ts';
+import { pageDescribeElements } from './page/pageDescribeElements.ts';
+import { pageElementAtPoint } from './page/pageElementAtPoint.ts';
+import { pageFocusCheck } from './page/pageFocusCheck.ts';
+import { pageOrigin, pageUrl } from './page/pageLocation.ts';
+import { pageReadyState } from './page/pageReadyState.ts';
+import { pageSnapshot } from './page/pageSnapshot.ts';
 
 interface BrowserControlOptions {
     // The DevTools HTTP address, such as http://127.0.0.1:9222. A function is asked on each action, so a browser
@@ -85,37 +95,10 @@ const DIALOG_BLOCKED_MESSAGE = 'The page is showing a dialog or does not answer.
 const CONTEXT_GONE_PATTERN = /context was destroyed|cannot find context|execution context/i;
 const LOAD_POLL_MS = 250;
 const CLICK_RETRY_DELAY_MS = 200;
-const READ_PAGE_EXPRESSION = '({ title: document.title, url: location.href, text: document.body ? document.body.innerText : "" })';
-const READY_STATE_EXPRESSION = 'document.readyState';
-// Runs in an isolated world, so the page's own scripts cannot change what it reads.
-const FOCUS_CHECK_EXPRESSION = '(() => { const field = document.activeElement; return { origin: location.origin, tag: field ? field.tagName : "", type: field && field.tagName === "INPUT" ? field.type : "", autocomplete: field && field.tagName === "INPUT" ? (field.autocomplete.trim().toLowerCase().split(/\\s+/).pop() || "") : "" }; })()';
-// Reads what is under the point and what has the focus. It only reads, so the page cannot be changed by it.
-// Only a text field is clicked again, because a second click would toggle a checkbox or press a button twice.
-// The focus is followed into shadow roots and same-origin frames. A frame of another site counts as focused.
-const NON_TEXT_INPUT_TYPES = '["checkbox","radio","button","submit","reset","file","image","color","range","hidden"]';
-const CLICK_FOCUS_EXPRESSION = (pointX: number, pointY: number): string => `(() => {
-    const isText = (element) => Boolean(element) && !element.disabled && !element.readOnly
-        && (element.tagName === "TEXTAREA" || (element.tagName === "INPUT" && !${NON_TEXT_INPUT_TYPES}.includes(element.type)) || element.isContentEditable);
-    const isField = (element) => isText(element) || (Boolean(element) && !element.disabled && element.tagName === "SELECT");
-    const target = document.elementFromPoint(${String(pointX)}, ${String(pointY)});
-    let active = document.activeElement;
-    for (;;) {
-        if (active && active.shadowRoot && active.shadowRoot.activeElement) { active = active.shadowRoot.activeElement; continue; }
-        if (active && active.tagName === "IFRAME") {
-            if (!active.contentDocument) { return { targetIsTextField: isText(target), focusedIsField: true }; }
-            if (active.contentDocument.activeElement) { active = active.contentDocument.activeElement; continue; }
-        }
-        break;
-    }
-    return { targetIsTextField: isText(target), focusedIsField: isField(active) };
-})()`;
 const ISOLATED_WORLD_NAME = 'cloudbot-secret-check';
 // Fields that are not password inputs but still take a secret. The last token of their autocomplete value says so,
 // as in "billing cc-number".
 const SECRET_AUTOCOMPLETE_VALUES = new Set(['current-password', 'new-password', 'one-time-code', 'cc-number', 'cc-csc']);
-const ORIGIN_EXPRESSION = 'location.origin';
-const URL_EXPRESSION = 'location.href';
-const FOCUSED_ELEMENT_EXPRESSION = 'document.activeElement';
 const MAX_LISTED_ELEMENTS = 300;
 const MAX_ELEMENT_NAME_LENGTH = 100;
 const ELEMENT_GONE_MESSAGE = 'That element is gone or hidden. Read the page again for new element numbers.';
@@ -125,42 +108,6 @@ const CLICKABLE_SELECTOR = [
     'a[href]', 'button', 'input:not([type="hidden"])', 'select', 'textarea', 'summary', '[tabindex]:not([tabindex="-1"])', '[contenteditable=""]', '[contenteditable="true"]',
     ...CLICKABLE_ROLES.map(role => `[role="${role}"]`),
 ].join(',');
-// Shared by the scripts below. They run in an isolated world, so page scripts cannot change what they read.
-// The name never reads the value of a field, so a typed password is never listed. Only a button input's value is its label.
-const ELEMENT_HELPERS = `
-    const selector = ${JSON.stringify(CLICKABLE_SELECTOR)};
-    const inputRoles = { checkbox: "checkbox", radio: "radio", submit: "button", button: "button", reset: "button", image: "button", range: "slider", number: "spinbutton", search: "searchbox" };
-    const tagRoles = { A: "link", BUTTON: "button", SELECT: "combobox", TEXTAREA: "textbox", SUMMARY: "button" };
-    const roleOf = (element) => element.getAttribute("role") || (element.tagName === "INPUT" ? (inputRoles[element.type] || "textbox") : tagRoles[element.tagName]) || (element.isContentEditable ? "textbox" : element.tagName.toLowerCase());
-    const textOf = (id) => { const labelElement = document.getElementById(id); return labelElement ? labelElement.innerText : ""; };
-    const nameOf = (element) => {
-        const isField = element.tagName === "INPUT" || element.tagName === "TEXTAREA" || element.tagName === "SELECT";
-        const isButtonInput = element.tagName === "INPUT" && ["submit", "button", "reset"].includes(element.type);
-        const labelledBy = (element.getAttribute("aria-labelledby") || "").split(/\\s+/).filter(Boolean).map(textOf).join(" ");
-        const label = element.labels && element.labels[0] ? element.labels[0].innerText : "";
-        const imageNames = [...element.querySelectorAll("img[alt], [aria-label]")].map(image => image.getAttribute("alt") || image.getAttribute("aria-label") || "");
-        const imageName = imageNames.find(text => text.trim() !== "") || "";
-        const candidates = [element.getAttribute("aria-label"), labelledBy, label, isField ? "" : element.innerText, isButtonInput ? element.value : "", element.getAttribute("placeholder"), element.getAttribute("title"), element.getAttribute("alt"), imageName];
-        return candidates.map(text => (text || "").trim()).find(text => text !== "") || "";
-    };
-    const describe = (element) => ({ role: roleOf(element), name: nameOf(element) });
-`;
-// Only what is on the screen and not covered, such as by a dialog. The rest is listed after a scroll.
-const LIST_ELEMENTS_EXPRESSION = `(() => {
-    ${ELEMENT_HELPERS}
-    const isOnScreen = (element) => {
-        const box = element.getBoundingClientRect();
-        if (box.width === 0 || box.height === 0 || box.bottom <= 0 || box.right <= 0 || box.top >= innerHeight || box.left >= innerWidth) { return false; }
-        const pointX = Math.min(Math.max((box.left + box.right) / 2, 0), innerWidth - 1);
-        const pointY = Math.min(Math.max((box.top + box.bottom) / 2, 0), innerHeight - 1);
-        const hit = document.elementFromPoint(pointX, pointY);
-        return Boolean(hit) && (element.contains(hit) || hit.contains(element));
-    };
-    return [...document.querySelectorAll(selector)].filter(isOnScreen).slice(0, ${String(MAX_LISTED_ELEMENTS)});
-})()`;
-const DESCRIBE_LIST_FUNCTION = `function () { ${ELEMENT_HELPERS} return this.map(describe); }`;
-// The clickable element around the target, such as the button around a clicked label.
-const DESCRIBE_HOLDER_FUNCTION = `function () { ${ELEMENT_HELPERS} const holder = this.closest ? this.closest(selector) : null; return holder ? describe(holder) : null; }`;
 // A user name or a code in a plain field is not as risky as a password, but a search box or a checkbox is still refused.
 const USERNAME_INPUT_TYPES = new Set(['text', 'email', 'tel']);
 const CODE_INPUT_TYPES = new Set(['text', 'tel', 'number']);
@@ -256,7 +203,7 @@ async function createIsolatedContext(page: CdpConnection): Promise<number> {
 
 async function readReadyState(page: CdpConnection): Promise<unknown> {
     try {
-        const result = await page.call('Runtime.evaluate', { expression: READY_STATE_EXPRESSION, returnByValue: true });
+        const result = await evaluateInPage(page, pageReadyState, [], { returnByValue: true });
 
         return readEvaluatedValue(result);
     } catch (error: unknown) {
@@ -433,7 +380,7 @@ class BrowserControl {
     describeTarget(target: BrowserTarget): Promise<string> {
         return this.withPage(async (page) => {
             const contextId = await createIsolatedContext(page);
-            const urlResult = await page.call('Runtime.evaluate', { expression: URL_EXPRESSION, returnByValue: true, contextId });
+            const urlResult = await evaluateInPage(page, pageUrl, [], { contextId, returnByValue: true });
             const url = readEvaluatedValue(urlResult);
             const objectId = await this.findTargetObject(page, contextId, target);
             const element = objectId === '' ? undefined : await this.describeHolder(page, objectId);
@@ -461,7 +408,7 @@ class BrowserControl {
     readPageOrigin(): Promise<string> {
         return this.withPage(async (page) => {
             const contextId = await createIsolatedContext(page);
-            const result = await page.call('Runtime.evaluate', { expression: ORIGIN_EXPRESSION, returnByValue: true, contextId });
+            const result = await evaluateInPage(page, pageOrigin, [], { contextId, returnByValue: true });
             const origin = readEvaluatedValue(result);
 
             if (typeof origin !== 'string' || origin === '' || origin === 'null') {
@@ -513,7 +460,7 @@ class BrowserControl {
     private typeIntoFocusedField(site: string, value: string, rule: FieldRule): Promise<void> {
         return this.withPage(async (page) => {
             const contextId = await createIsolatedContext(page);
-            const result = await page.call('Runtime.evaluate', { expression: FOCUS_CHECK_EXPRESSION, returnByValue: true, contextId });
+            const result = await evaluateInPage(page, pageFocusCheck, [], { contextId, returnByValue: true });
             const focus = readEvaluatedValue(result);
             const pageOrigin = readStringField(focus, 'origin');
 
@@ -572,16 +519,15 @@ class BrowserControl {
             }
         }
 
-        const expression = target.x !== undefined && target.y !== undefined
-            ? `document.elementFromPoint(${String(target.x)}, ${String(target.y)})`
-            : FOCUSED_ELEMENT_EXPRESSION;
-        const found = await page.call('Runtime.evaluate', { expression, contextId });
+        const found = target.x !== undefined && target.y !== undefined
+            ? await evaluateInPage(page, pageElementAtPoint, [target.x, target.y], { contextId })
+            : await evaluateInPage(page, pageActiveElement, [], { contextId });
 
         return readObjectId(found, 'result');
     }
 
     private async describeHolder(page: CdpConnection, objectId: string): Promise<Omit<PageElement, 'ref'> | undefined> {
-        const described = await page.call('Runtime.callFunctionOn', { objectId, functionDeclaration: DESCRIBE_HOLDER_FUNCTION, returnByValue: true });
+        const described = await evaluateInPage(page, pageDescribeElements, [CLICKABLE_SELECTOR], { objectId, returnByValue: true });
         const value = readEvaluatedValue(described);
 
         return readDescription(value);
@@ -597,7 +543,7 @@ class BrowserControl {
         let value: unknown;
 
         try {
-            const result = await page.call('Runtime.evaluate', { expression: CLICK_FOCUS_EXPRESSION(pointX, pointY), returnByValue: true });
+            const result = await evaluateInPage(page, pageClickFocus, [pointX, pointY], { returnByValue: true });
 
             value = readEvaluatedValue(result);
         } catch (error: unknown) {
@@ -616,7 +562,7 @@ class BrowserControl {
     }
 
     private async readPage(page: CdpConnection): Promise<PageText> {
-        const result = await page.call('Runtime.evaluate', { expression: READ_PAGE_EXPRESSION, returnByValue: true });
+        const result = await evaluateInPage(page, pageSnapshot, [], { returnByValue: true });
         const value = readEvaluatedValue(result);
         const fullText = readStringField(value, 'text');
         const isTruncated = fullText.length > MAX_PAGE_TEXT_LENGTH;
@@ -647,14 +593,14 @@ class BrowserControl {
     // The script returns the elements themselves. Each one's number is its backend node id, which DOM.describeNode gives.
     private async readElements(page: CdpConnection): Promise<PageElement[]> {
         const contextId = await createIsolatedContext(page);
-        const listed = await page.call('Runtime.evaluate', { expression: LIST_ELEMENTS_EXPRESSION, contextId });
+        const listed = await evaluateInPage(page, pageClickableElements, [CLICKABLE_SELECTOR, MAX_LISTED_ELEMENTS], { contextId });
         const listId = readObjectId(listed, 'result');
 
         if (listId === '') {
             return [];
         }
 
-        const described = await page.call('Runtime.callFunctionOn', { objectId: listId, functionDeclaration: DESCRIBE_LIST_FUNCTION, returnByValue: true });
+        const described = await evaluateInPage(page, pageDescribeElements, [CLICKABLE_SELECTOR], { objectId: listId, returnByValue: true });
         const descriptions = readEvaluatedValue(described);
         const properties = await page.call('Runtime.getProperties', { objectId: listId, ownProperties: true });
         const propertyList = readObject(properties, 'result');

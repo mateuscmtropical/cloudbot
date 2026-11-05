@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto';
 
 import { maskSensitiveNumbers } from '../sensitive/sensitiveNumbers.ts';
 import type { CdpConnection } from './CdpConnection.ts';
+import { evaluateInPage } from './evaluateInPage.ts';
+import { pageRecordSteps } from './page/pageRecordSteps.ts';
 
 // One thing the owner did on the screen while it was recorded.
 type RecordedStep
@@ -16,49 +18,10 @@ const MAX_STEPS = 200;
 const MAX_TEXT_LENGTH = 200;
 const MAX_LABEL_LENGTH = 80;
 
-// Runs in every page while the recording is on. It reports clicks, changed fields and form submits through the binding.
-// The value of a field that looks secret never leaves the page: the type, the autocomplete hint and the field names
-// decide. The page itself can call the binding too, so a recorded step is a claim of the page, never proof.
+// Page.addScriptToEvaluateOnNewDocument takes text only, so the arguments are written in as literals here.
+// The page function itself gets them from its arguments, never from this file.
 function buildRecorderScript(bindingName: string): string {
-    return `(() => {
-    const report = window[${JSON.stringify(bindingName)}];
-    const flagName = ${JSON.stringify(`${bindingName}_on`)};
-    if (typeof report !== 'function' || window[flagName] === true) { return; }
-    window[flagName] = true;
-    const SECRET_WORDS = /pass|pwd|secret|token|otp|one-time|code|cvc|cvv|card|cc-|pin|security|senha|codigo|código|cartao|cartão|cpf/i;
-    const short = (text) => String(text || '').replace(/\\s+/g, ' ').trim().slice(0, ${String(MAX_LABEL_LENGTH)});
-    const labelOf = (element) => {
-        if (!element || element.nodeType !== 1) { return ''; }
-        const labelled = element.labels && element.labels[0] ? element.labels[0].innerText : '';
-        // A field's value is never a label: it could be the password or code that was just typed. A submit or button
-        // input shows its value as its caption, so that value is the label.
-        const inputType = String(element.type || '').toLowerCase();
-        const isButtonInput = element.tagName === 'INPUT' && (inputType === 'submit' || inputType === 'button');
-        const isField = ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName) && !isButtonInput;
-        const text = isButtonInput ? element.value : (isField ? '' : element.innerText);
-        return short(element.getAttribute('aria-label') || labelled || element.getAttribute('placeholder')
-            || element.getAttribute('name') || element.getAttribute('title') || text
-            || element.getAttribute('id') || element.tagName.toLowerCase());
-    };
-    const isSecretField = (element) => {
-        const type = String(element.type || '').toLowerCase();
-        const hints = [element.getAttribute('autocomplete'), element.getAttribute('name'), element.getAttribute('id'),
-            element.getAttribute('aria-label'), element.getAttribute('placeholder')].join(' ');
-        return type === 'password' || type === 'hidden' || SECRET_WORDS.test(hints);
-    };
-    const send = (step) => { try { report(JSON.stringify(step)); } catch (error) { /* The recording ended. */ } };
-    document.addEventListener('click', (event) => {
-        const target = event.target && event.target.closest ? event.target.closest('a,button,input,select,textarea,label,[role],[onclick]') || event.target : event.target;
-        send({ kind: 'click', target: labelOf(target) });
-    }, true);
-    document.addEventListener('change', (event) => {
-        const field = event.target;
-        if (!field || !('value' in field)) { return; }
-        if (isSecretField(field)) { send({ kind: 'secret', field: labelOf(field) }); return; }
-        send({ kind: 'type', field: labelOf(field), text: String(field.value).slice(0, ${String(MAX_TEXT_LENGTH)}) });
-    }, true);
-    document.addEventListener('submit', (event) => { send({ kind: 'submit', target: labelOf(event.target) }); }, true);
-})();`;
+    return `(${pageRecordSteps.toString()})(${JSON.stringify(bindingName)}, ${String(MAX_LABEL_LENGTH)}, ${String(MAX_TEXT_LENGTH)});`;
 }
 
 // Labels are page text too, so a card, CPF or SSN number shown on a button or a field label is masked as well.
@@ -166,7 +129,7 @@ class ScreenRecorder {
             await page.call('Page.enable');
             await page.call('Runtime.addBinding', { name: bindingName });
             await page.call('Page.addScriptToEvaluateOnNewDocument', { source: script });
-            await page.call('Runtime.evaluate', { expression: script });
+            await evaluateInPage(page, pageRecordSteps, [bindingName, MAX_LABEL_LENGTH, MAX_TEXT_LENGTH]);
         } catch (error: unknown) {
             page.close();
             throw error;

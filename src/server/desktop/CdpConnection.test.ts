@@ -46,12 +46,12 @@ describe('CdpConnection', () => {
     it('rejects open calls when the socket closes', async () => {
         const { factory, sockets } = createFakeSocketFactory(() => undefined);
         const connection = await CdpConnection.open('ws://page', factory);
-        const pendingCall = connection.call('Runtime.evaluate');
+        const pendingCall = connection.call('Runtime.callFunctionOn');
 
         sockets[0]?.close();
 
         await expect(pendingCall).rejects.toThrow('closed');
-        await expect(connection.call('Runtime.evaluate')).rejects.toThrow('closed');
+        await expect(connection.call('Runtime.callFunctionOn')).rejects.toThrow('closed');
     });
 
     it('ignores events, unknown ids and text that is not JSON', async () => {
@@ -64,7 +64,7 @@ describe('CdpConnection', () => {
         socket?.emit('message', { data: 'not json' });
         socket?.emit('message', { data: 42 });
 
-        await expect(connection.call('Runtime.evaluate')).resolves.toBe('done');
+        await expect(connection.call('Runtime.callFunctionOn')).resolves.toBe('done');
     });
 
     it('passes events to the listener', async () => {

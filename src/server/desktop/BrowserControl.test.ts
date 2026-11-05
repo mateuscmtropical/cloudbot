@@ -4,6 +4,12 @@ import { BrowserControl, BrowserError, MAX_PAGE_TEXT_LENGTH, devtoolsSocketUrl, 
 import { createFakeSocketFactory } from './testCdp.ts';
 import type { FakeCdpSocket } from './testCdp.ts';
 import type { CdpAnswer, SentCall } from './testCdp.ts';
+import { pageActiveElement } from './page/pageActiveElement.ts';
+import { pageClickableElements } from './page/pageClickableElements.ts';
+import { pageElementAtPoint } from './page/pageElementAtPoint.ts';
+import { pageOrigin, pageUrl } from './page/pageLocation.ts';
+import { pageReadyState } from './page/pageReadyState.ts';
+import { pageSnapshot } from './page/pageSnapshot.ts';
 
 interface FetchCall {
     url: string;
@@ -32,13 +38,26 @@ function createFetch(targets: unknown, newTarget: unknown = {}): { fetchFunction
     return { fetchFunction, calls };
 }
 
+// A page function is sent as callFunctionOn with its source. Its own world is found first with a global object lookup.
+function isPageCall(call: SentCall, pageFunction: { toString(): string }): boolean {
+    return call.method === 'Runtime.callFunctionOn' && call.params.functionDeclaration === pageFunction.toString();
+}
+
+function isGlobalLookup(call: SentCall): boolean {
+    return call.method === 'Runtime.evaluate' && call.params.expression === 'globalThis';
+}
+
 function pageAnswer(pageValue: unknown): CdpAnswer {
     return (call: SentCall) => {
-        if (call.method === 'Runtime.evaluate' && call.params.expression === 'document.readyState') {
+        if (isGlobalLookup(call)) {
+            return { result: { result: { objectId: 'global-1' } } };
+        }
+
+        if (isPageCall(call, pageReadyState)) {
             return { result: { result: { value: 'complete' } } };
         }
 
-        if (call.method === 'Runtime.evaluate') {
+        if (call.method === 'Runtime.callFunctionOn') {
             return { result: { result: { value: pageValue } } };
         }
 
@@ -192,7 +211,7 @@ describe('BrowserControl', () => {
 
     it('stops waiting for a page that never finishes loading', async () => {
         const { browser, sockets } = createBrowser((call) => {
-            if (call.method === 'Runtime.evaluate' && call.params.expression === 'document.readyState') {
+            if (isPageCall(call, pageReadyState)) {
                 return { result: { result: { value: 'loading' } } };
             }
 
@@ -202,7 +221,7 @@ describe('BrowserControl', () => {
         await expect(browser.open('https://slow.example')).resolves.toMatchObject({ title: 'Slow' });
 
         const readyStateCalls = actionCalls(sockets.sockets[0])
-            .filter(call => call.params.expression === 'document.readyState');
+            .filter(call => isPageCall(call, pageReadyState));
 
         expect(readyStateCalls.length)
             .toBe(60);
@@ -245,7 +264,7 @@ describe('BrowserControl', () => {
             { targetIsTextField: true, focusedIsField: false },
             { targetIsTextField: true, focusedIsField: true },
         ];
-        const { browser, sockets } = createBrowser(call => (call.method === 'Runtime.evaluate'
+        const { browser, sockets } = createBrowser(call => (call.method === 'Runtime.callFunctionOn'
             ? { result: { result: { value: focusStates.shift() } } }
             : { result: {} }));
 
@@ -256,7 +275,7 @@ describe('BrowserControl', () => {
     });
 
     it('clicks a field only twice and then reports that nothing has the focus', async () => {
-        const { browser, sockets } = createBrowser(call => (call.method === 'Runtime.evaluate'
+        const { browser, sockets } = createBrowser(call => (call.method === 'Runtime.callFunctionOn'
             ? { result: { result: { value: { targetIsTextField: true, focusedIsField: false } } } }
             : { result: {} }));
 
@@ -267,7 +286,7 @@ describe('BrowserControl', () => {
     });
 
     it('does not fail or click again when the click started a navigation', async () => {
-        const { browser, sockets } = createBrowser(call => (call.method === 'Runtime.evaluate'
+        const { browser, sockets } = createBrowser(call => (call.method === 'Runtime.callFunctionOn'
             ? { error: { message: 'Execution context was destroyed.' } }
             : { result: {} }));
 
@@ -370,7 +389,7 @@ describe('BrowserControl', () => {
     it('keeps waiting when the page replaces itself while it loads', async () => {
         const readyStates = ['gone', 'complete'];
         const { browser } = createBrowser((call) => {
-            if (call.params.expression === 'document.readyState') {
+            if (isPageCall(call, pageReadyState)) {
                 const next = readyStates.shift();
 
                 return next === 'gone'
@@ -462,7 +481,7 @@ describe('BrowserControl', () => {
                 return { result: { executionContextId: 7 } };
             }
 
-            if (call.method === 'Runtime.evaluate') {
+            if (call.method === 'Runtime.callFunctionOn') {
                 return { result: { result: { value: focus } } };
             }
 
@@ -482,7 +501,7 @@ describe('BrowserControl', () => {
 
         const passwordCalls = actionCalls(passwordField.sockets.sockets[0]);
 
-        expect(passwordCalls.find(call => call.method === 'Runtime.evaluate')?.params.contextId)
+        expect(passwordCalls.find(call => call.method === 'Runtime.callFunctionOn')?.params.executionContextId)
             .toBe(7);
         expect(passwordCalls.at(-1))
             .toMatchObject({ method: 'Input.insertText', params: { text: 'fake-password-1' } });
@@ -508,7 +527,7 @@ describe('BrowserControl', () => {
                 return { result: { executionContextId: 9 } };
             }
 
-            if (call.method === 'Runtime.evaluate') {
+            if (call.method === 'Runtime.callFunctionOn') {
                 return { result: { result: { value: origin } } };
             }
 
@@ -520,8 +539,8 @@ describe('BrowserControl', () => {
         await expect(real.browser.readPageOrigin())
             .resolves.toBe('https://github.com');
         expect(actionCalls(real.sockets.sockets[0])
-            .find(call => call.method === 'Runtime.evaluate')?.params)
-            .toMatchObject({ expression: 'location.origin', contextId: 9 });
+            .find(call => call.method === 'Runtime.callFunctionOn')?.params)
+            .toMatchObject({ functionDeclaration: pageOrigin.toString(), executionContextId: 9 });
         await expect(blank.browser.readPageOrigin())
             .rejects.toThrow('no site of its own');
     });
@@ -536,7 +555,7 @@ describe('BrowserControl', () => {
                 return { result: { executionContextId: 7 } };
             }
 
-            if (call.method === 'Runtime.evaluate') {
+            if (call.method === 'Runtime.callFunctionOn') {
                 return { result: { result: { value: focus } } };
             }
 
@@ -593,19 +612,23 @@ function elementsAnswer(overrides = new Map<string, CdpAnswer>()): CdpAnswer {
             return { result: { executionContextId: 7 } };
         }
 
-        if (call.method === 'Runtime.evaluate' && call.params.expression === 'location.href') {
+        if (isGlobalLookup(call)) {
+            return { result: { result: { objectId: 'global-1' } } };
+        }
+
+        if (isPageCall(call, pageUrl)) {
             return { result: { result: { value: 'https://chat.example/' } } };
         }
 
-        if (call.method === 'Runtime.evaluate' && typeof call.params.expression === 'string' && call.params.expression.includes('querySelectorAll(selector)')) {
+        if (isPageCall(call, pageClickableElements)) {
             return { result: { result: { objectId: 'list-1' } } };
         }
 
-        if (call.method === 'Runtime.evaluate' && call.params.expression === 'document.activeElement') {
+        if (isPageCall(call, pageActiveElement)) {
             return { result: { result: { objectId: 'focused-1' } } };
         }
 
-        if (call.method === 'Runtime.evaluate') {
+        if (isPageCall(call, pageSnapshot)) {
             return { result: { result: { value: { title: 'Chat', url: 'https://chat.example/', text: 'Hi' } } } };
         }
 
@@ -642,7 +665,7 @@ describe('BrowserControl elements', () => {
             .toEqual([{ ref: 41, role: 'button', name: 'Send' }, { ref: 42, role: 'textbox', name: 'Type a message' }]);
 
         const listCall = actionCalls(sockets.sockets[0])
-            .find(call => call.method === 'Runtime.evaluate' && call.params.contextId === 7);
+            .find(call => isPageCall(call, pageClickableElements) && call.params.executionContextId === 7);
 
         expect(listCall)
             .toBeDefined();
@@ -696,12 +719,14 @@ describe('BrowserControl elements', () => {
         await browser.describeTarget({ x: 5, y: 6 });
         await expect(browser.describeTarget({})).resolves.toContain('textbox "Type a message"');
 
-        const expressions = sockets.sockets.flatMap(socket => actionCalls(socket))
-            .filter(call => call.method === 'Runtime.evaluate')
-            .map(call => call.params.expression);
+        const sent = sockets.sockets.flatMap(socket => actionCalls(socket))
+            .filter(call => call.method === 'Runtime.callFunctionOn');
+        const pointCall = sent.find(call => isPageCall(call, pageElementAtPoint));
 
-        expect(expressions)
-            .toEqual(expect.arrayContaining(['document.elementFromPoint(5, 6)', 'document.activeElement']));
+        expect(pointCall?.params)
+            .toMatchObject({ arguments: [{ value: 5 }, { value: 6 }] });
+        expect(sent.some(call => isPageCall(call, pageActiveElement)))
+            .toBe(true);
     });
 
     it('says unknown when the element number is from an old page', async () => {

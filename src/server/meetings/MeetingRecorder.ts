@@ -2,7 +2,9 @@ import type { CdpConnection } from '../desktop/CdpConnection.ts';
 import { createIsolatedContext, readEvaluatedValue } from '../desktop/BrowserControl.ts';
 import type { BrowserControl } from '../desktop/BrowserControl.ts';
 import type { TranscribeAudio } from '../voice/transcribeAudio.ts';
-import { PAGE_URL_EXPRESSION, RECORDER_START_EXPRESSION, recorderTakeExpression } from './meetingRecorderScript.ts';
+import { evaluateInPage } from '../desktop/evaluateInPage.ts';
+import { pageUrl } from '../desktop/page/pageLocation.ts';
+import { pageStartMeetingRecording, pageTakeMeetingRecording } from '../desktop/page/pageMeetingRecording.ts';
 
 interface MeetingRecorderOptions {
     browser: Pick<BrowserControl, 'connectPage'>;
@@ -125,7 +127,7 @@ class MeetingRecorder {
         const page = await this.options.browser.connectPage();
 
         try {
-            const urlResult = await page.call('Runtime.evaluate', { expression: PAGE_URL_EXPRESSION, returnByValue: true });
+            const urlResult = await evaluateInPage(page, pageUrl, [], { returnByValue: true });
             const url = readEvaluatedValue(urlResult);
 
             if (typeof url !== 'string' || !isMeetingUrl(url)) {
@@ -134,7 +136,7 @@ class MeetingRecorder {
 
             const contextId = await createIsolatedContext(page);
 
-            await page.call('Runtime.evaluate', { expression: RECORDER_START_EXPRESSION, contextId, awaitPromise: true, returnByValue: true, userGesture: true });
+            await evaluateInPage(page, pageStartMeetingRecording, [], { contextId, awaitPromise: true, returnByValue: true, userGesture: true });
 
             const startedAt = this.now();
             const recording: MeetingRecording = {
@@ -233,10 +235,9 @@ class MeetingRecorder {
     // Undefined when the page left the meeting or the browser closed. The parts so far are kept.
     private async takeAudio(recording: MeetingRecording, keepRecording: boolean): Promise<TakenSegment | undefined> {
         const offsetMs = recording.segmentStartedAt - recording.startedAt;
-        const expression = recorderTakeExpression(keepRecording);
 
         try {
-            const result = await recording.page.call('Runtime.evaluate', { expression, contextId: recording.contextId, awaitPromise: true, returnByValue: true }, EVALUATE_TIMEOUT_MS);
+            const result = await evaluateInPage(recording.page, pageTakeMeetingRecording, [keepRecording], { contextId: recording.contextId, awaitPromise: true, returnByValue: true, timeoutMs: EVALUATE_TIMEOUT_MS });
             const value = readEvaluatedValue(result);
             const segment = readTakenSegment(value);
 
