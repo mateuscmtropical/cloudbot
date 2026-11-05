@@ -9,7 +9,7 @@ import { z } from 'zod/v4';
 
 import { AppProxy } from '../apps/AppProxy.ts';
 import type { AgentEvent } from './AgentEvent.ts';
-import type { ToolCall } from './AgentRunner.ts';
+import type { ToolCall, TurnInbox } from './AgentRunner.ts';
 import { CodexEngine } from './CodexEngine.ts';
 import { CODEX_PROTOCOL_VERSION } from './codexProtocol.ts';
 import { startLoopbackToolServer } from './createLoopbackToolServer.ts';
@@ -29,6 +29,7 @@ const PATCH = `*** Begin Patch\n*** Add File: ${PATCHED_FILE}\n+hello\n*** End P
 const COMMANDS = ['ls', 'cat /etc/hostname', 'git status', 'grep -r secret .', 'base64 /etc/hostname', 'cat ~/.ssh/id_rsa', `touch ${MARKER_FILE}`];
 const TOKEN_PROBE = 'echo token=$CLOUDBOT_TOOLS_TOKEN';
 const REMOTE_SERVER_NAME = 'remote';
+const STEER_TEXT = 'canary message during the turn';
 const REMOTE_RESOURCE_URI = 'file:///canary-secret';
 const REMOTE_PROTOCOL_VERSION = '2025-06-18';
 const MODEL_CALLS = [
@@ -168,6 +169,62 @@ function startFakeRemoteServer(received: RemoteMessage[]): Promise<{ url: URL; c
         });
     });
 }
+
+describe.skipIf(CODEX_PATH === '')('Codex canary for a message during a turn', () => {
+    it('takes the owner message into the running turn, so the model reads it', async () => {
+        const requests: ModelRequest[] = [];
+        const delivered: boolean[] = [];
+        const folder = mkdtempSync(join(tmpdir(), 'cloudbot-codex-steer-canary-'));
+        const workspaceFolder = mkdtempSync(join(folder, 'workspace-'));
+        const model = await startFakeModel(requests, [{ name: 'exec_command', arguments: JSON.stringify({ cmd: 'ls' }) }]);
+        const inbox: TurnInbox = {};
+        const engine = new CodexEngine({
+            codexPath: CODEX_PATH,
+            codexHomeFor: () => join(folder, 'codex-home'),
+            environment: { PATH: process.env.PATH ?? '', FAKE_PROVIDER_KEY: FAKE_KEY, NO_PROXY: '127.0.0.1', no_proxy: '127.0.0.1' },
+            extraConfig: [
+                'model_provider="fake"',
+                'model="fake-model"',
+                'model_providers.fake.name="fake"',
+                `model_providers.fake.base_url="${model.url}"`,
+                'model_providers.fake.wire_api="responses"',
+                'model_providers.fake.env_key="FAKE_PROVIDER_KEY"',
+            ],
+        });
+        const turn = engine.runTurn({
+            botId: 'canary',
+            workspaceDir: workspaceFolder,
+            prompt: 'Run the canary.',
+            inbox,
+            abortSignal: new AbortController().signal,
+            // The turn is surely running while the review waits, so the message arrives in the middle of it.
+            reviewToolCall: async () => {
+                const isDelivered = await inbox.deliver?.(STEER_TEXT);
+
+                delivered.push(isDelivered === true);
+
+                return { isAllowed: false, reason: 'The canary refuses this call.' };
+            },
+        });
+
+        // The events are an async iterator, so `for await` is the only loop form that fits.
+        for await (const event of turn) {
+            expect(event.type)
+                .not.toBe('turn_error');
+        }
+
+        const lastInput = JSON.stringify(requests.at(-1)?.input);
+
+        expect(delivered)
+            .toEqual([true]);
+        expect(lastInput)
+            .toContain(STEER_TEXT);
+        expect(inbox.deliver)
+            .toBeUndefined();
+        model.close();
+        rmSync(folder, { recursive: true, force: true });
+    }, 120000);
+});
 
 // Auto and YOLO: Codex never asks about a tool call, so CloudBot must review it when it reaches the server.
 const MODE_MODEL_CALLS = [

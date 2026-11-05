@@ -8,7 +8,7 @@ import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AgentEvent } from './AgentEvent.ts';
-import type { ToolCallDecision, TurnRequest } from './AgentRunner.ts';
+import type { ToolCallDecision, TurnInbox, TurnRequest } from './AgentRunner.ts';
 import { CodexEngine, buildCodexArguments } from './CodexEngine.ts';
 import { ProviderModelCatalogs } from '../providers/ProviderModelCatalogs.ts';
 import type { SpawnFunction } from './ClaudeCliEngine.ts';
@@ -101,6 +101,10 @@ class FakeAppServer extends EventEmitter {
             this.say({ id: message.id, result: { turn: { id: 'turn-1', status: 'inProgress' } } });
             this.say({ method: 'turn/started', params: { threadId: 'thread-1', turn: { id: 'turn-1' } } });
             this.onTurn(this);
+        }
+
+        if (message.method === 'turn/steer') {
+            this.say({ id: message.id, result: { turnId: 'turn-1' } });
         }
 
         if (message.method === 'turn/interrupt') {
@@ -233,6 +237,32 @@ describe('CodexEngine', () => {
 
         expect(threadStart?.params)
             .toMatchObject(expected);
+    });
+
+    it('hands an owner message to the running turn, and closes the inbox when the turn ends', async () => {
+        const inbox: TurnInbox = {};
+        const delivered: boolean[] = [];
+        const { engine, servers } = makeEngine((server) => {
+            // The inbox opens right after the turn answers, so it is read a moment later.
+            setTimeout(() => {
+                void Promise.resolve(inbox.deliver?.('one more thing'))
+                    .then((isDelivered) => {
+                        delivered.push(isDelivered === true);
+                        completeTurn(server);
+                    });
+            }, 10);
+        });
+
+        await collect(engine.runTurn(makeRequest({ inbox })));
+
+        const steer = servers[0]?.sent.find(message => message.method === 'turn/steer');
+
+        expect(steer?.params)
+            .toEqual({ threadId: 'thread-1', expectedTurnId: 'turn-1', input: [{ type: 'text', text: 'one more thing', text_elements: [] }] });
+        expect(delivered)
+            .toEqual([true]);
+        expect(inbox.deliver)
+            .toBeUndefined();
     });
 
     it('starts a thread that asks before every call, streams the turn and reports the thread as the session', async () => {
