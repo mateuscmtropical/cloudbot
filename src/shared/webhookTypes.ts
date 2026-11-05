@@ -1,5 +1,5 @@
 // Why a call to a webhook was refused. The text is fixed, so no body, token or delivery id is ever shown.
-type WebhookRefusalReason = 'rate limit' | 'queue full' | 'body too large' | 'not ready';
+type WebhookRefusalReason = 'rate limit' | 'queue full' | 'body too large' | 'not ready' | 'bad signature';
 
 // One refused call, with the time it was refused. Kept in memory, so a restart forgets it.
 interface WebhookRefusal {
@@ -9,6 +9,8 @@ interface WebhookRefusal {
 
 // The name of a caller no known header or ?source= names.
 const UNKNOWN_PROVIDER = 'unknown';
+// The providers whose signatures CloudBot can check.
+const SIGNED_WEBHOOK_PROVIDERS = ['github', 'gitlab', 'stripe', 'slack', 'shopify', 'linear'];
 // The rule for any caller that has no rule of its own.
 const ANY_PROVIDER = '*';
 
@@ -39,6 +41,8 @@ interface BotWebhook {
     refusals: WebhookRefusal[];
     rules: WebhookRule[];
     calls: WebhookCall[];
+    // The providers whose calls must carry a right signature. The secrets themselves are never listed.
+    signedProviders: string[];
 }
 
 // The create response. The URL is shown once, so the web app keeps it only until the owner hides it.
@@ -46,5 +50,5 @@ interface CreatedBotWebhook extends BotWebhook {
     url: string;
 }
 
-export { ANY_PROVIDER, UNKNOWN_PROVIDER };
+export { ANY_PROVIDER, SIGNED_WEBHOOK_PROVIDERS, UNKNOWN_PROVIDER };
 export type { BotWebhook, CreatedBotWebhook, WebhookCall, WebhookCaller, WebhookRefusal, WebhookRefusalReason, WebhookRule };

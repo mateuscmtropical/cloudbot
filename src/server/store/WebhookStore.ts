@@ -74,6 +74,19 @@ class WebhookStore {
         return updatedRows[0];
     }
 
+    // Returns undefined when the bot has no webhook with this id.
+    async setSigningSecrets(botId: string, webhookId: string, signingSecrets: Record<string, string>): Promise<WebhookRecord | undefined> {
+        const botCondition = eq(webhooks.botId, botId);
+        const idCondition = eq(webhooks.id, webhookId);
+        const webhookCondition = and(botCondition, idCondition);
+        const updatedRows = await this.database.update(webhooks)
+            .set({ signingSecrets })
+            .where(webhookCondition)
+            .returning();
+
+        return updatedRows[0];
+    }
+
     // Notes a call and removes what passed the retention, of every webhook, and what is past the limit of this one.
     async addCall(webhookId: string, caller: WebhookCaller): Promise<void> {
         const time = this.now();

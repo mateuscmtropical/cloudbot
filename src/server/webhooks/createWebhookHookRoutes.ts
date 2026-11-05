@@ -6,6 +6,7 @@ import type { WebhookRecord, WebhookStore } from '../store/WebhookStore.ts';
 import { describeWebhookCaller, readWebhookCaller } from './webhookCaller.ts';
 import { buildWebhookMessage } from './webhookMessage.ts';
 import { DeliveryMemory, WebhookRefusalLog } from './webhookMemory.ts';
+import { checkWebhookSignature } from './webhookSignature.ts';
 import { hashWebhookToken } from './webhookToken.ts';
 import { BotDeletingError } from '../bots/BotDeletingError.ts';
 
@@ -60,6 +61,7 @@ const TOO_MANY: WebhookHookErrorResponse = { error: 'This bot got too many webho
 const QUEUE_FULL: WebhookHookErrorResponse = { error: 'This bot has too many webhook messages waiting. Wait for them to finish, then try again.' };
 const NOT_READY: WebhookHookErrorResponse = { error: 'CloudBot is starting. Try again in a moment.' };
 const BOT_MISSING: WebhookHookErrorResponse = { error: 'The bot of this webhook no longer exists.' };
+const BAD_SIGNATURE: WebhookHookErrorResponse = { error: 'The signature of this call is missing or wrong.' };
 const DUPLICATE: WebhookHookDuplicateResponse = { status: 'duplicate' };
 
 // Counts the calls of each bot in the last minute. Calls past the limit are refused until old ones age out.
@@ -169,12 +171,27 @@ function createWebhookHookRoutes(options: WebhookHookRoutesOptions): Hono<Webhoo
             changeInFlight(webhook.botId, 1);
 
             try {
-                const body = await context.req.text();
+                // A signature covers the bytes as sent, so they are read as they are and turned into text only after.
+                const bodyBytes = await context.req.arrayBuffer();
+                const rawBody = Buffer.from(bodyBytes);
+                const body = rawBody.toString('utf8');
                 const source = context.req.query('source');
-                const caller = readWebhookCaller(name => context.req.header(name), source, body);
+                const readHeader = (name: string): string | undefined => context.req.header(name);
+                const caller = readWebhookCaller(readHeader, source, body);
+                const secret = webhook.signingSecrets[caller.provider];
+                const callTime = now();
+                const isSigned = secret !== undefined && checkWebhookSignature(caller.provider, secret, readHeader, rawBody, callTime);
+
+                // A provider with a secret must sign, so a caller that only claims to be it gets no rule of it.
+                if (secret !== undefined && !isSigned) {
+                    refusals.record(webhook.id, 'bad signature');
+
+                    return context.json(BAD_SIGNATURE, 401);
+                }
+
                 const rule = webhook.rules[caller.provider] ?? webhook.rules[ANY_PROVIDER];
                 const callerText = describeWebhookCaller(caller);
-                const message = buildWebhookMessage(webhook.name, body, callerText, rule);
+                const message = buildWebhookMessage(webhook.name, body, callerText, rule, isSigned);
                 let sent: unknown;
 
                 try {

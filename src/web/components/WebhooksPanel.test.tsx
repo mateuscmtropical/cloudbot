@@ -12,6 +12,7 @@ const WEBHOOK = {
     refusals: [],
     rules: [{ provider: 'github', instruction: 'Run the tests' }],
     calls: [{ time: Date.parse('2026-11-05T10:00:00.000Z'), provider: 'github', event: 'push', address: '203.0.113.9', userAgent: 'GitHub-Hookshot/1' }],
+    signedProviders: [],
 };
 
 function stubFetch(handler: (path: string, init: RequestInit | undefined) => Response): ReturnType<typeof vi.fn> {
@@ -71,6 +72,23 @@ describe('WebhooksPanel', () => {
             .toBeTruthy();
         expect(fetchStub)
             .toHaveBeenCalledWith('/api/bots/bot-1/webhooks/hook-1/rules/stripe', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ instruction: 'Note the payment' }) }));
+    });
+
+    it('saves a signing secret and lists only the provider', async () => {
+        const fetchStub = stubFetch((_path, init) => (init?.method === 'PUT' ? Response.json({ ...WEBHOOK, signedProviders: ['stripe'] }) : Response.json([WEBHOOK])));
+
+        render(<WebhooksPanel bot={BOT} onClose={vi.fn()} />);
+        await screen.findByText('Run the tests');
+        fireEvent.change(screen.getByLabelText('Signed provider'), { target: { value: 'stripe' } });
+        fireEvent.change(screen.getByLabelText('Signing secret'), { target: { value: 'whsec_abc' } });
+        fireEvent.submit(screen.getByRole('form', { name: 'Add a signing secret to deploys' }));
+
+        expect(await screen.findByText('Calls that claim this provider need its signature.'))
+            .toBeTruthy();
+        expect(fetchStub)
+            .toHaveBeenCalledWith('/api/bots/bot-1/webhooks/hook-1/secrets/stripe', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ secret: 'whsec_abc' }) }));
+        expect(screen.getByLabelText<HTMLInputElement>('Signing secret').value)
+            .toBe('');
     });
 
     it('removes a rule by saving an empty instruction, and shows a refusal', async () => {

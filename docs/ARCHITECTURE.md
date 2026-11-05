@@ -1153,6 +1153,14 @@ name itself with `?source=name` in the URL. Anyone with the URL can claim any of
 this, so it never proves who called. The last 50 calls of each webhook stay in
 `webhook_calls` for 30 days, for the Webhooks page and `webhook_list`.
 
+The owner can save a signing secret for GitHub, GitLab, Stripe, Slack, Shopify or
+Linear on the Webhooks page. A call that names that provider must then carry a
+right signature, checked on the raw body by `checkWebhookSignature`, or it is
+refused with 401. Stripe and Slack also sign a time, and a signature older than
+five minutes is refused. GitLab sends the secret itself, so it proves the sender
+but not the body. A signed call says so in the message. The bot never sees or sets
+a secret, and `webhook_list` names only the providers that have one.
+
 The owner or the bot, with `webhook_rule_set`, can save an instruction per provider,
 and `*` for any other caller. The instruction goes on the first line of the
 message, above the outside text mark, where nothing a caller sends can sit. The
