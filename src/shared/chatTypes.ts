@@ -1,4 +1,4 @@
-import type { MascotColorName, MascotEyes, MascotShape } from './mascot.ts';
+import type { MascotBolt, MascotColorName, MascotEyes, MascotShape, MascotWeather } from './mascot.ts';
 import type { TaskCard } from './taskTypes.ts';
 
 type ChatRole = 'user' | 'assistant' | 'system';
@@ -133,6 +133,8 @@ interface BotSummary {
     mascotColor: MascotColorName;
     mascotShape: MascotShape;
     mascotEyes: MascotEyes;
+    mascotWeather: MascotWeather;
+    mascotBolt: MascotBolt;
     lastMessagePreview: string;
     lastActivityAt?: number;
     hasUnread: boolean;

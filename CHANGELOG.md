@@ -29,6 +29,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- Each cloud shape has its own weather: lightning, rain, snow, sun, wind, bubbles or a rainbow. Pick another one in the bot's profile, or ask the bot, and it stays on while the bot rests. Lightning goes down by default, and you can send it up, left, right or all around.
 - The clouds have moods. A quiet chat falls asleep with drifting letters, and a chat you just left stays awake for a minute and nods off first. Some days a bot has a cold and sneezes small lightning bolts. Rain falls after an error, a question mark floats while a bot waits for you, and stars pop when a turn ends.
 - Messages between bots now look like messages. The bot that sent one shows beside it with its name, instead of a gray line of text.
 - Panel headers, form fields and text buttons now share one component each, so they look and behave the same everywhere. Buttons in Connect apps, the screen panel and the secret forms get the same press feedback and focus ring as the rest of the app.

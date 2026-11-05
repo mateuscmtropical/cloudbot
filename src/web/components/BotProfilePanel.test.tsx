@@ -12,7 +12,7 @@ const BOT: BotSummary = {
     name: 'Outbound Prospecting',
     title: 'Assistant',
     mascotColor: 'pink',
-    mascotShape: 'bubble', mascotEyes: 'smile',
+    mascotShape: 'bubble', mascotEyes: 'smile', mascotWeather: 'auto', mascotBolt: 'down',
     lastMessagePreview: '',
     hasUnread: false,
     lastMessageSequence: 0,
@@ -61,6 +61,37 @@ describe('BotProfilePanel', () => {
             .toHaveBeenCalledOnce();
     });
 
+    it('saves a chosen weather, and asks where lightning goes only when the weather is lightning', async () => {
+        const onChangeMascot = vi.fn(() => Promise.resolve(undefined));
+
+        render(
+            <BotProfilePanel
+                bot={BOT}
+                onClose={vi.fn()}
+                onRenameBot={vi.fn(() => Promise.resolve(undefined))}
+                onChangeMascot={onChangeMascot}
+                onDeleteBot={vi.fn(() => Promise.resolve(undefined))}
+                onOpenConnectApps={vi.fn()}
+                onOpenScreen={vi.fn()}
+                pushControls={createPushControls()}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+        expect(screen.queryByRole('group', { name: 'Lightning goes' }))
+            .toBeNull();
+
+        fireEvent.click(screen.getByRole('radio', { name: 'lightning' }));
+        fireEvent.click(screen.getByRole('radio', { name: 'up' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        await waitFor(() => {
+            expect(onChangeMascot)
+                .toHaveBeenCalledWith(BOT.id, { color: BOT.mascotColor, shape: BOT.mascotShape, eyes: BOT.mascotEyes, weather: 'lightning', bolt: 'up' });
+        });
+    });
+
     it('turns Edit into Save, saves the name, the color and the shape, then shows Edit again', async () => {
         const onRenameBot = vi.fn(() => Promise.resolve(undefined));
         const onChangeMascot = vi.fn(() => Promise.resolve(undefined));
@@ -93,7 +124,7 @@ describe('BotProfilePanel', () => {
         expect(onRenameBot)
             .toHaveBeenCalledWith(BOT.id, 'New name');
         expect(onChangeMascot)
-            .toHaveBeenCalledWith(BOT.id, { color: 'mint', shape: 'wide', eyes: 'smile' });
+            .toHaveBeenCalledWith(BOT.id, { color: 'mint', shape: 'wide', eyes: 'smile', weather: 'auto', bolt: 'down' });
     });
 
     it('sets the color, the shape and the eyes at once from a ready look, and the eyes alone after', async () => {
@@ -120,7 +151,7 @@ describe('BotProfilePanel', () => {
         expect(await screen.findByRole('button', { name: 'Edit' }))
             .toBeTruthy();
         expect(onChangeMascot)
-            .toHaveBeenCalledWith(BOT.id, { color: 'rose', shape: 'puff', eyes: 'stars' });
+            .toHaveBeenCalledWith(BOT.id, { color: 'rose', shape: 'puff', eyes: 'stars', weather: 'auto', bolt: 'down' });
     });
 
     it('keeps the form open with the reason when the name is refused, and saves nothing else', async () => {

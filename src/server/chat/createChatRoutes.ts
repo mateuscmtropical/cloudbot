@@ -5,7 +5,7 @@ import { streamSSE } from 'hono/streaming';
 import type { SSEStreamingApi } from 'hono/streaming';
 
 import type { ChatEvent, ChatMessage } from '../../shared/chatTypes.ts';
-import { MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES } from '../../shared/mascot.ts';
+import { MASCOT_BOLTS, MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES, MASCOT_WEATHERS } from '../../shared/mascot.ts';
 import { MAX_FILES_PER_UPLOAD, readMaxUploadBytes } from '../attachments/saveUpload.ts';
 import { DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError } from './ChatService.ts';
 import type { ChatService, DeleteBotOutcome, MessagePageOptions, SaveMemoryOutcome } from './ChatService.ts';
@@ -21,7 +21,7 @@ interface ChatErrorResponse {
 const BOT_NOT_FOUND: ChatErrorResponse = { error: 'No bot has this id.' };
 const BOT_DELETING: ChatErrorResponse = { error: 'This bot is being deleted.' };
 const INVALID_NAME: ChatErrorResponse = { error: 'Send a name of 1 to 40 characters on one line.' };
-const INVALID_MASCOT: ChatErrorResponse = { error: `Send a "color", one of ${MASCOT_COLOR_NAMES.join(', ')}, a "shape", one of ${MASCOT_SHAPES.join(', ')}, or "eyes", one of ${MASCOT_EYES.join(', ')}.` };
+const INVALID_MASCOT: ChatErrorResponse = { error: `Send a "color", one of ${MASCOT_COLOR_NAMES.join(', ')}, a "shape", one of ${MASCOT_SHAPES.join(', ')}, "eyes", one of ${MASCOT_EYES.join(', ')}, a "weather", one of ${MASCOT_WEATHERS.join(', ')}, or a "bolt", one of ${MASCOT_BOLTS.join(', ')}.` };
 const DELETE_FAILED: ChatErrorResponse = { error: 'Could not delete this bot. Try again.' };
 // Each refusal has its own text, so the web app can show the owner why.
 const DELETE_REFUSED: Record<Exclude<DeleteBotOutcome, 'deleted' | 'missing'>, ChatErrorResponse> = {
@@ -247,8 +247,13 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
         const isShapeValid = fields.shape === undefined || shape !== undefined;
         const eyes = MASCOT_EYES.find(name => name === fields.eyes);
         const isEyesValid = fields.eyes === undefined || eyes !== undefined;
+        const weather = MASCOT_WEATHERS.find(name => name === fields.weather);
+        const isWeatherValid = fields.weather === undefined || weather !== undefined;
+        const bolt = MASCOT_BOLTS.find(name => name === fields.bolt);
+        const isBoltValid = fields.bolt === undefined || bolt !== undefined;
+        const isEmpty = color === undefined && shape === undefined && eyes === undefined && weather === undefined && bolt === undefined;
 
-        if (!isColorValid || !isShapeValid || !isEyesValid || (color === undefined && shape === undefined && eyes === undefined)) {
+        if (!isColorValid || !isShapeValid || !isEyesValid || !isWeatherValid || !isBoltValid || isEmpty) {
             return context.json(INVALID_MASCOT, 400);
         }
 
@@ -256,6 +261,8 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
             ...(color === undefined ? {} : { color }),
             ...(shape === undefined ? {} : { shape }),
             ...(eyes === undefined ? {} : { eyes }),
+            ...(weather === undefined ? {} : { weather }),
+            ...(bolt === undefined ? {} : { bolt }),
         };
         const changedBot = await chatService.changeBotMascot(botId, changes);
 

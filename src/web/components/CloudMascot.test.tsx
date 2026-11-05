@@ -228,8 +228,42 @@ describe('CloudMascot', () => {
             .toBeNull();
     });
 
-    it('sneezes bolts with a cold, at the delay of the bot', () => {
-        const { container } = render(<CloudMascot color="blue" shape="puff" state="idle" mood="cold" moodDelaySeconds={-3} />);
+    it('gives each shape its own weather', () => {
+        const shownWeathers = MASCOT_SHAPES.map((shape) => {
+            const { container, unmount } = render(<CloudMascot color="blue" shape={shape} state="idle" mood="weather" />);
+            const shown = container.querySelector('.cloud-mascot')
+                ?.getAttribute('data-weather');
+
+            unmount();
+
+            return shown;
+        });
+
+        expect(new Set(shownWeathers).size)
+            .toBe(MASCOT_SHAPES.length);
+    });
+
+    it('shows the chosen weather and sends lightning where the owner asked, down by default', () => {
+        const { container, rerender } = render(<CloudMascot color="blue" shape="wide" state="idle" mood="weather" weather="lightning" />);
+
+        expect(container.querySelector('.mascot-effects')
+            ?.getAttribute('data-bolt'))
+            .toBe('down');
+
+        rerender(<CloudMascot color="blue" shape="wide" state="idle" mood="weather" weather="lightning" bolt="left" />);
+
+        expect(container.querySelector('.mascot-effects')
+            ?.getAttribute('data-bolt'))
+            .toBe('left');
+
+        rerender(<CloudMascot color="blue" shape="wide" state="idle" mood="weather" weather="sun" />);
+
+        expect(container.querySelector('.fx-sun-core'))
+            .not.toBeNull();
+    });
+
+    it('sneezes bolts for lightning, at the delay of the bot', () => {
+        const { container } = render(<CloudMascot color="blue" shape="puff" state="idle" mood="weather" moodDelaySeconds={-3} />);
         const root = container.querySelector<HTMLElement>('.cloud-mascot');
 
         expect(container.querySelectorAll('.fx-bolt'))
@@ -239,7 +273,7 @@ describe('CloudMascot', () => {
     });
 
     it('shows no mood while the bot works', () => {
-        const { container } = render(<CloudMascot color="blue" shape="puff" state="thinking" mood="cold" />);
+        const { container } = render(<CloudMascot color="blue" shape="puff" state="thinking" mood="weather" />);
 
         expect(container.querySelector('.mascot-effects'))
             .toBeNull();

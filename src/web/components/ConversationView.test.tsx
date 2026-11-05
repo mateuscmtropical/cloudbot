@@ -454,7 +454,7 @@ describe('ConversationView older messages', () => {
     });
 
     it('does not restore a position across a bot switch, even with a load pending for the first bot', () => {
-        const botOne: BotSummary = { id: 'bot-1', name: 'CloudBot', title: 'Coworker', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
+        const botOne: BotSummary = { id: 'bot-1', name: 'CloudBot', title: 'Coworker', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', mascotWeather: 'auto', mascotBolt: 'down', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
         const botTwo: BotSummary = { ...botOne, id: 'bot-2', name: 'Ana' };
         const messages = [createSequencedMessage(3), createSequencedMessage(4)];
         const view = render(historyElement(messages, { hasOlderMessages: true, onLoadOlder: vi.fn() }, botOne));
@@ -522,7 +522,7 @@ describe('ConversationView header', () => {
         vi.unstubAllGlobals();
     });
 
-    const ana: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
+    const ana: BotSummary = { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', mascotWeather: 'auto', mascotBolt: 'down', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
 
     it('shows the bot profile pill with back and more buttons', () => {
         render(historyElement([], {}, ana));
@@ -597,7 +597,7 @@ describe('ConversationView thinking bubble', () => {
         name: 'CloudBot',
         title: 'Helper',
         mascotColor: 'blue',
-        mascotShape: 'puff', mascotEyes: 'smile',
+        mascotShape: 'puff', mascotEyes: 'smile', mascotWeather: 'auto', mascotBolt: 'down',
         lastMessagePreview: '',
         hasUnread: false, lastMessageSequence: 0,
     };

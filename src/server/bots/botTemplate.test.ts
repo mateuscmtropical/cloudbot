@@ -7,7 +7,7 @@ const SOURCE: BotTemplateSource = {
     name: 'Ana',
     title: 'Mail helper',
     description: 'Sorts my mail each morning.',
-    mascot: { color: 'mint', shape: 'tall', eyes: 'stars' },
+    mascot: { color: 'mint', shape: 'tall', eyes: 'stars', weather: 'snow', bolt: 'left' },
     rules: [
         { kind: 'block', text: 'Never send mail on my behalf.', blockedTools: ['Bash', 'WebFetch'] },
         { kind: 'allow', text: 'Mail summaries are fine.', blockedTools: [] },
@@ -224,7 +224,7 @@ describe('botTemplate', () => {
         const parsed = parseBotTemplate(fileWith({ mascot: { color: 'mint', shape: 'tall' } }));
 
         expect(parsed.ok && parsed.template.mascot)
-            .toEqual({ color: 'mint', shape: 'tall', eyes: 'smile' });
+            .toEqual({ color: 'mint', shape: 'tall', eyes: 'smile', weather: 'auto', bolt: 'down' });
     });
 
     it('names the file after the bot and falls back when the name has no letters or digits', () => {

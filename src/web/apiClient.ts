@@ -10,7 +10,7 @@ import type { ChannelDetail, ChannelPostView, ChannelSummary } from '../shared/c
 import type { PermissionMode } from '../shared/permissionModes.ts';
 import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse } from '../shared/providerTypes.ts';
 import type { PushKeyResponse, PushSubscriptionInput, PushUnsubscribeInput } from '../shared/pushTypes.ts';
-import type { MascotChoice } from '../shared/mascot.ts';
+import type { MascotLook } from '../shared/mascot.ts';
 import { compressImage } from './compressImage.ts';
 
 const API_ROOT = '/api';
@@ -390,8 +390,8 @@ async function saveBotMemory(botId: string, text: string, expectedText: string):
     await requestJson<unknown>(path, init);
 }
 
-// The owner picks the color and the shape of the mascot.
-function changeBotMascot(botId: string, mascot: MascotChoice): Promise<BotSummary> {
+// The owner picks the look of the mascot.
+function changeBotMascot(botId: string, mascot: MascotLook): Promise<BotSummary> {
     const path = botPath(botId, '/mascot');
     const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mascot) };
 

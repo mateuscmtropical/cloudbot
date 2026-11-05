@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod/v4';
 
-import type { MascotColorName, MascotEyes, MascotShape } from '../../shared/mascot.ts';
+import type { MascotBolt, MascotColorName, MascotEyes, MascotShape, MascotWeather } from '../../shared/mascot.ts';
 import { BotStore } from '../store/BotStore.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
@@ -13,11 +13,29 @@ interface MascotArguments {
     color: MascotColorName | undefined;
     shape: MascotShape | undefined;
     eyes: MascotEyes | undefined;
+    weather: MascotWeather | undefined;
+    bolt: MascotBolt | undefined;
 }
 
 function buildArguments(color: MascotColorName | undefined, shape: MascotShape | undefined, eyes?: MascotEyes): MascotArguments {
-    return { color, shape, eyes };
+    return { color, shape, eyes, weather: undefined, bolt: undefined };
 }
+
+describe('createSetMascotTool weather', () => {
+    it('saves the weather and the bolt the model passes', async () => {
+        const opened = await openDatabase(':memory:');
+        const botStore = new BotStore(opened.db);
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const tool = createSetMascotTool(botStore, bot.id);
+
+        await tool.handler({ ...buildArguments(undefined, undefined), weather: 'lightning', bolt: 'left' }, undefined);
+
+        await expect(botStore.getById(bot.id))
+            .resolves.toMatchObject({ mascotWeather: 'lightning', mascotBolt: 'left' });
+
+        opened.close();
+    });
+});
 
 describe('createSetMascotTool', () => {
     let opened: OpenedDatabase;
