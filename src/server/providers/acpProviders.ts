@@ -14,7 +14,7 @@ import type { KeyHeader, KeyProxy } from '../vault/KeyProxy.ts';
 import type { Vault } from '../vault/Vault.ts';
 import { createCliSignIn } from './createCliSignIn.ts';
 import type { ProviderEngine } from './ProviderRunner.ts';
-import type { ProviderModelCatalogs } from './ProviderModelCatalogs.ts';
+import type { ProviderModelCatalog, ProviderModelCatalogs } from './ProviderModelCatalogs.ts';
 import type { ProviderId } from './providerIds.ts';
 
 type AcpProviderId = Exclude<ProviderId, 'claude' | 'chatgpt'>;
@@ -97,6 +97,13 @@ const OPENCODE_FOLDERS = ['.opencode', 'opencode.json', 'opencode.jsonc', '.conf
 const BEARER: KeyHeader = { name: 'authorization', prefix: 'Bearer ' };
 // How long a sign-in check is trusted, so a turn does not start the CLI twice.
 const STATUS_CACHE_MS = 5 * 60 * 1000;
+// agy reports no model list to the server, so the Gemini subscription offers its one model by name.
+// The effort picks the level agy runs, see toAgyModel. ponytail: fixed list, update when agy adds a Gemini model.
+const AGY_MODEL_CATALOG: ProviderModelCatalog = {
+    models: [{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', efforts: ['low', 'medium', 'high'] }],
+    defaultModel: null,
+    defaultEffort: null,
+};
 
 type OpenCodeAccountProviderId = 'cloudbot-opencode-zen' | 'cloudbot-opencode-go';
 
@@ -316,6 +323,13 @@ function readWrapperStatus(launch: { spawnFunction: SpawnFunction }, provider: A
     });
 }
 
+// A Gemini key runs on the Gemini CLI, which reports its own list, so only the subscription gets the agy list.
+function offerAgyModels(catalogs: ProviderModelCatalogs | undefined, provider: AcpProviderId, method: ProviderMethod | undefined): void {
+    if (method !== 'apiKey' && catalogs?.get(provider) === undefined) {
+        catalogs?.set(provider, AGY_MODEL_CATALOG);
+    }
+}
+
 // Runs a turn with the sign-in or the key, whichever way the owner connected the provider last.
 function methodRunner(
     signInRunner: AgentRunner | undefined,
@@ -409,7 +423,14 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
         let checkedAt = 0;
         const isSignedIn = async (): Promise<boolean | undefined> => {
             if (spec.signIn?.usesAgy === true) {
-                return launch === undefined ? false : readWrapperStatus(launch, spec.id);
+                const isAgySignedIn = launch === undefined ? false : await readWrapperStatus(launch, spec.id);
+                const method = await options.methodFor(spec.id);
+
+                if (isAgySignedIn) {
+                    offerAgyModels(options.modelCatalogs, spec.id, method);
+                }
+
+                return isAgySignedIn;
             }
 
             if (signInEngine === undefined) {
@@ -499,5 +520,5 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
     };
 }
 
-export { ACP_PROVIDERS, BEARER, LOCAL_ACP_ARGS, PLACEHOLDER_KEY, checkKeyAt, createAcpProviders, methodRunner, openCodeKeyEnvironment, readLocalAcpPaths };
+export { ACP_PROVIDERS, BEARER, LOCAL_ACP_ARGS, PLACEHOLDER_KEY, checkKeyAt, createAcpProviders, methodRunner, offerAgyModels, openCodeKeyEnvironment, readLocalAcpPaths };
 export type { AcpProviderSpec, AcpProviders };
