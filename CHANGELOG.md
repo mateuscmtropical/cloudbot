@@ -27,6 +27,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- The server keeps a log of what each bot did in `actions.log` in the data folder: every tool review with its outcome and time, every finished tool and every turn error. It holds only names and outcomes, never what a tool received or what the chat said.
 - The mascot in the chat header now does a random trick every minute or two while the bot rests. It hangs from a web, sneezes rain, snow or lightning, flies around, falls and climbs back, dances, inflates like a balloon, and leaves to visit the other bots in the chat list. Work, another chat or a hidden tab ends a trick at once, and reduced motion turns them off.
 - Voice input keeps listening until you press stop, and browsers without a working speech service, such as Firefox, record instead. The recording goes to your own server, which turns it into text with ffmpeg and whisper.cpp and deletes the audio. The image grows by about 250 MB.
 - Bot replies have a button that reads them aloud with the browser's voices, and the conversation options can read each new reply.
