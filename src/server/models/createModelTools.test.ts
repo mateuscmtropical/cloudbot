@@ -10,8 +10,8 @@ import type { ProviderModelChoice } from '../store/ModelStore.ts';
 
 type ToolHandler = (args: Record<string, unknown>, extra: unknown) => Promise<ModelToolResult>;
 
-const STORED: ModelChoices = { chat: 'haiku', routines: null, review: null, browsing: null, documents: null };
-const STORED_EFFORTS: EffortChoices = { chat: null, routines: null, review: 'low', browsing: null, documents: null };
+const STORED: ModelChoices = { chat: 'haiku', routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null };
+const STORED_EFFORTS: EffortChoices = { chat: null, routines: null, review: 'low', checkins: null, webhooks: null, search: null, browsing: null, documents: null };
 
 interface FakeStore extends Pick<ModelStore, 'get' | 'set' | 'getEfforts' | 'setEfforts'> {
     // The last choices saved, or undefined when nothing was saved.
@@ -62,9 +62,21 @@ describe('createModelTools', () => {
         expect(result.isError)
             .toBeUndefined();
         expect(store.saved())
-            .toEqual({ chat: 'haiku', routines: null, review: null, browsing: 'sonnet', documents: null });
+            .toEqual({ chat: 'haiku', routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: 'sonnet', documents: null });
         expect(result.content[0]?.text)
             .toContain('browsing sonnet');
+    });
+
+    it('keeps the search, check-ins and webhooks choices when the chat changes', async () => {
+        const store = createFakeStore({ ...STORED, search: 'haiku', checkins: 'sonnet', webhooks: 'opus' });
+        const setModels = findHandler(createModelTools(store, 'bot-1'));
+
+        await setModels({ chat: 'opus', searchEffort: 'low' }, {});
+
+        expect(store.saved())
+            .toMatchObject({ chat: 'opus', search: 'haiku', checkins: 'sonnet', webhooks: 'opus' });
+        expect(store.savedEfforts()?.search)
+            .toBe('low');
     });
 
     it('clears a choice when null is passed', async () => {
@@ -102,7 +114,7 @@ describe('createModelTools', () => {
         expect(result.isError)
             .toBeUndefined();
         expect(store.savedEfforts())
-            .toEqual({ chat: 'max', routines: null, review: 'low', browsing: null, documents: null });
+            .toEqual({ chat: 'max', routines: null, review: 'low', checkins: null, webhooks: null, search: null, browsing: null, documents: null });
         expect(store.saved())
             .toEqual(STORED);
         expect(result.content[0]?.text)

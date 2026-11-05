@@ -2470,7 +2470,7 @@ describe('ChatService model choices', () => {
         const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
         const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore });
 
-        await modelStore.set(bot.id, { chat: 'haiku', routines: 'opus', review: null, browsing: null, documents: null });
+        await modelStore.set(bot.id, { chat: 'haiku', routines: 'opus', review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null });
 
         expect(await runOneTurn(service, runner, bot.id, 'routine'))
             .toBe('opus');
@@ -2481,7 +2481,7 @@ describe('ChatService model choices', () => {
         const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
         const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore });
 
-        await modelStore.set(bot.id, { chat: 'haiku', routines: 'opus', review: null, browsing: null, documents: null });
+        await modelStore.set(bot.id, { chat: 'haiku', routines: 'opus', review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null });
 
         expect(await runOneTurn(service, runner, bot.id, 'chat'))
             .toBe('haiku');
@@ -2492,7 +2492,7 @@ describe('ChatService model choices', () => {
         const runner = new FakeAgentRunner(REPLY_SCRIPT.map(event => ({ event })));
         const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore });
 
-        await modelStore.set(bot.id, { chat: 'sonnet', routines: null, review: null, browsing: null, documents: null });
+        await modelStore.set(bot.id, { chat: 'sonnet', routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null });
 
         expect(await runOneTurn(service, runner, bot.id, 'routine'))
             .toBe('sonnet');
@@ -2504,7 +2504,7 @@ describe('ChatService model choices', () => {
         const browser = new BrowserControl({ devtoolsUrl: 'http://127.0.0.1:9' });
         const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore, browser });
 
-        await modelStore.set(bot.id, { chat: null, routines: null, review: null, browsing: 'haiku', documents: null });
+        await modelStore.set(bot.id, { chat: null, routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: 'haiku', documents: null });
 
         const finished = waitForTurnFinish(service, bot.id);
 
@@ -2531,7 +2531,7 @@ describe('ChatService model choices', () => {
         const blockedTool = BROWSER_TOOL_FULL_NAMES[3] ?? '';
 
         await ruleStore.add(bot.id, { kind: 'block', text: 'Never click.', blockedTools: [blockedTool] });
-        await modelStore.set(bot.id, { chat: null, routines: null, review: null, browsing: 'haiku', documents: 'sonnet' });
+        await modelStore.set(bot.id, { chat: null, routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: 'haiku', documents: 'sonnet' });
 
         const finished = waitForTurnFinish(service, bot.id);
 

@@ -333,7 +333,10 @@ function createApp(options: AppOptions): Hono {
 
     if (options.chatService !== undefined && options.routineStore !== undefined) {
         const chatService = options.chatService;
-        const routineRoutes = createRoutineRoutes({ routineStore: options.routineStore, hasBot: botId => chatService.hasBot(botId) });
+        const workSettings = options.workSettings;
+        // Without work settings a routine cannot pick its own provider, so a provider is refused.
+        const checkWorkChoice: WorkSettings['checkChoice'] = (botId, change) => workSettings === undefined ? Promise.resolve('This server cannot pick a provider for a routine.') : workSettings.checkChoice(botId, change);
+        const routineRoutes = createRoutineRoutes({ routineStore: options.routineStore, hasBot: botId => chatService.hasBot(botId), checkWorkChoice });
 
         app.route('/', routineRoutes);
     }

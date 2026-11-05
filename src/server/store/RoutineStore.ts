@@ -10,11 +10,29 @@ import type { AppDatabase, StoreOptions } from './types.ts';
 
 type RoutineRecord = typeof routines.$inferSelect;
 
-interface NewRoutine {
+// The provider, model and effort of one routine. A null provider uses the choice for routines.
+interface RoutineWork {
+    provider: string | null;
+    model: string | null;
+    effort: string | null;
+}
+
+interface NewRoutine extends Partial<RoutineWork> {
     name: string;
     prompt: string;
     schedule: RoutineSchedule;
     isQuiet?: boolean;
+}
+
+// Without a provider the model and effort are cleared, since the choice for routines holds them.
+function toRoutineWork(work: Partial<RoutineWork>): RoutineWork {
+    const provider = work.provider ?? null;
+
+    if (provider === null) {
+        return { provider, model: null, effort: null };
+    }
+
+    return { provider, model: work.model ?? null, effort: work.effort ?? null };
 }
 
 class RoutineStore {
@@ -40,10 +58,12 @@ class RoutineStore {
 
     async add(botId: string, routine: NewRoutine): Promise<RoutineRecord> {
         const createdAt = this.now();
+        const work = toRoutineWork(routine);
         const newRoutine = {
             id: randomUUID(),
             botId,
             ...routine,
+            ...work,
             isQuiet: routine.isQuiet ?? false,
             isEnabled: true,
             nextRunAt: computeNextRun(routine.schedule, createdAt),
@@ -87,6 +107,20 @@ class RoutineStore {
             .returning();
 
         return removedRows.length > 0;
+    }
+
+    // Returns undefined when the bot has no routine with this id.
+    async setWork(botId: string, routineId: string, work: RoutineWork): Promise<RoutineRecord | undefined> {
+        const botCondition = eq(routines.botId, botId);
+        const idCondition = eq(routines.id, routineId);
+        const routineCondition = and(botCondition, idCondition);
+        const savedWork = toRoutineWork(work);
+        const updatedRows = await this.database.update(routines)
+            .set(savedWork)
+            .where(routineCondition)
+            .returning();
+
+        return updatedRows[0];
     }
 
     // Turning a routine on starts its schedule from now, so it does not fire for time it was off.
@@ -155,4 +189,4 @@ class RoutineStore {
 }
 
 export { RoutineStore };
-export type { NewRoutine, RoutineRecord };
+export type { NewRoutine, RoutineRecord, RoutineWork };

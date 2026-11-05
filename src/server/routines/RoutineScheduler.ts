@@ -6,7 +6,8 @@ type RoutineTurnSource = 'routine' | 'checkin';
 interface RoutineSchedulerOptions {
     routineStore: RoutineStore;
     // The source is 'checkin' for a quiet routine, so the chat can drop a run that found nothing.
-    sendMessage: (botId: string, text: string, source: RoutineTurnSource) => Promise<unknown>;
+    // The routine id lets the turn run on the routine's own provider.
+    sendMessage: (botId: string, text: string, source: RoutineTurnSource, routineId: string) => Promise<unknown>;
     // Routines wait while this returns false. ChatService answers a message with a reminder until Claude setup is done.
     isReady?: () => boolean;
     now?: () => number;
@@ -84,7 +85,7 @@ class RoutineScheduler {
             const message = routine.isQuiet ? buildCheckinMessage(routine) : buildRoutineMessage(routine);
             const source: RoutineTurnSource = routine.isQuiet ? 'checkin' : 'routine';
 
-            await this.sendMessage(routine.botId, message, source);
+            await this.sendMessage(routine.botId, message, source, routine.id);
         } catch {
             // One failing routine must not stop the others. The log names the routine, not its prompt.
             console.error(`Could not run the routine ${routine.id}.`);

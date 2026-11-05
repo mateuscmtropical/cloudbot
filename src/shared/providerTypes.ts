@@ -48,6 +48,10 @@ interface WorkKindSummary {
     effortOptions: string[];
     // Null when every connected provider can run this work.
     allowedProviders: string[] | null;
+    // The providers the owner may pick for this work. Only connected ones are listed.
+    choosableProviders: string[];
+    // The model options of each provider in choosableProviders, keyed by provider id.
+    providerModels: Record<string, ProviderModelOptionSummary[]>;
 }
 
 // The bot where the owner connects a provider. Its chat shows the sign-in.

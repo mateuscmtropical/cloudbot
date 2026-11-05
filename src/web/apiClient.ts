@@ -335,6 +335,14 @@ async function removeRoutine(botId: string, routineId: string): Promise<void> {
     }
 }
 
+// The provider, model and effort of one routine. A null provider uses the choice for routines.
+function setRoutineWork(botId: string, routineId: string, work: WorkChoiceInput): Promise<BotRoutine> {
+    const path = botPath(botId, `/routines/${encodeURIComponent(routineId)}/work`);
+    const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(work) };
+
+    return requestJson<BotRoutine>(path, init);
+}
+
 function listWebhooks(botId: string): Promise<BotWebhook[]> {
     const path = botPath(botId, '/webhooks');
 
@@ -754,6 +762,7 @@ export {
     removeRule,
     listRoutines,
     removeRoutine,
+    setRoutineWork,
     listWebhooks,
     createWebhook,
     removeWebhook,

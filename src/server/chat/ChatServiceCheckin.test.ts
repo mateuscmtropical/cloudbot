@@ -17,7 +17,7 @@ import type { OwnerNotice } from '../push/PushNotifier.ts';
 import type { ChatEvent } from '../../shared/chatTypes.ts';
 import { ChatService } from './ChatService.ts';
 
-const NO_MODELS = { chat: null, routines: null, review: null, browsing: null, documents: null };
+const NO_MODELS = { chat: null, routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null };
 
 // Resolves on the turn event that reports the turn as finished. Subscribe before sending.
 function waitForTurnFinish(service: ChatService, botId: string): Promise<void> {
@@ -232,7 +232,7 @@ describe('ChatService check-ins', () => {
         const service = new ChatService({ botStore, messageStore, runner, dataDir, modelStore, limitStore });
 
         await modelStore.set(bot.id, { ...NO_MODELS, chat: 'opus' });
-        await modelStore.setEfforts(bot.id, { chat: 'max', routines: null, review: null, browsing: null, documents: null });
+        await modelStore.setEfforts(bot.id, { chat: 'max', routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null });
         await limitStore.set(bot.id, {
             chat: { minutes: null, usd: 5, steps: 50 },
             routines: { minutes: null, usd: 0.2, steps: 8 },

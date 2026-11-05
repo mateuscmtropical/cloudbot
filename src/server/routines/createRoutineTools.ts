@@ -3,7 +3,9 @@ import { z } from 'zod/v4';
 
 import type { CloudbotTool } from '../agent/createProfileToolServer.ts';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
-import type { RoutineStore } from '../store/RoutineStore.ts';
+import type { WorkChange, WorkSettings } from '../providers/WorkSettings.ts';
+import { PROVIDER_IDS } from '../providers/providerIds.ts';
+import type { RoutineStore, RoutineWork } from '../store/RoutineStore.ts';
 import { MAX_INTERVAL_MINUTES, MIN_INTERVAL_MINUTES, parseSchedule } from './schedule.ts';
 
 interface RoutineToolResult {
@@ -16,25 +18,29 @@ const ROUTINE_CREATE_TOOL_NAME = 'routine_create';
 const ROUTINE_LIST_TOOL_NAME = 'routine_list';
 const ROUTINE_DELETE_TOOL_NAME = 'routine_delete';
 const ROUTINE_SET_ENABLED_TOOL_NAME = 'routine_set_enabled';
+const ROUTINE_SET_WORK_TOOL_NAME = 'routine_set_work';
 const ROUTINE_CREATE_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${ROUTINE_CREATE_TOOL_NAME}`;
 const ROUTINE_LIST_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${ROUTINE_LIST_TOOL_NAME}`;
 const ROUTINE_DELETE_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${ROUTINE_DELETE_TOOL_NAME}`;
 const ROUTINE_SET_ENABLED_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${ROUTINE_SET_ENABLED_TOOL_NAME}`;
+const ROUTINE_SET_WORK_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${ROUTINE_SET_WORK_TOOL_NAME}`;
 const ROUTINE_TOOL_FULL_NAMES = [
     ROUTINE_CREATE_TOOL_FULL_NAME,
     ROUTINE_LIST_TOOL_FULL_NAME,
     ROUTINE_DELETE_TOOL_FULL_NAME,
     ROUTINE_SET_ENABLED_TOOL_FULL_NAME,
+    ROUTINE_SET_WORK_TOOL_FULL_NAME,
 ];
 
 const MAX_ROUTINES_PER_BOT = 20;
 const MAX_NAME_LENGTH = 60;
 const MAX_PROMPT_LENGTH = 2000;
 
-const CREATE_DESCRIPTION = `Create a routine: a prompt that is sent to you on a schedule, as a chat message. Use it when the owner asks for something to repeat, or for something to happen once later, such as a reminder in two hours. The schedule is one of: {kind:"once", at} with at a future UTC time like "2026-01-31T18:30:00Z", {kind:"interval", everyMinutes} (${String(MIN_INTERVAL_MINUTES)} to ${String(MAX_INTERVAL_MINUTES)}), {kind:"daily", hour, minute} or {kind:"weekly", weekday, hour, minute} with weekday 0 for Sunday to 6 for Saturday. Hours and minutes are UTC. A once routine runs one time and then turns itself off. Write the prompt so you can do the task without the current chat. Set isQuiet true for a check-in that should message the owner only when something needs them. A quiet run that finds nothing leaves no trace in the chat, and it runs on a small model unless the owner picked one for routines. Leave isQuiet off for a brief or anything the owner wants to read every time.`;
-const LIST_DESCRIPTION = 'List your routines with their ids, schedules and next run times (UTC).';
+const CREATE_DESCRIPTION = `Create a routine: a prompt that is sent to you on a schedule, as a chat message. Use it when the owner asks for something to repeat, or for something to happen once later, such as a reminder in two hours. The schedule is one of: {kind:"once", at} with at a future UTC time like "2026-01-31T18:30:00Z", {kind:"interval", everyMinutes} (${String(MIN_INTERVAL_MINUTES)} to ${String(MAX_INTERVAL_MINUTES)}), {kind:"daily", hour, minute} or {kind:"weekly", weekday, hour, minute} with weekday 0 for Sunday to 6 for Saturday. Hours and minutes are UTC. A once routine runs one time and then turns itself off. Write the prompt so you can do the task without the current chat. Set isQuiet true for a check-in that should message the owner only when something needs them. A quiet run that finds nothing leaves no trace in the chat, and it runs on a small model unless the owner picked one for routines. Leave isQuiet off for a brief or anything the owner wants to read every time. Set provider, model and effort only when the owner asks for a provider for this routine. Leave them out to use the routines choice of the owner.`;
+const LIST_DESCRIPTION = 'List your routines with their ids, schedules, next run times (UTC) and, for a routine with its own provider, that provider and model.';
 const DELETE_DESCRIPTION = 'Delete one of your routines by id.';
 const SET_ENABLED_DESCRIPTION = 'Turn one of your routines on or off by id. A routine that is off does not run.';
+const SET_WORK_DESCRIPTION = 'Choose the provider, model and effort one of your routines runs on, by id. The provider must be connected. A null provider makes the routine follow the routines choice again, and clears its model and effort. A null model or effort uses the provider default.';
 
 const CREATE_SHAPE = {
     name: z.string()
@@ -61,10 +67,32 @@ const CREATE_SHAPE = {
         minute: z.number()
             .optional(),
     }),
+    provider: z.enum(PROVIDER_IDS)
+        .nullable()
+        .optional(),
+    model: z.string()
+        .nullable()
+        .optional(),
+    effort: z.string()
+        .nullable()
+        .optional(),
 };
 const LIST_SHAPE = {};
 const ID_SHAPE = { id: z.string() };
 const SET_ENABLED_SHAPE = { id: z.string(), isEnabled: z.boolean() };
+const SET_WORK_SHAPE = {
+    id: z.string(),
+    provider: z.enum(PROVIDER_IDS)
+        .nullable(),
+    model: z.string()
+        .nullable()
+        .optional(),
+    effort: z.string()
+        .nullable()
+        .optional(),
+};
+
+type CheckWorkChoice = WorkSettings['checkChoice'];
 
 function textResult(text: string, isError = false): RoutineToolResult {
     const content = { type: 'text' as const, text };
@@ -75,6 +103,23 @@ function textResult(text: string, isError = false): RoutineToolResult {
 function formatTime(timeMs: number): string {
     return new Date(timeMs)
         .toISOString();
+}
+
+// Such as "gemini with model flash, effort low". Only used for a routine with a provider.
+function describeWork(work: RoutineWork): string {
+    const modelText = work.model === null ? '' : ` with model ${work.model}`;
+    const effortText = work.effort === null ? '' : `, effort ${work.effort}`;
+
+    return `${String(work.provider)}${modelText}${effortText}`;
+}
+
+// A routine with no provider follows the routines choice, so only a provider is checked.
+async function checkWork(checkWorkChoice: CheckWorkChoice, botId: string, work: WorkChange): Promise<string | undefined> {
+    if (work.provider === null) {
+        return undefined;
+    }
+
+    return checkWorkChoice(botId, work);
 }
 
 // The tool takes a once time as text, and the stored schedule keeps it in milliseconds.
@@ -88,7 +133,7 @@ function readScheduleInput(input: { kind: string; at?: string | undefined }): un
     return { kind: 'once', at: atMs };
 }
 
-function createRoutineTools(store: RoutineStore, botId: string, now: () => number = Date.now): CloudbotTool[] {
+function createRoutineTools(store: RoutineStore, botId: string, checkWorkChoice: CheckWorkChoice, now: () => number = Date.now): CloudbotTool[] {
     const createTool = tool(
         ROUTINE_CREATE_TOOL_NAME,
         CREATE_DESCRIPTION,
@@ -105,7 +150,14 @@ function createRoutineTools(store: RoutineStore, botId: string, now: () => numbe
                 return textResult(`The time ${formatTime(schedule.at)} UTC has passed. Pick a time in the future.`, true);
             }
 
-            const routine = await store.addWithLimit(botId, { name: args.name, prompt: args.prompt, schedule, isQuiet: args.isQuiet === true }, MAX_ROUTINES_PER_BOT);
+            const work = { provider: args.provider ?? null, model: args.model ?? null, effort: args.effort ?? null };
+            const workProblem = await checkWork(checkWorkChoice, botId, work);
+
+            if (workProblem !== undefined) {
+                return textResult(workProblem, true);
+            }
+
+            const routine = await store.addWithLimit(botId, { name: args.name, prompt: args.prompt, schedule, isQuiet: args.isQuiet === true, ...work }, MAX_ROUTINES_PER_BOT);
 
             if (routine === undefined) {
                 return textResult(`You can have at most ${String(MAX_ROUTINES_PER_BOT)} routines. Delete one first.`, true);
@@ -131,8 +183,9 @@ function createRoutineTools(store: RoutineStore, botId: string, now: () => numbe
                 const scheduleText = JSON.stringify(shownSchedule);
 
                 const kindText = routine.isQuiet ? ' (quiet check-in)' : '';
+                const workText = routine.provider === null ? '' : `, runs on ${describeWork(routine)}`;
 
-                return `- ${routine.id}: "${routine.name}"${kindText} ${scheduleText}, ${state}`;
+                return `- ${routine.id}: "${routine.name}"${kindText} ${scheduleText}${workText}, ${state}`;
             });
 
             const listText = lines.join('\n');
@@ -164,13 +217,39 @@ function createRoutineTools(store: RoutineStore, botId: string, now: () => numbe
             return textResult(args.isEnabled ? 'The routine is on.' : 'The routine is off.');
         },
     );
+    const setWorkTool = tool(
+        ROUTINE_SET_WORK_TOOL_NAME,
+        SET_WORK_DESCRIPTION,
+        SET_WORK_SHAPE,
+        async (args): Promise<RoutineToolResult> => {
+            const work = { provider: args.provider, model: args.model ?? null, effort: args.effort ?? null };
+            const workProblem = await checkWork(checkWorkChoice, botId, work);
 
-    return [createTool, listTool, deleteTool, setEnabledTool] as CloudbotTool[];
+            if (workProblem !== undefined) {
+                return textResult(workProblem, true);
+            }
+
+            const savedRoutine = await store.setWork(botId, args.id, work);
+
+            if (savedRoutine === undefined) {
+                return textResult('You have no routine with this id.', true);
+            }
+
+            if (work.provider === null) {
+                return textResult('The routine follows the routines choice again.');
+            }
+
+            return textResult(`The routine runs on ${describeWork(work)}.`);
+        },
+    );
+
+    return [createTool, listTool, deleteTool, setEnabledTool, setWorkTool] as CloudbotTool[];
 }
 
 export {
     MAX_ROUTINES_PER_BOT,
     ROUTINE_LIST_TOOL_FULL_NAME,
+    ROUTINE_SET_WORK_TOOL_FULL_NAME,
     ROUTINE_TOOL_FULL_NAMES,
     createRoutineTools,
 };

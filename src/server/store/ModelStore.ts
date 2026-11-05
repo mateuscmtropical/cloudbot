@@ -14,8 +14,8 @@ interface ProviderModelChoice {
 }
 
 // A bot with no row has no choices, so every kind uses the CLI default.
-const NO_CHOICES: ModelChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
-const NO_EFFORTS: EffortChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
+const NO_CHOICES: ModelChoices = { chat: null, routines: null, checkins: null, webhooks: null, review: null, search: null, browsing: null, documents: null };
+const NO_EFFORTS: EffortChoices = { chat: null, routines: null, checkins: null, webhooks: null, review: null, search: null, browsing: null, documents: null };
 
 class ModelStore {
     private readonly database: AppDatabase;
@@ -34,7 +34,10 @@ class ModelStore {
         return {
             chat: foundRow.chatModel,
             routines: foundRow.routinesModel,
+            checkins: foundRow.checkinsModel,
+            webhooks: foundRow.webhooksModel,
             review: foundRow.reviewModel,
+            search: foundRow.searchModel,
             browsing: foundRow.browsingModel,
             documents: foundRow.documentsModel,
         };
@@ -45,7 +48,10 @@ class ModelStore {
         const changes = {
             chatModel: choices.chat,
             routinesModel: choices.routines,
+            checkinsModel: choices.checkins,
+            webhooksModel: choices.webhooks,
             reviewModel: choices.review,
+            searchModel: choices.search,
             browsingModel: choices.browsing,
             documentsModel: choices.documents,
         };
@@ -65,7 +71,10 @@ class ModelStore {
         return {
             chat: toEffortChoice(foundRow.chatEffort),
             routines: toEffortChoice(foundRow.routinesEffort),
+            checkins: toEffortChoice(foundRow.checkinsEffort),
+            webhooks: toEffortChoice(foundRow.webhooksEffort),
             review: toEffortChoice(foundRow.reviewEffort),
+            search: toEffortChoice(foundRow.searchEffort),
             browsing: toEffortChoice(foundRow.browsingEffort),
             documents: toEffortChoice(foundRow.documentsEffort),
         };
@@ -76,7 +85,10 @@ class ModelStore {
         const changes = {
             chatEffort: efforts.chat,
             routinesEffort: efforts.routines,
+            checkinsEffort: efforts.checkins,
+            webhooksEffort: efforts.webhooks,
             reviewEffort: efforts.review,
+            searchEffort: efforts.search,
             browsingEffort: efforts.browsing,
             documentsEffort: efforts.documents,
         };

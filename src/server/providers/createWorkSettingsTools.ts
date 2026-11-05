@@ -48,7 +48,7 @@ async function describeWork(dependencies: WorkToolDependencies, botId: string): 
 function createWorkSettingsTools(dependencies: WorkToolDependencies, botId: string): CloudbotTool[] {
     const listTool = tool(
         WORK_SETTINGS_LIST_TOOL_NAME,
-        'Show the provider, model and effort your chat, routines, review, browsing and documents run on, with the real model names. Use it when the owner asks which model or provider you use. Never guess those names.',
+        'Show the provider, model and effort your chat and each kind of work run on: web search, browsing, documents, routines, check-ins, webhooks and review. Use it when the owner asks which model or provider you use. Never guess those names.',
         {},
         async (): Promise<WorkToolResult> => {
             const text = await describeWork(dependencies, botId);
@@ -58,7 +58,7 @@ function createWorkSettingsTools(dependencies: WorkToolDependencies, botId: stri
     );
     const setTool = tool(
         WORK_SETTINGS_SET_TOOL_NAME,
-        'Choose the provider, model and effort of one kind of work, when the owner asks for it. A null provider makes the work follow the chat. A null model or effort uses the provider default. The provider must be connected. Review runs only on claude, chatgpt or gemini. To change the chat itself, use provider_use and models_set.',
+        'Choose the provider, model and effort of one kind of work (search, browsing, documents, routines, checkins, webhooks or review), when the owner asks for it. A null provider makes the work follow the chat. A null model or effort uses the provider default. The provider must be connected. Review runs only on claude, chatgpt or gemini. To change the chat itself, use provider_use and models_set.',
         {
             kind: z.enum(WORK_KINDS),
             provider: z.enum(PROVIDER_IDS)

@@ -6,16 +6,19 @@ const MODEL_ALIASES: readonly string[] = ['fable', 'opus', 'sonnet', 'haiku'];
 // gemini-3.8-flash-low. The pattern keeps any other text away from the CLI.
 const MODEL_ID_PATTERN = /^(claude|gemini)-[a-z0-9.-]+$/;
 const MAX_MODEL_LENGTH = 100;
-// The first three kinds pick the model of a turn. browsing and documents are helper agents, and a null
-// choice for either one means the bot has no helper for that work.
-const MODEL_KINDS = ['chat', 'routines', 'review', 'browsing', 'documents'] as const;
+// chat, routines, checkins, webhooks and review pick the model of a turn. search, browsing and documents are
+// helper agents, and a null choice for one of them means the bot has no helper for that work.
+const MODEL_KINDS = ['chat', 'routines', 'checkins', 'webhooks', 'review', 'search', 'browsing', 'documents'] as const;
 // The levels of the claude CLI --effort option.
 const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 // The kind and the field name the web app and the tool use for its effort. The order is the panel's order.
 const EFFORT_FIELDS = [
     ['chat', 'chatEffort'],
     ['routines', 'routinesEffort'],
+    ['checkins', 'checkinsEffort'],
+    ['webhooks', 'webhooksEffort'],
     ['review', 'reviewEffort'],
+    ['search', 'searchEffort'],
     ['browsing', 'browsingEffort'],
     ['documents', 'documentsEffort'],
 ] as const;
@@ -23,11 +26,14 @@ const EFFORT_FIELDS = [
 type ModelKind = (typeof MODEL_KINDS)[number];
 type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
-// A null choice means the CLI default model, or no helper for browsing and documents.
+// A null choice means the CLI default model, or no helper for search, browsing and documents.
 interface ModelChoices {
     chat: string | null;
     routines: string | null;
+    checkins: string | null;
+    webhooks: string | null;
     review: string | null;
+    search: string | null;
     browsing: string | null;
     documents: string | null;
 }
@@ -36,7 +42,10 @@ interface ModelChoices {
 interface EffortChoices {
     chat: EffortLevel | null;
     routines: EffortLevel | null;
+    checkins: EffortLevel | null;
+    webhooks: EffortLevel | null;
     review: EffortLevel | null;
+    search: EffortLevel | null;
     browsing: EffortLevel | null;
     documents: EffortLevel | null;
 }
@@ -45,7 +54,10 @@ interface EffortChoices {
 interface EffortFields {
     chatEffort: EffortLevel | null;
     routinesEffort: EffortLevel | null;
+    checkinsEffort: EffortLevel | null;
+    webhooksEffort: EffortLevel | null;
     reviewEffort: EffortLevel | null;
+    searchEffort: EffortLevel | null;
     browsingEffort: EffortLevel | null;
     documentsEffort: EffortLevel | null;
 }
@@ -54,8 +66,8 @@ interface ModelInputError {
     error: string;
 }
 
-const INVALID_BODY: ModelInputError = { error: 'Send an object with the chat, routines, review, browsing and documents models.' };
-const INVALID_EFFORT_BODY: ModelInputError = { error: 'Send an object with the chat, routines, review, browsing and documents efforts.' };
+const INVALID_BODY: ModelInputError = { error: 'Send an object with a model for each kind of work.' };
+const INVALID_EFFORT_BODY: ModelInputError = { error: 'Send an object with an effort for each kind of work.' };
 
 function isValidModel(value: string): boolean {
     if (value.length > MAX_MODEL_LENGTH) {
@@ -99,7 +111,10 @@ function parseModelInput(payload: unknown): ModelChoices | ModelInputError {
     return {
         chat: toChoice(fields.chat),
         routines: toChoice(fields.routines),
+        checkins: toChoice(fields.checkins),
+        webhooks: toChoice(fields.webhooks),
         review: toChoice(fields.review),
+        search: toChoice(fields.search),
         browsing: toChoice(fields.browsing),
         documents: toChoice(fields.documents),
     };
@@ -135,7 +150,10 @@ function parseEffortInput(payload: unknown): EffortChoices | ModelInputError {
     return {
         chat: toEffortChoice(fields.chatEffort),
         routines: toEffortChoice(fields.routinesEffort),
+        checkins: toEffortChoice(fields.checkinsEffort),
+        webhooks: toEffortChoice(fields.webhooksEffort),
         review: toEffortChoice(fields.reviewEffort),
+        search: toEffortChoice(fields.searchEffort),
         browsing: toEffortChoice(fields.browsingEffort),
         documents: toEffortChoice(fields.documentsEffort),
     };
@@ -145,7 +163,10 @@ function toEffortFields(efforts: EffortChoices): EffortFields {
     return {
         chatEffort: efforts.chat,
         routinesEffort: efforts.routines,
+        checkinsEffort: efforts.checkins,
+        webhooksEffort: efforts.webhooks,
         reviewEffort: efforts.review,
+        searchEffort: efforts.search,
         browsingEffort: efforts.browsing,
         documentsEffort: efforts.documents,
     };
@@ -155,29 +176,32 @@ function isModelInputError(value: ModelChoices | ModelInputError): value is Mode
     return 'error' in value;
 }
 
-// Routine and webhook turns use the routines choice and fall back to the chat choice. Undefined keeps the CLI default.
-// A check-in never falls back to the chat model. It uses the routines choice or the cheap default.
+// Webhook turns use the webhooks choice, then the routines choice, then the chat choice. Routine and bot turns
+// skip the webhooks step. Undefined keeps the CLI default. A check-in never falls back to the chat model. It uses
+// the check-ins choice, then the routines choice, then the cheap default.
 function chooseTurnModel(choices: ModelChoices, source: 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot'): string | undefined {
     if (source === 'checkin') {
-        return choices.routines ?? CHECKIN_DEFAULT_MODEL;
+        return choices.checkins ?? choices.routines ?? CHECKIN_DEFAULT_MODEL;
     }
 
+    const webhooksChoice = source === 'webhook' ? choices.webhooks : null;
     const routinesChoice = source === 'chat' ? null : choices.routines;
 
-    return routinesChoice ?? choices.chat ?? undefined;
+    return webhooksChoice ?? routinesChoice ?? choices.chat ?? undefined;
 }
 
 // The same rule as the model: routine and webhook turns use the routines effort and fall back to the chat effort.
 // A check-in skips the chat effort, because the chat effort was picked for a different model.
 function chooseTurnEffort(efforts: EffortChoices, source: 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot'): EffortLevel | undefined {
     if (source === 'checkin') {
-        return efforts.routines ?? undefined;
+        return efforts.checkins ?? efforts.routines ?? undefined;
     }
 
+    const webhooksEffort = source === 'webhook' ? efforts.webhooks : null;
     const routinesEffort = source === 'chat' ? null : efforts.routines;
 
-    return routinesEffort ?? efforts.chat ?? undefined;
+    return webhooksEffort ?? routinesEffort ?? efforts.chat ?? undefined;
 }
 
-export { EFFORT_LEVELS, MODEL_ALIASES, MODEL_ID_PATTERN, chooseTurnEffort, chooseTurnModel, isClaudeModel, isEffortLevel, isModelInputError, parseEffortInput, parseModelInput, toEffortChoice, toEffortFields };
+export { EFFORT_LEVELS, MODEL_ALIASES, MODEL_KINDS, MODEL_ID_PATTERN, chooseTurnEffort, chooseTurnModel, isClaudeModel, isEffortLevel, isModelInputError, parseEffortInput, parseModelInput, toEffortChoice, toEffortFields };
 export type { EffortChoices, EffortFields, EffortLevel, ModelChoices, ModelInputError, ModelKind };

@@ -16,6 +16,10 @@ interface BotRoutine {
     isQuiet: boolean;
     nextRunAt: number;
     lastRunAt: number | null;
+    // The provider, model and effort of this routine alone. A null provider uses the choice for routines.
+    provider: string | null;
+    model: string | null;
+    effort: string | null;
 }
 
 export type { BotRoutine, RoutineSchedule };

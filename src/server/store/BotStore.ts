@@ -18,6 +18,8 @@ interface QueuedTurnRecord {
     text: string;
     uploads: StoredUploadRecord[];
     source: 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot';
+    // Older rows have none.
+    routineId?: string | null;
 }
 
 type BotRow = typeof bots.$inferSelect;

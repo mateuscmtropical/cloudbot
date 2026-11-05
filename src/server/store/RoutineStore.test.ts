@@ -92,6 +92,49 @@ describe('RoutineStore', () => {
             .resolves.toEqual([routine]);
     });
 
+    it('stores the provider, model and effort of a routine', async () => {
+        const routine = await store.add(botId, { name: 'A', prompt: 'a', schedule: EVERY_TEN_MINUTES, provider: 'gemini', model: 'flash', effort: 'low' });
+
+        expect(routine)
+            .toMatchObject({ provider: 'gemini', model: 'flash', effort: 'low' });
+        await expect(store.list(botId))
+            .resolves.toEqual([routine]);
+    });
+
+    it('leaves the work of a routine empty when it has no provider', async () => {
+        const routine = await store.add(botId, { name: 'A', prompt: 'a', schedule: EVERY_TEN_MINUTES, model: 'flash' });
+
+        expect(routine)
+            .toMatchObject({ provider: null, model: null, effort: null });
+    });
+
+    it('sets the work of one routine and clears it with a null provider', async () => {
+        const routine = await store.add(botId, { name: 'A', prompt: 'a', schedule: EVERY_TEN_MINUTES });
+
+        const set = await store.setWork(botId, routine.id, { provider: 'chatgpt', model: 'gpt-6', effort: 'high' });
+        const [listed] = await store.list(botId);
+
+        expect(set)
+            .toMatchObject({ id: routine.id, provider: 'chatgpt', model: 'gpt-6', effort: 'high' });
+        expect(listed)
+            .toMatchObject({ provider: 'chatgpt', model: 'gpt-6', effort: 'high' });
+
+        const cleared = await store.setWork(botId, routine.id, { provider: null, model: 'gpt-6', effort: 'high' });
+
+        expect(cleared)
+            .toMatchObject({ provider: null, model: null, effort: null });
+    });
+
+    it('changes the work of a routine only for its own bot', async () => {
+        const otherBot = await botStore.create({ name: 'Bia', title: 'Assistant', description: '' });
+        const routine = await store.add(botId, { name: 'A', prompt: 'a', schedule: EVERY_TEN_MINUTES });
+
+        await expect(store.setWork(otherBot.id, routine.id, { provider: 'gemini', model: null, effort: null }))
+            .resolves.toBeUndefined();
+        await expect(store.list(botId))
+            .resolves.toEqual([routine]);
+    });
+
     it('changes and removes a routine only for its own bot', async () => {
         const otherBot = await botStore.create({ name: 'Bia', title: 'Assistant', description: '' });
         const routine = await store.add(botId, { name: 'A', prompt: 'a', schedule: EVERY_TEN_MINUTES });

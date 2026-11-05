@@ -23,7 +23,9 @@ const REVIEW: WorkKindSummary = {
     selectedEffort: null,
     modelOptions: [{ id: 'haiku', label: 'Haiku', efforts: ['low', 'high'] }],
     effortOptions: ['low', 'high'],
-    allowedProviders: ['claude', 'chatgpt'],
+    allowedProviders: null,
+    choosableProviders: ['claude', 'chatgpt'],
+    providerModels: {},
 };
 
 const PROVIDERS: ProviderChoiceSummary[] = [
@@ -43,7 +45,7 @@ describe('WorkPicker', () => {
         vi.resetAllMocks();
     });
 
-    it('shows the real names in use and offers only connected providers the work can run on', async () => {
+    it('shows the real names in use and offers only the providers the server lists as choosable', async () => {
         vi.mocked(getWorkSettings)
             .mockResolvedValue([REVIEW]);
 

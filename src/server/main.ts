@@ -232,7 +232,7 @@ const taskStore = new TaskStore(opened.db);
 const modelStore = new ModelStore(opened.db);
 const providerModelCatalogs = new ProviderModelCatalogs();
 // The provider list is built below. It is read only when an owner saves a choice.
-const workSettings = new WorkSettings({ settings, modelStore, modelCatalogs: providerModelCatalogs, providerFor: botId => providerChoices.forBot(botId), available: () => providerTools.available });
+const workSettings = new WorkSettings({ settings, modelStore, modelCatalogs: providerModelCatalogs, providerFor: botId => providerChoices.forBot(botId), available: () => providerTools.available, connected: () => setup.connectedProviders() });
 const limitStore = new LimitStore(opened.db);
 const webhookStore = new WebhookStore(opened.db);
 // One log for the whole process, so the bot and the owner see the same refused calls. It is kept in memory only.
@@ -621,7 +621,7 @@ if (localTools.gateProbe !== undefined && browser !== undefined && browserGate !
 
 const routineScheduler = new RoutineScheduler({
     routineStore,
-    sendMessage: (botId, text, source) => chatService.sendMessage(botId, text, source),
+    sendMessage: (botId, text, source, routineId) => chatService.sendMessage(botId, text, source, undefined, undefined, routineId),
     isReady: () => setup.isDone(),
 });
 
