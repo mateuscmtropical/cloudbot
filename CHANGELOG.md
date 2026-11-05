@@ -22,6 +22,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- On an Arm server whose CPU has dotprod and fp16, voice input builds with them to turn speech into text faster.
 - The app icon is a white cloud with light and depth on a blue sky, larger on the home screen. Its source is `docs/app-icon.svg`.
 - In a bot's provider list, the whole row of a provider that is not connected connects it, and the row no longer looks disabled. The setup chat goes straight to that provider, without asking again which one.
 - The provider list shows a provider as connected right after its sign-in ends.
