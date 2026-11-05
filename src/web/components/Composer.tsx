@@ -48,6 +48,7 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
     const [historyIndex, setHistoryIndex] = useState<number | undefined>(undefined);
     // The text that was in the box before the arrow keys started, so arrow down can bring it back.
     const draftBeforeHistoryRef = useRef('');
+    const caretAfterWalkRef = useRef<'start' | 'end' | undefined>(undefined);
     const activeHistoryIndex = historyIndex !== undefined && historyIndex < sentHistory.length ? historyIndex : undefined;
     const fileInputRef = useRef<HTMLInputElement>(null);
     const textAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -98,6 +99,23 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
         textArea.style.height = `${nextHeight.toString()}px`;
     }, [draft]);
 
+    // Puts the caret where the last walk through the history asked, once the message is in the box.
+    useLayoutEffect(() => {
+        const textArea = textAreaRef.current;
+        const caretAfterWalk = caretAfterWalkRef.current;
+
+        if (textArea === null || caretAfterWalk === undefined) {
+            return;
+        }
+
+        caretAfterWalkRef.current = undefined;
+
+        const caret = caretAfterWalk === 'start' ? 0 : textArea.value.length;
+
+        textArea.setSelectionRange(caret, caret);
+        textArea.scrollTop = caretAfterWalk === 'start' ? 0 : textArea.scrollHeight;
+    });
+
     function sendDraft(): void {
         if (!canSend) {
             return;
@@ -125,39 +143,67 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
     }
 
     // Arrow up brings back the sent messages, newest first. Arrow down goes forward, and past the newest it returns the text
-    // that was in the box. The arrows only walk the history when the caret is on the first line (up) or the last line (down),
-    // so a long message can still be edited with them. Returns true when the key was used.
-    function walkHistory(goesBack: boolean, field: HTMLTextAreaElement): boolean {
-        const textBeforeCaret = draft.slice(0, field.selectionStart);
-        const textAfterCaret = draft.slice(field.selectionEnd);
-
+    // that was in the box. The caret lands where the next press in the same direction walks on.
+    function walkHistory(goesBack: boolean): void {
         if (goesBack) {
             const olderIndex = stepBack(sentHistory.length, activeHistoryIndex);
 
-            if (textBeforeCaret.includes('\n') || olderIndex === undefined) {
-                return false;
+            if (olderIndex === undefined) {
+                return;
             }
 
             if (activeHistoryIndex === undefined) {
                 draftBeforeHistoryRef.current = draft;
             }
 
+            caretAfterWalkRef.current = 'start';
             setHistoryIndex(olderIndex);
             showDraft(sentHistory[olderIndex] ?? '');
 
-            return true;
+            return;
         }
 
-        if (activeHistoryIndex === undefined || textAfterCaret.includes('\n')) {
-            return false;
+        if (activeHistoryIndex === undefined) {
+            return;
         }
 
         const newerIndex = stepForward(sentHistory.length, activeHistoryIndex);
 
+        caretAfterWalkRef.current = 'end';
         setHistoryIndex(newerIndex);
         showDraft(newerIndex === undefined ? draftBeforeHistoryRef.current : (sentHistory[newerIndex] ?? ''));
+    }
 
-        return true;
+    // The browser moves the caret between lines, wrapped ones too, and only it knows where a line wraps. So this looks after
+    // the browser has acted. A caret that stayed put is on the first line (up) or the last line (down): it goes to the edge
+    // of the text first, and a press from the edge walks the history. Some systems jump to the edge by themselves. While
+    // walking, a caret that crossed a whole message from edge to edge was on a one line message, so that press walks too.
+    function handleArrowKey(goesBack: boolean, field: HTMLTextAreaElement): void {
+        const caret = field.selectionStart;
+
+        if (caret !== field.selectionEnd) {
+            return;
+        }
+
+        setTimeout(() => {
+            const edge = goesBack ? 0 : field.value.length;
+            const oppositeEdge = goesBack ? field.value.length : 0;
+            const isWalking = activeHistoryIndex !== undefined;
+            const hasStayed = field.selectionStart === caret && field.selectionEnd === caret;
+            const hasCrossedMessage = field.selectionStart === edge && caret === oppositeEdge;
+
+            if (!hasStayed && !(isWalking && hasCrossedMessage)) {
+                return;
+            }
+
+            if (caret === edge || (isWalking && caret === oppositeEdge)) {
+                walkHistory(goesBack);
+
+                return;
+            }
+
+            field.setSelectionRange(edge, edge);
+        }, 0);
     }
 
     function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -165,11 +211,7 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
         const hasModifier = event.shiftKey || event.altKey || event.ctrlKey || event.metaKey;
 
         if (isArrow && !hasModifier && !event.nativeEvent.isComposing) {
-            const isUsed = walkHistory(event.key === 'ArrowUp', event.currentTarget);
-
-            if (isUsed) {
-                event.preventDefault();
-            }
+            handleArrowKey(event.key === 'ArrowUp', event.currentTarget);
 
             return;
         }
