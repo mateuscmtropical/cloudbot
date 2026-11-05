@@ -31,6 +31,7 @@ import { skipAfterFailure } from './approvals/skipAfterFailure.ts';
 import { createClaudeReviewModel } from './approvals/createClaudeReviewModel.ts';
 import { createReviewChain } from './approvals/createReviewChain.ts';
 import { WorkSettings } from './providers/WorkSettings.ts';
+import { ConnectedProviders } from './providers/ConnectedProviders.ts';
 import { PROVIDER_AGENT_WRAPPER, codexAgentLaunch, wrapperAgentLaunch } from './agent/codexAgentLaunch.ts';
 import { createReviewContextReader } from './approvals/createReviewContextReader.ts';
 import { createToolCallReviewer } from './approvals/createToolCallReviewer.ts';
@@ -232,7 +233,9 @@ const taskStore = new TaskStore(opened.db);
 const modelStore = new ModelStore(opened.db);
 const providerModelCatalogs = new ProviderModelCatalogs();
 // The provider list is built below. It is read only when an owner saves a choice.
-const workSettings = new WorkSettings({ settings, modelStore, modelCatalogs: providerModelCatalogs, providerFor: botId => providerChoices.forBot(botId), available: () => providerTools.available, connected: () => setup.connectedProviders() });
+// One kept answer about the sign-ins for the pages, the turns and the tools, since asking each CLI can take a minute.
+const connectedProviders = new ConnectedProviders(() => setup.connectedProviders(), () => setup.connectionVersion());
+const workSettings = new WorkSettings({ settings, modelStore, modelCatalogs: providerModelCatalogs, providerFor: botId => providerChoices.forBot(botId), available: () => providerTools.available, connected: () => connectedProviders.read() });
 const limitStore = new LimitStore(opened.db);
 const webhookStore = new WebhookStore(opened.db);
 // One log for the whole process, so the bot and the owner see the same refused calls. It is kept in memory only.
@@ -495,7 +498,8 @@ const peopleAdmin = hubConfig?.role === 'owner' ? new HubClient(hubConfig) : und
 // The bots use these through their provider tools, and the owner through the provider routes of the web app.
 const providerTools: ProviderToolDependencies = {
     available: ['claude', ...(chatgptSignIn === undefined ? [] : ['chatgpt' as const]), ...acpProviders.available],
-    connected: () => setup.connectedProviders(),
+    connected: () => connectedProviders.read(),
+    checkConnected: () => setup.connectedProviders(),
     providerFor: botId => providerChoices.forBot(botId),
     setProvider: (botId, provider) => providerChoices.setForBot(botId, provider),
     offerProviders: provider => setup.offerProviders(provider),
