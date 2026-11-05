@@ -15,6 +15,10 @@ All notable changes to this project are listed here. The format follows
 - The site sends `Strict-Transport-Security` with a one day lifetime and no longer offers HTTP/3, which never worked because UDP 443 is not published.
 - The hub and server databases are mode 600.
 
+### Changed
+
+- The review asks the owner before the bot gives personal details, such as an address, phone or document, to a site the owner did not name. It also asks before the bot changes or deletes something in an outside account, accepts terms or signs something, unless the owner asked for it. Other browser use never asks.
+
 ### Fixed
 
 - A bot on ChatGPT or an OpenAI key can use its own tools, such as the browser, and connected apps in Auto and YOLO. Codex does not ask about these calls in those modes, so every one was refused with no card. CloudBot now reviews each call when it arrives. Harmless ones run at once, and dangerous ones still show a card in Auto.
