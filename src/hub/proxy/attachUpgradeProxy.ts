@@ -6,7 +6,7 @@ import { HUB_TRUST_HEADER } from '../../shared/hubProtocol.ts';
 import type { ActivityTracker, InstanceManager, PeopleStore, PersonRecord } from '../contract.ts';
 import type { LoginSessions } from '../auth/LoginSessions.ts';
 import { readHostRoute } from '../auth/hostRouting.ts';
-import { HUB_SESSION_COOKIE, readHubSessionCookie } from '../auth/sessionCookie.ts';
+import { readHubSessionCookie, removeHubSessionCookies } from '../auth/sessionCookie.ts';
 import type { UpstreamTarget } from '../auth/createFrontDoorRoutes.ts';
 
 interface UpgradeProxyOptions {
@@ -38,18 +38,6 @@ function readForwardedFor(request: IncomingMessage): string {
     return request.socket.remoteAddress ?? 'unknown';
 }
 
-function removeSessionCookie(cookieHeader: string | undefined): string | undefined {
-    if (cookieHeader === undefined) {
-        return undefined;
-    }
-
-    const keptCookies = cookieHeader.split(';')
-        .map(entry => entry.trim())
-        .filter(entry => entry !== '' && !entry.startsWith(`${HUB_SESSION_COOKIE}=`));
-
-    return keptCookies.length === 0 ? undefined : keptCookies.join('; ');
-}
-
 function readConnectionTokens(request: IncomingMessage): Set<string> {
     const rawConnection = request.headers.connection ?? '';
     const connection = Array.isArray(rawConnection) ? rawConnection.join(',') : rawConnection;
@@ -74,7 +62,7 @@ function buildUpgradeHeaders(request: IncomingMessage, person: PersonRecord, sec
             forwardedHeaders[name] = value;
         });
 
-    const cookieHeader = removeSessionCookie(request.headers.cookie);
+    const cookieHeader = removeHubSessionCookies(request.headers.cookie);
 
     if (cookieHeader !== undefined) {
         forwardedHeaders.cookie = cookieHeader;
@@ -237,7 +225,8 @@ function attachUpgradeProxy(options: UpgradeProxyOptions): void {
             return;
         }
 
-        const sessionToken = readHubSessionCookie(request);
+        const secure = options.domain.toLowerCase() !== 'localhost';
+        const sessionToken = readHubSessionCookie(request, secure);
         const currentTime = Date.now();
         const sessionName = sessionToken === undefined ? undefined : options.sessions.find(sessionToken, currentTime);
 
@@ -246,8 +235,6 @@ function attachUpgradeProxy(options: UpgradeProxyOptions): void {
 
             return;
         }
-
-        const secure = options.domain.toLowerCase() !== 'localhost';
 
         if (!isSameOriginUpgrade(request, hostHeader, secure)) {
             refuse(socket, '403 Forbidden');

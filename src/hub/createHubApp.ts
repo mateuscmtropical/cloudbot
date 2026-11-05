@@ -77,7 +77,7 @@ function createHubApp(options: CreateHubAppOptions): Hono {
             const requestHost = readRequestHost(context);
             const requestName = readHostRoute(requestHost, options.domain)?.name;
             const currentTime = options.now?.() ?? Date.now();
-            const session = readHubSession(context, options.sessions, currentTime);
+            const session = readHubSession(context, options.sessions, currentTime, options.secure);
 
             if (session === undefined) {
                 return context.json({ error: 'Sign in first.' }, 401);
@@ -112,7 +112,7 @@ function createHubApp(options: CreateHubAppOptions): Hono {
         sessionPersonName: (context) => {
             const currentTime = options.now?.() ?? Date.now();
 
-            return readHubSession(context, options.sessions, currentTime)?.name;
+            return readHubSession(context, options.sessions, currentTime, options.secure)?.name;
         },
         isPersonActive: name => options.people.find(name)?.state === 'active',
         startSession: (name, context) => {

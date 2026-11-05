@@ -7,7 +7,7 @@ import type { BlockList } from 'node:net';
 import type { RenderedPage } from '../pages/renderPage.ts';
 import { renderNotAvailablePage } from '../pages/renderPages.ts';
 import type { LoginSessions } from './LoginSessions.ts';
-import { HUB_SESSION_COOKIE } from './sessionCookie.ts';
+import { hubSessionCookieName } from './sessionCookie.ts';
 
 interface SessionState {
     token: string;
@@ -114,8 +114,9 @@ function requestHasSameOrigin(context: Context, secure: boolean): boolean {
     }
 }
 
-function readHubSession(context: Context, sessions: LoginSessions, now: number): SessionState | undefined {
-    const token = getCookie(context, HUB_SESSION_COOKIE);
+function readHubSession(context: Context, sessions: LoginSessions, now: number, secure: boolean): SessionState | undefined {
+    const cookieName = hubSessionCookieName(secure);
+    const token = getCookie(context, cookieName);
 
     if (token === undefined || token === '') {
         return undefined;
@@ -137,16 +138,18 @@ function sessionCookieOptions(secure: boolean, maxAge = SESSION_MAX_AGE_SECONDS)
 function startHubSession(context: Context, sessions: LoginSessions, name: string, secure: boolean, now: number): string {
     const token = sessions.create(name, now);
     const cookieOptions = sessionCookieOptions(secure);
+    const cookieName = hubSessionCookieName(secure);
 
-    setCookie(context, HUB_SESSION_COOKIE, token, cookieOptions);
+    setCookie(context, cookieName, token, cookieOptions);
 
     return token;
 }
 
 function clearHubSessionCookie(context: Context, secure: boolean): void {
     const cookieOptions = sessionCookieOptions(secure, 0);
+    const cookieName = hubSessionCookieName(secure);
 
-    setCookie(context, HUB_SESSION_COOKIE, '', cookieOptions);
+    setCookie(context, cookieName, '', cookieOptions);
 }
 
 function renderResponse(context: Context, page: RenderedPage, status: 200 | 401 | 404 | 500 | 502 = 200): Response {

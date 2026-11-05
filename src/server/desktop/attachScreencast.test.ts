@@ -107,7 +107,7 @@ describe('attachScreencast', () => {
 
     it('sends the frames of the browser page to a signed-in owner', async () => {
         const webSocket = new WebSocket(`ws://127.0.0.1:${String(httpPort)}/api/desktop/screencast`, {
-            headers: { cookie: `cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(httpPort)}` },
+            headers: { cookie: `__Host-cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(httpPort)}` },
         });
         const firstMessage = new Promise<string>((resolve) => {
             webSocket.on('message', (data: Buffer) => {
@@ -169,7 +169,7 @@ describe('attachScreencast', () => {
 
     it('stops the screencast and closes the page when the owner leaves', async () => {
         const webSocket = new WebSocket(`ws://127.0.0.1:${String(httpPort)}/api/desktop/screencast`, {
-            headers: { cookie: `cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(httpPort)}` },
+            headers: { cookie: `__Host-cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(httpPort)}` },
         });
 
         await waitUntil(() => fake.calls.includes('Page.startScreencast'));

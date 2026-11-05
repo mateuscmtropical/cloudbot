@@ -78,7 +78,7 @@ describe('attachVncProxy', () => {
 
     async function connectAndRequestPortraitResize(size: { width: number; height: number } = { width: 400, height: 800 }): Promise<WebSocket> {
         const webSocket = new WebSocket(`ws://127.0.0.1:${String(httpPort)}/api/desktop/vnc`, {
-            headers: { cookie: `cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(httpPort)}` },
+            headers: { cookie: `__Host-cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(httpPort)}` },
         });
         const handshake = Buffer.concat([Buffer.from('RFB 003.008\n'), Buffer.from([1, 1])]);
         const resize = buildSetDesktopSizeMessage(size);
@@ -124,7 +124,7 @@ describe('attachVncProxy', () => {
 
     it('refuses a page of another localhost port, even with a valid cookie', async () => {
         const webSocket = new WebSocket(`ws://127.0.0.1:${String(httpPort)}/api/desktop/vnc`, {
-            headers: { cookie: `cloudbot_session=${sessionToken}`, origin: 'http://localhost:5173' },
+            headers: { cookie: `__Host-cloudbot_session=${sessionToken}`, origin: 'http://localhost:5173' },
         });
 
         expect(await waitForOutcome(webSocket))
@@ -138,7 +138,7 @@ describe('attachVncProxy', () => {
         attachVncProxy({ server: publicServer, access, screen, vncPort, publicUrl: 'https://cloudbot.example.com/' });
 
         const publicPort = await listenOnFreePort(publicServer);
-        const cookie = `cloudbot_session=${sessionToken}`;
+        const cookie = `__Host-cloudbot_session=${sessionToken}`;
         const allowed = new WebSocket(`ws://127.0.0.1:${String(publicPort)}/api/desktop/vnc`, {
             headers: { cookie, origin: 'https://cloudbot.example.com' },
         });
@@ -158,7 +158,7 @@ describe('attachVncProxy', () => {
 
     it('refuses a request with a wrong session cookie', async () => {
         const webSocket = new WebSocket(`ws://127.0.0.1:${String(httpPort)}/api/desktop/vnc`, {
-            headers: { cookie: 'cloudbot_session=wrong', origin: `http://127.0.0.1:${String(httpPort)}` },
+            headers: { cookie: '__Host-cloudbot_session=wrong', origin: `http://127.0.0.1:${String(httpPort)}` },
         });
 
         expect(await waitForOutcome(webSocket))
@@ -167,7 +167,7 @@ describe('attachVncProxy', () => {
 
     it('forwards the VNC greeting and the client bytes with a valid cookie', async () => {
         const webSocket = new WebSocket(`ws://127.0.0.1:${String(httpPort)}/api/desktop/vnc`, {
-            headers: { cookie: `cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(httpPort)}` },
+            headers: { cookie: `__Host-cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(httpPort)}` },
         });
         const messages: string[] = [];
         const received = new Promise<void>((resolve) => {
@@ -228,7 +228,7 @@ describe('attachVncProxy', () => {
         attachVncProxy({ server: secondServer, access, screen, vncPort: deadVncPort });
 
         const webSocket = new WebSocket(`ws://127.0.0.1:${String(secondPort)}/api/desktop/vnc`, {
-            headers: { cookie: `cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(secondPort)}` },
+            headers: { cookie: `__Host-cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(secondPort)}` },
         });
         const closed = new Promise<string>((resolve) => {
             webSocket.on('close', () => {
@@ -249,7 +249,7 @@ describe('attachVncProxy', () => {
         // The fake desktop echoes the bytes it gets. The test reads them back until the update request arrives.
         async function sendAndCollect(): Promise<Buffer> {
             const webSocket = new WebSocket(`ws://127.0.0.1:${String(httpPort)}/api/desktop/vnc`, {
-                headers: { cookie: `cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(httpPort)}` },
+                headers: { cookie: `__Host-cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(httpPort)}` },
             });
             let echoed = Buffer.alloc(0);
             const done = new Promise<void>((resolve) => {
