@@ -179,5 +179,5 @@ function chooseTurnEffort(efforts: EffortChoices, source: 'chat' | 'routine' | '
     return routinesEffort ?? efforts.chat ?? undefined;
 }
 
-export { EFFORT_LEVELS, MODEL_ALIASES, MODEL_ID_PATTERN, chooseTurnEffort, chooseTurnModel, isClaudeModel, isModelInputError, parseEffortInput, parseModelInput, toEffortChoice, toEffortFields };
+export { EFFORT_LEVELS, MODEL_ALIASES, MODEL_ID_PATTERN, chooseTurnEffort, chooseTurnModel, isClaudeModel, isEffortLevel, isModelInputError, parseEffortInput, parseModelInput, toEffortChoice, toEffortFields };
 export type { EffortChoices, EffortFields, EffortLevel, ModelChoices, ModelInputError, ModelKind };

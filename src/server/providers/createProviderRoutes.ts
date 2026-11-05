@@ -3,9 +3,9 @@ import { Hono } from 'hono';
 import { isPermissionMode } from '../../shared/permissionModes.ts';
 import type { PermissionMode } from '../../shared/permissionModes.ts';
 import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse } from '../../shared/providerTypes.ts';
-import { isClaudeModel } from '../models/modelChoices.ts';
+import { EFFORT_LEVELS, MODEL_ALIASES, isClaudeModel, isEffortLevel } from '../models/modelChoices.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
-import type { ProviderModelCatalogs } from './ProviderModelCatalogs.ts';
+import type { ProviderModelCatalogs, ProviderModelOption } from './ProviderModelCatalogs.ts';
 import type { ProviderToolDependencies } from './createProviderTools.ts';
 import { PROVIDER_LABELS, isProviderId } from './providerIds.ts';
 import type { ProviderId } from './providerIds.ts';
@@ -17,7 +17,7 @@ interface ProviderErrorResponse {
 // The provider routes are owner settings behind the session check. The bot changes its own provider with provider_use.
 interface ProviderRoutesOptions {
     providers: ProviderToolDependencies;
-    modelStore: Pick<ModelStore, 'get' | 'getProviderChoice' | 'setProviderChoice'>;
+    modelStore: Pick<ModelStore, 'get' | 'set' | 'getEfforts' | 'setEfforts' | 'getProviderChoice' | 'setProviderChoice'>;
     modelCatalogs?: ProviderModelCatalogs | undefined;
     hasBot: (botId: string) => Promise<boolean>;
     // Only the owner changes the mode, here behind the session check. No bot tool reaches it, so a page cannot talk a bot into YOLO.
@@ -38,6 +38,14 @@ const INVALID_MODEL_CHOICE: ProviderErrorResponse = { error: 'Choose a model fro
 const INVALID_EFFORT_CHOICE: ProviderErrorResponse = { error: 'Choose an effort offered for the selected model.' };
 const INVALID_PERMISSION_MODE: ProviderErrorResponse = { error: 'Send a JSON body with a mode: ask, auto or yolo.' };
 
+// Claude reports no model list, so the menu offers the aliases its CLI takes, by name.
+const CLAUDE_MODELS: ProviderModelOption[] = MODEL_ALIASES.map(id => ({
+    id,
+    label: `${id.charAt(0)
+        .toUpperCase()}${id.slice(1)}`,
+    efforts: [...EFFORT_LEVELS],
+}));
+
 // Only the models a provider takes are shown. The claude models belong to Claude, and gemini- models to Gemini.
 function modelFor(provider: ProviderId, chatModel: string | null): string | null {
     if (chatModel === null) {
@@ -51,8 +59,60 @@ function modelFor(provider: ProviderId, chatModel: string | null): string | null
     return provider === 'gemini' && chatModel.startsWith('gemini-') ? chatModel : null;
 }
 
+// The choices of Claude live in the bot's chat model and effort. Other providers keep theirs per provider.
+async function summarizeClaude(options: ProviderRoutesOptions, botId: string): Promise<BotProviderSummary> {
+    const choices = await options.modelStore.get(botId);
+    const efforts = await options.modelStore.getEfforts(botId);
+    const model = modelFor('claude', choices.chat);
+    const isOffered = model === null || CLAUDE_MODELS.some(option => option.id === model);
+    const permissionMode = await options.permissionModes.get(botId);
+
+    return {
+        provider: 'claude',
+        label: PROVIDER_LABELS.claude,
+        model,
+        // A full model id chosen another way stays in the list, so the menu shows it.
+        modelOptions: isOffered ? CLAUDE_MODELS : [...CLAUDE_MODELS, { id: model, label: model, efforts: [...EFFORT_LEVELS] }],
+        selectedModel: model,
+        selectedEffort: efforts.chat,
+        effortOptions: [...EFFORT_LEVELS],
+        permissionMode,
+    };
+}
+
+async function saveClaudeChoice(options: ProviderRoutesOptions, botId: string, fields: Record<string, unknown>): Promise<ProviderErrorResponse | undefined> {
+    const { model, effort } = fields;
+
+    if (model !== undefined && model !== null && (typeof model !== 'string' || !isClaudeModel(model))) {
+        return INVALID_MODEL_CHOICE;
+    }
+
+    if (effort !== undefined && effort !== null && !isEffortLevel(effort)) {
+        return INVALID_EFFORT_CHOICE;
+    }
+
+    if (model !== undefined) {
+        const choices = await options.modelStore.get(botId);
+
+        await options.modelStore.set(botId, { ...choices, chat: model });
+    }
+
+    if (effort !== undefined) {
+        const efforts = await options.modelStore.getEfforts(botId);
+
+        await options.modelStore.setEfforts(botId, { ...efforts, chat: effort });
+    }
+
+    return undefined;
+}
+
 async function summarize(options: ProviderRoutesOptions, botId: string): Promise<BotProviderSummary> {
     const provider = await options.providers.providerFor(botId);
+
+    if (provider === 'claude') {
+        return summarizeClaude(options, botId);
+    }
+
     const choices = await options.modelStore.get(botId);
     const providerChoice = await options.modelStore.getProviderChoice(botId, provider);
     const catalog = options.modelCatalogs?.get(provider);
@@ -62,11 +122,9 @@ async function summarize(options: ProviderRoutesOptions, botId: string): Promise
         && catalog.models.some(option => option.id === providerChoice.defaultModel);
     const providerDefaultModel = savedDefaultIsOffered ? providerChoice.defaultModel : catalog?.defaultModel ?? providerChoice?.defaultModel ?? null;
     const hasSelectableModels = (catalog?.models.length ?? 0) > 0;
-    const model = provider === 'claude'
-        ? modelFor(provider, choices.chat)
-        : providerChoice !== undefined && !hasSelectableModels
-            ? null
-            : providerChoice === undefined ? legacyGemini ?? providerDefaultModel : selectedModel ?? providerDefaultModel;
+    const model = providerChoice !== undefined && !hasSelectableModels
+        ? null
+        : providerChoice === undefined ? legacyGemini ?? providerDefaultModel : selectedModel ?? providerDefaultModel;
     const selectedOption = catalog?.models.find(option => option.id === (selectedModel ?? providerDefaultModel));
     const permissionMode = await options.permissionModes.get(botId);
 
@@ -88,6 +146,8 @@ const CONNECTED_FRESH_MS = 20_000;
 interface ConnectedCheck {
     connected: ProviderId[];
     checkedAt: number;
+    // The sign-ins changed since this check when this number is behind.
+    version: number;
 }
 
 function createProviderRoutes(options: ProviderRoutesOptions): Hono {
@@ -95,14 +155,19 @@ function createProviderRoutes(options: ProviderRoutesOptions): Hono {
     let lastCheck: ConnectedCheck | undefined;
     let runningCheck: Promise<ConnectedCheck> | undefined;
 
+    function readVersion(): number {
+        return options.providers.connectionVersion?.() ?? 0;
+    }
+
     function startCheck(): Promise<ConnectedCheck> {
         if (runningCheck !== undefined) {
             return runningCheck;
         }
 
+        const version = readVersion();
         const check = options.providers.connected()
             .then((connected) => {
-                lastCheck = { connected, checkedAt: Date.now() };
+                lastCheck = { connected, checkedAt: Date.now(), version };
 
                 return lastCheck;
             })
@@ -115,12 +180,16 @@ function createProviderRoutes(options: ProviderRoutesOptions): Hono {
         return check;
     }
 
-    // The last answer is used at once, and an old one is checked again in the background. Only the first call waits for the CLIs.
+    // The last answer is used at once, and an old one is checked again in the background. Only the first call, and the first
+    // after a sign-in changed, waits for the CLIs. A check that was running during the change does not count.
     async function readConnected(): Promise<ProviderId[]> {
-        if (lastCheck === undefined) {
-            const first = await startCheck();
+        const version = readVersion();
 
-            return first.connected;
+        if (lastCheck === undefined || lastCheck.version !== version) {
+            const check = await startCheck();
+            const current = check.version === version ? check : await startCheck();
+
+            return current.connected;
         }
 
         if (Date.now() - lastCheck.checkedAt > CONNECTED_FRESH_MS) {
@@ -219,7 +288,7 @@ function createProviderRoutes(options: ProviderRoutesOptions): Hono {
         const provider = await options.providers.providerFor(botId);
         const catalog = options.modelCatalogs?.get(provider);
 
-        if (catalog === undefined || catalog.models.length === 0) {
+        if (provider !== 'claude' && (catalog === undefined || catalog.models.length === 0)) {
             return context.json(NO_MODEL_OPTIONS, 400);
         }
 
@@ -229,6 +298,22 @@ function createProviderRoutes(options: ProviderRoutesOptions): Hono {
 
         if (fields === undefined || (fields.model === undefined && fields.effort === undefined)) {
             return context.json({ error: 'Send a model or effort choice.' }, 400);
+        }
+
+        if (provider === 'claude') {
+            const refusal = await saveClaudeChoice(options, botId, fields);
+
+            if (refusal !== undefined) {
+                return context.json(refusal, 400);
+            }
+
+            const claudeSummary = await summarize(options, botId);
+
+            return context.json(claudeSummary);
+        }
+
+        if (catalog === undefined) {
+            return context.json(NO_MODEL_OPTIONS, 400);
         }
 
         if (fields.model !== undefined && fields.model !== null && typeof fields.model !== 'string') {
@@ -272,8 +357,18 @@ function createProviderRoutes(options: ProviderRoutesOptions): Hono {
     });
 
     // The sign-in runs in the chat of the setup bot, as it does for a provider the owner connects there.
+    // A provider in the body goes straight to its sign-in. Without one, the chat asks which provider.
     routes.post('/api/providers/connect', async (context) => {
-        await options.providers.offerProviders();
+        const payload: unknown = await context.req.json()
+            .catch(() => undefined);
+        const requested = (payload as { provider?: unknown } | undefined)?.provider;
+        const picked = typeof requested === 'string' && isProviderId(requested) && options.providers.available.includes(requested) ? requested : undefined;
+
+        if (requested !== undefined && picked === undefined) {
+            return context.json(UNKNOWN_PROVIDER, 400);
+        }
+
+        await options.providers.offerProviders(picked);
         const response: ProviderConnectResponse = { botId: options.setupBotId };
 
         return context.json(response);

@@ -1516,13 +1516,20 @@ button.list-row {
     text-align: left;
 }
 
+.provider-row:hover,
 .provider-row[aria-pressed='true'] {
     background: var(--color-hover);
+}
+
+.provider-row[aria-pressed='true'] {
     font-weight: 600;
 }
 
-.provider-row.is-off {
-    color: var(--color-text-muted);
+.provider-row-connect {
+    flex: none;
+    color: var(--color-accent);
+    font-size: 0.75rem;
+    font-weight: 600;
 }
 
 .provider-row-name {
@@ -1568,10 +1575,6 @@ button.list-row {
 
 .provider-row[aria-pressed='true'] .provider-radio::after {
     transform: scale(1);
-}
-
-.provider-row.is-off .provider-radio {
-    opacity: 0.4;
 }
 
 .provider-note {

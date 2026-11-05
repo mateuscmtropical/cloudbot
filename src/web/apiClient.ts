@@ -474,9 +474,9 @@ function listProviders(): Promise<ProviderChoiceSummary[]> {
     return requestJson<ProviderChoiceSummary[]>(`${API_ROOT}/providers`, {});
 }
 
-// Posts the provider list in the setup chat. The answer names the bot whose chat holds the sign-in.
-function startProviderConnect(): Promise<ProviderConnectResponse> {
-    return requestJson<ProviderConnectResponse>(`${API_ROOT}/providers/connect`, { method: 'POST' });
+// Starts connecting a provider in the setup chat. The answer names the bot whose chat holds the sign-in.
+function startProviderConnect(provider: string): Promise<ProviderConnectResponse> {
+    return postJson<ProviderConnectResponse>(`${API_ROOT}/providers/connect`, { provider });
 }
 
 interface LimitBound {

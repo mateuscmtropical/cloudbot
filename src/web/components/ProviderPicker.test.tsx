@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotProviderSummary, ProviderChoiceSummary } from '../../shared/providerTypes.ts';
@@ -161,8 +161,44 @@ describe('ProviderPicker', () => {
             expect(onOpenSetupChat)
                 .toHaveBeenCalledWith('setup-bot');
         });
+        expect(startProviderConnect)
+            .toHaveBeenCalledWith('chatgpt');
         expect(onClose)
             .toHaveBeenCalledOnce();
+    });
+
+    it('offers the models and efforts a Claude summary lists', async () => {
+        vi.mocked(getBotProvider)
+            .mockResolvedValue({
+                ...CLAUDE_SUMMARY,
+                modelOptions: [{ id: 'sonnet', label: 'Sonnet', efforts: ['low', 'max'] }, { id: 'haiku', label: 'Haiku', efforts: ['low', 'max'] }],
+                effortOptions: ['low', 'max'],
+            });
+
+        renderPicker();
+
+        expect(await screen.findByRole('combobox', { name: 'Model' }))
+            .toBeTruthy();
+        expect(screen.getByRole('combobox', { name: 'Effort' }))
+            .toBeTruthy();
+    });
+
+    it('connects from anywhere on the row of a provider', async () => {
+        vi.mocked(startProviderConnect)
+            .mockResolvedValue({ botId: 'setup-bot' });
+
+        renderPicker();
+
+        const row = await screen.findByRole('button', { name: 'Connect ChatGPT' });
+
+        expect(row.className)
+            .toBe('provider-row');
+
+        fireEvent.click(within(row)
+            .getByText('ChatGPT'));
+
+        expect(startProviderConnect)
+            .toHaveBeenCalledWith('chatgpt');
     });
 
     it('marks the old provider again when the change is refused', async () => {

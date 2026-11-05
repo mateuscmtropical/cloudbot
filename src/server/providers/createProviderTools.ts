@@ -18,8 +18,10 @@ interface ProviderToolDependencies {
     connected: () => Promise<ProviderId[]>;
     providerFor: (botId: string) => Promise<ProviderId>;
     setProvider: (botId: string, provider: ProviderId) => Promise<void>;
-    // Posts the provider list in the setup chat.
-    offerProviders: () => Promise<void>;
+    // Posts the provider list in the setup chat. A provider the owner already picked skips the list.
+    offerProviders: (provider?: ProviderId) => Promise<void>;
+    // Goes up when a sign-in may have changed, so a kept answer about the connected providers is read again.
+    connectionVersion?: (() => number) | undefined;
 }
 
 const PROVIDER_LIST_TOOL_NAME = 'provider_list';

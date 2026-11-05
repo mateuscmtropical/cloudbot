@@ -17,6 +17,9 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- In a bot's provider list, the whole row of a provider that is not connected connects it, and the row no longer looks disabled. The setup chat goes straight to that provider, without asking again which one.
+- The provider list shows a provider as connected right after its sign-in ends.
+- A bot on Claude now has its model and effort in the provider menu.
 - The Screen panel closes by itself when the bot's turn ends, unless the owner holds the screen or asked to see it.
 - On a phone, a swipe to the left in a chat opens the bot's details, and a swipe to the right closes them. Anything that scrolls sideways, such as filter chips, keeps the drag also at the end of its scroll. Dialogs keep it too.
 - In the message box, the up and down arrows move through the lines first, wrapped lines too. On the first or last line they go to the edge of the text, and only from there to the older or newer message.
