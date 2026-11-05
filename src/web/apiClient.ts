@@ -8,7 +8,14 @@ import type { BotWebhook, CreatedBotWebhook } from '../shared/webhookTypes.ts';
 import type { TurnLimits } from '../shared/limitTypes.ts';
 import type { ChannelDetail, ChannelPostView, ChannelSettings, ChannelSummary } from '../shared/channelTypes.ts';
 import type { PermissionMode } from '../shared/permissionModes.ts';
-import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse } from '../shared/providerTypes.ts';
+import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse, WorkKindSummary } from '../shared/providerTypes.ts';
+
+// A null provider follows the chat. A null model or effort uses the provider default.
+interface WorkChoiceInput {
+    provider: string | null;
+    model: string | null;
+    effort: string | null;
+}
 import type { PushKeyResponse, PushSubscriptionInput, PushUnsubscribeInput } from '../shared/pushTypes.ts';
 import type { MascotLook } from '../shared/mascot.ts';
 import { compressImage } from './compressImage.ts';
@@ -462,6 +469,19 @@ function saveProviderModel(botId: string, model: string | null, effort: string |
     return requestJson<BotProviderSummary>(path, init);
 }
 
+function getWorkSettings(botId: string): Promise<WorkKindSummary[]> {
+    const path = botPath(botId, '/work');
+
+    return requestJson<WorkKindSummary[]>(path, {});
+}
+
+function saveWorkChoice(botId: string, kind: string, choice: WorkChoiceInput): Promise<WorkKindSummary[]> {
+    const path = botPath(botId, `/work/${kind}`);
+    const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(choice) };
+
+    return requestJson<WorkKindSummary[]>(path, init);
+}
+
 function savePermissionMode(botId: string, mode: PermissionMode): Promise<BotProviderSummary> {
     const path = botPath(botId, '/provider/permission-mode');
     const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) };
@@ -661,7 +681,7 @@ async function removePushSubscription(endpoint: string): Promise<void> {
         throw new RequestFailedError(path, response.status, serverMessage);
     }
 }
-export type { EffortLevel, LimitBound, LimitsResponse, MessagePageRequest, ModelSettings, ModelSettingsResponse, NewRuleRequest };
+export type { EffortLevel, LimitBound, LimitsResponse, MessagePageRequest, ModelSettings, ModelSettingsResponse, NewRuleRequest, WorkChoiceInput };
 export {
     RequestFailedError,
     listConnectedApps,
@@ -716,6 +736,8 @@ export {
     listProviders,
     startProviderConnect,
     switchBotProvider,
+    getWorkSettings,
+    saveWorkChoice,
     savePermissionMode, saveProviderModel,
     renameBot,
     changeBotMascot,

@@ -30,9 +30,29 @@ interface ProviderModelOptionSummary {
     efforts: string[];
 }
 
+// What one kind of work runs on, such as routines, and what the owner can choose for it.
+interface WorkKindSummary {
+    kind: string;
+    label: string;
+    // The owner's choice. Null follows the chat.
+    provider: string | null;
+    usedProvider: string;
+    usedProviderLabel: string;
+    // The real name when it is known, and null until the provider reported its default.
+    usedModel: string | null;
+    usedEffort: string | null;
+    selectedModel: string | null;
+    selectedEffort: string | null;
+    // Empty when the work takes these from the chat or the provider lists no models yet.
+    modelOptions: ProviderModelOptionSummary[];
+    effortOptions: string[];
+    // Null when every connected provider can run this work.
+    allowedProviders: string[] | null;
+}
+
 // The bot where the owner connects a provider. Its chat shows the sign-in.
 interface ProviderConnectResponse {
     botId: string;
 }
 
-export type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse, ProviderModelOptionSummary };
+export type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse, ProviderModelOptionSummary, WorkKindSummary };

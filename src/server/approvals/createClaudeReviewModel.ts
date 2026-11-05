@@ -2,7 +2,6 @@ import { spawn } from 'node:child_process';
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
 
 import { isClaudeModel } from '../models/modelChoices.ts';
-import type { EffortLevel } from '../models/modelChoices.ts';
 import type { ReviewModel } from './createToolCallReviewer.ts';
 
 type ReviewSpawnFunction = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -31,7 +30,7 @@ interface ReviewResultLine {
 const DEFAULT_REVIEW_TIMEOUT_MS = 60_000;
 const REVIEW_SYSTEM_PROMPT = 'You are a careful reviewer of tool calls. You answer with one JSON object and nothing else.';
 
-function buildReviewArguments(model: string | undefined, effort: EffortLevel | undefined): string[] {
+function buildReviewArguments(model: string | undefined, effort: string | undefined): string[] {
     const modelArguments = model === undefined || !isClaudeModel(model) ? [] : ['--model', model];
     const effortArguments = effort === undefined ? [] : ['--effort', effort];
 

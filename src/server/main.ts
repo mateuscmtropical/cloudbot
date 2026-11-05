@@ -28,7 +28,8 @@ import { createAgyReviewModel } from './approvals/createAgyReviewModel.ts';
 import { createCodexReviewModel } from './approvals/createCodexReviewModel.ts';
 import { skipAfterFailure } from './approvals/skipAfterFailure.ts';
 import { createClaudeReviewModel } from './approvals/createClaudeReviewModel.ts';
-import type { ReviewModel } from './approvals/createToolCallReviewer.ts';
+import { createReviewChain } from './approvals/createReviewChain.ts';
+import { WorkSettings } from './providers/WorkSettings.ts';
 import { PROVIDER_AGENT_WRAPPER, codexAgentLaunch, wrapperAgentLaunch } from './agent/codexAgentLaunch.ts';
 import { createReviewContextReader } from './approvals/createReviewContextReader.ts';
 import { createToolCallReviewer } from './approvals/createToolCallReviewer.ts';
@@ -230,6 +231,8 @@ const routineStore = new RoutineStore(opened.db);
 const taskStore = new TaskStore(opened.db);
 const modelStore = new ModelStore(opened.db);
 const providerModelCatalogs = new ProviderModelCatalogs();
+// The provider list is built below. It is read only when an owner saves a choice.
+const workSettings = new WorkSettings({ settings, modelStore, modelCatalogs: providerModelCatalogs, providerFor: botId => providerChoices.forBot(botId), available: () => providerTools.available });
 const limitStore = new LimitStore(opened.db);
 const webhookStore = new WebhookStore(opened.db);
 // One log for the whole process, so the bot and the owner see the same refused calls. It is kept in memory only.
@@ -329,30 +332,18 @@ const askCodexReview = agentUser === undefined ? undefined : createCodexReviewMo
 const askAgyReview = agentUser === undefined
     ? undefined
     : createAgyReviewModel({ launch: wrapperAgentLaunch(agentUser, PROVIDER_AGENT_WRAPPER), command: PROVIDER_AGENT_WRAPPER, args: ['gemini', 'agy-review'] });
-const fallbackReviews: ReviewModel[] = askCodexReview === undefined || askAgyReview === undefined
-    ? []
-    : [
-            skipAfterFailure(askCodexReview),
-            skipAfterFailure(askAgyReview),
-        ];
-const askClaudeReviewOnce = skipAfterFailure(askClaudeReview);
-const askReviewModel: ReviewModel = (prompt, signal, model, effort, onCost) => {
-    const firstTry = askClaudeReviewOnce(prompt, signal, model, effort, onCost);
-
-    return fallbackReviews.reduce((attempt, askNext) => attempt.catch((error: unknown) => {
-        if (signal?.aborted === true) {
-            throw error;
-        }
-
-        return askNext(prompt, signal, model, effort);
-    }), firstTry);
-};
+const askReviewModel = createReviewChain({
+    claude: skipAfterFailure(askClaudeReview),
+    ...(askCodexReview === undefined ? {} : { chatgpt: skipAfterFailure(askCodexReview) }),
+    ...(askAgyReview === undefined ? {} : { gemini: skipAfterFailure(askAgyReview) }),
+});
 const toolCallReviewer = createToolCallReviewer({
     askModel: askReviewModel,
     readContext: createReviewContextReader({
         ruleStore,
         messageStore,
         modelStore,
+        workSettings,
         channelStore,
         workspaceFor: botId => agentUser === undefined ? join(dataDir, 'workspaces', botId) : agentWorkspacePath(botId, AGENT_WORKSPACE_ROOT),
     }),
@@ -469,7 +460,7 @@ if (codexPath !== undefined && chatgptSignIn !== undefined && openaiKeyProxy !==
     };
 }
 
-const providerRunner = new ProviderRunner({ engines, providerFor: botId => providerChoices.forBot(botId), providerChoiceFor: (botId, provider) => modelStore.getProviderChoice(botId, provider), modelCatalogs: providerModelCatalogs });
+const providerRunner = new ProviderRunner({ engines, providerFor: botId => providerChoices.forBot(botId), providerChoiceFor: (botId, provider) => modelStore.getProviderChoice(botId, provider), modelCatalogs: providerModelCatalogs, noteDefaultModel: (provider, model) => workSettings.noteDefaultModel(provider, model) });
 
 // The token is used only for the Telegram API site the owner saved it for.
 function readTelegramToken(botId: string): string | undefined {
@@ -523,6 +514,7 @@ const chatService: ChatService = new ChatService({
     templateGallery,
     providerTools,
     providerModelCatalogs,
+    workSettings,
     watchStore,
     connectedApps,
     integrationService,
@@ -669,7 +661,7 @@ await rm(voiceWorkDir, { recursive: true, force: true });
 
 const voicePrograms = readVoicePrograms(process.env);
 const transcribeVoice = createVoiceTranscriber({ workDir: voiceWorkDir, programs: voicePrograms });
-const app = createApp({ transcribeVoice, push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, bitwardenVault, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ transcribeVoice, push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, workSettings, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, bitwardenVault, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

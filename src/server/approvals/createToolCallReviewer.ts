@@ -9,7 +9,7 @@ import { GALLERY_INSTALL_TOOL_FULL_NAME, GALLERY_SHARE_TOOL_FULL_NAME } from '..
 import { hasHiddenCode } from '../text/isHiddenCode.ts';
 import { checkCommandFloor } from './commandFloor.ts';
 import { GITHUB_WRITE_TOOL_NAME, classifyToolCall } from './classifyToolCall.ts';
-import type { EffortLevel } from '../models/modelChoices.ts';
+import type { ProviderId } from '../providers/providerIds.ts';
 import type { ToolCallReviewer, ToolCallVerdict } from './ApprovalGate.ts';
 import { normalizeHost } from '../desktop/browserHost.ts';
 import type { ChangeCard, ChangeMode } from '../integrations/IntegrationService.ts';
@@ -28,8 +28,9 @@ type ReviewModel = (
     prompt: string,
     signal?: AbortSignal,
     model?: string,
-    effort?: EffortLevel,
+    effort?: string,
     onCost?: (costUsd: number) => void,
+    provider?: ProviderId,
 ) => Promise<string>;
 
 interface ReviewContext {
@@ -42,7 +43,9 @@ interface ReviewContext {
     // The model the owner chose for the review. Unset keeps the CLI default.
     reviewModel?: string;
     // The effort the owner chose for the review. Unset keeps the CLI default.
-    reviewEffort?: EffortLevel;
+    reviewEffort?: string;
+    // The provider the review runs on first. Unset keeps the usual order.
+    reviewProvider?: ProviderId;
 }
 
 interface ToolCallReviewerOptions {
@@ -477,7 +480,7 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
         let answerText: string;
 
         try {
-            answerText = await options.askModel(prompt, signal, context.reviewModel, context.reviewEffort, reportReviewCost);
+            answerText = await options.askModel(prompt, signal, context.reviewModel, context.reviewEffort, reportReviewCost, context.reviewProvider);
         } catch (error: unknown) {
             if (signal?.aborted === true) {
                 throw error;

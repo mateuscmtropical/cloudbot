@@ -52,6 +52,52 @@ function makeRunner(provider: ProviderId, connected = true): { runner: ProviderR
 }
 
 describe('ProviderRunner', () => {
+    it('runs work with its own provider there, with its own model and effort', async () => {
+        const chatgpt = recordingRunner('thread-1');
+        const claude = recordingRunner('claude-session');
+        const runner = new ProviderRunner({
+            engines: { claude: { runner: claude, isConnected: () => Promise.resolve(true) }, chatgpt: { runner: chatgpt, isConnected: () => Promise.resolve(true) } },
+            providerFor: () => Promise.resolve('claude'),
+            providerChoiceFor: () => Promise.resolve({ model: 'gpt-6-luna', effort: 'low', defaultModel: 'gpt-6-sol', defaultEffort: 'medium' }),
+        });
+
+        await collect(runner.runTurn({ ...makeRequest(), provider: 'chatgpt', model: 'gpt-6-astra', effort: 'high' }));
+
+        expect(claude.requests)
+            .toHaveLength(0);
+        expect(chatgpt.requests[0])
+            .toMatchObject({ model: 'gpt-6-astra', effort: 'high', providerDefaultModel: 'gpt-6-sol' });
+        expect(chatgpt.requests[0])
+            .not.toHaveProperty('provider');
+    });
+
+    it('notes the model an engine reports only when none was chosen', async () => {
+        const engine = {
+            async* runTurn(): AsyncGenerator<AgentEvent> {
+                await Promise.resolve();
+                yield { type: 'session', sessionId: 's1', model: 'claude-opus-5-5' };
+            },
+        };
+        const noted: string[] = [];
+        const runner = new ProviderRunner({
+            engines: { claude: { runner: engine, isConnected: () => Promise.resolve(true) } },
+            providerFor: () => Promise.resolve('claude'),
+            noteDefaultModel: (_provider, model) => {
+                noted.push(model);
+
+                return Promise.resolve();
+            },
+        });
+
+        await collect(runner.runTurn({ ...makeRequest(), model: 'sonnet' }));
+        expect(noted)
+            .toEqual([]);
+
+        await collect(runner.runTurn(makeRequest()));
+        expect(noted)
+            .toEqual(['claude-opus-5-5']);
+    });
+
     it('runs the turn on the engine of the bot\'s provider and tags its session', async () => {
         const { runner, claude, chatgpt } = makeRunner('chatgpt');
 

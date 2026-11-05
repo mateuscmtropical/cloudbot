@@ -21,6 +21,8 @@ interface ProviderRunnerOptions {
     providerFor: (botId: string) => Promise<ProviderId>;
     providerChoiceFor?: (botId: string, provider: ProviderId) => Promise<ProviderModelChoice | undefined>;
     modelCatalogs?: ProviderModelCatalogs | undefined;
+    // Keeps the real name of the model a provider runs when no model was chosen, so the owner and the bot can see it.
+    noteDefaultModel?: ((provider: ProviderId, model: string) => Promise<void>) | undefined;
 }
 
 // A session id is tagged with its provider, so a bot that moves to another provider starts a new session
@@ -53,24 +55,27 @@ class ProviderRunner implements AgentRunner {
     }
 
     async* runTurn(request: TurnRequest): AsyncGenerator<AgentEvent> {
-        const provider = await this.options.providerFor(request.botId);
+        const provider = request.provider ?? await this.options.providerFor(request.botId);
         const engine = this.options.engines[provider];
         const label = PROVIDER_LABELS[provider];
+        const owner = request.provider === undefined ? 'This bot' : 'This work';
 
         if (engine === undefined) {
-            yield { type: 'turn_error', message: `This bot uses ${label}, which this server does not have. Ask me to switch this bot to another provider.`, isUsageLimit: false };
+            yield { type: 'turn_error', message: `${owner} uses ${label}, which this server does not have. Ask me to switch this bot to another provider.`, isUsageLimit: false };
 
             return;
         }
 
         if (!await engine.isConnected()) {
-            yield { type: 'turn_error', message: `This bot uses ${label}, which is not connected. Ask me to connect ${label} or to switch this bot to another provider.`, isUsageLimit: false };
+            yield { type: 'turn_error', message: `${owner} uses ${label}, which is not connected. Ask me to connect ${label} or to switch this bot to another provider.`, isUsageLimit: false };
 
             return;
         }
 
         const sessionId = untagSession(provider, request.sessionId);
         const providerRequest: TurnRequest = { ...request };
+
+        delete providerRequest.provider;
 
         if (sessionId === undefined) {
             delete providerRequest.sessionId;
@@ -80,7 +85,11 @@ class ProviderRunner implements AgentRunner {
 
         if (provider !== 'claude') {
             const modelRevision = this.options.modelCatalogs?.revision(provider);
-            const choice = await this.options.providerChoiceFor?.(request.botId, provider);
+            const savedChoice = await this.options.providerChoiceFor?.(request.botId, provider);
+            // Work with its own provider brings its own model and effort. The saved defaults still let the engine restore them.
+            const choice = request.provider === undefined
+                ? savedChoice
+                : { model: request.model ?? null, effort: request.effort ?? null, defaultModel: savedChoice?.defaultModel ?? null, defaultEffort: savedChoice?.defaultEffort ?? null };
             const legacyGeminiModel = choice === undefined && provider === 'gemini' && request.model?.startsWith('gemini-') === true ? request.model : undefined;
 
             delete providerRequest.model;
@@ -109,6 +118,10 @@ class ProviderRunner implements AgentRunner {
         }
 
         for await (const event of engine.runner.runTurn(providerRequest)) {
+            if (event.type === 'session' && event.model !== undefined && (providerRequest.model ?? null) === null) {
+                await this.options.noteDefaultModel?.(provider, event.model);
+            }
+
             yield event.type === 'session' ? { ...event, sessionId: tagSession(provider, event.sessionId) } : event;
         }
     }

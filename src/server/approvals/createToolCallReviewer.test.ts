@@ -107,7 +107,7 @@ describe('createToolCallReviewer', () => {
         await reviewer('bot-1', BASH_CALL);
 
         expect(askModel)
-            .toHaveBeenCalledWith(expect.any(String), undefined, 'opus', undefined, expect.any(Function));
+            .toHaveBeenCalledWith(expect.any(String), undefined, 'opus', undefined, expect.any(Function), undefined);
     });
 
     it('asks the model with the review effort choice of the bot', async () => {
@@ -118,7 +118,7 @@ describe('createToolCallReviewer', () => {
         await reviewer('bot-1', BASH_CALL);
 
         expect(askModel)
-            .toHaveBeenCalledWith(expect.any(String), undefined, undefined, 'high', expect.any(Function));
+            .toHaveBeenCalledWith(expect.any(String), undefined, undefined, 'high', expect.any(Function), undefined);
     });
 
     it('allows a harmless call without asking the model', async () => {
@@ -567,7 +567,7 @@ describe('createToolCallReviewer review cost', () => {
         await reviewer('bot-1', BASH_CALL, turnSignal);
 
         expect(askModel)
-            .toHaveBeenCalledWith(expect.any(String), turnSignal, undefined, undefined, expect.any(Function));
+            .toHaveBeenCalledWith(expect.any(String), turnSignal, undefined, undefined, expect.any(Function), undefined);
     });
 });
 

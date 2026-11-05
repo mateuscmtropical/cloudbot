@@ -1,5 +1,6 @@
 import type { AgentEvent } from './AgentEvent.ts';
 import type { PermissionMode } from '../../shared/permissionModes.ts';
+import type { ProviderId } from '../providers/providerIds.ts';
 import type { LoopbackTool } from './createLoopbackToolServer.ts';
 
 // A helper agent of the main turn, written to the CLI as one entry of its --agents file.
@@ -35,6 +36,8 @@ type ToolCallDecision = { isAllowed: true } | { isAllowed: false; reason: string
 
 interface TurnRequest {
     botId: string;
+    // Runs this turn on a provider the owner chose for the work, with this model and effort. Unset uses the bot's provider.
+    provider?: ProviderId;
     workspaceDir: string;
     prompt: string;
     sessionId?: string;

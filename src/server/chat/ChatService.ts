@@ -12,7 +12,7 @@ import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnImage, TurnInbox, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
 import { MEMORY_FILE_MODE, MEMORY_FILE_NAME, MEMORY_MAX_BYTES, MEMORY_TRUNCATED_NOTE, readWorkspaceMemoryBlock, readWorkspaceMemoryText, writeWorkspaceMemory } from '../agent/readWorkspaceMemory.ts';
-import { AGENT_TOOL_NAME, buildHelperAgents } from '../agent/buildHelperAgents.ts';
+import { AGENT_TOOL_NAME, buildHelperAgents, helperTurnParts } from '../agent/buildHelperAgents.ts';
 import type { HelperKind } from '../agent/buildHelperAgents.ts';
 import {
     SET_MASCOT_TOOL_FULL_NAME,
@@ -20,6 +20,7 @@ import {
     UPDATE_PROFILE_TOOL_FULL_NAME,
     createProfileTools,
 } from '../agent/createProfileToolServer.ts';
+import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
 import type { CloudbotTool } from '../agent/createProfileToolServer.ts';
 import { AGENT_WORKSPACE_ROOT, agentWorkspacePath } from '../agent/prepareAgentWorkspace.ts';
 import { UNSENT_UPLOAD_MAX_AGE_MS, readUploadRetentionMs, removeOldUploads } from '../attachments/cleanUploads.ts';
@@ -49,8 +50,13 @@ import { TASK_TOOL_FULL_NAMES, createTaskTools, describeBlockedNotice } from '..
 import { INTEGRATION_TOOL_FULL_NAMES, createIntegrationTools } from '../integrations/createIntegrationTools.ts';
 import type { IntegrationService } from '../integrations/IntegrationService.ts';
 import { MODELS_SET_TOOL_FULL_NAME, createModelTools } from '../models/createModelTools.ts';
+import { HELPER_RUN_TOOL_FULL_NAME, createHelperRunTool } from '../agent/createHelperRunTool.ts';
+import type { HelperPlan } from '../agent/createHelperRunTool.ts';
+import { WORK_SETTINGS_LIST_TOOL_FULL_NAME, WORK_SETTINGS_SET_TOOL_FULL_NAME, createWorkSettingsTools } from '../providers/createWorkSettingsTools.ts';
+import type { WorkChoice, WorkSettings } from '../providers/WorkSettings.ts';
 import { PROVIDER_TOOL_FULL_NAMES, createProviderTools } from '../providers/createProviderTools.ts';
 import { PROVIDER_LABELS, isProviderId } from '../providers/providerIds.ts';
+import type { ProviderId } from '../providers/providerIds.ts';
 import { KEEP_WAITING_CHOICE_ID, buildProviderSwitchCard } from '../providers/providerSwitchCard.ts';
 import type { ProviderToolDependencies } from '../providers/createProviderTools.ts';
 import type { ProviderModelCatalogs } from '../providers/ProviderModelCatalogs.ts';
@@ -111,7 +117,6 @@ import type { TaskStore } from '../store/TaskStore.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
 import type { WebhookStore } from '../store/WebhookStore.ts';
 import { chooseTurnEffort, chooseTurnModel } from '../models/modelChoices.ts';
-import type { EffortLevel } from '../models/modelChoices.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
 import type { SetupAction, SetupConversation } from '../setup/SetupConversation.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
@@ -247,6 +252,7 @@ interface ChatServiceOptions {
     // Lets a bot list the AI providers, connect one and switch its own. Unset leaves the tools out.
     providerTools?: ProviderToolDependencies | undefined;
     providerModelCatalogs?: ProviderModelCatalogs | undefined;
+    workSettings?: WorkSettings | undefined;
     emailPasswordStore?: Pick<EmailAccountService, 'savePassword'> | undefined;
     emailAccountService?: EmailAccountService | undefined;
     emailSender?: SmtpEmailSender | undefined;
@@ -391,7 +397,11 @@ interface TurnContext {
     additionalDirectories: string[];
     model?: string;
     // The effort level of this turn. Unset keeps the CLI default.
-    effort?: EffortLevel;
+    effort?: string;
+    // The provider the owner chose for this work. Unset runs on the bot's provider.
+    provider?: ProviderId;
+    // True when the turn runs apart from the chat's session, which belongs to another provider.
+    isSideSession: boolean;
     // The helper agents of this turn. Empty when the owner chose no helper.
     agents: NonNullable<TurnRequest['agents']>;
     // The limits of this turn. Each null field is no limit.
@@ -637,6 +647,16 @@ function settingsSource(source: TurnSource): 'chat' | 'routine' | 'checkin' | 'w
     return source === 'channel' ? 'bot' : source;
 }
 
+// Where a helper runs. The CLI of a Claude turn starts Claude helpers itself. Any other pair runs as its own turn through
+// helper_run. A helper that follows the chat does not exist on another provider: the main turn does that work.
+function helperRoute(choice: WorkChoice, mainProvider: ProviderId): 'cli' | 'turn' | 'none' {
+    if (mainProvider === 'claude' && choice.provider === 'claude') {
+        return choice.model === null ? 'none' : 'cli';
+    }
+
+    return choice.followsChat ? 'none' : 'turn';
+}
+
 function toQueuedTurnRecord(queuedTurn: QueuedTurn): QueuedTurnRecord {
     const storedUploads = queuedTurn.uploads.map(toStoredUpload);
 
@@ -738,6 +758,7 @@ class ChatService {
     private readonly templateGallery: TemplateGallery | undefined;
     private readonly providerTools: ProviderToolDependencies | undefined;
     private readonly providerModelCatalogs: ProviderModelCatalogs | undefined;
+    private readonly workSettings: WorkSettings | undefined;
     private readonly emailPasswordStore: Pick<EmailAccountService, 'savePassword'> | undefined;
     private readonly emailAccountService: EmailAccountService | undefined;
     private readonly emailSender: SmtpEmailSender | undefined;
@@ -833,6 +854,7 @@ class ChatService {
         this.templateGallery = options.templateGallery;
         this.providerTools = options.providerTools;
         this.providerModelCatalogs = options.providerModelCatalogs;
+        this.workSettings = options.workSettings;
         this.emailPasswordStore = options.emailPasswordStore;
         this.emailAccountService = options.emailAccountService;
         this.emailSender = options.emailSender;
@@ -3926,6 +3948,14 @@ class ChatService {
                         providerFor: providerDependencies === undefined ? undefined : () => providerDependencies.providerFor(botId),
                         modelCatalogs: this.providerModelCatalogs,
                     });
+            const workSettingsForTools = this.workSettings;
+            const workTools = workSettingsForTools === undefined || providerDependencies === undefined
+                ? []
+                : createWorkSettingsTools({
+                        workSettings: workSettingsForTools,
+                        connected: () => providerDependencies.connected(),
+                        describeChat: () => this.describeChatWork(botId),
+                    }, botId);
             const limitTools = this.limitStore === undefined ? [] : createLimitTools(this.limitStore, botId);
             const webhookTools = this.webhookTools(botId);
             const watchTools = this.watchStore === undefined ? [] : createWatchTools(this.watchStore, botId);
@@ -3980,7 +4010,7 @@ class ChatService {
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath, turn.channel),
-                [...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...whatsappTools],
+                [...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...workTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...whatsappTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -4001,18 +4031,40 @@ class ChatService {
             const modelChoices = this.modelStore === undefined ? undefined : await this.modelStore.get(botId);
             const efforts = this.modelStore === undefined ? undefined : await this.modelStore.getEfforts(botId);
             const chosenModel = modelChoices === undefined ? undefined : chooseTurnModel(modelChoices, settingsKind);
-            const modelOption = chosenModel === undefined ? {} : { model: chosenModel };
             const chosenEffort = efforts === undefined ? undefined : chooseTurnEffort(efforts, settingsKind);
-            const effortOption = chosenEffort === undefined ? {} : { effort: chosenEffort };
+            const workSettings = this.workSettings;
+            const chatProvider = workSettings === undefined ? undefined : await this.providerTools?.providerFor(botId);
+            const isRoutineWork = settingsKind === 'routine' || settingsKind === 'checkin' || settingsKind === 'webhook';
+            const routineWork = workSettings !== undefined && isRoutineWork ? await workSettings.read(botId, 'routines') : undefined;
+            // Work with its own provider brings its own model and effort. A check-in with no choice keeps its small default on Claude.
+            const ownWork = routineWork === undefined || routineWork.followsChat ? undefined : routineWork;
+            const fallbackModel = ownWork?.provider === 'claude' ? chosenModel : undefined;
+            const fallbackEffort = ownWork?.provider === 'claude' ? chosenEffort : undefined;
+            const turnModel = ownWork === undefined ? chosenModel : ownWork.model ?? fallbackModel;
+            const turnEffort = ownWork === undefined ? chosenEffort : ownWork.effort ?? fallbackEffort;
+            const modelOption = turnModel === undefined ? {} : { model: turnModel };
+            const effortOption = turnEffort === undefined ? {} : { effort: turnEffort };
+            const providerOption = ownWork === undefined ? {} : { provider: ownWork.provider };
+            const isSideSession = ownWork !== undefined && ownWork.provider !== chatProvider;
+            const mainProvider = ownWork?.provider ?? chatProvider ?? 'claude';
+            const browsingWork = await workSettings?.read(botId, 'browsing');
+            const documentsWork = await workSettings?.read(botId, 'documents');
+            const browsingRoute = browsingWork === undefined ? 'cli' : helperRoute(browsingWork, mainProvider);
+            const documentsRoute = documentsWork === undefined ? 'cli' : helperRoute(documentsWork, mainProvider);
             // A helper exists only for the work the owner chose a model for, and it gets only the tools of that work.
             const helperAgents = modelChoices === undefined
                 ? {}
-                : buildHelperAgents(modelChoices, {
+                : buildHelperAgents({ browsing: browsingRoute === 'cli' ? modelChoices.browsing : null, documents: documentsRoute === 'cli' ? modelChoices.documents : null }, {
                         disallowedTools,
                         hasBrowser: this.browser !== undefined,
                         efforts: { browsing: efforts?.browsing ?? null, documents: efforts?.documents ?? null },
                     });
             const helperKinds = Object.keys(helperAgents) as HelperKind[];
+            const turnHelperWork: [HelperKind, WorkChoice][] = [
+                ...(browsingWork !== undefined && browsingRoute === 'turn' && this.browser !== undefined ? [['browsing', browsingWork] as [HelperKind, WorkChoice]] : []),
+                ...(documentsWork !== undefined && documentsRoute === 'turn' ? [['documents', documentsWork] as [HelperKind, WorkChoice]] : []),
+            ];
+            const turnHelperKinds = turnHelperWork.map(([kind]) => kind);
             const reachable = await this.reachableBotsOf(botId);
             const otherBotNames = reachable.map(otherBot => otherBot.name);
             const memoryAccess = this.agentUser === undefined ? undefined : { agentUser: this.agentUser, botId };
@@ -4040,7 +4092,48 @@ class ChatService {
                 skills,
                 canChangeSkills: this.approvals !== undefined,
                 helpers: helperKinds,
+                turnHelpers: turnHelperKinds,
             });
+            const helperPlans: HelperPlan[] = turnHelperWork.map(([kind, work]) => {
+                const parts = helperTurnParts(kind);
+                const helperTools = profileTools.filter((profileTool) => {
+                    const fullName = `mcp__${PROFILE_SERVER_NAME}__${profileTool.name}`;
+
+                    return parts.toolNames.includes(fullName);
+                });
+
+                return {
+                    kind,
+                    request: {
+                        botId,
+                        provider: work.provider,
+                        workspaceDir,
+                        systemPrompt: parts.prompt,
+                        tools: helperTools,
+                        allowedTools: [...parts.toolNames, ...parts.builtInToolNames],
+                        disallowedTools,
+                        permissionMode,
+                        additionalDirectories,
+                        abortSignal: abortController.signal,
+                        ...(work.model === null ? {} : { model: work.model }),
+                        ...(work.effort === null ? {} : { effort: work.effort }),
+                        ...(turnLimit.steps === null ? {} : { maxSteps: turnLimit.steps }),
+                        ...(turnLimit.usd === null ? {} : { maxSpendUsd: turnLimit.usd }),
+                        reviewToolCall,
+                    },
+                };
+            });
+            const helperRunTools = helperPlans.length === 0
+                ? []
+                : [createHelperRunTool(helperPlans, this.runner, {
+                        onActivity: () => {
+                            this.stallWatches.get(botId)
+                                ?.touch();
+                        },
+                        onCost: (costUsd) => {
+                            this.recordReviewCost(botId, costUsd, abortController.signal);
+                        },
+                    })];
             const turnContext: TurnContext = {
                 additionalDirectories,
                 agents: helperAgents,
@@ -4056,12 +4149,15 @@ class ChatService {
                 permissionMode,
                 ...modelOption,
                 ...effortOption,
+                ...providerOption,
+                isSideSession,
                 limit: turnLimit,
                 mcpServers: remoteServers,
-                tools: profileTools,
+                tools: [...profileTools, ...helperRunTools],
                 inbox,
             };
-            const firstAttempt = await this.runAttempt(turnContext, bot.sessionId, turnState);
+            // The chat's session belongs to its provider, so work on another provider neither resumes nor replaces it.
+            const firstAttempt = await this.runAttempt(turnContext, isSideSession ? null : bot.sessionId, turnState);
 
             // A resumed session that fails before it starts is usually gone, for example
             // after a container rebuild. Start a fresh session once instead of failing every turn.
@@ -4298,6 +4394,19 @@ class ChatService {
     // Headless turns cannot answer a permission prompt, so the cloudbot tools the bot has are allowed up front.
     // Without the approval gate, only the profile tools, the export, the read-only rule list, the read-only skills, the notification switch
     // and the WhatsApp setup tools are allowed up front. The WhatsApp tools only post secure forms and link a number. The rest need the gate.
+    // The chat's provider, model and effort as one line for the bot, with the real name of a default model when it is known.
+    private async describeChatWork(botId: string): Promise<string> {
+        const provider = await this.providerTools?.providerFor(botId) ?? 'claude';
+        const models = await this.modelStore?.get(botId);
+        const efforts = await this.modelStore?.getEfforts(botId);
+        const saved = provider === 'claude' ? undefined : await this.modelStore?.getProviderChoice(botId, provider);
+        const model = provider === 'claude' ? models?.chat ?? null : saved?.model ?? null;
+        const effort = provider === 'claude' ? efforts?.chat ?? null : saved?.effort ?? null;
+        const defaultName = await this.workSettings?.defaultModelName(provider);
+
+        return `${PROVIDER_LABELS[provider]}, model ${model ?? defaultName ?? 'not reported yet'}, effort ${effort ?? 'provider default'}`;
+    }
+
     private allowedToolNames(): string[] {
         if (this.approvals === undefined) {
             const emailToolNames = this.emailAccountService === undefined || this.emailSender === undefined ? [] : EMAIL_STATUS_TOOL_ONLY_FULL_NAMES;
@@ -4318,7 +4427,8 @@ class ChatService {
         const routineToolNames = this.routineStore === undefined ? [] : ROUTINE_TOOL_FULL_NAMES;
         const taskToolNames = this.taskStore === undefined ? [] : TASK_TOOL_FULL_NAMES;
         const integrationToolNames = this.integrationService === undefined ? [] : INTEGRATION_TOOL_FULL_NAMES;
-        const modelToolNames = this.modelStore === undefined ? [] : [MODELS_SET_TOOL_FULL_NAME];
+        const workToolNames = this.workSettings === undefined || this.providerTools === undefined ? [] : [WORK_SETTINGS_LIST_TOOL_FULL_NAME, WORK_SETTINGS_SET_TOOL_FULL_NAME, HELPER_RUN_TOOL_FULL_NAME];
+        const modelToolNames = this.modelStore === undefined ? [] : [MODELS_SET_TOOL_FULL_NAME, ...workToolNames];
         const providerToolNames = this.providerTools === undefined ? [] : PROVIDER_TOOL_FULL_NAMES;
         const limitToolNames = this.limitStore === undefined ? [] : [LIMITS_SET_TOOL_FULL_NAME];
         const webhookToolNames = this.webhookStore === undefined ? [] : WEBHOOK_TOOL_FULL_NAMES;
@@ -4405,6 +4515,7 @@ class ChatService {
         const githubEnvironment = this.githubEnvironment === undefined ? undefined : await this.githubEnvironment(botId);
         const turnRequest: TurnRequest = {
             botId,
+            ...(turnContext.provider === undefined ? {} : { provider: turnContext.provider }),
             workspaceDir: turnContext.workspaceDir,
             prompt: turnContext.prompt,
             images: turnContext.images,
@@ -4441,6 +4552,10 @@ class ChatService {
                 if (agentEvent.type === 'session') {
                     hasSession = true;
                     turnState.agentStarted = true;
+
+                    if (turnContext.isSideSession) {
+                        continue;
+                    }
                 }
 
                 // Only a rejected limit means wait. A warning or an allowed status does not stop the turn.

@@ -295,7 +295,7 @@ describe('ClaudeCliEngine event mapping on recorded stream-json', () => {
         const texts = events.flatMap(event => (event.type === 'text' ? [event.text] : []));
 
         expect(events)
-            .toContainEqual({ type: 'session', sessionId: 'e2bfe1f0-c4e7-4564-8838-428321ab79ec' });
+            .toContainEqual({ type: 'session', sessionId: 'e2bfe1f0-c4e7-4564-8838-428321ab79ec', model: 'claude-opus-5-5' });
         expect(deltas.join(''))
             .toBe('Hello world.');
         expect(texts)
