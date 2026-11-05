@@ -77,6 +77,9 @@ const SKIP_TOOL_NAMES = new Set([
     // These only link or unlink a number and post secure forms. No WhatsApp message is ever sent.
     'mcp__cloudbot__whatsapp_connect',
     'mcp__cloudbot__whatsapp_disconnect',
+    // Reading the meeting text and stopping the recording send nothing out. Starting it is reviewed like any call.
+    'mcp__cloudbot__meeting_record_status',
+    'mcp__cloudbot__meeting_record_stop',
 ]);
 
 // Letting the browser reach a private host always needs the owner's approval, whatever the rules say.

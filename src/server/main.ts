@@ -92,6 +92,8 @@ import { AppOAuthTokens } from './apps/AppOAuthTokens.ts';
 import { readGoogleHubRoute } from './apps/googleEndpoints.ts';
 import { readGoogleClientEnv } from '../shared/googleClientEnv.ts';
 import { createVoiceTranscriber, readVoicePrograms } from './voice/transcribeAudio.ts';
+import { MeetingRecorder } from './meetings/MeetingRecorder.ts';
+import { saveFiles } from './attachments/saveUpload.ts';
 import { BitwardenAccountStore } from './bitwarden/bitwardenAccount.ts';
 import { BitwardenVault } from './bitwarden/BitwardenVault.ts';
 import { ConnectedApps } from './apps/ConnectedApps.ts';
@@ -511,7 +513,37 @@ const actionLogPrune = setInterval(() => {
 // An instance may sleep for days, so the log is also pruned at each start.
 actionLogPrune.unref();
 actionLog.prune();
+
+// A meeting has its own transcriber and folder, so a voice message never waits for it. A stop leaves audio behind, so it is cleared at each start.
+const meetingWorkDir = join(dataDir, 'meeting-jobs');
+
+await rm(meetingWorkDir, { recursive: true, force: true });
+
+const meetingPrograms = readVoicePrograms(process.env);
+const transcribeMeeting = createVoiceTranscriber({ workDir: meetingWorkDir, programs: meetingPrograms });
+const MEETING_ENDED_MESSAGE = 'The meeting you were recording has ended. Leave the call if you are still in it, read the transcript, post a short summary with the action items and share the file. Transcript:';
+// The transcript goes to the bot's upload folder, which it can read. chatService is set below, before a meeting can start.
+const meetingRecorder = browser === undefined
+    ? undefined
+    : new MeetingRecorder({
+            browser,
+            transcribe: transcribeMeeting,
+            saveTranscript: async (botId, fileName, text) => {
+                const file = new File([text], fileName, { type: 'text/markdown' });
+                const uploadDir = chatService.uploadDirFor(botId);
+                const saved = await saveFiles(uploadDir, [file]);
+
+                return saved[0]?.absolutePath ?? '';
+            },
+            onEnded: (botId, transcriptPath) => {
+                chatService.sendMessage(botId, `${MEETING_ENDED_MESSAGE} ${transcriptPath}`, 'routine')
+                    .catch(() => {
+                        console.error('Could not tell the bot that its meeting ended.');
+                    });
+            },
+        });
 const chatService: ChatService = new ChatService({
+    meetingRecorder,
     actionLog,
     notifyOwner: notice => pushNotifier.notify(notice),
     passkeys,

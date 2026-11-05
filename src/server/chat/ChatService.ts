@@ -75,6 +75,8 @@ import { WATCH_TOOL_FULL_NAMES, createWatchTools } from '../watches/createWatchT
 import type { WatchStore } from '../store/WatchStore.ts';
 import { NOTIFICATION_TEXT_TOOL_FULL_NAME, NOTIFICATIONS_DISABLE_TOOL_FULL_NAME, NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, createNotificationTextTool, createNotificationsDisableTool, createNotificationsEnableTool } from '../push/createNotificationTools.ts';
 import { firstReplyLine } from '../push/noticeLine.ts';
+import { MEETING_TOOL_FULL_NAMES, createMeetingTools } from '../meetings/createMeetingTools.ts';
+import type { MeetingRecorder } from '../meetings/MeetingRecorder.ts';
 import { TELEGRAM_TOOL_FULL_NAMES, createTelegramTools } from '../telegram/createTelegramTools.ts';
 import type { TelegramConnector } from '../telegram/createTelegramTools.ts';
 import type { OwnerNotice } from '../push/PushNotifier.ts';
@@ -296,6 +298,8 @@ interface ChatServiceOptions {
     peopleAdmin?: PeopleAdmin | undefined;
     // Connects a bot to the owner's Telegram account. Unset means the Telegram tools are not offered.
     telegram?: TelegramConnector | undefined;
+    // Records and transcribes a Google Meet call on the bot's screen. Unset means the meeting tools are not offered.
+    meetingRecorder?: MeetingRecorder | undefined;
     // Receives messages from the owner's WhatsApp number. Unset means the WhatsApp tools are not offered.
     whatsapp?: WhatsAppConnector | undefined;
 }
@@ -795,6 +799,7 @@ class ChatService {
     private readonly passkeys: PasskeyService | undefined;
     private readonly peopleAdmin: PeopleAdmin | undefined;
     private readonly telegram: TelegramConnector | undefined;
+    private readonly meetingRecorder: MeetingRecorder | undefined;
     private readonly whatsapp: WhatsAppConnector | undefined;
     // Bots whose delete is running. New messages and uploads for them are refused.
     private readonly deletingBots = new Set<string>();
@@ -886,6 +891,7 @@ class ChatService {
         this.passkeys = options.passkeys;
         this.peopleAdmin = options.peopleAdmin;
         this.telegram = options.telegram;
+        this.meetingRecorder = options.meetingRecorder;
         this.whatsapp = options.whatsapp;
         this.approvals = options.toolCallReviewer === undefined
             ? undefined
@@ -4017,12 +4023,13 @@ class ChatService {
                         announce: (event) => { this.announcePeopleCredentials(event); },
                     });
             const telegramTools = this.telegram === undefined ? [] : createTelegramTools(this.telegram, botId);
+            const meetingTools = this.meetingRecorder === undefined ? [] : createMeetingTools(this.meetingRecorder, botId);
             const whatsappTools = this.whatsapp === undefined ? [] : createWhatsAppTools(this.whatsapp, botId);
             const profileTools = createProfileTools(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath, turn.channel),
-                [...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...workTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...whatsappTools],
+                [...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...workTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...whatsappTools, ...meetingTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -4479,8 +4486,9 @@ class ChatService {
         const peopleToolNames = this.peopleToolNames();
         const telegramToolNames = this.telegram === undefined ? [] : TELEGRAM_TOOL_FULL_NAMES;
         const whatsappToolNames = this.whatsapp === undefined ? [] : WHATSAPP_TOOL_FULL_NAMES;
+        const meetingToolNames = this.meetingRecorder === undefined ? [] : MEETING_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...browserToolNames, ...desktopToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...whatsappToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...meetingToolNames, ...browserToolNames, ...desktopToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...whatsappToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.

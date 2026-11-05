@@ -1656,6 +1656,18 @@ Limits. There is no notification for a usage limit, a stall or an owner Stop. A 
 
 Limits. Text only. Approval cards, files and screenshots stay in the web app. Turns run one after the other, so when the owner writes on Telegram while a web turn runs, the replies of that web turn go to Telegram too, and the ones of the Telegram turn may not. Replies go back until the bot is idle with an empty queue. One Telegram bot token serves one CloudBot bot, since Telegram lets only one poll read its updates.
 
+## Meeting notes
+
+`MeetingRecorder` records a Google Meet call that the bot joined on its screen and turns it into text with the same local whisper.cpp as voice input. Nothing goes to an outside speech service.
+
+- The bot joins with its browser tools, as a guest with its camera and microphone off, and says in the meeting chat who it is. The tool descriptions tell it to, and to report a recording or consent notice to the owner.
+- `meeting_record_start` keeps one DevTools connection to the page and runs `RECORDER_START_EXPRESSION` in an isolated world, so the meeting page cannot see or change it. The script mixes the audio of every `<audio>` and `<video>` element into one `MediaRecorder`, and picks up new elements every 2 seconds. It needs no sound card. The start is reviewed like any tool call. Only an https page on `meet.google.com` is accepted.
+- Every 5 minutes the server takes the recorded part as webm and starts a new one. Each part goes through its own transcriber with a separate work folder, one part after the other, so a voice message in the chat never waits for a meeting. A part is at most 5 minutes, under the 360 second limit of the transcriber.
+- `meeting_record_status` returns the text so far. `meeting_record_stop` takes the last part, waits for its text and saves the transcript as a Markdown file in the bot's upload folder, with the time of each part in the meeting. Neither needs a review.
+- When the page leaves the meeting, or no audio track plays for two parts in a row, or the meeting runs 4 hours, the recording ends by itself and the bot gets a message to summarize and share the transcript.
+
+Limits. One recording per instance, since there is one browser. The text lags about one part behind. whisper does not tell speakers apart. The bot's Chromium sends WebRTC only through its proxy, so the call runs over TCP relays. A bot alone in a call with no audio ends the recording after 10 minutes.
+
 ## Bot hand-offs
 
 A bot passes a message or a task to another bot with `bot_send`, found by the target's name. The tool is offered only with the approval gate. Its handler is `ChatService.handoffFromTool`. It refuses an unknown name, a name shared by two bots, and the sending bot itself.
