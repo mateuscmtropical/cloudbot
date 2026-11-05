@@ -1441,6 +1441,8 @@ unless the review asks for it.
 
 Only the owner changes it, through a route behind the session check. No bot tool reaches it.
 
+In Auto and YOLO, Codex does not ask about MCP tool calls. So `CodexEngine` sets those servers to `approve`, and CloudBot reviews each call when it reaches the loopback server or the app proxy. The canary checks this in both modes.
+
 | CLI | Auto | YOLO |
 | --- | --- | --- |
 | Claude | `--permission-mode auto` | `--dangerously-skip-permissions` |
