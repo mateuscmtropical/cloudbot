@@ -66,11 +66,11 @@ describe('createWebhookTools', () => {
         return found.handler as ToolHandler;
     }
 
-    it('offers list, create and delete', () => {
+    it('offers list, create, delete, rules and send', () => {
         const names = (createWebhookTools(store, botId, createFakeCreation()) as unknown as { name: string }[]).map(candidate => candidate.name);
 
         expect(names)
-            .toEqual(['webhook_list', 'webhook_create', 'webhook_delete']);
+            .toEqual(['webhook_list', 'webhook_create', 'webhook_delete', 'webhook_rule_set', 'webhook_send']);
     });
 
     it('lists webhooks by id and name, without any URL', async () => {

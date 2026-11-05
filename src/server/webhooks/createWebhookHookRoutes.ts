@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 
+import { ANY_PROVIDER } from '../../shared/webhookTypes.ts';
 import type { WebhookRecord, WebhookStore } from '../store/WebhookStore.ts';
+import { describeWebhookCaller, readWebhookCaller } from './webhookCaller.ts';
 import { buildWebhookMessage } from './webhookMessage.ts';
 import { DeliveryMemory, WebhookRefusalLog } from './webhookMemory.ts';
 import { hashWebhookToken } from './webhookToken.ts';
@@ -168,7 +170,11 @@ function createWebhookHookRoutes(options: WebhookHookRoutesOptions): Hono<Webhoo
 
             try {
                 const body = await context.req.text();
-                const message = buildWebhookMessage(webhook.name, body);
+                const source = context.req.query('source');
+                const caller = readWebhookCaller(name => context.req.header(name), source, body);
+                const rule = webhook.rules[caller.provider] ?? webhook.rules[ANY_PROVIDER];
+                const callerText = describeWebhookCaller(caller);
+                const message = buildWebhookMessage(webhook.name, body, callerText, rule);
                 let sent: unknown;
 
                 try {
@@ -191,6 +197,12 @@ function createWebhookHookRoutes(options: WebhookHookRoutesOptions): Hono<Webhoo
                 }
 
                 isQueued = true;
+
+                // The message is queued, so a failed note in the list of calls does not fail the call.
+                await options.webhookStore.addCall(webhook.id, caller)
+                    .catch((error: unknown) => {
+                        console.error('Could not note a webhook call:', error);
+                    });
 
                 const accepted: WebhookHookAcceptedResponse = { status: 'queued' };
 

@@ -278,11 +278,37 @@ const webhooks = sqliteTable('webhooks', {
     tokenHash: text('token_hash')
         .notNull()
         .unique(),
+    // What the owner wants done with the calls of each provider.
+    rules: text('rules', { mode: 'json' })
+        .$type<Record<string, string>>()
+        .notNull()
+        .default({}),
     createdAt: integer('created_at')
         .notNull(),
 }, table => [
     index('webhooks_bot_id')
         .on(table.botId),
+]);
+
+// The calls that reached a webhook's queue. WebhookStore keeps the last ones for 30 days.
+const webhookCalls = sqliteTable('webhook_calls', {
+    id: text('id')
+        .primaryKey(),
+    webhookId: text('webhook_id')
+        .notNull()
+        .references(() => webhooks.id, { onDelete: 'cascade' }),
+    time: integer('time')
+        .notNull(),
+    provider: text('provider')
+        .notNull(),
+    event: text('event'),
+    address: text('address'),
+    userAgent: text('user_agent'),
+}, table => [
+    index('webhook_calls_webhook_id_time')
+        .on(table.webhookId, table.time),
+    index('webhook_calls_time')
+        .on(table.time),
 ]);
 
 // A page the bot checks on a schedule. Only a hash of the visible text is kept, plus the last text for the diff.
@@ -575,5 +601,5 @@ const pushSubscriptions = sqliteTable('push_subscriptions', {
         .on(table.endpoint),
 ]);
 
-export { botLimits, botModels, botProviderModels, botRules, botSkills, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, emailAccounts, emailDeliveries, integrationRuns, integrations, messages, passkeys, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhooks, whatsappConnections, whatsappMessages };
+export { botLimits, botModels, botProviderModels, botRules, botSkills, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, emailAccounts, emailDeliveries, integrationRuns, integrations, messages, passkeys, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhookCalls, webhooks, whatsappConnections, whatsappMessages };
 export type { StoredUploadRecord };

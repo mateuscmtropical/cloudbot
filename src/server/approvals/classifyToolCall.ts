@@ -103,6 +103,9 @@ const ALWAYS_ASK_TOOL_NAMES = new Set([
     'mcp__cloudbot__integration_update',
     // Rules are permissions, so a change the owner did not ask for waits for the owner.
     'mcp__cloudbot__rule_change',
+    // A webhook rule tells the bot what to do on each outside call, and a call sends data out of CloudBot.
+    'mcp__cloudbot__webhook_rule_set',
+    'mcp__cloudbot__webhook_send',
     // A skill is steps the bot will follow, so the owner reads and approves the whole text, and each removal.
     'mcp__cloudbot__skill_add',
     'mcp__cloudbot__skill_remove',

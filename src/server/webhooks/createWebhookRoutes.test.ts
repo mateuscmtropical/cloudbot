@@ -126,9 +126,25 @@ describe('createWebhookRoutes', () => {
         const listedText = await listed.text();
 
         expect(JSON.parse(listedText))
-            .toEqual([{ id: created.id, name: 'Deploy', createdAt: created.createdAt, refusals: [] }]);
+            .toEqual([{ id: created.id, name: 'Deploy', createdAt: created.createdAt, refusals: [], rules: [], calls: [] }]);
         expect(listedText)
             .not.toContain('hooks/');
+    });
+
+    it('saves a rule, lists it and says when it is refused', async () => {
+        const created = await (await postWebhook({ name: 'Deploy' })).json() as CreatedBotWebhook;
+        const rulesPath = `/api/bots/${botId}/webhooks/${created.id}/rules`;
+        const headers = { 'cookie': cookie, 'origin': 'http://localhost', 'content-type': 'application/json' };
+        const saved = await app.request(`${rulesPath}/github`, { method: 'PUT', headers, body: JSON.stringify({ instruction: 'Run the tests' }) });
+        const refused = await app.request(`${rulesPath}/github`, { method: 'PUT', headers, body: JSON.stringify({}) });
+        const unknown = await app.request(`/api/bots/${botId}/webhooks/none/rules/github`, { method: 'PUT', headers, body: JSON.stringify({ instruction: 'x' }) });
+
+        expect(saved.status)
+            .toBe(200);
+        expect(await saved.json())
+            .toMatchObject({ rules: [{ provider: 'github', instruction: 'Run the tests' }] });
+        expect([refused.status, unknown.status])
+            .toEqual([400, 404]);
     });
 
     it('refuses a name that is empty, too long or on more than one line', async () => {

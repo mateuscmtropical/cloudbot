@@ -194,6 +194,17 @@ function MonitorIcon(): ReactElement {
     );
 }
 
+function WebhookIcon(): ReactElement {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="6" cy="17" r="3" />
+            <circle cx="18" cy="17" r="3" />
+            <circle cx="12" cy="6" r="3" />
+            <path d="M9 17h6M10.5 8.6 7.5 14.4M13.5 8.6l3 5.8" />
+        </svg>
+    );
+}
+
 function FilterIcon(): ReactElement {
     return (
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -246,6 +257,7 @@ export {
     LibraryIcon,
     MicIcon,
     MonitorIcon,
+    WebhookIcon,
     MoreIcon,
     PeopleIcon,
     PlusIcon,
