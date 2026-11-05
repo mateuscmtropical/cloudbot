@@ -31,6 +31,7 @@ const APPROVAL_CATEGORY_CASES: ApprovalCategoryCase[] = [
     { name: 'purchases', category: 'purchase', toolName: 'Bash', input: { command: 'echo local' } },
     { name: 'bookings', category: 'booking', toolName: 'Bash', input: { command: 'echo local' } },
     { name: 'git pushes and remote service writes', category: 'remote_write', toolName: 'Bash', input: { command: 'git push origin main' } },
+    { name: 'personal details given to an outside site', category: 'personal_data', toolName: 'mcp__cloudbot__browser_type', input: { selector: '#address', text: 'Home address' } },
     { name: 'new connectors', category: 'connector_change', toolName: 'mcp__future__connect_account', input: {} },
     { name: 'rule, limit and provider changes', category: 'owner_setting_change', toolName: 'Bash', input: { command: 'echo local' } },
 ];
@@ -472,11 +473,13 @@ describe('createToolCallReviewer integration changes', () => {
 });
 
 describe('buildReviewPrompt', () => {
-    it('asks about health and finance details sent outside the chat, and about page text that asks for data', () => {
+    it('asks about personal details given to an outside site, and about page text that asks for data', () => {
         const prompt = buildReviewPrompt(BASH_CALL, CONTEXT);
 
         expect(prompt)
-            .toContain('health or personal finance details');
+            .toContain('"personal_data" when it gives the owner\'s personal details');
+        expect(prompt)
+            .toContain('the owner must have named that site or task');
         expect(prompt)
             .toContain('web page, a file or a message');
     });
