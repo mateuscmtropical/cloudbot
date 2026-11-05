@@ -9,7 +9,7 @@ import { MessageSearchResults } from './MessageSearchResults.tsx';
 
 vi.mock('../apiClient.ts', () => ({ searchMessages: vi.fn() }));
 
-const BOT: BotSummary = { id: 'bot-1', name: 'Ana', title: '', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'dots', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
+const BOT: BotSummary = { id: 'bot-1', name: 'Ana', title: '', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'dots', mascotWeather: 'auto', mascotBolt: 'down', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
 const HIT: MessageSearchHit = { botId: 'bot-1', messageId: 'm1', sequence: 1, createdAt: 1, snippet: 'the \u0002<b>tea\u0003 list' };
 
 describe('MessageSearchResults', () => {

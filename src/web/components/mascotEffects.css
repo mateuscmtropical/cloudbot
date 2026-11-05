@@ -1,6 +1,7 @@
 /* The effects around a mascot. Everything moves by transform and opacity only, so it runs on the compositor. */
 .cloud-mascot {
     position: relative;
+    isolation: isolate;
 }
 
 .mascot-effects {
@@ -135,8 +136,8 @@
     }
 }
 
-/* A cold: the cloud holds its breath, then sneezes out small lightning bolts. The cycles share one length and one delay. */
-.cloud-mascot[data-effect='cold'] > svg {
+/* Lightning: the cloud holds its breath, then sneezes out small bolts. The cycles share one length and one delay. */
+.cloud-mascot[data-weather='lightning'] > svg {
     transform-origin: 50% 90%;
     animation: cloud-sneeze 14s linear infinite;
     animation-delay: var(--mood-delay, 0s);
@@ -148,25 +149,40 @@
     animation-delay: var(--mood-delay, 0s);
 }
 
-.fx-bolt.fx-first {
+/* The drawn bolt points down, so each direction also turns it. */
+.mascot-effects[data-bolt='down'] .fx-bolt {
+    --bolt-y: 130%;
+}
+
+.mascot-effects[data-bolt='up'] .fx-bolt {
+    --bolt-y: -130%;
+    --bolt-turn: 180deg;
+}
+
+.mascot-effects[data-bolt='left'] .fx-bolt {
     --bolt-x: -130%;
-    --bolt-y: -40%;
+    --bolt-turn: 90deg;
 }
 
-.fx-bolt.fx-second {
-    --bolt-x: 0%;
-    --bolt-y: 120%;
-}
-
-.fx-bolt.fx-third {
+.mascot-effects[data-bolt='right'] .fx-bolt {
     --bolt-x: 130%;
-    --bolt-y: -40%;
+    --bolt-turn: -90deg;
 }
 
-.fx-drop {
-    color: #7cc6ff;
-    animation: fx-drop-fall 7s ease-in infinite;
-    animation-delay: var(--mood-delay, 0s);
+.mascot-effects[data-bolt='around'] .fx-first {
+    --bolt-x: -130%;
+    --bolt-y: 40%;
+    --bolt-turn: 45deg;
+}
+
+.mascot-effects[data-bolt='around'] .fx-second {
+    --bolt-y: 130%;
+}
+
+.mascot-effects[data-bolt='around'] .fx-third {
+    --bolt-x: 130%;
+    --bolt-y: 40%;
+    --bolt-turn: -45deg;
 }
 
 @keyframes cloud-sneeze {
@@ -203,45 +219,228 @@
     0%,
     89% {
         opacity: 0;
-        transform: scale(0.3);
+        transform: rotate(var(--bolt-turn, 0deg)) scale(0.3);
     }
 
     90% {
         opacity: 1;
-        transform: scale(1);
+        transform: rotate(var(--bolt-turn, 0deg)) scale(1);
     }
 
     94% {
         opacity: 0;
-        transform: translate(var(--bolt-x), var(--bolt-y)) scale(0.8) rotate(16deg);
+        transform: translate(var(--bolt-x, 0%), var(--bolt-y, 0%)) rotate(var(--bolt-turn, 0deg)) scale(0.8);
     }
 
     100% {
         opacity: 0;
-        transform: translate(var(--bolt-x), var(--bolt-y));
+        transform: translate(var(--bolt-x, 0%), var(--bolt-y, 0%)) rotate(var(--bolt-turn, 0deg));
     }
 }
 
-@keyframes fx-drop-fall {
-    0%,
-    55% {
+/* Snow: flakes drift down slowly, and the cloud shivers now and then. */
+.fx-snow {
+    color: #9fd8ff;
+    animation: fx-snow-fall 4.5s linear infinite;
+    animation-delay: var(--mood-delay, 0s);
+}
+
+.fx-snow.fx-second {
+    animation-delay: calc(var(--mood-delay, 0s) + 1.5s);
+}
+
+.fx-snow.fx-third {
+    animation-delay: calc(var(--mood-delay, 0s) + 3s);
+}
+
+.cloud-mascot[data-weather='snow'] > svg {
+    animation: cloud-shiver 9s linear infinite;
+    animation-delay: var(--mood-delay, 0s);
+}
+
+@keyframes fx-snow-fall {
+    0% {
         opacity: 0;
-        transform: scale(0.2);
+        transform: translate(0, 0) rotate(0deg);
     }
 
-    70% {
-        opacity: 0.95;
-        transform: scale(1);
-    }
-
-    90% {
-        opacity: 0.9;
-        transform: translateY(110%) scale(1);
+    20% {
+        opacity: 1;
     }
 
     100% {
         opacity: 0;
-        transform: translateY(190%) scale(0.8);
+        transform: translate(50%, 170%) rotate(120deg);
+    }
+}
+
+@keyframes cloud-shiver {
+    0%,
+    90%,
+    100% {
+        transform: none;
+    }
+
+    92%,
+    96% {
+        transform: translateX(-2%);
+    }
+
+    94%,
+    98% {
+        transform: translateX(2%);
+    }
+}
+
+/* Sun: it sits behind the cloud, its rays turn slowly and its core glows. */
+.fx-sun-rays,
+.fx-sun-core {
+    z-index: -1;
+    color: #ffc62e;
+    opacity: 1;
+}
+
+.fx-sun-rays {
+    animation: fx-sun-turn 14s linear infinite;
+}
+
+.fx-sun-core {
+    animation: fx-sun-glow 3.5s ease-in-out infinite;
+}
+
+@keyframes fx-sun-turn {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes fx-sun-glow {
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.1);
+    }
+}
+
+/* Wind: gusts cross the cloud, and it leans away from them. */
+.fx-wind {
+    color: var(--color-text-muted, #9a9aa2);
+    animation: fx-wind-gust 3.6s ease-in-out infinite;
+    animation-delay: var(--mood-delay, 0s);
+}
+
+.fx-wind.fx-second {
+    animation-delay: calc(var(--mood-delay, 0s) + 0.5s);
+}
+
+.fx-wind.fx-third {
+    animation-delay: calc(var(--mood-delay, 0s) + 1s);
+}
+
+.cloud-mascot[data-weather='wind'] > svg {
+    transform-origin: 50% 90%;
+    animation: cloud-lean 3.6s ease-in-out infinite;
+    animation-delay: var(--mood-delay, 0s);
+}
+
+@keyframes fx-wind-gust {
+    0%,
+    40% {
+        opacity: 0;
+        transform: translateX(-40%);
+    }
+
+    60% {
+        opacity: 0.8;
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateX(120%);
+    }
+}
+
+@keyframes cloud-lean {
+    0%,
+    45%,
+    100% {
+        transform: none;
+    }
+
+    70% {
+        transform: rotate(4deg);
+    }
+}
+
+/* Bubbles: they float up from the cloud and fade. */
+.fx-bubble {
+    color: #8fd3ff;
+    animation: fx-bubble-rise 4.2s ease-out infinite;
+    animation-delay: var(--mood-delay, 0s);
+}
+
+.fx-bubble.fx-second {
+    animation-delay: calc(var(--mood-delay, 0s) + 1.4s);
+}
+
+.fx-bubble.fx-third {
+    animation-delay: calc(var(--mood-delay, 0s) + 2.8s);
+}
+
+@keyframes fx-bubble-rise {
+    0% {
+        opacity: 0;
+        transform: translateY(40%) scale(0.5);
+    }
+
+    25% {
+        opacity: 0.9;
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(-160%) scale(1.1);
+    }
+}
+
+/* A rainbow: it comes up behind the cloud, one band after the other, and fades. */
+.fx-rainbow {
+    z-index: -1;
+    animation: fx-rainbow-glow 7s ease-in-out infinite;
+    animation-delay: var(--mood-delay, 0s);
+}
+
+.fx-rainbow .is-line {
+    stroke-width: 1.2;
+    stroke-linecap: butt;
+}
+
+.fx-rainbow.fx-first {
+    color: #ff5a5a;
+}
+
+.fx-rainbow.fx-second {
+    color: #ffd23f;
+    animation-delay: calc(var(--mood-delay, 0s) + 0.25s);
+}
+
+.fx-rainbow.fx-third {
+    color: #4fb8ff;
+    animation-delay: calc(var(--mood-delay, 0s) + 0.5s);
+}
+
+@keyframes fx-rainbow-glow {
+    0%,
+    100% {
+        opacity: 0;
+    }
+
+    30%,
+    70% {
+        opacity: 0.9;
     }
 }
 
@@ -333,7 +532,12 @@
 
     .fx-z.fx-first,
     .fx-question,
-    .fx-rain {
+    .fx-rain,
+    .fx-bolt,
+    .fx-snow,
+    .fx-wind,
+    .fx-bubble,
+    .fx-rainbow {
         opacity: 0.9;
     }
 

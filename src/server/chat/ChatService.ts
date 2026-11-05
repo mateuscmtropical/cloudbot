@@ -101,7 +101,7 @@ import { FILL_LOGIN_TOOL_FULL_NAME, createFillLoginTool } from '../bitwarden/cre
 import type { BitwardenVault } from '../bitwarden/BitwardenVault.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
-import type { MascotChoice } from '../../shared/mascot.ts';
+import type { MascotLook } from '../../shared/mascot.ts';
 import type { ChannelStore } from '../store/ChannelStore.ts';
 import type { RuleStore } from '../store/RuleStore.ts';
 import type { RoutineStore } from '../store/RoutineStore.ts';
@@ -1079,7 +1079,7 @@ class ChatService {
             name: bot.name,
             title: bot.title,
             description: bot.description,
-            mascot: { color: bot.mascotColor, shape: bot.mascotShape, eyes: bot.mascotEyes },
+            mascot: { color: bot.mascotColor, shape: bot.mascotShape, eyes: bot.mascotEyes, weather: bot.mascotWeather, bolt: bot.mascotBolt },
             rules: rules.map(rule => ({ kind: rule.kind, text: rule.text, blockedTools: rule.blockedTools })),
             routines: routines.map(routine => ({ name: routine.name, prompt: routine.prompt, schedule: routine.schedule })),
         });
@@ -2062,7 +2062,7 @@ class ChatService {
     }
 
     // The owner picks the color and the shape of the mascot, as the bot can with set_mascot. Only the given fields change.
-    async changeBotMascot(botId: string, changes: Partial<MascotChoice>): Promise<BotSummary | undefined> {
+    async changeBotMascot(botId: string, changes: Partial<MascotLook>): Promise<BotSummary | undefined> {
         const changedBot = await this.botStore.updateMascot(botId, changes);
 
         return changedBot === undefined ? undefined : this.summarizeBot(changedBot);
@@ -3559,6 +3559,8 @@ class ChatService {
             mascotColor: bot.mascotColor,
             mascotShape: bot.mascotShape,
             mascotEyes: bot.mascotEyes,
+            mascotWeather: bot.mascotWeather,
+            mascotBolt: bot.mascotBolt,
             lastMessagePreview,
             ...(latestMessage === undefined ? {} : { lastActivityAt: latestMessage.createdAt }),
             hasUnread: false,

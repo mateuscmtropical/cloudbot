@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 
 import { asc, eq } from 'drizzle-orm';
 
-import { randomMascot, readMascotColor, readMascotEyes, readMascotShape } from '../../shared/mascot.ts';
+import { randomMascot, readMascotBolt, readMascotColor, readMascotEyes, readMascotShape, readMascotWeather } from '../../shared/mascot.ts';
 import type { PermissionMode } from '../../shared/permissionModes.ts';
-import type { MascotChoice } from '../../shared/mascot.ts';
+import type { MascotLook } from '../../shared/mascot.ts';
 import { bots, turnQueue, turnWaits } from './schema.ts';
 import type { StoredUploadRecord } from './schema.ts';
 import type { AppDatabase, Bot, BotProfile, StoreOptions } from './types.ts';
@@ -24,7 +24,7 @@ type BotRow = typeof bots.$inferSelect;
 
 // A stored look that is not known any more, such as a removed color, reads as the default, so the bot still shows up.
 function readBotRow(row: BotRow): Bot {
-    return { ...row, mascotColor: readMascotColor(row.mascotColor), mascotShape: readMascotShape(row.mascotShape), mascotEyes: readMascotEyes(row.mascotEyes) };
+    return { ...row, mascotColor: readMascotColor(row.mascotColor), mascotShape: readMascotShape(row.mascotShape), mascotEyes: readMascotEyes(row.mascotEyes), mascotWeather: readMascotWeather(row.mascotWeather), mascotBolt: readMascotBolt(row.mascotBolt) };
 }
 
 interface UsageWaitRecord {
@@ -113,12 +113,14 @@ class BotStore {
     }
 
     // Only the mascot fields present in `changes` are written.
-    async updateMascot(botId: string, changes: Partial<MascotChoice>): Promise<Bot | undefined> {
+    async updateMascot(botId: string, changes: Partial<MascotLook>): Promise<Bot | undefined> {
         const botCondition = eq(bots.id, botId);
         const mascotChanges = {
             ...(changes.color === undefined ? {} : { mascotColor: changes.color }),
             ...(changes.shape === undefined ? {} : { mascotShape: changes.shape }),
             ...(changes.eyes === undefined ? {} : { mascotEyes: changes.eyes }),
+            ...(changes.weather === undefined ? {} : { mascotWeather: changes.weather }),
+            ...(changes.bolt === undefined ? {} : { mascotBolt: changes.bolt }),
         };
 
         if (Object.keys(mascotChanges).length > 0) {

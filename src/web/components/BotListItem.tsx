@@ -27,7 +27,7 @@ function BotListItem({ bot, isSelected, mascotState, onPointerUp, onClick, actio
         : new Date(bot.lastActivityAt)
                 .toISOString();
     const pressHold = usePressHold(onOpenActions, onOpenActions);
-    const mood = useMascotMood({ botId: bot.id, lastActivityAt: bot.lastActivityAt, isSelected });
+    const mood = useMascotMood({ botId: bot.id, lastActivityAt: bot.lastActivityAt, isSelected, weather: bot.mascotWeather });
     const moodDelaySeconds = readSneezeDelaySeconds(bot.id);
 
     function handlePointerUp(event: PointerEvent<HTMLButtonElement>): void {
@@ -54,7 +54,7 @@ function BotListItem({ bot, isSelected, mascotState, onPointerUp, onClick, actio
                 onContextMenu={pressHold.onContextMenu}
                 onClick={onClick}
             >
-                <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} eyes={bot.mascotEyes} state={mascotState} size={44} isActive={isSelected} mood={mood} moodDelaySeconds={moodDelaySeconds} />
+                <CloudMascot color={bot.mascotColor} shape={bot.mascotShape} eyes={bot.mascotEyes} weather={bot.mascotWeather} bolt={bot.mascotBolt} state={mascotState} size={44} isActive={isSelected} mood={mood} moodDelaySeconds={moodDelaySeconds} />
                 <span className="bot-text">
                     <span className="bot-name-line">
                         <span className="bot-name">{bot.name}</span>

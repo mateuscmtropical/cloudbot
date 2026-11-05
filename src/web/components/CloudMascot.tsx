@@ -1,8 +1,8 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 
-import { MASCOT_COLORS, MASCOT_FACE_COLORS, readMascotColor } from '../../shared/mascot.ts';
-import type { MascotColorName, MascotEyes, MascotShape } from '../../shared/mascot.ts';
+import { MASCOT_COLORS, MASCOT_FACE_COLORS, readMascotColor, readShownWeather } from '../../shared/mascot.ts';
+import type { MascotBolt, MascotColorName, MascotEyes, MascotShape, MascotWeather } from '../../shared/mascot.ts';
 import { computeEyeOffset, computeTypingEyeOffset, subscribeToPointer, subscribeToTyping } from '../mascotPointer.ts';
 import type { Point } from '../mascotPointer.ts';
 import { pickMascotEffect } from '../mascotMood.ts';
@@ -24,6 +24,10 @@ interface CloudMascotProps {
     mood?: MascotMood | undefined;
     // Where in its cycle the mood starts, in seconds, so bots do not move in step.
     moodDelaySeconds?: number | undefined;
+    // What the weather mood shows. The default follows the shape.
+    weather?: MascotWeather | undefined;
+    // Where lightning goes.
+    bolt?: MascotBolt | undefined;
 }
 
 interface CircleSpec {
@@ -300,7 +304,7 @@ function pickBlinkDelayMs(randomValue: number): number {
     return BLINK_MIN_DELAY_MS + randomValue * (BLINK_MAX_DELAY_MS - BLINK_MIN_DELAY_MS);
 }
 
-function CloudMascotView({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE, isActive = false, mood, moodDelaySeconds = 0 }: CloudMascotProps): ReactElement {
+function CloudMascotView({ color, shape, eyes = 'smile', state, size = DEFAULT_SIZE, isActive = false, mood, moodDelaySeconds = 0, weather = 'auto', bolt = 'down' }: CloudMascotProps): ReactElement {
     const svgRef = useRef<SVGSVGElement>(null);
     const lookRef = useRef<SVGGElement>(null);
     const eyeShiftRef = useRef<SVGGElement>(null);
@@ -309,6 +313,7 @@ function CloudMascotView({ color, shape, eyes = 'smile', state, size = DEFAULT_S
     const [isOnScreen, setIsOnScreen] = useState(true);
     // The eyes move and blink under reduced motion too. The stylesheet only drops the easing there.
     const effect = pickMascotEffect(state, mood);
+    const shownWeather = readShownWeather(weather, shape);
     // A sleeping bot keeps its eyes shut, so it neither blinks nor looks around.
     const faceState = state === 'idle' && effect === 'sleeping' ? 'sleepy' : state;
     const hasMovingEyes = isPointerFace(faceState);
@@ -466,7 +471,8 @@ function CloudMascotView({ color, shape, eyes = 'smile', state, size = DEFAULT_S
             data-color={color}
             data-eyes={eyes}
             data-effect={effect}
-            style={{ width: size, height: size, ...(effect === 'cold' ? { '--mood-delay': `${String(moodDelaySeconds)}s` } as CSSProperties : {}) }}
+            data-weather={effect === 'weather' ? shownWeather : undefined}
+            style={{ width: size, height: size, ...(effect === 'weather' ? { '--mood-delay': `${String(moodDelaySeconds)}s` } as CSSProperties : {}) }}
         >
             <svg ref={svgRef} viewBox={VIEW_BOX} aria-hidden="true" focusable="false">
                 <g ref={lookRef} className="cloud-look">
@@ -487,7 +493,7 @@ function CloudMascotView({ color, shape, eyes = 'smile', state, size = DEFAULT_S
                     </g>
                 </g>
             </svg>
-            {effect === undefined ? null : <MascotEffects effect={effect} />}
+            {effect === undefined ? null : <MascotEffects key={`${effect}-${shownWeather}-${bolt}`} effect={effect} weather={shownWeather} bolt={bolt} />}
         </span>
     );
 }

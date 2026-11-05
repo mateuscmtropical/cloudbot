@@ -1686,6 +1686,8 @@ colors and the new shapes and eyes follow the mascot sheet of the project. The l
 clouds of the sheet. `BotStore.create` picks one of them at random, and the `profile_set_mascot` tool changes the color,
 the shape or the eyes. A stored name the app does not know reads as the default, so the bot still shows up. A template
 from before the eyes gets the smile.
+
+The weather is the mood of an idle cloud, in two more columns of `bots`. `mascot_weather` is `auto` or one of lightning, rain, snow, sun, wind, bubbles and rainbow. `mascot_bolt` says where lightning goes, down by default. With `auto` the weather follows `SHAPE_WEATHER` in `src/shared/mascot.ts` and shows on one day in five for each bot. A chosen weather stays on. Sleep and every real state still win over it.
 The owner changes them on the bot profile page. Edit turns the name into a field and shows the ready looks, the colors,
 the shapes and the eyes. A ready look sets the color, the shape and the eyes at once, and the rows after it change one
 part. The mascot above shows the pick. Save sends `PUT /api/bots/:id/name` when the name changed and then

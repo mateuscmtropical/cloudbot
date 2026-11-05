@@ -23,11 +23,11 @@ describe('pickMascotMood', () => {
         expect(pickMascotMood({ botId: 'b', lastActivityAt: NOW - 1000, isSelected: false, now: NOW })).not.toBe('sleeping');
     });
 
-    it('gives a bot a cold on some days and not on others, the same all day', () => {
+    it('shows the weather of a shape on some days and not on others, the same all day', () => {
         const moods = Array.from({ length: 5 }, (_value, day) => pickMascotMood({ botId: 'b', lastActivityAt: NOW, isSelected: true, now: NOW + day * 24 * HOUR_MS }));
         const laterToday = pickMascotMood({ botId: 'b', lastActivityAt: NOW, isSelected: true, now: NOW + HOUR_MS });
 
-        expect(moods.filter(mood => mood === 'cold'))
+        expect(moods.filter(mood => mood === 'weather'))
             .toHaveLength(1);
         expect(laterToday)
             .toBe(moods[0]);
@@ -38,19 +38,19 @@ describe('pickMascotEffect', () => {
     it('lets a real state win over the mood', () => {
         expect(pickMascotEffect('error', 'sleeping'))
             .toBe('storm');
-        expect(pickMascotEffect('waiting', 'cold'))
+        expect(pickMascotEffect('waiting', 'weather'))
             .toBe('question');
-        expect(pickMascotEffect('done', 'cold'))
+        expect(pickMascotEffect('done', 'weather'))
             .toBe('cheer');
         expect(pickMascotEffect('sleepy', undefined))
             .toBe('sleeping');
-        expect(pickMascotEffect('thinking', 'cold'))
+        expect(pickMascotEffect('thinking', 'weather'))
             .toBeUndefined();
     });
 
     it('shows the mood only while idle', () => {
-        expect(pickMascotEffect('idle', 'cold'))
-            .toBe('cold');
+        expect(pickMascotEffect('idle', 'weather'))
+            .toBe('weather');
         expect(pickMascotEffect('idle', undefined))
             .toBeUndefined();
     });
@@ -67,9 +67,23 @@ describe('readSneezeDelaySeconds', () => {
     });
 });
 
+describe('a chosen weather', () => {
+    const HOUR_MS = 60 * 60 * 1000;
+
+    it('stays on every day, and sleep still wins', () => {
+        const days = [0, 1, 2, 3, 4, 5, 6].map(day => pickMascotMood({ botId: 'a', lastActivityAt: day * 24 * HOUR_MS, isSelected: false, now: day * 24 * HOUR_MS, weather: 'snow' }));
+        const asleep = pickMascotMood({ botId: 'a', lastActivityAt: 0, isSelected: false, now: 5 * HOUR_MS, weather: 'snow' });
+
+        expect(new Set(days))
+            .toEqual(new Set(['weather']));
+        expect(asleep)
+            .toBe('sleeping');
+    });
+});
+
 describe('falling asleep after leaving a chat', () => {
     const HOUR_MS = 60 * 60 * 1000;
-    // A bot id and a day with no cold, so only the sleep shows.
+    // A bot id and a day with no weather, so only the sleep shows.
     const quietChat = (now: number, leftAt: number): Parameters<typeof pickMascotMood>[0] => ({ botId: 'a', lastActivityAt: now - 5 * HOUR_MS, isSelected: false, now, leftAt });
 
     it('stays awake, then nods, then sleeps', () => {

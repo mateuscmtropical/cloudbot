@@ -7,7 +7,7 @@ import type { BotSummary } from '../../shared/chatTypes.ts';
 import { GroupDialog } from './GroupDialog.tsx';
 
 function makeBot(id: string, name: string): BotSummary {
-    return { id, name, title: '', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
+    return { id, name, title: '', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', mascotWeather: 'auto', mascotBolt: 'down', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 };
 }
 
 const BOTS = [makeBot('ana', 'Ana'), makeBot('ben', 'Ben')];

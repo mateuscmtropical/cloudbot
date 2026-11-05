@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 import type { MessageBody } from '../../shared/chatTypes.ts';
-import { MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES } from '../../shared/mascot.ts';
+import { MASCOT_BOLTS, MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES, MASCOT_WEATHERS } from '../../shared/mascot.ts';
 import { CONNECTED_APP_STATUSES } from '../../shared/connectedApps.ts';
 import { INTEGRATION_COMMANDS } from '../../shared/integrations.ts';
 import { TASK_STATUSES } from '../../shared/taskTypes.ts';
@@ -46,6 +46,12 @@ const bots = sqliteTable('bots', {
     mascotEyes: text('mascot_eyes', { enum: MASCOT_EYES })
         .notNull()
         .default('smile'),
+    mascotWeather: text('mascot_weather', { enum: MASCOT_WEATHERS })
+        .notNull()
+        .default('auto'),
+    mascotBolt: text('mascot_bolt', { enum: MASCOT_BOLTS })
+        .notNull()
+        .default('down'),
 });
 
 // `sequence` is the insertion order and the paging cursor. AUTOINCREMENT keeps
