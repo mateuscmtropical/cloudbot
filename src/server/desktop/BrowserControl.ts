@@ -1,6 +1,8 @@
 import { CdpConnection, CdpError } from './CdpConnection.ts';
 import type { CdpSocketFactory } from './CdpConnection.ts';
 import { evaluateInPage } from './evaluateInPage.ts';
+import { cursorSteps, pressHoldMs } from './humanCursor.ts';
+import type { CursorPoint } from './humanCursor.ts';
 import { pageActiveElement } from './page/pageActiveElement.ts';
 import { pageClickFocus } from './page/pageClickFocus.ts';
 import { pageClickableElements } from './page/pageClickableElements.ts';
@@ -280,6 +282,8 @@ class BrowserControl {
     private readonly socketFactory: CdpSocketFactory | undefined;
     private readonly sleep: (delayMs: number) => Promise<void>;
     private dismissedDialogs: string[] = [];
+    // Where the pointer was left, so the next click moves from there.
+    private cursor: CursorPoint = { x: 0, y: 0 };
 
     constructor(options: BrowserControlOptions) {
         this.devtoolsUrl = options.devtoolsUrl;
@@ -533,9 +537,23 @@ class BrowserControl {
         return readDescription(value);
     }
 
-    private async dispatchClick(page: CdpConnection, point: { x: number; y: number }): Promise<void> {
+    // The pointer travels from where it was along a curve, then the button is held down for a moment.
+    private async dispatchClick(page: CdpConnection, point: CursorPoint): Promise<void> {
+        const steps = cursorSteps(this.cursor, point);
+        const start = Promise.resolve();
+
+        await steps.reduce(async (previous, step) => {
+            await previous;
+            await this.sleep(step.waitMs);
+            await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: step.x, y: step.y });
+        }, start);
         await page.call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
+        this.cursor = point;
         await page.call('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
+
+        const holdMs = pressHoldMs();
+
+        await this.sleep(holdMs);
         await page.call('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
     }
 

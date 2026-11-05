@@ -246,17 +246,20 @@ describe('BrowserControl', () => {
             .toEqual({ id: 2, method: 'Page.captureScreenshot', params: { format: 'png' } });
     });
 
-    it('clicks with a move, a press and a release at the point', async () => {
+    it('clicks after a curved move that ends on the point, then a press and a release there', async () => {
         const { browser, sockets } = createBrowser(pageAnswer({}));
 
-        await expect(browser.click(10, 20)).resolves.toEqual({ hasFocusedField: false });
+        await expect(browser.click(300, 200)).resolves.toEqual({ hasFocusedField: false });
 
         const sentTypes = actionCalls(sockets.sockets[0])
             .filter(call => call.method === 'Input.dispatchMouseEvent')
             .map(call => [call.params.type, call.params.x, call.params.y]);
+        const moves = sentTypes.filter(([type]) => type === 'mouseMoved');
 
-        expect(sentTypes)
-            .toEqual([['mouseMoved', 10, 20], ['mousePressed', 10, 20], ['mouseReleased', 10, 20]]);
+        expect(moves.length)
+            .toBeGreaterThan(10);
+        expect(sentTypes.slice(-3))
+            .toEqual([['mouseMoved', 300, 200], ['mousePressed', 300, 200], ['mouseReleased', 300, 200]]);
     });
 
     it('clicks a field again when the first click left it without the focus', async () => {

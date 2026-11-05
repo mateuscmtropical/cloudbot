@@ -32,6 +32,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- When the bot clicks in its browser, the pointer moves there along a curve at the speed of a hand and holds the button for a moment, with [ghost-cursor](https://github.com/Xetera/ghost-cursor). Before, it jumped straight to the point. Each click takes up to about two seconds longer.
 - The first CloudBot of a new install is the blue cloud of the project. Bots made later still get a random cloud.
 - On an Arm server whose CPU has dotprod and fp16, voice input builds with them to turn speech into text faster.
 - The app icon is a white cloud with light and depth on a blue sky, larger on the home screen. Its source is `docs/app-icon.svg`.
