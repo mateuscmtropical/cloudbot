@@ -2,6 +2,7 @@ import { memo } from 'react';
 import type { ReactElement } from 'react';
 
 import type { AttachmentSummary, BotSummary, ChatMessage } from '../../shared/chatTypes.ts';
+import type { MascotColorName, MascotEyes, MascotShape } from '../../shared/mascot.ts';
 import { TASK_LABELS, TASK_STATUSES } from '../../shared/taskTypes.ts';
 import { PREVIEW_IMAGE_TYPES } from '../../shared/previewImageTypes.ts';
 import { readHandoff } from '../botHandoff.ts';
@@ -35,6 +36,17 @@ interface MessageItemProps {
     actions: MessageActions;
     // Used to show a message between two bots as a message of that bot. A stable list keeps the memo below working.
     bots?: BotSummary[] | undefined;
+    // Shows the mascot and name of the bot that wrote it beside the message, as in a group.
+    author?: MessageAuthor | undefined;
+    // Where the file of this message is, when it is not in the chat of a bot.
+    fileUrl?: string | undefined;
+}
+
+interface MessageAuthor {
+    name: string;
+    color: MascotColorName;
+    shape: MascotShape;
+    eyes: MascotEyes;
 }
 
 // Sent images show as a grid, and every other file, or an image from before copies were kept, as a card.
@@ -58,7 +70,7 @@ function renderAttachments(message: ChatMessage, attachments: AttachmentSummary[
     );
 }
 
-function renderBody(message: ChatMessage, actions: MessageActions): ReactElement | null {
+function renderBody(message: ChatMessage, actions: MessageActions, ownFileUrl: string | undefined): ReactElement | null {
     const body = message.body;
 
     switch (body.kind) {
@@ -146,7 +158,7 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
                 />
             );
         case 'file': {
-            const fileUrl = `/api/bots/${encodeURIComponent(message.botId)}/messages/${encodeURIComponent(message.id)}/file`;
+            const fileUrl = ownFileUrl ?? `/api/bots/${encodeURIComponent(message.botId)}/messages/${encodeURIComponent(message.id)}/file`;
 
             return <SharedFile file={body} url={fileUrl} />;
         }
@@ -163,29 +175,41 @@ function renderBody(message: ChatMessage, actions: MessageActions): ReactElement
     }
 }
 
-// A message between two bots sits on the bot side, with the mascot beside it and the label above the text. A bot that is gone shows the default mascot.
-function renderHandoff(handoff: HandoffView): ReactElement {
+// A message of a named bot sits on the bot side, with the mascot beside it and the name above the message.
+function renderAuthored(author: MessageAuthor, content: ReactElement | null): ReactElement {
     return (
         <div className="message message-handoff has-mascot">
-            <CloudMascot
-                color={handoff.bot?.mascotColor ?? 'blue'}
-                shape={handoff.bot?.mascotShape ?? 'puff'}
-                eyes={handoff.bot?.mascotEyes ?? 'smile'}
-                state="idle"
-                size={HANDOFF_MASCOT_SIZE}
-            />
-            <div className="text-message">
-                <div className="handoff-sender">{handoff.label}</div>
-                <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(handoff.text) }} />
+            <CloudMascot color={author.color} shape={author.shape} eyes={author.eyes} state="idle" size={HANDOFF_MASCOT_SIZE} />
+            <div className="message-authored">
+                <div className="handoff-sender">{author.name}</div>
+                {content}
             </div>
         </div>
     );
 }
 
-function MessageItemView({ message, actions, bots }: MessageItemProps): ReactElement {
+// A message between two bots. A bot that is gone shows the default mascot.
+function renderHandoff(handoff: HandoffView): ReactElement {
+    const author: MessageAuthor = {
+        name: handoff.label,
+        color: handoff.bot?.mascotColor ?? 'blue',
+        shape: handoff.bot?.mascotShape ?? 'puff',
+        eyes: handoff.bot?.mascotEyes ?? 'smile',
+    };
+
+    return renderAuthored(author, <div className="text-message"><div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(handoff.text) }} /></div>);
+}
+
+function MessageItemView({ message, actions, bots, author, fileUrl }: MessageItemProps): ReactElement {
     const className = `message message-${message.role}`;
     const routineSystemText = getRoutineSystemText(message);
     const handoff = readHandoff(bots ?? [], message);
+
+    if (author !== undefined) {
+        const authoredBody = renderBody(message, actions, fileUrl);
+
+        return renderAuthored(author, authoredBody);
+    }
 
     if (handoff !== undefined) {
         return renderHandoff(handoff);
@@ -195,7 +219,7 @@ function MessageItemView({ message, actions, bots }: MessageItemProps): ReactEle
         return <div className="message message-system">{routineSystemText}</div>;
     }
 
-    return <div className={className}>{renderBody(message, actions)}</div>;
+    return <div className={className}>{renderBody(message, actions, fileUrl)}</div>;
 }
 
 // Stored messages render only when they change. The bot list only matters to a row that may be a message between bots, and a bot's own reply never is.

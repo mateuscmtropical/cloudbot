@@ -87,6 +87,35 @@ describe('ChatService deleting a bot that manages a channel', () => {
             .toEqual(['Ben']);
     });
 
+    it('refuses bot_send across an isolated group in both directions, and lists only the bots a bot can reach', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const toolCallReviewer = vi.fn(() => Promise.resolve({ decision: 'ask' as const, summary: 'Send.' }));
+        const gated = new ChatService({ botStore, messageStore: new MessageStore(opened.db), runner, dataDir, channelStore, toolCallReviewer, ruleStore: new RuleStore(opened.db) });
+        const ana = await botStore.create({ name: 'Ana', title: 'Inside', description: '' });
+        const ben = await botStore.create({ name: 'Ben', title: 'Inside', description: '' });
+        const carl = await botStore.create({ name: 'Carl', title: 'Outside', description: '' });
+
+        await channelStore.create({ name: 'Walled', managerId: ana.id, memberIds: [ana.id, ben.id], isIsolated: true });
+
+        const out = await gated.handoffFromTool(ana.id, 0, { bot: 'Carl', text: 'Hi' });
+        const inward = await gated.handoffFromTool(carl.id, 0, { bot: 'Ben', text: 'Hi' });
+        const finished = waitForTurnFinish(gated, ana.id);
+
+        await gated.sendMessage(ana.id, 'Hi');
+        await finished;
+
+        const systemPrompt = String(runner.receivedRequests[0]?.systemPrompt);
+
+        expect(out.isError)
+            .toBe(true);
+        expect(out.text)
+            .toContain('isolated group');
+        expect(inward.isError)
+            .toBe(true);
+        expect(systemPrompt)
+            .toContain('other bots: Ben.');
+    });
+
     it('offers the channel tools to the bot only when the approval gate exists', async () => {
         const toolCallReviewer = vi.fn(() => Promise.resolve({ decision: 'ask' as const, summary: 'Change a channel.' }));
         const withGate = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);

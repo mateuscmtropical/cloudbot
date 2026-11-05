@@ -70,6 +70,10 @@ function describeEvent(event: ChatEvent): string {
         return 'messagesRemoved';
     }
 
+    if (event.type === 'channel') {
+        return 'channel';
+    }
+
     return `message:${event.message.role}:${event.message.body.kind}`;
 }
 

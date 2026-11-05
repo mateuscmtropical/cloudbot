@@ -14,6 +14,7 @@ import { BotListItem } from './BotListItem.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { ListRow } from './ListRow.tsx';
+import { MascotStack } from './MascotStack.tsx';
 import { MessageSearchResults } from './MessageSearchResults.tsx';
 import { PillField } from './PillField.tsx';
 import { RenameField } from './RenameField.tsx';
@@ -21,6 +22,7 @@ import { RoundButton } from './RoundButton.tsx';
 
 // Where the hop lands on the row, inside its rounded right end.
 const ROW_EDGE_INSET = 24;
+const GROUP_ROW_MASCOT_SIZE = 32;
 
 interface BotListProps {
     bots: BotSummary[];
@@ -33,6 +35,8 @@ interface BotListProps {
     onSelectBot: (botId: string, sourceMascot: HTMLElement | null, rowEdge: MascotHopPoint) => void;
     onSelectChannel: (channelId: string) => void;
     onNewBot: () => void;
+    // Opens the dialog that makes a group. Without it the list has no button for that.
+    onNewGroup?: (() => void) | undefined;
     onConnectApps: () => void;
     personName?: string | undefined;
     // Opens Account for the owner, whether or not this CloudBot is in a hub.
@@ -58,7 +62,7 @@ function initialsFromName(name: string): string {
     return initials.toLocaleUpperCase();
 }
 
-function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, onSelectBot, onSelectChannel, onNewBot, onConnectApps, personName, onAccount, onPeople, onRenameBot, onDeleteBot, onOpenSearchHit }: BotListProps): ReactElement {
+function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, onSelectBot, onSelectChannel, onNewBot, onNewGroup, onConnectApps, personName, onAccount, onPeople, onRenameBot, onDeleteBot, onOpenSearchHit }: BotListProps): ReactElement {
     const [renamingBotId, setRenamingBotId] = useState<string | undefined>(undefined);
     const [actionsBotId, setActionsBotId] = useState<string | undefined>(undefined);
     const [deletingBotId, setDeletingBotId] = useState<string | undefined>(undefined);
@@ -205,9 +209,16 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
                             />
                         );
                     })}
-                    {channels.length === 0
+                    {channels.length === 0 && onNewGroup === undefined
                         ? null
-                        : <p className="channel-section-title">Channels</p>}
+                        : (
+                                <div className="channel-section-header">
+                                    <p className="channel-section-title">Groups</p>
+                                    {onNewGroup === undefined
+                                        ? null
+                                        : <button type="button" className="icon-button channel-section-add" aria-label="New group" onClick={onNewGroup}><PlusIcon /></button>}
+                                </div>
+                            )}
                     {channels.map((channel) => {
                         const isSelected = channel.id === selectedChannelId;
                         const itemClassName = isSelected ? 'bot-item is-selected' : 'bot-item';
@@ -218,7 +229,8 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
                             <ListRow
                                 key={channel.id}
                                 title={channel.name}
-                                description={rosterText}
+                                description={channel.isIsolated ? `Isolated. ${rosterText}` : rosterText}
+                                leadingIcon={<MascotStack members={channel.members} size={GROUP_ROW_MASCOT_SIZE} />}
                                 className={`${itemClassName} channel-list-row`}
                                 ariaCurrent={isSelected}
                                 onClick={() => {

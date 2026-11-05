@@ -6,7 +6,7 @@ import type { BotRoutine } from '../shared/routineTypes.ts';
 import type { BotWatch } from '../shared/watchTypes.ts';
 import type { BotWebhook, CreatedBotWebhook } from '../shared/webhookTypes.ts';
 import type { TurnLimits } from '../shared/limitTypes.ts';
-import type { ChannelDetail, ChannelPostView, ChannelSummary } from '../shared/channelTypes.ts';
+import type { ChannelDetail, ChannelPostView, ChannelSettings, ChannelSummary } from '../shared/channelTypes.ts';
 import type { PermissionMode } from '../shared/permissionModes.ts';
 import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse } from '../shared/providerTypes.ts';
 import type { PushKeyResponse, PushSubscriptionInput, PushUnsubscribeInput } from '../shared/pushTypes.ts';
@@ -95,6 +95,24 @@ function getChannel(channelId: string): Promise<ChannelDetail> {
     const path = `${API_ROOT}/channels/${encodeURIComponent(channelId)}`;
 
     return requestJson<ChannelDetail>(path, {});
+}
+
+function createChannel(settings: ChannelSettings): Promise<ChannelSummary> {
+    return postJson<ChannelSummary>(`${API_ROOT}/channels`, settings);
+}
+
+function updateChannel(channelId: string, settings: ChannelSettings): Promise<ChannelSummary> {
+    const path = `${API_ROOT}/channels/${encodeURIComponent(channelId)}`;
+    const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) };
+
+    return requestJson<ChannelSummary>(path, init);
+}
+
+async function deleteChannel(channelId: string): Promise<void> {
+    const path = `${API_ROOT}/channels/${encodeURIComponent(channelId)}`;
+    const response = await fetch(path, { method: 'DELETE' });
+
+    ensureOk(response, path);
 }
 
 function postChannelMessage(channelId: string, text: string): Promise<ChannelPostView> {
@@ -650,6 +668,9 @@ export {
     searchMessages,
     listChannels,
     getChannel,
+    createChannel,
+    updateChannel,
+    deleteChannel,
     postChannelMessage,
     stopChannel,
     listMessages,
