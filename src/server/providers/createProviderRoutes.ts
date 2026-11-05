@@ -3,9 +3,11 @@ import { Hono } from 'hono';
 import { isPermissionMode } from '../../shared/permissionModes.ts';
 import type { PermissionMode } from '../../shared/permissionModes.ts';
 import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse } from '../../shared/providerTypes.ts';
-import { EFFORT_LEVELS, MODEL_ALIASES, isClaudeModel, isEffortLevel } from '../models/modelChoices.ts';
+import { EFFORT_LEVELS, isClaudeModel, isEffortLevel } from '../models/modelChoices.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
-import type { ProviderModelCatalogs, ProviderModelOption } from './ProviderModelCatalogs.ts';
+import type { ProviderModelCatalogs } from './ProviderModelCatalogs.ts';
+import { claudeModelOptions } from './WorkSettings.ts';
+import type { WorkSettings } from './WorkSettings.ts';
 import type { ProviderToolDependencies } from './createProviderTools.ts';
 import { PROVIDER_LABELS, isProviderId } from './providerIds.ts';
 import type { ProviderId } from './providerIds.ts';
@@ -27,6 +29,8 @@ interface ProviderRoutesOptions {
     };
     // The bot whose chat holds the sign-in of a provider.
     setupBotId: string;
+    // Knows the real name of a default model once the provider reported it.
+    workSettings?: Pick<WorkSettings, 'defaultModelName'>;
 }
 
 const BOT_NOT_FOUND: ProviderErrorResponse = { error: 'No bot has this id.' };
@@ -37,14 +41,6 @@ const NO_MODEL_OPTIONS: ProviderErrorResponse = { error: 'This provider does not
 const INVALID_MODEL_CHOICE: ProviderErrorResponse = { error: 'Choose a model from the current provider list.' };
 const INVALID_EFFORT_CHOICE: ProviderErrorResponse = { error: 'Choose an effort offered for the selected model.' };
 const INVALID_PERMISSION_MODE: ProviderErrorResponse = { error: 'Send a JSON body with a mode: ask, auto or yolo.' };
-
-// Claude reports no model list, so the menu offers the aliases its CLI takes, by name.
-const CLAUDE_MODELS: ProviderModelOption[] = MODEL_ALIASES.map(id => ({
-    id,
-    label: `${id.charAt(0)
-        .toUpperCase()}${id.slice(1)}`,
-    efforts: [...EFFORT_LEVELS],
-}));
 
 // Only the models a provider takes are shown. The claude models belong to Claude, and gemini- models to Gemini.
 function modelFor(provider: ProviderId, chatModel: string | null): string | null {
@@ -64,15 +60,14 @@ async function summarizeClaude(options: ProviderRoutesOptions, botId: string): P
     const choices = await options.modelStore.get(botId);
     const efforts = await options.modelStore.getEfforts(botId);
     const model = modelFor('claude', choices.chat);
-    const isOffered = model === null || CLAUDE_MODELS.some(option => option.id === model);
+    const defaultName = await options.workSettings?.defaultModelName('claude');
     const permissionMode = await options.permissionModes.get(botId);
 
     return {
         provider: 'claude',
         label: PROVIDER_LABELS.claude,
-        model,
-        // A full model id chosen another way stays in the list, so the menu shows it.
-        modelOptions: isOffered ? CLAUDE_MODELS : [...CLAUDE_MODELS, { id: model, label: model, efforts: [...EFFORT_LEVELS] }],
+        model: model ?? defaultName ?? null,
+        modelOptions: claudeModelOptions(model),
         selectedModel: model,
         selectedEffort: efforts.chat,
         effortOptions: [...EFFORT_LEVELS],

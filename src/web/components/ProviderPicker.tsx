@@ -8,6 +8,7 @@ import { getBotProvider, listProviders, savePermissionMode, saveProviderModel, s
 import { Field } from './Field.tsx';
 import { PopoverMenuSection } from './PopoverMenu.tsx';
 import { Select } from './Select.tsx';
+import { WorkPicker } from './WorkPicker.tsx';
 
 interface ProviderPickerProps {
     botId: string;
@@ -233,6 +234,7 @@ function ProviderPicker({ botId, isOpen, changeCount = 0, onOpenSetupChat, onClo
                                     )}
                         </PopoverMenuSection>
                     )}
+            <WorkPicker botId={botId} providers={providers} refreshKey={[current.provider, changeCount, isOpen].join(':')} />
             <PopoverMenuSection title="Permissions">
                 <Field label="Mode" isInline>
                     <Select

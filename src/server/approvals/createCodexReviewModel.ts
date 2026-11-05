@@ -39,7 +39,7 @@ function readLine(line: string): CodexReviewLine | undefined {
 function createCodexReviewModel(options: CodexReviewModelOptions): ReviewModel {
     const timeoutMs = options.timeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS;
 
-    return (prompt, signal) => new Promise((resolve, reject) => {
+    return (prompt, signal, model, effort) => new Promise((resolve, reject) => {
         // The locked settings, as for a turn. sudo only allows the wrapper with arguments after app-server.
         const child = options.launch.spawnFunction('codex', CODEX_REVIEW_ARGUMENTS, {
             cwd: tmpdir(),
@@ -93,7 +93,7 @@ function createCodexReviewModel(options: CodexReviewModelOptions): ReviewModel {
             const threadId = message.result?.thread?.id;
 
             if (message.id === THREAD_ID && threadId !== undefined) {
-                write({ jsonrpc: '2.0', id: TURN_ID, method: 'turn/start', params: { threadId, input: [{ type: 'text', text: prompt, text_elements: [] }], effort: 'low' } });
+                write({ jsonrpc: '2.0', id: TURN_ID, method: 'turn/start', params: { threadId, input: [{ type: 'text', text: prompt, text_elements: [] }], ...(model === undefined ? {} : { model }), effort: effort ?? 'low' } });
             }
 
             const item = message.params?.item;

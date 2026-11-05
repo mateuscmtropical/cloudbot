@@ -47,6 +47,7 @@ interface CliSystemMessage {
     type: 'system';
     subtype: string;
     session_id?: string | undefined;
+    model?: string | undefined;
 }
 
 interface CliStreamEventMessage {
@@ -115,7 +116,7 @@ function mapCliMessage(message: CliMessage): AgentEvent[] {
     switch (message.type) {
         case 'system':
             return message.subtype === 'init' && message.session_id !== undefined
-                ? [{ type: 'session', sessionId: message.session_id }]
+                ? [{ type: 'session', sessionId: message.session_id, ...(message.model === undefined ? {} : { model: message.model }) }]
                 : [];
         case 'stream_event':
             return mapStreamEvent(message);

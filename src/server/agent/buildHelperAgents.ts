@@ -83,5 +83,12 @@ function buildHelperAgents(choices: HelperChoices, options: HelperAgentOptions):
     return { ...browsingEntries, ...documentsEntries };
 }
 
-export { AGENT_TOOL_NAME, buildHelperAgents };
+// The instructions and tools of a helper that runs as its own turn, on any provider.
+function helperTurnParts(kind: HelperKind): { prompt: string; toolNames: string[]; builtInToolNames: string[] } {
+    return kind === 'browsing'
+        ? { prompt: BROWSING_HELPER_TEXT.prompt, toolNames: BROWSER_TOOL_FULL_NAMES, builtInToolNames: [] }
+        : { prompt: DOCUMENTS_HELPER_TEXT.prompt, toolNames: [SHARE_FILE_TOOL_FULL_NAME], builtInToolNames: DOCUMENT_BUILT_IN_TOOL_NAMES };
+}
+
+export { AGENT_TOOL_NAME, buildHelperAgents, helperTurnParts };
 export type { HelperAgentOptions, HelperChoices, HelperEfforts, HelperKind };

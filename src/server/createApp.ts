@@ -45,6 +45,8 @@ import { createModelRoutes } from './models/createModelRoutes.ts';
 import { createProviderRoutes } from './providers/createProviderRoutes.ts';
 import type { ProviderToolDependencies } from './providers/createProviderTools.ts';
 import type { ProviderModelCatalogs } from './providers/ProviderModelCatalogs.ts';
+import { createWorkSettingsRoutes } from './providers/createWorkSettingsRoutes.ts';
+import type { WorkSettings } from './providers/WorkSettings.ts';
 import { createRoutineRoutes } from './routines/createRoutineRoutes.ts';
 import type { LimitStore } from './store/LimitStore.ts';
 import type { ModelStore } from './store/ModelStore.ts';
@@ -88,6 +90,7 @@ interface AppOptions {
     routineStore?: RoutineStore;
     modelStore?: ModelStore;
     providerModelCatalogs?: ProviderModelCatalogs;
+    workSettings?: WorkSettings;
     // The AI providers the owner can pick for a bot, and the bot whose chat holds the sign-in. Without both the provider routes are not served.
     providers?: ProviderToolDependencies;
     setupBotId?: string;
@@ -339,9 +342,16 @@ function createApp(options: AppOptions): Hono {
 
     if (options.chatService !== undefined && options.modelStore !== undefined && options.providers !== undefined && options.setupBotId !== undefined) {
         const chatService = options.chatService;
-        const providerRoutes = createProviderRoutes({ providers: options.providers, modelStore: options.modelStore, modelCatalogs: options.providerModelCatalogs, hasBot: botId => chatService.hasBot(botId), permissionModes: { get: botId => chatService.getPermissionMode(botId), set: (botId, mode) => chatService.setPermissionMode(botId, mode) }, setupBotId: options.setupBotId });
+        const providerRoutes = createProviderRoutes({ providers: options.providers, modelStore: options.modelStore, modelCatalogs: options.providerModelCatalogs, hasBot: botId => chatService.hasBot(botId), permissionModes: { get: botId => chatService.getPermissionMode(botId), set: (botId, mode) => chatService.setPermissionMode(botId, mode) }, setupBotId: options.setupBotId, ...(options.workSettings === undefined ? {} : { workSettings: options.workSettings }) });
 
         app.route('/', providerRoutes);
+    }
+
+    if (options.chatService !== undefined && options.workSettings !== undefined) {
+        const chatService = options.chatService;
+        const workRoutes = createWorkSettingsRoutes({ workSettings: options.workSettings, hasBot: botId => chatService.hasBot(botId) });
+
+        app.route('/', workRoutes);
     }
 
     if (options.chatService !== undefined && options.limitStore !== undefined) {

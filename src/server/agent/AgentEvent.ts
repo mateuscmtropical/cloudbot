@@ -25,6 +25,8 @@ interface ToolFinishedEvent {
 interface SessionEvent {
     type: 'session';
     sessionId: string;
+    // The real name of the model, when the engine reports it.
+    model?: string;
 }
 
 interface TurnFinishedEvent {

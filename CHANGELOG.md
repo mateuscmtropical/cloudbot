@@ -15,6 +15,11 @@ All notable changes to this project are listed here. The format follows
 - The site sends `Strict-Transport-Security` with a one day lifetime and no longer offers HTTP/3, which never worked because UDP 443 is not published.
 - The hub and server databases are mode 600.
 
+### Added
+
+- The provider menu shows the provider, model and effort of routines, review, browsing and documents, and lets the owner choose them for each one. The bot can read and change them too. Browsing and documents on another provider run as a helper of the main turn. Review runs on Claude, ChatGPT or Gemini.
+- The default model of Claude shows by its real name, once a turn has reported it.
+
 ### Changed
 
 - In a bot's provider list, the whole row of a provider that is not connected connects it, and the row no longer looks disabled. The setup chat goes straight to that provider, without asking again which one.

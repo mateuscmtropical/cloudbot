@@ -1,6 +1,7 @@
 import type { RuleStore } from '../store/RuleStore.ts';
 import type { MessageStore } from '../store/MessageStore.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
+import type { WorkSettings } from '../providers/WorkSettings.ts';
 import type { ChannelMessage, ChannelStore } from '../store/ChannelStore.ts';
 import type { ReviewContext } from './createToolCallReviewer.ts';
 import { isWebhookMessage } from '../webhooks/webhookMessage.ts';
@@ -14,6 +15,8 @@ interface ReviewContextSources {
     ruleStore: Pick<RuleStore, 'list'>;
     messageStore: Pick<MessageStore, 'listByBot'>;
     modelStore: Pick<ModelStore, 'get' | 'getEfforts'>;
+    // The provider, model and effort the owner chose for the review. Without it the review reads the model store.
+    workSettings?: Pick<WorkSettings, 'read'>;
     // The posts a channel turn is reviewed against. Without it a channel review gets no chat lines, never the bot's own chat.
     channelStore?: Pick<ChannelStore, 'listRecentMessages'>;
     workspaceFor?: (botId: string) => string;
@@ -130,8 +133,12 @@ function createReviewContextReader(sources: ReviewContextSources): (botId: strin
             sources.modelStore.get(botId),
             sources.modelStore.getEfforts(botId),
         ]);
-        const reviewModelOption = modelChoices.review === null ? {} : { reviewModel: modelChoices.review };
-        const reviewEffortOption = efforts.review === null ? {} : { reviewEffort: efforts.review };
+        const work = await sources.workSettings?.read(botId, 'review');
+        const reviewModel = work === undefined ? modelChoices.review : work.model;
+        const reviewEffort = work === undefined ? efforts.review : work.effort;
+        const reviewModelOption = reviewModel === null ? {} : { reviewModel };
+        const reviewEffortOption = reviewEffort === null ? {} : { reviewEffort };
+        const reviewProviderOption = work === undefined ? {} : { reviewProvider: work.provider };
         const workspaceOption = sources.workspaceFor === undefined ? {} : { workspaceDir: sources.workspaceFor(botId) };
 
         return {
@@ -140,6 +147,7 @@ function createReviewContextReader(sources: ReviewContextSources): (botId: strin
             ...workspaceOption,
             ...reviewModelOption,
             ...reviewEffortOption,
+            ...reviewProviderOption,
         };
     };
 }
