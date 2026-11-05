@@ -15,7 +15,10 @@ import type { ConnectionState, ScreencastInputMessage } from './ScreencastView.t
 import { SoftKeyboardInput } from './SoftKeyboardInput.tsx';
 
 interface DesktopPanelProps {
+    // Must be stable, because a new function checks the holder again.
     onClose: () => void;
+    // True when the bot has finished with the screen. The panel then closes as soon as the owner does not hold it.
+    isBotDone?: boolean | undefined;
 }
 
 interface RfbScreenSize {
@@ -107,7 +110,7 @@ function applyVncViewportSize(viewportElement: HTMLElement, targetElement: HTMLE
 }
 
 // The live screen of the bot. It is view only while the bot holds the screen. The server also drops input then.
-function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
+function DesktopPanel({ onClose, isBotDone = false }: DesktopPanelProps): ReactElement {
     const screenViewportRef = useRef<HTMLDivElement>(null);
     const screenRef = useRef<HTMLDivElement>(null);
     const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
@@ -155,6 +158,28 @@ function DesktopPanel({ onClose }: DesktopPanelProps): ReactElement {
             clearInterval(timer);
         };
     }, []);
+
+    // The holder on the last poll can be old, and the bot may have just handed over the screen, so it is read once more.
+    useEffect(() => {
+        if (!isBotDone || holder !== 'bot') {
+            return;
+        }
+
+        let isCurrent = true;
+        const handoffCountAtStart = handoffCountRef.current;
+
+        getScreenHolder()
+            .then((current) => {
+                if (isCurrent && current === 'bot' && handoffCountRef.current === handoffCountAtStart) {
+                    onClose();
+                }
+            })
+            .catch(() => undefined);
+
+        return () => {
+            isCurrent = false;
+        };
+    }, [isBotDone, holder, onClose]);
 
     useEffect(() => {
         const orientationQuery = window.matchMedia('(orientation: portrait)');

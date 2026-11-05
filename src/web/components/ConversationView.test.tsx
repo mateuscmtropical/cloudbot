@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -171,6 +171,7 @@ function historyElement(
     screenRequestId?: number,
     onOpenProfile?: () => void,
     onOpenSetupChat?: (setupBotId: string) => void,
+    screenWatchId?: number,
 ): ReactElement {
     return (
         <ConversationView
@@ -182,6 +183,7 @@ function historyElement(
             onOpenProfile={onOpenProfile}
             onOpenSetupChat={onOpenSetupChat}
             screenRequestId={screenRequestId}
+            screenWatchId={screenWatchId}
             onSend={vi.fn()}
             onStop={vi.fn()}
             onAttach={vi.fn()}
@@ -589,6 +591,36 @@ describe('ConversationView header', () => {
 
         expect(screen.queryByRole('region', { name: 'Bot screen' }))
             .toBeNull();
+    });
+
+    it('closes the Screen panel with no turn running, but keeps it when the owner asked to see the screen', async () => {
+        vi.stubGlobal('fetch', () => Promise.resolve(Response.json({ holder: 'bot', view: 'vnc' })));
+
+        const view = render(historyElement([], {}, ana));
+
+        view.rerender(historyElement([], {}, ana, undefined, undefined, undefined, 1));
+
+        expect(await screen.findByRole('region', { name: 'Bot screen' }))
+            .toBeTruthy();
+
+        view.rerender(historyElement([], {}, ana, 1, undefined, undefined, 1));
+
+        await act(async () => {
+            await new Promise((resolve) => {
+                setTimeout(resolve, 50);
+            });
+        });
+
+        expect(screen.queryByRole('region', { name: 'Bot screen' }))
+            .not.toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+        view.rerender(historyElement([], {}, ana, 2, undefined, undefined, 1));
+
+        await waitFor(() => {
+            expect(screen.queryByRole('region', { name: 'Bot screen' }))
+                .toBeNull();
+        });
     });
 });
 describe('ConversationView thinking bubble', () => {

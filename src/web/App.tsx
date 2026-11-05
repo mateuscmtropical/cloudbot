@@ -174,6 +174,8 @@ function App(): ReactElement {
     const [personCredentials, setPersonCredentials] = useState<ChatPersonCredentialsEvent[]>([]);
     // Counts the screen requests of the bot on screen. Each new count opens the Screen panel.
     const [screenRequestId, setScreenRequestId] = useState(0);
+    // Counts the times the owner asked to see the screen. Each new count opens the panel until the owner closes it.
+    const [screenWatchId, setScreenWatchId] = useState(0);
     // The screen holder seen on the last check. The Screen panel opens only when it changes to the owner.
     const lastScreenHolderRef = useRef<string | undefined>(undefined);
     const [isBotListOpen, setIsBotListOpen] = useState(false);
@@ -655,7 +657,11 @@ function App(): ReactElement {
 
             // The bot asked for the screen or opened its browser, so the Screen panel opens for the owner.
             if (event.type === 'screen') {
-                setScreenRequestId(current => current + 1);
+                if (event.keepsOpen === true) {
+                    setScreenWatchId(current => current + 1);
+                } else {
+                    setScreenRequestId(current => current + 1);
+                }
 
                 return;
             }
@@ -1569,6 +1575,7 @@ function App(): ReactElement {
                                         handleSelectBot(setupBotId);
                                     }}
                                     screenRequestId={screenRequestId}
+                                    screenWatchId={screenWatchId}
                                     focusMessageId={selectedPaging === undefined ? undefined : focusMessage?.id}
                                     focusSequence={focusMessage?.sequence}
                                     onFocusHandled={() => {

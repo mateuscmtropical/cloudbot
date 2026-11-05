@@ -70,6 +70,8 @@ interface ConversationViewProps {
     onRenameBot?: ((botId: string, name: string) => Promise<string | undefined>) | undefined;
     // Goes up each time the bot asks for the screen. The Screen panel opens then, so the owner sees the request at once.
     screenRequestId?: number | undefined;
+    // Goes up each time the owner asks to see the screen. The panel then stays after the turn, until the owner closes it.
+    screenWatchId?: number | undefined;
     // The message a tapped notification was about. The view scrolls to it once the messages are there, and reports it handled.
     focusMessageId?: string | undefined;
     // The sequence of that message, when it is known. The view then loads older pages until it reaches it.
@@ -133,6 +135,7 @@ function ConversationView({
     onOpenSetupChat,
     onRenameBot,
     screenRequestId,
+    screenWatchId,
     focusMessageId,
     focusSequence,
     onFocusHandled,
@@ -162,16 +165,21 @@ function ConversationView({
     const isBubbleDue = isThinkingBubbleShown({ isRunning, messages });
     const isThinkingShown = useDelayedFlag(isBubbleDue, BUBBLE_DELAY_MS);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
+    // True when the owner asked to see the screen, so the end of the turn does not close it.
+    const [isScreenWatched, setIsScreenWatched] = useState(false);
     const autoRead = useAutoRead(bot?.id, messages, isRunning);
-
-    useBackButton(isDesktopOpen, () => {
+    const closeDesktop = useCallback(() => {
         setIsDesktopOpen(false);
-    });
+        setIsScreenWatched(false);
+    }, []);
+
+    useBackButton(isDesktopOpen, closeDesktop);
 
     const [isRenaming, setIsRenaming] = useState(false);
     const lastNameTapRef = useRef<Tap | undefined>(undefined);
     const [shownBotId, setShownBotId] = useState(bot?.id);
     const [shownScreenRequestId, setShownScreenRequestId] = useState(screenRequestId);
+    const [shownScreenWatchId, setShownScreenWatchId] = useState(screenWatchId);
 
     // React's pattern for state that follows a prop: reset it during render, not in an effect.
     if (shownBotId !== bot?.id) {
@@ -183,6 +191,12 @@ function ConversationView({
     if (shownScreenRequestId !== screenRequestId) {
         setShownScreenRequestId(screenRequestId);
         setIsDesktopOpen(true);
+    }
+
+    if (shownScreenWatchId !== screenWatchId) {
+        setShownScreenWatchId(screenWatchId);
+        setIsDesktopOpen(true);
+        setIsScreenWatched(true);
     }
     const botId = bot?.id;
 
@@ -500,9 +514,8 @@ function ConversationView({
                     ? (
                             <Suspense fallback={<p className="desktop-status">Loading the screen...</p>}>
                                 {createElement(lazyDesktopPanel, {
-                                    onClose: () => {
-                                        setIsDesktopOpen(false);
-                                    },
+                                    onClose: closeDesktop,
+                                    isBotDone: !isRunning && !isScreenWatched,
                                 })}
                             </Suspense>
                         )
