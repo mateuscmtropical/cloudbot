@@ -212,6 +212,27 @@ if docker exec --user cloudbot "$CONTAINER_NAME" sudo -n -u bot -- /usr/local/bi
 fi
 echo "ok: the end-turn helper ends a marked process that left the group, and refuses a bad marker"
 
+# The server turns recordings into text as its own user, in the private data folder. The bot cannot open them.
+# One second of silence proves that ffmpeg, whisper, its CPU code and both models load on this architecture.
+VOICE_DIR="$DATA_DIR/voice-probe"
+docker exec --user cloudbot "$CONTAINER_NAME" sh -c "mkdir -m 0700 '$VOICE_DIR' && ffmpeg -nostdin -loglevel error -f lavfi -i anullsrc=r=16000:cl=mono -t 1 -c:a pcm_s16le '$VOICE_DIR/speech.wav'" \
+    || fail "cloudbot cannot convert audio with ffmpeg"
+WHISPER_DIR="/usr/local/lib/cloudbot/whisper"
+docker exec --user cloudbot "$CONTAINER_NAME" env -i "$WHISPER_DIR/whisper-cli" -m "$WHISPER_DIR/ggml-base.bin" -f "$VOICE_DIR/speech.wav" -l auto -t 2 -nt -np --vad -vm "$WHISPER_DIR/ggml-silero.bin" > /dev/null \
+    || fail "cloudbot cannot run whisper"
+if VOICE_OUTPUT="$(docker exec --user bot "$CONTAINER_NAME" cat "$VOICE_DIR/speech.wav" 2>&1)"; then
+    fail "bot user can read a recording"
+fi
+case "$VOICE_OUTPUT" in
+    *"Permission denied"*) ;;
+    *) fail "unexpected error reading a recording: $VOICE_OUTPUT" ;;
+esac
+docker exec --user cloudbot "$CONTAINER_NAME" rm -rf "$VOICE_DIR"
+if docker exec --user bot "$CONTAINER_NAME" sh -c "printf x > '$WHISPER_DIR/ggml-base.bin'" > /dev/null 2>&1; then
+    fail "bot user can replace the whisper model"
+fi
+echo "ok: cloudbot transcribes audio and the bot cannot read a recording or replace the model"
+
 docker exec --user cloudbot "$CONTAINER_NAME" rm -f "$PROBE_FILE"
 if [ -n "$HUB_CONTAINER_NAME" ]; then
     HUB_HEALTH="$(docker inspect --format '{{.State.Health.Status}}' "$HUB_CONTAINER_NAME")"

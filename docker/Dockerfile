@@ -18,6 +18,31 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
+# Server side voice input. Pinned by commit and by checksum, and built here so the build tools stay out of the image.
+# On x86 the CPU variants load at run time, so one image uses AVX2 where the machine has it and still runs where it does not.
+# The compiler in Debian does not know the newest Arm variants, so Arm gets one build with the NEON every 64 bit Arm CPU has.
+FROM base AS whisper
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates cmake curl g++ git make \
+    && git clone --depth 1 --branch v1.9.5 https://github.com/ggml-org/whisper.cpp.git /whisper-src \
+    && test "$(git -C /whisper-src rev-parse HEAD)" = d1be6fde11ac6e0407606b4e42fe72d34add8037 \
+    && case "$(uname -m)" in \
+        aarch64) cpu_flags='-DGGML_BACKEND_DL=OFF -DGGML_CPU_ALL_VARIANTS=OFF' ;; \
+        *) cpu_flags='-DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON' ;; \
+    esac \
+    && cmake -S /whisper-src -B /whisper-build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
+        -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON '-DCMAKE_INSTALL_RPATH=$ORIGIN' \
+        -DGGML_NATIVE=OFF $cpu_flags \
+        -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF \
+    && cmake --build /whisper-build --config Release --target whisper-cli -j "$(nproc)" \
+    && install -d /whisper \
+    && cp -a /whisper-build/bin/. /whisper/ \
+    && find /whisper-build/src /whisper-build/ggml/src -name '*.so*' -exec cp -a {} /whisper/ \; \
+    && curl -fsSL -o /whisper/ggml-base.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q5_1.bin \
+    && curl -fsSL -o /whisper/ggml-silero.bin https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin \
+    && echo '422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898  /whisper/ggml-base.bin' | sha256sum -c - \
+    && echo '2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987  /whisper/ggml-silero.bin' | sha256sum -c -
+
 FROM base AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash bubblewrap ca-certificates curl sudo \
@@ -25,7 +50,7 @@ RUN apt-get update \
         x11-utils x11-xserver-utils xdotool xterm \
         poppler-utils python3 python3-docx python3-lxml python3-openpyxl \
         python3-pil python3-pip python3-pypdf python3-reportlab python3-typing-extensions \
-        python3-xlsxwriter git openssl \
+        python3-xlsxwriter git openssl ffmpeg libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # The GitHub CLI comes from GitHub's own apt repository, as its install page describes.
@@ -141,6 +166,9 @@ COPY --chmod=0755 docker/cloudbot-print-url /usr/local/bin/cloudbot-print-url
 # COPY --chmod would give a folder it makes the file mode too, which nobody could enter.
 RUN install -d -m 0755 /usr/local/lib/cloudbot
 COPY --chmod=0644 docker/acp-login.js docker/agy-login.js docker/agy-hook.js /usr/local/lib/cloudbot/
+
+# Whisper and its models, read-only for everyone. Only the server user runs it, on audio in its private data folder.
+COPY --from=whisper /whisper /usr/local/lib/cloudbot/whisper
 
 USER cloudbot
 WORKDIR /app

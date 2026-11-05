@@ -81,6 +81,14 @@ function MicIcon(): ReactElement {
     );
 }
 
+function SpeakerIcon(): ReactElement {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 10v4h3.5l4.5 4V6L7.5 10zM15.5 9.5a3.5 3.5 0 0 1 0 5M18 7a7 7 0 0 1 0 10" />
+        </svg>
+    );
+}
+
 function WaveformIcon(): ReactElement {
     return (
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -244,6 +252,7 @@ export {
     RefreshIcon,
     SearchIcon,
     SendArrowIcon,
+    SpeakerIcon,
     ShareIcon,
     TrashIcon,
     WaveformIcon,

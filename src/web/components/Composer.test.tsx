@@ -205,12 +205,18 @@ describe('Composer', () => {
             .toHaveBeenCalledWith('server-1');
     });
 
-    it('disables the waveform voice button when the browser has no speech recognition', () => {
+    it('says why instead of disabling the waveform button when the browser has no voice input', () => {
         renderComposer();
 
-        expect(screen.getByRole('button', { name: 'Voice input' })
-            .hasAttribute('disabled'))
-            .toBe(true);
+        const voiceButton = screen.getByRole('button', { name: 'Voice input' });
+
+        expect(voiceButton.hasAttribute('disabled'))
+            .toBe(false);
+
+        fireEvent.click(voiceButton);
+
+        expect(screen.getByRole('status').textContent)
+            .toMatch(/cannot record voice|secure connection/);
     });
 
     it('starts voice input from the waveform button when the draft is empty', () => {
