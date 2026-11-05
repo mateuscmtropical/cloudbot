@@ -9,6 +9,7 @@ All notable changes to this project are listed here. The format follows
 ### Security
 
 - Over HTTPS the session cookies of the hub and of CloudBot carry the `__Host-` prefix, so a page on another subdomain cannot plant a session. Everyone signs in once more after this update.
+- The hub reaches Docker through a new Docker guard, which lets through only the requests the hub makes. A new container must use the CloudBot image, stay unprivileged and mount only its own volumes. Run `sudo cloudbot update` to start the guard.
 - A stranger can no longer block a person's password sign-in with five wrong tries. One address gets five tries at one person, and the person is locked only after fifty wrong tries in all.
 - The sign-in, setup and password forms refuse a body over 16 KB.
 - Resetting a person's password or removing a person ends that person's sessions. An owner who resets their own password stays signed in until the forced change, which ends the other sessions.

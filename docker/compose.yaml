@@ -12,14 +12,14 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     image: cloudbot:local
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["export HUB_CONTAINER_ID=\"$$(hostname)\"; exec node dist/hub/main.js"]
+    command: ["node", "dist/hub/main.js"]
     environment:
       NODE_ENV: production
       CLOUDBOT_DOMAIN: ${CLOUDBOT_DOMAIN:-localhost}
       CLOUDBOT_LOGIN_ALLOWED_IPS: ${CLOUDBOT_LOGIN_ALLOWED_IPS:-}
       HUB_DATA_DIR: /var/lib/cloudbot-hub
-      DOCKER_API_URL: http://docker-proxy:2375
+      DOCKER_API_URL: http://docker-guard:2375
+      HUB_CONTAINER_ID: cloudbot-hub-1
       CLOUDBOT_INSTANCE_IMAGE: cloudbot:local
       CLOUDBOT_INSTANCE_MEMORY_MB: ${CLOUDBOT_INSTANCE_MEMORY_MB:-2560}
       CLOUDBOT_INSTANCE_BUDGET_MB: ${CLOUDBOT_INSTANCE_BUDGET_MB:-10240}
@@ -43,7 +43,7 @@ services:
       - default
       - hubctl
     depends_on:
-      docker-proxy:
+      docker-guard:
         condition: service_started
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/internal/health').then((response) => process.exit(response.ok ? 0 : 1), () => process.exit(1))"]
@@ -51,6 +51,31 @@ services:
       timeout: 5s
       start_period: 20s
       retries: 5
+
+  # Lets through only the Docker requests the hub makes, for CloudBot names, the CloudBot image and its own volumes.
+  docker-guard:
+    image: cloudbot:local
+    command: ["node", "dist/hub/dockerGuardMain.js"]
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    pids_limit: 256
+    logging: *logging
+    environment:
+      DOCKER_GUARD_UPSTREAM: http://docker-proxy:2375
+      CLOUDBOT_INSTANCE_IMAGE: cloudbot:local
+      HUB_CONTAINER_ID: cloudbot-hub-1
+    expose:
+      - "2375"
+    networks:
+      - hubctl
+      - dockerctl
+    depends_on:
+      docker-proxy:
+        condition: service_started
 
   docker-proxy:
     image: tecnativa/docker-socket-proxy:0.3.0
@@ -85,7 +110,7 @@ services:
     expose:
       - "2375"
     networks:
-      - hubctl
+      - dockerctl
 
   caddy:
     image: caddy:2
@@ -119,4 +144,6 @@ volumes:
 networks:
   default:
   hubctl:
+    internal: true
+  dockerctl:
     internal: true

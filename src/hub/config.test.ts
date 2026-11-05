@@ -12,7 +12,7 @@ describe('readHubSettings', () => {
                 port: 3001,
                 host: '0.0.0.0',
                 dataDir: '/var/lib/cloudbot-hub',
-                dockerApiUrl: 'http://docker-proxy:2375',
+                dockerApiUrl: 'http://docker-guard:2375',
                 instanceImage: 'cloudbot:local',
                 instanceMemoryMb: 2560,
                 instanceBudgetMb: 10240,

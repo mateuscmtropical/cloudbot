@@ -93,7 +93,7 @@ jobs:
           docker compose -f docker/compose.yaml --env-file .env config --quiet
           docker compose -f docker/compose.yaml --env-file .env up -d --build
 
-      - name: Check health, isolation and socket proxy rules
+      - name: Check health, isolation and Docker guard rules
         run: |
           HUB_CONTAINER_ID="$(docker compose -f docker/compose.yaml --env-file .env ps -q hub)"
           bash docker/check-container.sh cloudbot-ci 3000 "$HUB_CONTAINER_ID"
@@ -102,7 +102,7 @@ jobs:
         if: failure()
         run: |
           docker logs cloudbot-ci 2>&1 | sed -E -e 's/(Owner [^ ]+ password: ).*/\1[redacted]/' -e 's#(/setup\?code=)[A-Za-z0-9_-]+#\1[redacted]#g'
-          docker compose -f docker/compose.yaml --env-file .env logs --no-color caddy docker-proxy
+          docker compose -f docker/compose.yaml --env-file .env logs --no-color caddy docker-guard docker-proxy
           docker compose -f docker/compose.yaml --env-file .env logs --no-color hub | sed -E 's/(Owner [^ ]+ password: ).*/\1[redacted]/'
 
   shellcheck:
@@ -189,5 +189,5 @@ jobs:
       - name: Show container logs on failure
         if: failure()
         run: |
-          docker compose -f /opt/cloudbot/docker/compose.yaml --env-file /opt/cloudbot/.env logs --no-color caddy docker-proxy
+          docker compose -f /opt/cloudbot/docker/compose.yaml --env-file /opt/cloudbot/.env logs --no-color caddy docker-guard docker-proxy
           docker compose -f /opt/cloudbot/docker/compose.yaml --env-file /opt/cloudbot/.env logs --no-color hub | sed -E 's/(Owner [^ ]+ password: ).*/\1[redacted]/'
