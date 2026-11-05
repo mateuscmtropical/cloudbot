@@ -4,9 +4,9 @@ import type { EffortChoices, ModelChoices } from './modelChoices.ts';
 import { createModelRoutes } from './createModelRoutes.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
 
-const NO_CHOICES: ModelChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
-const NO_EFFORTS: EffortChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
-const NO_EFFORT_FIELDS = { chatEffort: null, routinesEffort: null, reviewEffort: null, browsingEffort: null, documentsEffort: null };
+const NO_CHOICES: ModelChoices = { chat: null, routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null };
+const NO_EFFORTS: EffortChoices = { chat: null, routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null };
+const NO_EFFORT_FIELDS = { chatEffort: null, routinesEffort: null, reviewEffort: null, checkinsEffort: null, webhooksEffort: null, searchEffort: null, browsingEffort: null, documentsEffort: null };
 const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 interface FakeStore extends Pick<ModelStore, 'get' | 'set' | 'getEfforts' | 'setEfforts'> {
@@ -83,25 +83,31 @@ describe('model routes', () => {
             .toEqual({
                 chat: 'haiku',
                 routines: 'claude-sonnet-4-5',
+                checkins: null,
+                webhooks: null,
                 review: null,
+                search: null,
                 browsing: null,
                 documents: null,
                 chatEffort: 'high',
                 routinesEffort: 'max',
+                checkinsEffort: null,
+                webhooksEffort: null,
                 reviewEffort: null,
+                searchEffort: null,
                 browsingEffort: null,
                 documentsEffort: null,
             });
         expect(store.saved.get('bot-1'))
-            .toEqual({ chat: 'haiku', routines: 'claude-sonnet-4-5', review: null, browsing: null, documents: null });
+            .toEqual({ chat: 'haiku', routines: 'claude-sonnet-4-5', review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null });
         expect(store.savedEfforts.get('bot-1'))
-            .toEqual({ chat: 'high', routines: 'max', review: null, browsing: null, documents: null });
+            .toEqual({ chat: 'high', routines: 'max', review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null });
     });
 
     it('refuses an unknown model and saves nothing', async () => {
         const { request, store } = createTestApp(['bot-1']);
 
-        const response = await request('/api/bots/bot-1/models', putJson({ review: 'gpt-4o', browsing: null, documents: null }));
+        const response = await request('/api/bots/bot-1/models', putJson({ review: 'gpt-4o', checkins: null, webhooks: null, search: null, browsing: null, documents: null }));
 
         expect(response.status)
             .toBe(400);
@@ -147,7 +153,7 @@ describe('model routes', () => {
         expect(response.status)
             .toBe(200);
         expect(store.saved.get('bot-1'))
-            .toEqual({ chat: null, routines: null, review: null, browsing: 'haiku', documents: null });
+            .toEqual({ chat: null, routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: 'haiku', documents: null });
     });
 
     it('answers 404 when saving choices for a bot that does not exist', async () => {

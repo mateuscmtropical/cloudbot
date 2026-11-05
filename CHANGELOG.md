@@ -19,6 +19,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Web search, check-ins and webhooks are kinds of work with their own provider, model and effort. With a search helper the chat hands every web search to it, so the chat provider's quota is not spent on searching. Each routine can also run on its own provider, model and effort. Only connected providers can be chosen.
 - Account has an Action log screen with what each bot did: tool reviews and their outcome, finished tools and turn errors. Entries are deleted after 30 days.
 - Webhooks say who called: the provider, the event, the address and the user agent. The bot and a new Webhooks page in the bot's profile show the last calls for 30 days. A service CloudBot does not know can name itself with `?source=name` in the URL.
 - A webhook can have one instruction per provider, so calls from each provider start different work. The owner sets them on the Webhooks page, or the bot with `webhook_rule_set`.

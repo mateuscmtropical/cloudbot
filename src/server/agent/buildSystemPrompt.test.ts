@@ -25,6 +25,17 @@ describe('buildSystemPrompt', () => {
             .not.toContain('documents helper');
     });
 
+    it('tells the main agent to hand web searches to the search helper, with the Agent tool or helper_run', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+
+        expect(buildSystemPrompt(profile, { helpers: ['search'] }))
+            .toContain('Hand web searches to the search helper with the Agent tool');
+        expect(buildSystemPrompt(profile, { turnHelpers: ['search'] }))
+            .toContain('Hand web searches to helper_run with the search helper');
+        expect(buildSystemPrompt(profile, { helpers: ['browsing'] }))
+            .not.toContain('search helper');
+    });
+
     it('names models_set only when the bot can change its models', () => {
         const profile = { name: 'Ana', title: 'Assistant', description: '' };
 

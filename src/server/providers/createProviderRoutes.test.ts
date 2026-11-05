@@ -9,8 +9,8 @@ import type { ProviderModelChoice } from '../store/ModelStore.ts';
 import type { ProviderToolDependencies } from './createProviderTools.ts';
 import type { ProviderId } from './providerIds.ts';
 
-const NO_CHOICES: ModelChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
-const NO_EFFORTS: EffortChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
+const NO_CHOICES: ModelChoices = { chat: null, routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null };
+const NO_EFFORTS: EffortChoices = { chat: null, routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null };
 
 interface TestApp {
     request: (path: string, init?: RequestInit) => Response | Promise<Response>;

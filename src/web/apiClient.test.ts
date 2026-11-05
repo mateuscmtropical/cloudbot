@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createWebhook, getLimits, getModelSettings, listBots, listMessages, listRoutines, listWebhooks, removeRoutine, removeWebhook, RequestFailedError, saveLimits, saveModelSettings, startAppConnection, startAppSignIn, stopTurn, uploadAttachments } from './apiClient.ts';
+import { createWebhook, getLimits, getModelSettings, listBots, listMessages, listRoutines, listWebhooks, removeRoutine, removeWebhook, RequestFailedError, saveLimits, saveModelSettings, setRoutineWork, startAppConnection, startAppSignIn, stopTurn, uploadAttachments } from './apiClient.ts';
 import type { ChatMessage } from '../shared/chatTypes.ts';
 
 const NO_SETTINGS = {
@@ -186,6 +186,17 @@ describe('apiClient', () => {
             .toHaveBeenCalledWith('/api/bots/bot-1/routines', {});
         expect(routines)
             .toEqual([{ id: 'routine-1' }]);
+    });
+
+    it('saves the provider, model and effort of one routine', async () => {
+        const fetchMock = stubFetch(Response.json({ id: 'routine-1', provider: 'gemini', model: 'flash', effort: 'high' }));
+
+        const saved = await setRoutineWork('bot/1', 'routine-1', { provider: 'gemini', model: 'flash', effort: 'high' });
+
+        expect(fetchMock)
+            .toHaveBeenCalledWith('/api/bots/bot%2F1/routines/routine-1/work', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'gemini', model: 'flash', effort: 'high' }) });
+        expect(saved)
+            .toMatchObject({ provider: 'gemini', model: 'flash', effort: 'high' });
     });
 
     it('deletes a routine by its bot and routine id', async () => {

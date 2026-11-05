@@ -109,6 +109,8 @@ const turnQueue = sqliteTable('turn_queue', {
     source: text('source', { enum: ['chat', 'routine', 'checkin', 'webhook', 'bot'] })
         .notNull()
         .default('chat'),
+    // The routine that started the turn, so it keeps the routine's own provider after a restart.
+    routineId: text('routine_id'),
 }, table => [
     index('turn_queue_bot_id')
         .on(table.botId),
@@ -210,6 +212,10 @@ const routines = sqliteTable('routines', {
     lastRunAt: integer('last_run_at'),
     createdAt: integer('created_at')
         .notNull(),
+    // The provider, model and effort of this routine alone. A null provider uses the choice for routines.
+    provider: text('provider'),
+    model: text('model'),
+    effort: text('effort'),
 }, table => [
     index('routines_bot_id')
         .on(table.botId),
@@ -399,12 +405,18 @@ const botModels = sqliteTable('bot_models', {
     reviewModel: text('review_model'),
     browsingModel: text('browsing_model'),
     documentsModel: text('documents_model'),
+    searchModel: text('search_model'),
+    checkinsModel: text('checkins_model'),
+    webhooksModel: text('webhooks_model'),
     // The effort per kind of work, as a level of the CLI effort option. A null column is the CLI default.
     chatEffort: text('chat_effort'),
     routinesEffort: text('routines_effort'),
     reviewEffort: text('review_effort'),
     browsingEffort: text('browsing_effort'),
     documentsEffort: text('documents_effort'),
+    searchEffort: text('search_effort'),
+    checkinsEffort: text('checkins_effort'),
+    webhooksEffort: text('webhooks_effort'),
 });
 
 // One model and effort choice for each provider a bot uses. Null leaves the provider default.

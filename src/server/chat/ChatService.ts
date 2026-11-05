@@ -12,7 +12,7 @@ import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnImage, TurnInbox, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
 import { MEMORY_FILE_MODE, MEMORY_FILE_NAME, MEMORY_MAX_BYTES, MEMORY_TRUNCATED_NOTE, readWorkspaceMemoryBlock, readWorkspaceMemoryText, writeWorkspaceMemory } from '../agent/readWorkspaceMemory.ts';
-import { AGENT_TOOL_NAME, buildHelperAgents, helperTurnParts } from '../agent/buildHelperAgents.ts';
+import { AGENT_TOOL_NAME, SEARCH_TOOL_NAMES, buildHelperAgents, helperTurnParts } from '../agent/buildHelperAgents.ts';
 import type { HelperKind } from '../agent/buildHelperAgents.ts';
 import {
     SET_MASCOT_TOOL_FULL_NAME,
@@ -53,7 +53,7 @@ import { MODELS_SET_TOOL_FULL_NAME, createModelTools } from '../models/createMod
 import { HELPER_RUN_TOOL_FULL_NAME, createHelperRunTool } from '../agent/createHelperRunTool.ts';
 import type { HelperPlan } from '../agent/createHelperRunTool.ts';
 import { WORK_SETTINGS_LIST_TOOL_FULL_NAME, WORK_SETTINGS_SET_TOOL_FULL_NAME, createWorkSettingsTools } from '../providers/createWorkSettingsTools.ts';
-import type { WorkChoice, WorkSettings } from '../providers/WorkSettings.ts';
+import type { WorkChoice, WorkKind, WorkSettings } from '../providers/WorkSettings.ts';
 import { PROVIDER_TOOL_FULL_NAMES, createProviderTools } from '../providers/createProviderTools.ts';
 import { PROVIDER_LABELS, isProviderId } from '../providers/providerIds.ts';
 import type { ProviderId } from '../providers/providerIds.ts';
@@ -344,8 +344,8 @@ interface UsageLimitState {
     resetsAt: number | undefined;
 }
 
-// Who started a turn. A routine turn uses the routines model choice. A bot hand-off uses the routines choice too.
-// A check-in is a routine that stays out of the chat when it finds nothing.
+// Who started a turn. A routine turn uses the routines work choice, a check-in the check-ins one and a webhook the webhooks one.
+// A bot hand-off uses the routines choice too. A check-in is a routine that stays out of the chat when it finds nothing.
 type TurnSource = 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot' | 'channel';
 
 // A member of a channel, with the name the bot has now.
@@ -372,6 +372,8 @@ interface TurnInput {
     source: TurnSource;
     handoff?: BotHandoffSource | undefined;
     channel?: ChannelTurnSource | undefined;
+    // The routine that sent this turn, when it came from one. Its own provider choice applies to the turn.
+    routineId?: string | undefined;
 }
 
 // A turn waiting in the queue. Its position orders the queue, so a retry can go in front.
@@ -647,6 +649,9 @@ function settingsSource(source: TurnSource): 'chat' | 'routine' | 'checkin' | 'w
     return source === 'channel' ? 'bot' : source;
 }
 
+// The kind of work whose provider and model a turn runs on. Chat and hand-off turns have none, so they stay on the chat.
+const WORK_KIND_BY_SOURCE: Partial<Record<TurnSource, WorkKind>> = { routine: 'routines', checkin: 'checkins', webhook: 'webhooks' };
+
 // Where a helper runs. The CLI of a Claude turn starts Claude helpers itself. Any other pair runs as its own turn through
 // helper_run. A helper that follows the chat does not exist on another provider: the main turn does that work.
 function helperRoute(choice: WorkChoice, mainProvider: ProviderId): 'cli' | 'turn' | 'none' {
@@ -668,6 +673,7 @@ function toQueuedTurnRecord(queuedTurn: QueuedTurn): QueuedTurnRecord {
         text: queuedTurn.text,
         uploads: storedUploads,
         source: queuedTurn.source === 'channel' ? 'bot' : queuedTurn.source,
+        routineId: queuedTurn.routineId ?? null,
     };
 }
 
@@ -695,6 +701,7 @@ async function restoreQueuedTurn(record: QueuedTurnRecord): Promise<QueuedTurn> 
         text: record.text,
         uploads,
         source: record.source,
+        routineId: record.routineId ?? undefined,
     };
 }
 
@@ -2654,12 +2661,12 @@ class ChatService {
     }
 
     // A message sent while CloudBot starts gets a note at once and runs by itself when the start ends.
-    private async sendWhenStarted(setup: SetupConversation, botId: string, text: string, source: TurnSource, handoff: BotHandoffSource | undefined, emailDeliveryId: string | undefined): Promise<ChatMessage | undefined> {
+    private async sendWhenStarted(setup: SetupConversation, botId: string, text: string, source: TurnSource, handoff: BotHandoffSource | undefined, emailDeliveryId: string | undefined, routineId: string | undefined): Promise<ChatMessage | undefined> {
         this.publishTurnState(botId);
         const notice = await this.saveAndPublish(botId, 'assistant', { kind: 'text', text: STARTING_NOTICE });
 
         void setup.whenStarted()
-            .then(() => this.sendMessage(botId, text, source, handoff, emailDeliveryId))
+            .then(() => this.sendMessage(botId, text, source, handoff, emailDeliveryId, routineId))
             .catch(() => undefined);
 
         return notice;
@@ -2675,8 +2682,8 @@ class ChatService {
     }
 
     // A message sent while the bot is busy is saved as queued and runs after the work ahead of it.
-    // The source only picks the model of the turn. Routine messages pass 'routine'.
-    async sendMessage(botId: string, text: string, source: TurnSource = 'chat', handoff?: BotHandoffSource, emailDeliveryId?: string): Promise<ChatMessage | undefined> {
+    // The source only picks the model of the turn. Routine messages pass 'routine', and the routine's id when they pass one.
+    async sendMessage(botId: string, text: string, source: TurnSource = 'chat', handoff?: BotHandoffSource, emailDeliveryId?: string, routineId?: string): Promise<ChatMessage | undefined> {
         if (this.deletingBots.has(botId)) {
             throw new BotDeletingError();
         }
@@ -2688,7 +2695,7 @@ class ChatService {
         }
 
         if (this.setup !== undefined && this.setup.isStarting()) {
-            return this.sendWhenStarted(this.setup, botId, text, source, handoff, emailDeliveryId);
+            return this.sendWhenStarted(this.setup, botId, text, source, handoff, emailDeliveryId, routineId);
         }
 
         if (this.setup !== undefined && !this.setup.isDone()) {
@@ -2766,7 +2773,7 @@ class ChatService {
         }
 
         if (isQueued) {
-            await this.enqueueTurn(botId, { botId, text, uploads: turnUploads, messageId: userMessage.id, source, handoff }, false);
+            await this.enqueueTurn(botId, { botId, text, uploads: turnUploads, messageId: userMessage.id, source, handoff, routineId }, false);
 
             // The turn that was running may have ended while the message was saved, so the queue is checked again.
             this.startNextQueuedTurn(botId)
@@ -2776,7 +2783,7 @@ class ChatService {
         }
 
         // The turn runs in the background. Its failures are reported to the chat.
-        this.runTurn({ botId, text, uploads: turnUploads, messageId: userMessage.id, source, handoff }, abortController)
+        this.runTurn({ botId, text, uploads: turnUploads, messageId: userMessage.id, source, handoff, routineId }, abortController)
             .catch((error: unknown) => {
                 console.error('The chat turn failed outside the conversation', error);
             });
@@ -3937,7 +3944,12 @@ class ChatService {
             const offeredEmailTools = this.approvals === undefined
                 ? emailTools.filter(emailTool => emailTool.name === EMAIL_STATUS_TOOL_NAME)
                 : emailTools;
-            const routineTools = this.routineStore === undefined ? [] : createRoutineTools(this.routineStore, botId);
+            // A routine's own provider is checked the way the work settings check it. Without work settings a routine cannot pick one.
+            const workSettingsForRoutines = this.workSettings;
+            const checkRoutineWork: WorkSettings['checkChoice'] = (routineBotId, change) => workSettingsForRoutines === undefined
+                ? Promise.resolve('Choosing a provider for a routine is not available here.')
+                : workSettingsForRoutines.checkChoice(routineBotId, change);
+            const routineTools = this.routineStore === undefined ? [] : createRoutineTools(this.routineStore, botId, checkRoutineWork);
             const taskTools = this.taskStore === undefined ? [] : createTaskTools(this.taskStore, botId, { onBlocked: task => this.noticeBlockedTask(botId, task), onBoard: (cards, hiddenCount) => this.postTaskBoard(botId, cards, hiddenCount) });
             const integrationTools = this.integrationService === undefined ? [] : createIntegrationTools(this.integrationService, botId);
             const providerTools = this.providerTools === undefined ? [] : createProviderTools(this.providerTools, botId);
@@ -4034,10 +4046,13 @@ class ChatService {
             const chosenEffort = efforts === undefined ? undefined : chooseTurnEffort(efforts, settingsKind);
             const workSettings = this.workSettings;
             const chatProvider = workSettings === undefined ? undefined : await this.providerTools?.providerFor(botId);
-            const isRoutineWork = settingsKind === 'routine' || settingsKind === 'checkin' || settingsKind === 'webhook';
-            const routineWork = workSettings !== undefined && isRoutineWork ? await workSettings.read(botId, 'routines') : undefined;
+            // The work kind of a check-in, a webhook or a routine. A routine with its own provider runs on that provider instead.
+            const workKind = WORK_KIND_BY_SOURCE[settingsKind];
+            const kindWork = workSettings === undefined || workKind === undefined ? undefined : await workSettings.read(botId, workKind);
+            const kindOwnWork = kindWork === undefined || kindWork.followsChat ? undefined : kindWork;
+            const routineWork = await this.routineWorkChoice(botId, turn.routineId);
+            const ownWork = routineWork ?? kindOwnWork;
             // Work with its own provider brings its own model and effort. A check-in with no choice keeps its small default on Claude.
-            const ownWork = routineWork === undefined || routineWork.followsChat ? undefined : routineWork;
             const fallbackModel = ownWork?.provider === 'claude' ? chosenModel : undefined;
             const fallbackEffort = ownWork?.provider === 'claude' ? chosenEffort : undefined;
             const turnModel = ownWork === undefined ? chosenModel : ownWork.model ?? fallbackModel;
@@ -4047,24 +4062,37 @@ class ChatService {
             const providerOption = ownWork === undefined ? {} : { provider: ownWork.provider };
             const isSideSession = ownWork !== undefined && ownWork.provider !== chatProvider;
             const mainProvider = ownWork?.provider ?? chatProvider ?? 'claude';
+            const searchWork = await workSettings?.read(botId, 'search');
             const browsingWork = await workSettings?.read(botId, 'browsing');
             const documentsWork = await workSettings?.read(botId, 'documents');
+            const searchHelperRoute = searchWork === undefined ? 'none' : helperRoute(searchWork, mainProvider);
+            // The main turn loses WebSearch and WebFetch, and the CLI would take them from its subagents too.
+            // So a search helper always runs as its own turn, even on Claude.
+            const searchRoute = searchHelperRoute === 'cli' ? 'turn' : searchHelperRoute;
             const browsingRoute = browsingWork === undefined ? 'cli' : helperRoute(browsingWork, mainProvider);
             const documentsRoute = documentsWork === undefined ? 'cli' : helperRoute(documentsWork, mainProvider);
             // A helper exists only for the work the owner chose a model for, and it gets only the tools of that work.
             const helperAgents = modelChoices === undefined
                 ? {}
-                : buildHelperAgents({ browsing: browsingRoute === 'cli' ? modelChoices.browsing : null, documents: documentsRoute === 'cli' ? modelChoices.documents : null }, {
+                : buildHelperAgents({
+                        search: null,
+                        browsing: browsingRoute === 'cli' ? modelChoices.browsing : null,
+                        documents: documentsRoute === 'cli' ? modelChoices.documents : null,
+                    }, {
                         disallowedTools,
                         hasBrowser: this.browser !== undefined,
-                        efforts: { browsing: efforts?.browsing ?? null, documents: efforts?.documents ?? null },
+                        efforts: { search: efforts?.search ?? null, browsing: efforts?.browsing ?? null, documents: efforts?.documents ?? null },
                     });
             const helperKinds = Object.keys(helperAgents) as HelperKind[];
             const turnHelperWork: [HelperKind, WorkChoice][] = [
+                ...(searchWork !== undefined && searchRoute === 'turn' ? [['search', searchWork] as [HelperKind, WorkChoice]] : []),
                 ...(browsingWork !== undefined && browsingRoute === 'turn' && this.browser !== undefined ? [['browsing', browsingWork] as [HelperKind, WorkChoice]] : []),
                 ...(documentsWork !== undefined && documentsRoute === 'turn' ? [['documents', documentsWork] as [HelperKind, WorkChoice]] : []),
             ];
             const turnHelperKinds = turnHelperWork.map(([kind]) => kind);
+            // A search helper does the web search, so the main turn must hand it over. The owner's blocked tools apply to both.
+            const hasSearchHelper = helperKinds.includes('search') || turnHelperKinds.includes('search');
+            const mainDisallowedTools = hasSearchHelper ? [...disallowedTools, ...SEARCH_TOOL_NAMES] : disallowedTools;
             const reachable = await this.reachableBotsOf(botId);
             const otherBotNames = reachable.map(otherBot => otherBot.name);
             const memoryAccess = this.agentUser === undefined ? undefined : { agentUser: this.agentUser, botId };
@@ -4144,7 +4172,7 @@ class ChatService {
                 workspaceDir,
                 images,
                 systemPrompt: memoryBlock === undefined ? profilePrompt : `${profilePrompt}\n\n${memoryBlock}`,
-                disallowedTools,
+                disallowedTools: mainDisallowedTools,
                 reviewToolCall,
                 permissionMode,
                 ...modelOption,
@@ -4486,6 +4514,33 @@ class ChatService {
 
     private async postTaskBoard(botId: string, cards: TaskCard[], hiddenCount: number): Promise<void> {
         await this.saveAndPublish(botId, 'assistant', { kind: 'tasks', tasks: cards, hiddenCount });
+    }
+
+    // The provider, model and effort a routine has of its own. Nothing is returned when the routine has none, or when its
+    // provider is no longer connected, so the choice of its kind of work applies instead.
+    private async routineWorkChoice(botId: string, routineId: string | undefined): Promise<WorkChoice | undefined> {
+        const routineStore = this.routineStore;
+        const providerDependencies = this.providerTools;
+
+        if (routineId === undefined || routineStore === undefined || providerDependencies === undefined) {
+            return undefined;
+        }
+
+        const routines = await routineStore.list(botId);
+        const routine = routines.find(candidate => candidate.id === routineId);
+
+        if (routine === undefined || routine.provider === null || !isProviderId(routine.provider)) {
+            return undefined;
+        }
+
+        const provider = routine.provider;
+        const connected = await providerDependencies.connected();
+
+        if (!connected.includes(provider)) {
+            return undefined;
+        }
+
+        return { provider, followsChat: false, model: routine.model, effort: routine.effort };
     }
 
     private webhookTools(botId: string): CloudbotTool[] {

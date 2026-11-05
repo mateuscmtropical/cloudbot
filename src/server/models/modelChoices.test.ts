@@ -5,8 +5,8 @@ import type { EffortChoices } from './modelChoices.ts';
 
 describe('parseModelInput', () => {
     it('accepts the SDK aliases and full model ids', () => {
-        expect(parseModelInput({ chat: 'haiku', routines: 'claude-sonnet-4-5', review: 'fable', browsing: null, documents: null }))
-            .toEqual({ chat: 'haiku', routines: 'claude-sonnet-4-5', review: 'fable', browsing: null, documents: null });
+        expect(parseModelInput({ chat: 'haiku', routines: 'claude-sonnet-4-5', review: 'fable', checkins: null, webhooks: null, search: null, browsing: null, documents: null }))
+            .toEqual({ chat: 'haiku', routines: 'claude-sonnet-4-5', review: 'fable', checkins: null, webhooks: null, search: null, browsing: null, documents: null });
     });
 
     it('accepts a Gemini model id, which only agy gets', () => {
@@ -22,9 +22,9 @@ describe('parseModelInput', () => {
 
     it('treats a missing or null choice as the CLI default', () => {
         expect(parseModelInput({ chat: 'opus', routines: null }))
-            .toEqual({ chat: 'opus', routines: null, review: null, browsing: null, documents: null });
+            .toEqual({ chat: 'opus', routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null });
         expect(parseModelInput({}))
-            .toEqual({ chat: null, routines: null, review: null, browsing: null, documents: null });
+            .toEqual({ chat: null, routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null });
     });
 
     it('refuses a name that is neither an alias nor a full model id', () => {
@@ -62,15 +62,15 @@ describe('parseModelInput', () => {
 
 describe('parseEffortInput', () => {
     it('accepts each effort level and reads the flat field names', () => {
-        expect(parseEffortInput({ chatEffort: 'low', routinesEffort: 'medium', reviewEffort: 'high', browsingEffort: 'xhigh', documentsEffort: 'max' }))
-            .toEqual({ chat: 'low', routines: 'medium', review: 'high', browsing: 'xhigh', documents: 'max' });
+        expect(parseEffortInput({ chatEffort: 'low', routinesEffort: 'medium', reviewEffort: 'high', checkinsEffort: null, webhooksEffort: null, searchEffort: null, browsingEffort: 'xhigh', documentsEffort: 'max' }))
+            .toEqual({ chat: 'low', routines: 'medium', review: 'high', checkins: null, webhooks: null, search: null, browsing: 'xhigh', documents: 'max' });
     });
 
     it('treats a missing or null effort as the CLI default', () => {
         expect(parseEffortInput({ chatEffort: 'high' }))
-            .toEqual({ chat: 'high', routines: null, review: null, browsing: null, documents: null });
+            .toEqual({ chat: 'high', routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null });
         expect(parseEffortInput({}))
-            .toEqual({ chat: null, routines: null, review: null, browsing: null, documents: null });
+            .toEqual({ chat: null, routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null });
     });
 
     it('refuses a level that is not on the list', () => {
@@ -97,15 +97,15 @@ describe('parseEffortInput', () => {
     });
 
     it('names the flat fields again when it reports them', () => {
-        const efforts: EffortChoices = { chat: 'low', routines: null, review: 'max', browsing: null, documents: null };
+        const efforts: EffortChoices = { chat: 'low', routines: null, review: 'max', checkins: null, webhooks: null, search: null, browsing: null, documents: null };
 
         expect(toEffortFields(efforts))
-            .toEqual({ chatEffort: 'low', routinesEffort: null, reviewEffort: 'max', browsingEffort: null, documentsEffort: null });
+            .toEqual({ chatEffort: 'low', routinesEffort: null, reviewEffort: 'max', checkinsEffort: null, webhooksEffort: null, searchEffort: null, browsingEffort: null, documentsEffort: null });
     });
 });
 
 describe('chooseTurnModel', () => {
-    const choices = { chat: 'haiku', routines: 'opus', review: null, browsing: null, documents: null };
+    const choices = { chat: 'haiku', routines: 'opus', review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null };
 
     it('uses the routines choice for a routine turn', () => {
         expect(chooseTurnModel(choices, 'routine'))
@@ -123,12 +123,12 @@ describe('chooseTurnModel', () => {
     });
 
     it('falls back to the chat choice when the routines choice is unset', () => {
-        expect(chooseTurnModel({ chat: 'haiku', routines: null, review: null, browsing: null, documents: null }, 'routine'))
+        expect(chooseTurnModel({ chat: 'haiku', routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null }, 'routine'))
             .toBe('haiku');
     });
 
     it('keeps the CLI default when nothing is chosen', () => {
-        expect(chooseTurnModel({ chat: null, routines: null, review: null, browsing: null, documents: null }, 'routine'))
+        expect(chooseTurnModel({ chat: null, routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null }, 'routine'))
             .toBeUndefined();
     });
 
@@ -141,10 +141,17 @@ describe('chooseTurnModel', () => {
         expect(chooseTurnModel({ ...choices, chat: 'opus', routines: null }, 'checkin'))
             .toBe('haiku');
     });
+
+    it('prefers the check-ins and webhooks choices over the routines choice', () => {
+        const ownChoices = { ...choices, checkins: 'sonnet', webhooks: 'fable' };
+
+        expect([chooseTurnModel(ownChoices, 'checkin'), chooseTurnModel(ownChoices, 'webhook'), chooseTurnModel(ownChoices, 'routine')])
+            .toEqual(['sonnet', 'fable', 'opus']);
+    });
 });
 
 describe('chooseTurnEffort', () => {
-    const efforts: EffortChoices = { chat: 'low', routines: 'max', review: null, browsing: null, documents: null };
+    const efforts: EffortChoices = { chat: 'low', routines: 'max', review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null };
 
     it('uses the routines effort for a routine or webhook turn', () => {
         expect(chooseTurnEffort(efforts, 'routine'))

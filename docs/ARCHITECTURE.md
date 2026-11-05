@@ -958,15 +958,16 @@ reviewed like other setting changes, because it is not on the skip list in
 `classifyToolCall`.
 
 `ModelStore` keeps one row per bot in the `bot_models` table, with a choice for
-each kind of work: `chat`, `routines`, `review`, `browsing` and `documents`. A
-null choice keeps the CLI default. For `browsing` and `documents` a null choice
-means no helper agent. A choice is an alias the CLI accepts (`fable`, `opus`,
+each kind of work: `chat`, `routines`, `checkins`, `webhooks`, `review`,
+`search`, `browsing` and `documents` (migration `0033_work_routing` added the
+three new ones). A null choice keeps the CLI default. For `search`, `browsing`
+and `documents` a null choice means no helper agent. A choice is an alias the CLI accepts (`fable`, `opus`,
 `sonnet` or `haiku`, listed in `MODEL_ALIASES`) or a full id that matches
 `^claude-[a-z0-9.-]+$`. `parseModelInput` checks both. The routes `GET` and
 `PUT /api/bots/:id/models` sit behind the session cookie. `PUT` replaces all
 choices, and a missing field clears its choice.
 
-Effort has the same five kinds. Each kind has an `effort` column in the same
+Effort has the same kinds. Each kind has an `effort` column in the same
 `bot_models` row (`chat_effort`, `routines_effort`, and so on, added by the
 migration `0007_effort`). A null effort is the CLI default. A level is one of
 `low`, `medium`, `high`, `xhigh` or `max` (`EFFORT_LEVELS`). The JSON fields
@@ -989,8 +990,16 @@ picker controls. The header shows the selected model or reported provider
 default when known. Catalog responses carry a revision so an in-flight response
 from before an authentication-method change cannot replace the current list.
 
-A turn sends its choice to the CLI `--model` option. A routine or webhook turn
-uses the `routines` choice and falls back to `chat`. The `source` of a turn
+A turn sends its choice to the CLI `--model` option. A webhook turn uses the
+`webhooks` choice, then `routines`, then `chat`. A routine turn uses `routines`,
+then `chat`. A check-in uses `checkins`, then `routines`, then a small model.
+A routine with its own `provider`, `model` and `effort` (columns on the
+`routines` row) runs on them instead, while that provider is connected.
+
+With a search helper, the main turn loses `WebSearch` and `WebFetch` and hands
+every web search to the helper, so searching does not spend the chat provider's
+quota. Only connected providers can be chosen for a kind of work or a routine.
+A kind whose provider is disconnected follows the chat again. The `source` of a turn
 (`chat`, `routine`, `checkin`, `webhook` or `bot`) is stored with the queued turn, so a turn that
 waits keeps its choice after a restart. The review model is read with the owner
 rules on each review call.

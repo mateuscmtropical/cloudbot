@@ -1,12 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod/v4';
 
+import type { WorkChange } from '../providers/WorkSettings.ts';
 import { BotStore } from '../store/BotStore.ts';
 import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
 import { RoutineStore } from '../store/RoutineStore.ts';
 
-import { createRoutineTools, MAX_ROUTINES_PER_BOT } from './createRoutineTools.ts';
+import { ROUTINE_SET_WORK_TOOL_FULL_NAME, ROUTINE_TOOL_FULL_NAMES, createRoutineTools, MAX_ROUTINES_PER_BOT } from './createRoutineTools.ts';
 import type { RoutineToolResult } from './createRoutineTools.ts';
 
 type ToolHandler = (args: Record<string, unknown>, extra: unknown) => Promise<RoutineToolResult>;
@@ -16,10 +17,14 @@ describe('createRoutineTools', () => {
     let store: RoutineStore;
     let botId: string;
     let otherBotId: string;
+    // Stands in for WorkSettings.checkChoice. Tests set its answer when they need a refusal.
+    const checkWork = vi.fn<(botId: string, change: WorkChange) => Promise<string | undefined>>();
 
     beforeEach(async () => {
         opened = await openDatabase(':memory:');
         store = new RoutineStore(opened.db, { now: () => Date.UTC(2026, 9, 21, 11, 0) });
+        checkWork.mockReset();
+        checkWork.mockResolvedValue(undefined);
 
         const botStore = new BotStore(opened.db);
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
@@ -34,7 +39,7 @@ describe('createRoutineTools', () => {
     });
 
     function findHandler(forBotId: string, name: string): ToolHandler {
-        const tools = createRoutineTools(store, forBotId) as unknown as { name: string; handler: unknown }[];
+        const tools = createRoutineTools(store, forBotId, checkWork) as unknown as { name: string; handler: unknown }[];
         const found = tools.find(candidate => candidate.name === name);
 
         if (found === undefined) {
@@ -57,7 +62,7 @@ describe('createRoutineTools', () => {
     });
 
     it('creates a once routine for a future UTC time and shows that time in the list', async () => {
-        const tools = createRoutineTools(store, botId, () => Date.UTC(2026, 9, 21, 11, 0)) as unknown as { name: string; handler: ToolHandler }[];
+        const tools = createRoutineTools(store, botId, checkWork, () => Date.UTC(2026, 9, 21, 11, 0)) as unknown as { name: string; handler: ToolHandler }[];
         const create = tools.find(candidate => candidate.name === 'routine_create')?.handler;
         const list = tools.find(candidate => candidate.name === 'routine_list')?.handler;
 
@@ -76,7 +81,7 @@ describe('createRoutineTools', () => {
     });
 
     it('refuses a once time that has passed or is not a time', async () => {
-        const tools = createRoutineTools(store, botId, () => Date.UTC(2026, 9, 21, 11, 0)) as unknown as { name: string; handler: ToolHandler }[];
+        const tools = createRoutineTools(store, botId, checkWork, () => Date.UTC(2026, 9, 21, 11, 0)) as unknown as { name: string; handler: ToolHandler }[];
         const create = tools.find(candidate => candidate.name === 'routine_create')?.handler;
 
         const past = await create?.({ name: 'Old', prompt: 'x', schedule: { kind: 'once', at: '2026-10-21T10:59:00Z' } }, {});
@@ -120,7 +125,7 @@ describe('createRoutineTools', () => {
     });
 
     it('refuses an unknown schedule key in the arguments, so the bot learns its name', () => {
-        const tools = createRoutineTools(store, botId) as unknown as { name: string; inputSchema: z.ZodRawShape }[];
+        const tools = createRoutineTools(store, botId, checkWork) as unknown as { name: string; inputSchema: z.ZodRawShape }[];
         const shape = tools.find(candidate => candidate.name === 'routine_create')?.inputSchema ?? {};
         const schema = z.object(shape);
         const wrong = schema.safeParse({ name: 'Inbox', prompt: 'x', schedule: { kind: 'interval', hours: 3 } });
@@ -192,5 +197,116 @@ describe('createRoutineTools', () => {
             .toBeUndefined();
         await expect(store.list(botId))
             .resolves.toEqual([]);
+    });
+
+    it('creates a routine with its own provider after the choice is checked', async () => {
+        const create = findHandler(botId, 'routine_create');
+        const result = await create({ name: 'Inbox', prompt: 'x', schedule: { kind: 'interval', everyMinutes: 60 }, provider: 'gemini', model: 'flash', effort: 'low' }, {});
+        const [routine] = await store.list(botId);
+
+        expect(result.isError)
+            .toBeUndefined();
+        expect(checkWork)
+            .toHaveBeenCalledWith(botId, { provider: 'gemini', model: 'flash', effort: 'low' });
+        expect(routine)
+            .toMatchObject({ provider: 'gemini', model: 'flash', effort: 'low' });
+    });
+
+    it('refuses a create whose provider choice is refused, and saves nothing', async () => {
+        checkWork.mockResolvedValueOnce('Choose a model from the list of that provider.');
+        const create = findHandler(botId, 'routine_create');
+        const result = await create({ name: 'Inbox', prompt: 'x', schedule: { kind: 'interval', everyMinutes: 60 }, provider: 'gemini', model: 'nope' }, {});
+
+        expect(result.isError)
+            .toBe(true);
+        expect(result.content[0]?.text)
+            .toBe('Choose a model from the list of that provider.');
+        await expect(store.list(botId))
+            .resolves.toEqual([]);
+    });
+
+    it('does not check a create that has no provider', async () => {
+        const create = findHandler(botId, 'routine_create');
+
+        await create({ name: 'Inbox', prompt: 'x', schedule: { kind: 'interval', everyMinutes: 60 } }, {});
+        const [routine] = await store.list(botId);
+
+        expect(checkWork)
+            .not.toHaveBeenCalled();
+        expect(routine)
+            .toMatchObject({ provider: null, model: null, effort: null });
+    });
+
+    it('sets the work of a routine by id, and goes back to the routines choice with a null provider', async () => {
+        const routine = await store.add(botId, { name: 'Inbox', prompt: 'x', schedule: { kind: 'interval', everyMinutes: 60 } });
+        const setWork = findHandler(botId, 'routine_set_work');
+
+        const set = await setWork({ id: routine.id, provider: 'chatgpt', model: 'gpt-6', effort: null }, {});
+        const [afterSet] = await store.list(botId);
+        const cleared = await setWork({ id: routine.id, provider: null }, {});
+        const [afterClear] = await store.list(botId);
+
+        expect(set.isError)
+            .toBeUndefined();
+        expect(set.content[0]?.text)
+            .toBe('The routine runs on chatgpt with model gpt-6.');
+        expect(afterSet)
+            .toMatchObject({ provider: 'chatgpt', model: 'gpt-6', effort: null });
+        expect(cleared.content[0]?.text)
+            .toBe('The routine follows the routines choice again.');
+        expect(afterClear)
+            .toMatchObject({ provider: null, model: null, effort: null });
+        expect(checkWork)
+            .toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses routine_set_work when the choice is refused, and changes nothing', async () => {
+        const routine = await store.add(botId, { name: 'Inbox', prompt: 'x', schedule: { kind: 'interval', everyMinutes: 60 } });
+
+        checkWork.mockResolvedValueOnce('Choose a model from the list of that provider.');
+        const result = await findHandler(botId, 'routine_set_work')({ id: routine.id, provider: 'gemini', model: 'nope', effort: null }, {});
+        const [unchanged] = await store.list(botId);
+
+        expect(result.isError)
+            .toBe(true);
+        expect(result.content[0]?.text)
+            .toBe('Choose a model from the list of that provider.');
+        expect(unchanged?.provider)
+            .toBeNull();
+    });
+
+    it('answers routine_set_work with an error for a routine of another bot', async () => {
+        const routine = await store.add(botId, { name: 'Inbox', prompt: 'x', schedule: { kind: 'interval', everyMinutes: 60 } });
+        const result = await findHandler(otherBotId, 'routine_set_work')({ id: routine.id, provider: null }, {});
+
+        expect(result.isError)
+            .toBe(true);
+        expect(result.content[0]?.text)
+            .toBe('You have no routine with this id.');
+    });
+
+    it('lists the provider and model of routines that have one', async () => {
+        await store.add(botId, { name: 'Brief', prompt: 'x', schedule: { kind: 'interval', everyMinutes: 60 }, provider: 'gemini', model: 'flash' });
+        await store.add(botId, { name: 'Plain', prompt: 'x', schedule: { kind: 'interval', everyMinutes: 60 } });
+        const result = await findHandler(botId, 'routine_list')({}, {});
+        const [brief, plain] = (result.content[0]?.text ?? '').split('\n');
+
+        expect(brief)
+            .toContain('runs on gemini with model flash');
+        expect(plain)
+            .not.toContain('runs on');
+    });
+
+    it('registers routine_set_work and refuses an unknown provider in its arguments', () => {
+        const tools = createRoutineTools(store, botId, checkWork) as unknown as { name: string; inputSchema: z.ZodRawShape }[];
+        const setWork = tools.find(candidate => candidate.name === 'routine_set_work');
+        const schema = z.object(setWork?.inputSchema ?? {});
+
+        expect(ROUTINE_TOOL_FULL_NAMES)
+            .toContain(ROUTINE_SET_WORK_TOOL_FULL_NAME);
+        expect(schema.safeParse({ id: 'x', provider: 'nope', model: null, effort: null }).success)
+            .toBe(false);
+        expect(schema.safeParse({ id: 'x', provider: null }).success)
+            .toBe(true);
     });
 });

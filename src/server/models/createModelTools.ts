@@ -5,7 +5,7 @@ import type { CloudbotTool } from '../agent/createProfileToolServer.ts';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
 import type { EffortChoices, EffortLevel, ModelChoices } from './modelChoices.ts';
-import { isModelInputError, parseEffortInput, parseModelInput } from './modelChoices.ts';
+import { MODEL_KINDS, isModelInputError, parseEffortInput, parseModelInput } from './modelChoices.ts';
 import type { ProviderId } from '../providers/providerIds.ts';
 import type { ProviderModelCatalog, ProviderModelCatalogs } from '../providers/ProviderModelCatalogs.ts';
 
@@ -17,7 +17,7 @@ interface ModelToolResult {
 
 const MODELS_SET_TOOL_NAME = 'models_set';
 const MODELS_SET_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${MODELS_SET_TOOL_NAME}`;
-const MODELS_SET_DESCRIPTION = 'Change the model and effort the owner picked for your work. Pass only the fields the owner asked to change. On Claude, chat, routines and review take a model alias (haiku, sonnet, opus or fable) or a full claude- model id. browsing and documents take the same, and they also take null for no helper. Pass null for the default model. Claude effort fields take low, medium, high, xhigh or max, and null for the default. On another provider, chat takes one exact model ID from that provider\'s advertised model list, and chatEffort takes one effort advertised for the selected model. A provider with no advertised models keeps its default. When the owner changes a model without naming an effort, keep a saved effort if that model offers it, and otherwise use the provider default effort. Do not ask the owner follow-up questions when a default works.';
+const MODELS_SET_DESCRIPTION = 'Change the model and effort the owner picked for your work. Pass only the fields the owner asked to change. On Claude, chat, routines, checkins, webhooks and review take a model alias (haiku, sonnet, opus or fable) or a full claude- model id. search, browsing and documents take the same, and they also take null for no helper. Pass null for the default model. Claude effort fields take low, medium, high, xhigh or max, and null for the default. On another provider, chat takes one exact model ID from that provider\'s advertised model list, and chatEffort takes one effort advertised for the selected model. A provider with no advertised models keeps its default. When the owner changes a model without naming an effort, keep a saved effort if that model offers it, and otherwise use the provider default effort. Do not ask the owner follow-up questions when a default works.';
 
 const MODEL_FIELD = z.string()
     .nullable()
@@ -28,35 +28,29 @@ const EFFORT_FIELD = z.string()
 const MODELS_SET_SHAPE = {
     chat: MODEL_FIELD,
     routines: MODEL_FIELD,
+    checkins: MODEL_FIELD,
+    webhooks: MODEL_FIELD,
     review: MODEL_FIELD,
+    search: MODEL_FIELD,
     browsing: MODEL_FIELD,
     documents: MODEL_FIELD,
     chatEffort: EFFORT_FIELD,
     routinesEffort: EFFORT_FIELD,
+    checkinsEffort: EFFORT_FIELD,
+    webhooksEffort: EFFORT_FIELD,
     reviewEffort: EFFORT_FIELD,
+    searchEffort: EFFORT_FIELD,
     browsingEffort: EFFORT_FIELD,
     documentsEffort: EFFORT_FIELD,
 };
 
+// The model of each kind by its name, and the effort of each kind by its name with Effort at the end.
 interface ModelChangeArguments {
-    chat?: string | null | undefined;
-    routines?: string | null | undefined;
-    review?: string | null | undefined;
-    browsing?: string | null | undefined;
-    documents?: string | null | undefined;
-    chatEffort?: string | null | undefined;
-    routinesEffort?: string | null | undefined;
-    reviewEffort?: string | null | undefined;
-    browsingEffort?: string | null | undefined;
-    documentsEffort?: string | null | undefined;
+    [field: string]: string | null | undefined;
 }
 
 interface EffortInputFields {
-    chatEffort: string | null;
-    routinesEffort: string | null;
-    reviewEffort: string | null;
-    browsingEffort: string | null;
-    documentsEffort: string | null;
+    [field: string]: string | null;
 }
 
 interface ModelToolStore extends Pick<ModelStore, 'get' | 'set' | 'getEfforts' | 'setEfforts'> {
@@ -77,23 +71,19 @@ function textResult(text: string, isError = false): ModelToolResult {
 
 // A field the model did not pass keeps its stored choice.
 function mergeChanges(stored: ModelChoices, changes: ModelChangeArguments): ModelChoices {
-    return {
-        chat: changes.chat === undefined ? stored.chat : changes.chat,
-        routines: changes.routines === undefined ? stored.routines : changes.routines,
-        review: changes.review === undefined ? stored.review : changes.review,
-        browsing: changes.browsing === undefined ? stored.browsing : changes.browsing,
-        documents: changes.documents === undefined ? stored.documents : changes.documents,
-    };
+    return MODEL_KINDS.reduce<ModelChoices>((merged, kind) => {
+        const change = changes[kind];
+
+        return { ...merged, [kind]: change === undefined ? stored[kind] : change };
+    }, { ...stored });
 }
 
 function mergeEffortChanges(stored: EffortChoices, changes: ModelChangeArguments): EffortInputFields {
-    return {
-        chatEffort: changes.chatEffort === undefined ? stored.chat : changes.chatEffort,
-        routinesEffort: changes.routinesEffort === undefined ? stored.routines : changes.routinesEffort,
-        reviewEffort: changes.reviewEffort === undefined ? stored.review : changes.reviewEffort,
-        browsingEffort: changes.browsingEffort === undefined ? stored.browsing : changes.browsingEffort,
-        documentsEffort: changes.documentsEffort === undefined ? stored.documents : changes.documentsEffort,
-    };
+    return MODEL_KINDS.reduce<EffortInputFields>((merged, kind) => {
+        const change = changes[`${kind}Effort`];
+
+        return { ...merged, [`${kind}Effort`]: change === undefined ? stored[kind] : change };
+    }, {});
 }
 
 function describeKind(model: string | null, effort: EffortLevel | null, noneText: string): string {
@@ -107,15 +97,20 @@ function describeChoices(choices: ModelChoices, efforts: EffortChoices): string 
     return [
         `chat ${describeKind(choices.chat, efforts.chat, 'default model')}`,
         `routines ${describeKind(choices.routines, efforts.routines, 'default model')}`,
+        `checkins ${describeKind(choices.checkins, efforts.checkins, 'routines model')}`,
+        `webhooks ${describeKind(choices.webhooks, efforts.webhooks, 'routines model')}`,
         `review ${describeKind(choices.review, efforts.review, 'default model')}`,
+        `search ${describeKind(choices.search, efforts.search, 'no helper')}`,
         `browsing ${describeKind(choices.browsing, efforts.browsing, 'no helper')}`,
         `documents ${describeKind(choices.documents, efforts.documents, 'no helper')}`,
     ].join(', ');
 }
 
+// On another provider only the chat fields apply here. The other kinds are chosen with the work settings.
 function hasUnsupportedProviderFields(changes: ModelChangeArguments): boolean {
-    return changes.routines !== undefined || changes.review !== undefined || changes.browsing !== undefined || changes.documents !== undefined
-        || changes.routinesEffort !== undefined || changes.reviewEffort !== undefined || changes.browsingEffort !== undefined || changes.documentsEffort !== undefined;
+    const otherKinds = MODEL_KINDS.filter(kind => kind !== 'chat');
+
+    return otherKinds.some(kind => changes[kind] !== undefined || changes[`${kind}Effort`] !== undefined);
 }
 
 function describeProviderModel(modelId: string | null, catalog: ProviderModelCatalog): string {

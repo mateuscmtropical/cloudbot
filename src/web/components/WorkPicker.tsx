@@ -72,8 +72,7 @@ function WorkPicker({ botId, providers, refreshKey }: WorkPickerProps): ReactEle
     return (
         <PopoverMenuSection title="Each kind of work">
             {work.map((item) => {
-                const allowed = item.allowedProviders;
-                const offered = providers.filter(provider => provider.isConnected && (allowed === null || allowed.includes(provider.id)));
+                const offered = providers.filter(provider => item.choosableProviders.includes(provider.id));
                 const model = item.selectedModel;
                 const efforts = item.modelOptions.find(option => option.id === model)?.efforts ?? item.effortOptions;
 

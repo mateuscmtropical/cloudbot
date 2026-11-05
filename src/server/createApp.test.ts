@@ -259,6 +259,9 @@ describe('createApp', () => {
                 isQuiet: false,
                 nextRunAt: routine.nextRunAt,
                 lastRunAt: null,
+                provider: null,
+                model: null,
+                effort: null,
             }]);
         expect(unknownBot.status)
             .toBe(404);

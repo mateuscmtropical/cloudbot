@@ -9,8 +9,8 @@ import { createReviewContextReader } from './createReviewContextReader.ts';
 import type { EffortChoices, ModelChoices } from '../models/modelChoices.ts';
 import { CHANNEL_TRANSCRIPT_LIMIT } from '../channels/channelRound.ts';
 
-const NO_CHOICES: ModelChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
-const NO_EFFORTS: EffortChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
+const NO_CHOICES: ModelChoices = { chat: null, routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null };
+const NO_EFFORTS: EffortChoices = { chat: null, routines: null, review: null, checkins: null, webhooks: null, search: null, browsing: null, documents: null };
 
 function createModelStore(choices: ModelChoices = NO_CHOICES, efforts: EffortChoices = NO_EFFORTS): { get: Mock; getEfforts: Mock } {
     return {
