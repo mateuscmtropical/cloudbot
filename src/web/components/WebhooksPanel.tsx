@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { ReactElement, SyntheticEvent } from 'react';
 
-import { ANY_PROVIDER, UNKNOWN_PROVIDER } from '../../shared/webhookTypes.ts';
+import { ANY_PROVIDER, SIGNED_WEBHOOK_PROVIDERS, UNKNOWN_PROVIDER } from '../../shared/webhookTypes.ts';
 import type { BotWebhook, CreatedBotWebhook, WebhookCall, WebhookRule } from '../../shared/webhookTypes.ts';
-import { createWebhook, listWebhooks, removeWebhook, RequestFailedError, setWebhookRule } from '../apiClient.ts';
+import { createWebhook, listWebhooks, removeWebhook, RequestFailedError, setWebhookRule, setWebhookSecret } from '../apiClient.ts';
 import { Button } from './Button.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { Field } from './Field.tsx';
@@ -66,6 +66,8 @@ function WebhookCard({ botId, webhook, onChanged, onRemoved }: WebhookCardProps)
     const [problem, setProblem] = useState<string | undefined>(undefined);
     const [isBusy, setIsBusy] = useState(false);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+    const [secretProvider, setSecretProvider] = useState(SIGNED_WEBHOOK_PROVIDERS[0] ?? '');
+    const [secret, setSecret] = useState('');
     const listId = `webhook-providers-${webhook.id}`;
     const choices = providerChoices(webhook);
     const shownCalls = webhook.calls.slice(0, SHOWN_CALLS);
@@ -98,6 +100,51 @@ function WebhookCard({ botId, webhook, onChanged, onRemoved }: WebhookCardProps)
             setProvider('');
             setInstruction('');
         });
+    }
+
+    function saveSecret(provider: string, value: string, onSaved?: () => void): void {
+        setIsBusy(true);
+        setProblem(undefined);
+        setWebhookSecret(botId, webhook.id, provider, value)
+            .then((saved) => {
+                onChanged(saved);
+                onSaved?.();
+            })
+            .catch((error: unknown) => {
+                const text = errorText(error, 'Could not save the secret.');
+
+                setProblem(text);
+            })
+            .finally(() => {
+                setIsBusy(false);
+            });
+    }
+
+    function handleAddSecret(event: SyntheticEvent<HTMLFormElement>): void {
+        event.preventDefault();
+        saveSecret(secretProvider, secret, () => {
+            setSecret('');
+        });
+    }
+
+    function signedRow(provider: string): ReactElement {
+        return (
+            <ListRow
+                key={provider}
+                title={provider}
+                description="Calls that claim this provider need its signature."
+                trailingControl={(
+                    <Button
+                        disabled={isBusy}
+                        onClick={() => {
+                            saveSecret(provider, '');
+                        }}
+                    >
+                        Remove
+                    </Button>
+                )}
+            />
+        );
     }
 
     function confirmDelete(): void {
@@ -168,6 +215,36 @@ function WebhookCard({ botId, webhook, onChanged, onRemoved }: WebhookCardProps)
                         />
                     </Field>
                     <Button type="submit" disabled={isBusy}>Save rule</Button>
+                </form>
+            </ListGroup>
+            <ListGroup label="Signatures" ariaLabel={`Signatures of ${webhook.name}`}>
+                {webhook.signedProviders.map(signedRow)}
+                <form className="webhook-rule-form" aria-label={`Add a signing secret to ${webhook.name}`} onSubmit={handleAddSecret}>
+                    <Field label="Signed provider">
+                        <select
+                            className="rename-input"
+                            value={secretProvider}
+                            onChange={(event) => {
+                                setSecretProvider(event.target.value);
+                            }}
+                        >
+                            {SIGNED_WEBHOOK_PROVIDERS.map(choice => <option key={choice} value={choice}>{choice}</option>)}
+                        </select>
+                    </Field>
+                    <Field label="Signing secret">
+                        <input
+                            type="password"
+                            className="rename-input"
+                            autoComplete="off"
+                            value={secret}
+                            maxLength={300}
+                            required
+                            onChange={(event) => {
+                                setSecret(event.target.value);
+                            }}
+                        />
+                    </Field>
+                    <Button type="submit" disabled={isBusy}>Save secret</Button>
                 </form>
             </ListGroup>
             {problem === undefined ? null : <p className="settings-error" role="alert">{problem}</p>}

@@ -225,6 +225,13 @@
       "when": 1793901696009,
       "tag": "0031_webhook_callers",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1793904992364,
+      "tag": "0032_webhook_signing_secrets",
+      "breakpoints": true
     }
   ]
 }

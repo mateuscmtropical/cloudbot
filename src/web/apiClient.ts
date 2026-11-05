@@ -375,6 +375,15 @@ function setWebhookRule(botId: string, webhookId: string, provider: string, inst
     return requestJson<BotWebhook>(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
 }
 
+function setWebhookSecret(botId: string, webhookId: string, provider: string, secret: string): Promise<BotWebhook> {
+    const encodedWebhookId = encodeURIComponent(webhookId);
+    const encodedProvider = encodeURIComponent(provider);
+    const path = botPath(botId, `/webhooks/${encodedWebhookId}/secrets/${encodedProvider}`);
+    const body = JSON.stringify({ secret });
+
+    return requestJson<BotWebhook>(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+}
+
 async function removeWebhook(botId: string, webhookId: string): Promise<void> {
     const path = botPath(botId, `/webhooks/${encodeURIComponent(webhookId)}`);
     const response = await fetch(path, { method: 'DELETE' });
@@ -749,6 +758,7 @@ export {
     createWebhook,
     removeWebhook,
     setWebhookRule,
+    setWebhookSecret,
     listWatches,
     removeWatch,
     getBotProvider,

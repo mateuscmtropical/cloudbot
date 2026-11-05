@@ -283,6 +283,11 @@ const webhooks = sqliteTable('webhooks', {
         .$type<Record<string, string>>()
         .notNull()
         .default({}),
+    // The secret each provider signs its calls with. Only the owner sets one. It is never listed or shown to the bot.
+    signingSecrets: text('signing_secrets', { mode: 'json' })
+        .$type<Record<string, string>>()
+        .notNull()
+        .default({}),
     createdAt: integer('created_at')
         .notNull(),
 }, table => [

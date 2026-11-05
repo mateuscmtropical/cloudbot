@@ -85,6 +85,13 @@ function describeRefusals(refusalList: WebhookRefusal[]): string {
     return `, refused recently: ${reasons.join(', ')}`;
 }
 
+// Names only. The bot never sees a secret.
+function describeSigned(signingSecrets: Record<string, string>): string {
+    const providers = Object.keys(signingSecrets);
+
+    return providers.length === 0 ? '' : `, signature checked for ${providers.join(', ')}`;
+}
+
 function describeRules(rules: Record<string, string>): string {
     const lines = Object.entries(rules)
         .map(([provider, instruction]) => `\n  rule for ${provider}: ${instruction}`);
@@ -115,7 +122,7 @@ function createWebhookTools(store: WebhookStore, botId: string, creation: Webhoo
                         return `\n  call at ${time.toISOString()}: ${describeWebhookCaller(call)}`;
                     });
 
-                return `- ${webhook.id}: "${webhook.name}"${describeRefusals(refusalList)}${describeRules(webhook.rules)}${callLines.join('')}`;
+                return `- ${webhook.id}: "${webhook.name}"${describeRefusals(refusalList)}${describeSigned(webhook.signingSecrets)}${describeRules(webhook.rules)}${callLines.join('')}`;
             });
             const lines = await Promise.all(lineRequests);
             const listText = lines.join('\n');

@@ -1,0 +1,1 @@
+ALTER TABLE `webhooks` ADD `signing_secrets` text DEFAULT '{}' NOT NULL;

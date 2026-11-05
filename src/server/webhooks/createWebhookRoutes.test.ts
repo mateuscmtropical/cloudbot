@@ -126,7 +126,7 @@ describe('createWebhookRoutes', () => {
         const listedText = await listed.text();
 
         expect(JSON.parse(listedText))
-            .toEqual([{ id: created.id, name: 'Deploy', createdAt: created.createdAt, refusals: [], rules: [], calls: [] }]);
+            .toEqual([{ id: created.id, name: 'Deploy', createdAt: created.createdAt, refusals: [], rules: [], calls: [], signedProviders: [] }]);
         expect(listedText)
             .not.toContain('hooks/');
     });

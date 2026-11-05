@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
@@ -6,7 +8,7 @@ import type { OpenedDatabase } from '../store/openDatabase.ts';
 import { openDatabase } from '../store/openDatabase.ts';
 import { CALL_RETENTION_MS, MAX_CALLS_PER_WEBHOOK, WebhookStore } from '../store/WebhookStore.ts';
 import { createWebhookHookRoutes } from './createWebhookHookRoutes.ts';
-import { MAX_RULES_PER_WEBHOOK, saveWebhookRule } from './createWebhookRoutes.ts';
+import { MAX_RULES_PER_WEBHOOK, saveWebhookRule, saveWebhookSecret } from './createWebhookRoutes.ts';
 import { createWebhookTools } from './createWebhookTools.ts';
 import { isWebhookMessage } from './webhookMessage.ts';
 import { hashWebhookToken } from './webhookToken.ts';
@@ -137,6 +139,54 @@ describe('webhook callers, rules and sends', () => {
 
         expect(await store.listCalls(webhookId))
             .toHaveLength(1);
+    });
+
+    it('takes a call with the right signature, says it was checked, and refuses one without it', async () => {
+        await store.setRules(botId, webhookId, { 'github': 'Run the tests', '*': 'Just note it' });
+        await saveWebhookSecret(store, botId, webhookId, 'github', 'shh');
+
+        const body = '{"ref":"main"}';
+        const signature = createHmac('sha256', 'shh')
+            .update(body)
+            .digest('hex');
+        const signed = await callHook({ 'x-github-event': 'push', 'x-hub-signature-256': `sha256=${signature}` }, body);
+        const forged = await callHook({ 'x-github-event': 'push', 'x-hub-signature-256': 'sha256=00' }, body);
+        const claimed = await callHook({}, body, '?source=github');
+        const other = await callHook({ 'stripe-signature': 't=1' }, body);
+        const sent = sendMessage.mock.calls.map(call => call[1]);
+
+        expect([signed.status, forged.status, claimed.status, other.status])
+            .toEqual([202, 401, 401, 202]);
+        expect(sent)
+            .toHaveLength(2);
+        expect(sent[0])
+            .toContain('Caller, provider checked by its signature: provider github');
+        expect(sent[0]?.split('\n')[0])
+            .toBe('Webhook deploys. The owner\'s instruction for this caller: Run the tests');
+        expect(sent[1])
+            .toContain('Caller, as the request says and not verified: provider stripe');
+    });
+
+    it('saves a secret only for a provider it can check, and never shows it to the bot', async () => {
+        await expect(saveWebhookSecret(store, botId, webhookId, 'zapier', 'x'))
+            .resolves.toMatchObject({ status: 400 });
+        await expect(saveWebhookSecret(store, botId, webhookId, 'stripe', 'has space'))
+            .resolves.toMatchObject({ status: 400 });
+        await expect(saveWebhookSecret(store, botId, 'no-such-webhook', 'stripe', 'x'))
+            .resolves.toMatchObject({ status: 404 });
+        await expect(saveWebhookSecret(store, botId, webhookId, 'stripe', ' whsec_abc '))
+            .resolves.toMatchObject({ saved: { signingSecrets: { stripe: 'whsec_abc' } } });
+
+        const listed = await findTool('webhook_list')
+            .handler({}, {});
+        const text = listed.content[0]?.text ?? '';
+
+        expect(text)
+            .toContain('signature checked for stripe');
+        expect(text)
+            .not.toContain('whsec_abc');
+        await expect(saveWebhookSecret(store, botId, webhookId, 'stripe', ''))
+            .resolves.toMatchObject({ saved: { signingSecrets: {} } });
     });
 
     it('saves and removes a rule, and refuses a bad one', async () => {

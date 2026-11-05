@@ -20,6 +20,7 @@ All notable changes to this project are listed here. The format follows
 - Account has an Action log screen with what each bot did: tool reviews and their outcome, finished tools and turn errors. Entries are deleted after 30 days.
 - Webhooks say who called: the provider, the event, the address and the user agent. The bot and a new Webhooks page in the bot's profile show the last calls for 30 days. A service CloudBot does not know can name itself with `?source=name` in the URL.
 - A webhook can have one instruction per provider, so calls from each provider start different work. The owner sets them on the Webhooks page, or the bot with `webhook_rule_set`.
+- A webhook can check the signatures of GitHub, GitLab, Stripe, Slack, Shopify and Linear. The owner saves the secret of a provider on the Webhooks page, and a call that claims that provider without a right signature is refused. The bot never sees the secret.
 - The bot can send webhooks to outside services with `webhook_send`, which waits for the owner unless the owner asked for it.
 - The owner can see the version and update the whole install from the web app, under Account, Update CloudBot. On a server that exists already, run `sudo cloudbot install-update` once.
 - The provider menu shows the provider, model and effort of routines, review, browsing and documents, and lets the owner choose them for each one. The bot can read and change them too. Browsing and documents on another provider run as a helper of the main turn. Review runs on Claude, ChatGPT or Gemini.

@@ -4,6 +4,7 @@ import type { WebhookRecord, WebhookStore } from '../store/WebhookStore.ts';
 import { ANY_PROVIDER } from '../../shared/webhookTypes.ts';
 import type { BotWebhook, CreatedBotWebhook, WebhookCall, WebhookRefusal } from '../../shared/webhookTypes.ts';
 import { DeliveryMemory, WebhookRefusalLog } from './webhookMemory.ts';
+import { SIGNED_PROVIDERS } from './webhookSignature.ts';
 import { buildWebhookUrl, createWebhookToken, hashWebhookToken } from './webhookToken.ts';
 
 interface WebhookErrorResponse {
@@ -27,6 +28,7 @@ const MAX_NAME_LENGTH = 60;
 const MAX_RULES_PER_WEBHOOK = 20;
 const MAX_INSTRUCTION_LENGTH = 500;
 const PROVIDER_NAME_PATTERN = /^[a-z0-9_-]{1,40}$/;
+const MAX_SECRET_LENGTH = 300;
 
 const BOT_NOT_FOUND: WebhookErrorResponse = { error: 'No bot has this id.' };
 const WEBHOOK_NOT_FOUND: WebhookErrorResponse = { error: 'This bot has no webhook with this id.' };
@@ -35,6 +37,8 @@ const TOO_MANY: WebhookErrorResponse = { error: `This bot has ${String(MAX_WEBHO
 const INVALID_PROVIDER: WebhookErrorResponse = { error: `Name the provider in lower case letters, digits, - or _, or use ${ANY_PROVIDER} for any other caller.` };
 const INVALID_INSTRUCTION: WebhookErrorResponse = { error: `Send an instruction of at most ${String(MAX_INSTRUCTION_LENGTH)} characters on one line. An empty one removes the rule.` };
 const TOO_MANY_RULES: WebhookErrorResponse = { error: `This webhook has ${String(MAX_RULES_PER_WEBHOOK)} rules. Remove one first.` };
+const UNSIGNED_PROVIDER: WebhookErrorResponse = { error: `CloudBot checks the signatures of ${SIGNED_PROVIDERS.join(', ')} only.` };
+const INVALID_SECRET: WebhookErrorResponse = { error: `Send a secret of at most ${String(MAX_SECRET_LENGTH)} characters, without spaces. An empty one removes it.` };
 
 function toBotWebhook(record: WebhookRecord, refusals: WebhookRefusal[] = [], calls: WebhookCall[] = []): BotWebhook {
     const ruleEntries = Object.entries(record.rules);
@@ -46,6 +50,7 @@ function toBotWebhook(record: WebhookRecord, refusals: WebhookRefusal[] = [], ca
         refusals,
         rules: ruleEntries.map(([provider, instruction]) => ({ provider, instruction })),
         calls,
+        signedProviders: Object.keys(record.signingSecrets),
     };
 }
 
@@ -90,6 +95,34 @@ async function saveWebhookRule(webhookStore: WebhookStore, botId: string, webhoo
 
     const rules = trimmedInstruction === '' ? otherRules : { ...otherRules, [provider]: trimmedInstruction };
     const saved = await webhookStore.setRules(botId, webhookId, rules);
+
+    return saved === undefined ? { problem: WEBHOOK_NOT_FOUND, status: 404 } : { saved };
+}
+
+// Only the owner route calls this. The bot never sets or reads a secret. An empty secret removes it.
+async function saveWebhookSecret(webhookStore: WebhookStore, botId: string, webhookId: string, provider: string, secret: string): Promise<SaveWebhookRuleResult> {
+    const trimmedSecret = secret.trim();
+
+    if (!SIGNED_PROVIDERS.includes(provider)) {
+        return { problem: UNSIGNED_PROVIDER, status: 400 };
+    }
+
+    if (trimmedSecret.length > MAX_SECRET_LENGTH || /[\s\p{Cc}]/u.test(trimmedSecret)) {
+        return { problem: INVALID_SECRET, status: 400 };
+    }
+
+    const webhooks = await webhookStore.list(botId);
+    const webhook = webhooks.find(known => known.id === webhookId);
+
+    if (webhook === undefined) {
+        return { problem: WEBHOOK_NOT_FOUND, status: 404 };
+    }
+
+    const secretEntries = Object.entries(webhook.signingSecrets);
+    const otherEntries = secretEntries.filter(([secretProvider]) => secretProvider !== provider);
+    const otherSecrets = Object.fromEntries(otherEntries);
+    const signingSecrets = trimmedSecret === '' ? otherSecrets : { ...otherSecrets, [provider]: trimmedSecret };
+    const saved = await webhookStore.setSigningSecrets(botId, webhookId, signingSecrets);
 
     return saved === undefined ? { problem: WEBHOOK_NOT_FOUND, status: 404 } : { saved };
 }
@@ -211,6 +244,31 @@ function createWebhookRoutes(options: WebhookRoutesOptions): Hono {
         return context.json(webhook);
     });
 
+    routes.put('/api/bots/:id/webhooks/:webhookId/secrets/:provider', async (context) => {
+        const payload: unknown = await context.req.json()
+            .catch(() => undefined);
+        const secret = typeof payload === 'object' && payload !== null && 'secret' in payload ? payload.secret : undefined;
+
+        if (typeof secret !== 'string') {
+            return context.json(INVALID_SECRET, 400);
+        }
+
+        const botId = context.req.param('id');
+        const webhookId = context.req.param('webhookId');
+        const provider = context.req.param('provider');
+        const result = await saveWebhookSecret(options.webhookStore, botId, webhookId, provider, secret);
+
+        if ('problem' in result) {
+            return context.json(result.problem, result.status);
+        }
+
+        const recordRefusals = refusals.list(webhookId);
+        const calls = await options.webhookStore.listCalls(webhookId);
+        const webhook = toBotWebhook(result.saved, recordRefusals, calls);
+
+        return context.json(webhook);
+    });
+
     routes.delete('/api/bots/:id/webhooks/:webhookId', async (context) => {
         const botId = context.req.param('id');
         const webhookId = context.req.param('webhookId');
@@ -229,5 +287,5 @@ function createWebhookRoutes(options: WebhookRoutesOptions): Hono {
     return routes;
 }
 
-export { MAX_INSTRUCTION_LENGTH, MAX_NAME_LENGTH, MAX_RULES_PER_WEBHOOK, MAX_WEBHOOKS_PER_BOT, addBotWebhook, createWebhookRoutes, saveWebhookRule, toBotWebhook };
+export { MAX_INSTRUCTION_LENGTH, MAX_NAME_LENGTH, MAX_RULES_PER_WEBHOOK, MAX_WEBHOOKS_PER_BOT, addBotWebhook, createWebhookRoutes, saveWebhookRule, saveWebhookSecret, toBotWebhook };
 export type { AddBotWebhookResult, BotWebhook, CreatedBotWebhook, WebhookRoutesOptions };
