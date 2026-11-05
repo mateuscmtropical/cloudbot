@@ -365,6 +365,16 @@ async function removeWatch(botId: string, watchId: string): Promise<void> {
     }
 }
 
+// An empty instruction removes the rule.
+function setWebhookRule(botId: string, webhookId: string, provider: string, instruction: string): Promise<BotWebhook> {
+    const encodedWebhookId = encodeURIComponent(webhookId);
+    const encodedProvider = encodeURIComponent(provider);
+    const path = botPath(botId, `/webhooks/${encodedWebhookId}/rules/${encodedProvider}`);
+    const body = JSON.stringify({ instruction });
+
+    return requestJson<BotWebhook>(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
+}
+
 async function removeWebhook(botId: string, webhookId: string): Promise<void> {
     const path = botPath(botId, `/webhooks/${encodeURIComponent(webhookId)}`);
     const response = await fetch(path, { method: 'DELETE' });
@@ -738,6 +748,7 @@ export {
     listWebhooks,
     createWebhook,
     removeWebhook,
+    setWebhookRule,
     listWatches,
     removeWatch,
     getBotProvider,

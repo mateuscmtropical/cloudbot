@@ -10,10 +10,11 @@ import { Button } from './Button.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { Field } from './Field.tsx';
-import { AppsGridIcon, BackIcon, LibraryIcon, MoreIcon, MonitorIcon, TrashIcon } from './icons.tsx';
+import { AppsGridIcon, BackIcon, LibraryIcon, MoreIcon, MonitorIcon, TrashIcon, WebhookIcon } from './icons.tsx';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
 import { MemoryPanel } from './MemoryPanel.tsx';
+import { WebhooksPanel } from './WebhooksPanel.tsx';
 import { PanelHeader } from './PanelHeader.tsx';
 import { PopoverMenu, PopoverMenuItem } from './PopoverMenu.tsx';
 
@@ -234,6 +235,7 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
     const [deleteError, setDeleteError] = useState<string | undefined>(undefined);
     const [isDeleting, setIsDeleting] = useState(false);
     const [isMemoryOpen, setIsMemoryOpen] = useState(false);
+    const [isWebhooksOpen, setIsWebhooksOpen] = useState(false);
     // While editing, the mascot shows the look that Save would keep.
     const shownColor = draft?.color ?? bot.mascotColor;
     const shownShape = draft?.shape ?? bot.mascotShape;
@@ -247,6 +249,17 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
                 bot={bot}
                 onClose={() => {
                     setIsMemoryOpen(false);
+                }}
+            />
+        );
+    }
+
+    if (isWebhooksOpen) {
+        return (
+            <WebhooksPanel
+                bot={bot}
+                onClose={() => {
+                    setIsWebhooksOpen(false);
                 }}
             />
         );
@@ -327,6 +340,14 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
                         leadingIcon={<LibraryIcon />}
                         onClick={() => {
                             setIsMemoryOpen(true);
+                        }}
+                        chevron
+                    />
+                    <ListRow
+                        title="Webhooks"
+                        leadingIcon={<WebhookIcon />}
+                        onClick={() => {
+                            setIsWebhooksOpen(true);
                         }}
                         chevron
                     />

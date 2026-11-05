@@ -1121,7 +1121,7 @@ Not covered yet: commands that Codex starts in their own session may outlive a s
 
 ## Webhooks
 
-The owner creates a webhook in the Routines panel, with `POST
+The owner creates a webhook under Webhooks in the bot's profile, with `POST
 /api/bots/:id/webhooks` and `{ name }`. The route makes a random token of 32
 bytes, encoded as base64url. The `webhooks` table keeps only its SHA-256 hash.
 The response carries the full URL, `<public address>/hooks/<token>`, once. The
@@ -1135,7 +1135,7 @@ tool sends it as a `webhookUrl` event on the bot's SSE stream, to the web app
 that listens for that bot, and nothing is stored. The web app shows it once
 with the same keep-secret text and Hide button as the panel. When no web app
 listens for the bot, the tool creates nothing and tells the model to ask the
-owner to open the web app or use the Routines panel. If the listener leaves
+owner to open the web app or use the Webhooks page. If the listener leaves
 while the webhook is made, the tool removes that webhook again.
 
 `POST /hooks/:token` is public, like the health route, so it sits outside the
@@ -1145,6 +1145,24 @@ setup is done.
 An accepted call sends a chat message with source `webhook`. The message starts
 with `Webhook <name>` and marks the body as text from outside. The turn waits in
 the queue like any message, and it uses the `routines` model choice.
+
+Each call also says who called, under the outside text mark: the provider, the
+event, the address and the user agent. `readWebhookCaller` knows a provider by a
+header only it sends, such as `x-github-event`, and a service it does not know can
+name itself with `?source=name` in the URL. Anyone with the URL can claim any of
+this, so it never proves who called. The last 50 calls of each webhook stay in
+`webhook_calls` for 30 days, for the Webhooks page and `webhook_list`.
+
+The owner or the bot, with `webhook_rule_set`, can save an instruction per provider,
+and `*` for any other caller. The instruction goes on the first line of the
+message, above the outside text mark, where nothing a caller sends can sit. The
+whole turn still counts as outside text for the review, so a rule does not lift any
+approval. `webhook_rule_set` waits for the owner unless the owner asked for it.
+
+`webhook_send` sends one http request to a public address. It uses the pinned
+connection of connected apps, follows no redirect, and returns at most 4000
+characters of the answer, marked as outside text. It waits for the owner unless the
+owner asked for it.
 
 A call may send an `X-Delivery-Id` header. The id is trimmed, and an id longer
 than 200 characters counts as no id. An id whose message was queued less than

@@ -2455,7 +2455,33 @@ a.file-chip:hover {
     color: var(--color-danger);
 }
 
-/* A new webhook URL, in the Routines panel or under the conversation header. */
+/* The forms of the Webhooks page. */
+.webhook-rule-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+}
+
+.webhook-rule-form .field {
+    flex: 1 1 200px;
+    min-width: 0;
+}
+
+.webhook-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.webhook-card > .list-group,
+.webhook-card > * {
+    max-width: 100%;
+}
+
+/* A new webhook URL, on the Webhooks page or under the conversation header. */
 .webhook-created {
     display: flex;
     flex-wrap: wrap;

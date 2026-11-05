@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 
 import type { WebhookRecord, WebhookStore } from '../store/WebhookStore.ts';
-import type { BotWebhook, CreatedBotWebhook, WebhookRefusal } from '../../shared/webhookTypes.ts';
+import { ANY_PROVIDER } from '../../shared/webhookTypes.ts';
+import type { BotWebhook, CreatedBotWebhook, WebhookCall, WebhookRefusal } from '../../shared/webhookTypes.ts';
 import { DeliveryMemory, WebhookRefusalLog } from './webhookMemory.ts';
 import { buildWebhookUrl, createWebhookToken, hashWebhookToken } from './webhookToken.ts';
 
@@ -23,19 +24,74 @@ interface WebhookRoutesOptions {
 
 const MAX_WEBHOOKS_PER_BOT = 10;
 const MAX_NAME_LENGTH = 60;
+const MAX_RULES_PER_WEBHOOK = 20;
+const MAX_INSTRUCTION_LENGTH = 500;
+const PROVIDER_NAME_PATTERN = /^[a-z0-9_-]{1,40}$/;
 
 const BOT_NOT_FOUND: WebhookErrorResponse = { error: 'No bot has this id.' };
 const WEBHOOK_NOT_FOUND: WebhookErrorResponse = { error: 'This bot has no webhook with this id.' };
 const INVALID_NAME: WebhookErrorResponse = { error: `Send a name of 1 to ${String(MAX_NAME_LENGTH)} characters on one line.` };
 const TOO_MANY: WebhookErrorResponse = { error: `This bot has ${String(MAX_WEBHOOKS_PER_BOT)} webhooks. Delete one first.` };
+const INVALID_PROVIDER: WebhookErrorResponse = { error: `Name the provider in lower case letters, digits, - or _, or use ${ANY_PROVIDER} for any other caller.` };
+const INVALID_INSTRUCTION: WebhookErrorResponse = { error: `Send an instruction of at most ${String(MAX_INSTRUCTION_LENGTH)} characters on one line. An empty one removes the rule.` };
+const TOO_MANY_RULES: WebhookErrorResponse = { error: `This webhook has ${String(MAX_RULES_PER_WEBHOOK)} rules. Remove one first.` };
 
-function toBotWebhook(record: WebhookRecord, refusals: WebhookRefusal[] = []): BotWebhook {
+function toBotWebhook(record: WebhookRecord, refusals: WebhookRefusal[] = [], calls: WebhookCall[] = []): BotWebhook {
+    const ruleEntries = Object.entries(record.rules);
+
     return {
         id: record.id,
         name: record.name,
         createdAt: record.createdAt,
         refusals,
+        rules: ruleEntries.map(([provider, instruction]) => ({ provider, instruction })),
+        calls,
     };
+}
+
+interface SaveWebhookRuleProblem {
+    problem: WebhookErrorResponse;
+    status: 400 | 404;
+}
+
+interface SaveWebhookRuleSuccess {
+    saved: WebhookRecord;
+}
+
+type SaveWebhookRuleResult = SaveWebhookRuleProblem | SaveWebhookRuleSuccess;
+
+// Shared by the owner route and the bot's webhook_rule_set tool. The instruction becomes part of the first line of each
+// message, so it must stay on one line. An empty instruction removes the rule.
+async function saveWebhookRule(webhookStore: WebhookStore, botId: string, webhookId: string, provider: string, instruction: string): Promise<SaveWebhookRuleResult> {
+    const trimmedInstruction = instruction.trim();
+
+    if (provider !== ANY_PROVIDER && !PROVIDER_NAME_PATTERN.test(provider)) {
+        return { problem: INVALID_PROVIDER, status: 400 };
+    }
+
+    if (trimmedInstruction.length > MAX_INSTRUCTION_LENGTH || /[\p{Cc}\p{Zl}\p{Zp}]/u.test(trimmedInstruction)) {
+        return { problem: INVALID_INSTRUCTION, status: 400 };
+    }
+
+    const webhooks = await webhookStore.list(botId);
+    const webhook = webhooks.find(known => known.id === webhookId);
+
+    if (webhook === undefined) {
+        return { problem: WEBHOOK_NOT_FOUND, status: 404 };
+    }
+
+    const ruleEntries = Object.entries(webhook.rules);
+    const otherEntries = ruleEntries.filter(([ruleProvider]) => ruleProvider !== provider);
+    const otherRules = Object.fromEntries(otherEntries);
+
+    if (trimmedInstruction !== '' && otherEntries.length >= MAX_RULES_PER_WEBHOOK) {
+        return { problem: TOO_MANY_RULES, status: 400 };
+    }
+
+    const rules = trimmedInstruction === '' ? otherRules : { ...otherRules, [provider]: trimmedInstruction };
+    const saved = await webhookStore.setRules(botId, webhookId, rules);
+
+    return saved === undefined ? { problem: WEBHOOK_NOT_FOUND, status: 404 } : { saved };
 }
 
 // The name becomes part of the chat message, so it must stay on one line.
@@ -100,11 +156,13 @@ function createWebhookRoutes(options: WebhookRoutesOptions): Hono {
         }
 
         const records = await options.webhookStore.list(botId);
-        const botWebhooks = records.map((record) => {
+        const webhookRequests = records.map(async (record) => {
             const recordRefusals = refusals.list(record.id);
+            const calls = await options.webhookStore.listCalls(record.id);
 
-            return toBotWebhook(record, recordRefusals);
+            return toBotWebhook(record, recordRefusals, calls);
         });
+        const botWebhooks = await Promise.all(webhookRequests);
 
         return context.json(botWebhooks);
     });
@@ -128,6 +186,31 @@ function createWebhookRoutes(options: WebhookRoutesOptions): Hono {
         return context.json(result.created, 201);
     });
 
+    routes.put('/api/bots/:id/webhooks/:webhookId/rules/:provider', async (context) => {
+        const payload: unknown = await context.req.json()
+            .catch(() => undefined);
+        const instruction = typeof payload === 'object' && payload !== null && 'instruction' in payload ? payload.instruction : undefined;
+
+        if (typeof instruction !== 'string') {
+            return context.json(INVALID_INSTRUCTION, 400);
+        }
+
+        const botId = context.req.param('id');
+        const webhookId = context.req.param('webhookId');
+        const provider = context.req.param('provider');
+        const result = await saveWebhookRule(options.webhookStore, botId, webhookId, provider, instruction);
+
+        if ('problem' in result) {
+            return context.json(result.problem, result.status);
+        }
+
+        const recordRefusals = refusals.list(webhookId);
+        const calls = await options.webhookStore.listCalls(webhookId);
+        const webhook = toBotWebhook(result.saved, recordRefusals, calls);
+
+        return context.json(webhook);
+    });
+
     routes.delete('/api/bots/:id/webhooks/:webhookId', async (context) => {
         const botId = context.req.param('id');
         const webhookId = context.req.param('webhookId');
@@ -146,5 +229,5 @@ function createWebhookRoutes(options: WebhookRoutesOptions): Hono {
     return routes;
 }
 
-export { MAX_NAME_LENGTH, MAX_WEBHOOKS_PER_BOT, addBotWebhook, createWebhookRoutes, toBotWebhook };
+export { MAX_INSTRUCTION_LENGTH, MAX_NAME_LENGTH, MAX_RULES_PER_WEBHOOK, MAX_WEBHOOKS_PER_BOT, addBotWebhook, createWebhookRoutes, saveWebhookRule, toBotWebhook };
 export type { AddBotWebhookResult, BotWebhook, CreatedBotWebhook, WebhookRoutesOptions };
