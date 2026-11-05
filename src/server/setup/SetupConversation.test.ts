@@ -102,7 +102,7 @@ describe('setup conversation', () => {
             await setup.start();
         }
 
-        return { app, chat, setup, messages, settings, botId: bot.id, cookie: `cloudbot_session=${cookie ?? ''}`, vault, session, connect, authStatus, runner, checkKey, startLogin, signOut };
+        return { app, chat, setup, messages, settings, botId: bot.id, cookie: `__Host-cloudbot_session=${cookie ?? ''}`, vault, session, connect, authStatus, runner, checkKey, startLogin, signOut };
     }
 
     it('says once that the computer has no browser, when there is none', async () => {

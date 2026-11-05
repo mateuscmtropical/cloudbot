@@ -53,7 +53,7 @@ function restoreHubEnvironment(environment: HubEnvironment): void {
 
 function readSessionToken(response: Response): string {
     const setCookieHeader = response.headers.get('set-cookie') ?? '';
-    const match = /cloudbot_session=([^;]+)/.exec(setCookieHeader);
+    const match = /__Host-cloudbot_session=([^;]+)/.exec(setCookieHeader);
     const sessionToken = match?.[1];
 
     if (sessionToken === undefined) {
@@ -126,7 +126,7 @@ describe('createHubActivityRoutes', () => {
             const signIn = await standaloneApp.request(`/setup?code=${setupCode}`);
             const sessionToken = readSessionToken(signIn);
             const notMounted = await standaloneApp.request(HUB_ACTIVITY_PATH, {
-                headers: { cookie: `cloudbot_session=${sessionToken}` },
+                headers: { cookie: `__Host-cloudbot_session=${sessionToken}` },
             });
 
             expect(notMounted.status)

@@ -16,7 +16,7 @@ import type { LoginPageExtras } from '../pages/renderPages.ts';
 import type { LoginSessions } from './LoginSessions.ts';
 import { readHostRoute } from './hostRouting.ts';
 import { clearHubSessionCookie, isClientAddressAllowed, readClientAddress, readHubSession, readRequestHost, renderResponse, renderUnavailable, requestHasSameOrigin, SIGN_IN_DENIED_MESSAGE, startHubSession } from './routeHelpers.ts';
-import { HUB_SESSION_COOKIE } from './sessionCookie.ts';
+import { removeHubSessionCookies } from './sessionCookie.ts';
 
 interface UpstreamTarget {
     hostname: string;
@@ -195,18 +195,6 @@ function readGoogleReturnLocation(context: Context, options: FrontDoorRoutesOpti
     return `${origin}${APP_OAUTH_CALLBACK_PATH}${requestAddress.search}`;
 }
 
-function removeSessionCookie(cookieHeader: string | undefined): string | undefined {
-    if (cookieHeader === undefined) {
-        return undefined;
-    }
-
-    const keptCookies = cookieHeader.split(';')
-        .map(entry => entry.trim())
-        .filter(entry => entry !== '' && !entry.startsWith(`${HUB_SESSION_COOKIE}=`));
-
-    return keptCookies.length === 0 ? undefined : keptCookies.join('; ');
-}
-
 function readConnectionTokens(headers: Headers): Set<string> {
     const connection = headers.get('connection') ?? '';
     const tokens = connection.split(',')
@@ -228,7 +216,7 @@ function buildProxyHeaders(context: Context, person: PersonRecord, options: Fron
         }
     });
 
-    const cookieHeader = removeSessionCookie(incomingHeaders.get('cookie') ?? undefined);
+    const cookieHeader = removeHubSessionCookies(incomingHeaders.get('cookie') ?? undefined);
 
     if (cookieHeader !== undefined) {
         forwardedHeaders.cookie = cookieHeader;
@@ -574,7 +562,7 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
 
         if (context.req.path === '/__hub/login' && context.req.method === 'GET') {
             const currentTime = nowFor(options);
-            const currentSession = readHubSession(context, options.sessions, currentTime);
+            const currentSession = readHubSession(context, options.sessions, currentTime, options.secure);
 
             if (currentSession?.name === name) {
                 const redirectPath = person.mustChangePassword ? '/__hub/password' : '/';
@@ -649,7 +637,7 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
         }
 
         const currentTime = nowFor(options);
-        const session = readHubSession(context, options.sessions, currentTime);
+        const session = readHubSession(context, options.sessions, currentTime, options.secure);
 
         if (session === undefined || session.name !== name) {
             const loginPage = renderLoginPage({ name, extras: options.loginExtras });

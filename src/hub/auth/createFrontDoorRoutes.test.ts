@@ -50,7 +50,7 @@ interface ObservedHeaders {
 const INITIAL_PASSWORD = 'correct horse battery staple';
 const PERSON_NAME = 'maria';
 const PERSON_SECRET = 'person-instance-secret';
-const SESSION_TOKEN_PATTERN = /cloudbot_hub_session=([^;]+)/;
+const SESSION_TOKEN_PATTERN = /((?:__Host-)?cloudbot_hub_session)=([^;]+)/;
 
 class FakePeople {
     private readonly records: Map<string, PersonRecord>;
@@ -198,13 +198,13 @@ function send(app: Hono, url: string, init?: RequestInit): Promise<Response> {
 
 function cookieFrom(response: Response): string {
     const setCookie = response.headers.get('set-cookie') ?? '';
-    const token = SESSION_TOKEN_PATTERN.exec(setCookie)?.[1];
+    const match = SESSION_TOKEN_PATTERN.exec(setCookie);
 
-    if (token === undefined) {
+    if (match === null) {
         throw new Error('Login did not set a hub session cookie.');
     }
 
-    return `cloudbot_hub_session=${token}`;
+    return `${match[1] ?? ''}=${match[2] ?? ''}`;
 }
 
 async function startLocalServer(handler: (request: IncomingMessage, response: ServerResponse) => void): Promise<LocalHttpServer> {
@@ -621,7 +621,7 @@ describe('createFrontDoorRoutes', () => {
         harnesses.push(harness);
         const loginResponse = await login(harness.app);
         const cookie = cookieFrom(loginResponse);
-        const token = SESSION_TOKEN_PATTERN.exec(cookie)?.[1] ?? '';
+        const token = SESSION_TOKEN_PATTERN.exec(cookie)?.[2] ?? '';
         const sessions = new SqliteLoginSessions(harness.database);
         const logoutResponse = await harness.app.request(`https://${PERSON_NAME}.example.test/__hub/logout`, {
             method: 'POST',
@@ -657,7 +657,7 @@ describe('createFrontDoorRoutes', () => {
         });
         const sessions = new SqliteLoginSessions(harness.database);
         const tokenMatch = SESSION_TOKEN_PATTERN.exec(loginResponse.headers.get('set-cookie') ?? '');
-        const currentToken = tokenMatch?.[1] ?? '';
+        const currentToken = tokenMatch?.[2] ?? '';
 
         expect(loginResponse.headers.get('location'))
             .toBe('/__hub/password');
@@ -845,7 +845,7 @@ describe('createFrontDoorRoutes', () => {
         harnesses.push(harness);
         const base = `https://${PERSON_NAME}.example.test`;
         const token = createWebhookToken();
-        const hook = await harness.app.request(`${base}/hooks/${token}`, { method: 'POST', body: '{"event":"push"}', headers: { 'content-type': 'application/json', 'cookie': 'cloudbot_hub_session=stale' } });
+        const hook = await harness.app.request(`${base}/hooks/${token}`, { method: 'POST', body: '{"event":"push"}', headers: { 'content-type': 'application/json', 'cookie': '__Host-cloudbot_hub_session=stale' } });
         const whatsappPost = await harness.app.request(`${base}/whatsapp`, { method: 'POST', body: '{}' });
         const handshake = await harness.app.request(`${base}/whatsapp?hub.mode=subscribe&hub.challenge=7`);
 

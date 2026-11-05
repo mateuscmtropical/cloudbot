@@ -45,7 +45,7 @@ async function createWebRoot(): Promise<string> {
 
 function readSessionCookie(response: Response): string | undefined {
     const setCookieHeader = response.headers.get('set-cookie') ?? '';
-    const match = /cloudbot_session=([^;]+)/.exec(setCookieHeader);
+    const match = /__Host-cloudbot_session=([^;]+)/.exec(setCookieHeader);
 
     return match?.[1];
 }
@@ -64,7 +64,7 @@ function buildChatService(database: OpenedDatabase): ChatService {
 
 function requestWithSession(app: Hono, path: string, sessionToken: string | undefined): Response | Promise<Response> {
     return app.request(path, {
-        headers: { cookie: `cloudbot_session=${sessionToken ?? ''}` },
+        headers: { cookie: `__Host-cloudbot_session=${sessionToken ?? ''}` },
     });
 }
 
@@ -201,7 +201,7 @@ describe('createApp', () => {
         // The app routes are mounted too, so a route of Bitwarden that looks like /api/apps/:id would be taken by them.
         const app = createApp({ version: '1.2.3', access, chatService, connectedApps: {} as ConnectedApps, bitwardenVault });
         const sessionToken = await signIn(app, access);
-        const cookie = `cloudbot_session=${sessionToken}`;
+        const cookie = `__Host-cloudbot_session=${sessionToken}`;
         const path = `/api/apps/bitwarden/account?bot=${bot.id}`;
         const body = JSON.stringify({ botId: bot.id, clientId: 'user.11111111-2222-3333-4444-555555555555', clientSecret: 'fakeclientsecret0123456789', masterPassword: 'fake master password' });
         const withoutCookie = await app.request(path);
@@ -240,7 +240,7 @@ describe('createApp', () => {
         const routine = await routineStore.add(bot.id, { name: 'Inbox', prompt: 'Check.', schedule: { kind: 'daily', hour: 8, minute: 0 } });
         const app = createApp({ version: '1.2.3', access, chatService, routineStore });
         const sessionToken = await signIn(app, access);
-        const cookie = `cloudbot_session=${sessionToken}`;
+        const cookie = `__Host-cloudbot_session=${sessionToken}`;
         const withoutCookie = await app.request(`/api/bots/${bot.id}/routines`);
         const listed = await requestWithSession(app, `/api/bots/${bot.id}/routines`, sessionToken);
         const unknownBot = await requestWithSession(app, '/api/bots/missing/routines', sessionToken);
@@ -275,7 +275,7 @@ describe('createApp', () => {
             .create({ name: 'Ana', title: 'Assistant', description: '' });
         const app = createApp({ version: '1.2.3', access, chatService, ruleStore });
         const sessionToken = await signIn(app, access);
-        const cookie = `cloudbot_session=${sessionToken}`;
+        const cookie = `__Host-cloudbot_session=${sessionToken}`;
         const withoutCookie = await app.request(`/api/bots/${bot.id}/rules`);
         const added = await app.request(`/api/bots/${bot.id}/rules`, {
             method: 'POST',
@@ -322,7 +322,7 @@ describe('createApp', () => {
 
         const response = await app.request(`/api/bots/${bot.id}/rules`, {
             method: 'POST',
-            headers: { 'cookie': `cloudbot_session=${sessionToken}`, 'origin': OWN_ORIGIN, 'content-type': 'application/json' },
+            headers: { 'cookie': `__Host-cloudbot_session=${sessionToken}`, 'origin': OWN_ORIGIN, 'content-type': 'application/json' },
             body: JSON.stringify({ kind: 'allow', text: 'One more.' }),
         });
 
@@ -472,7 +472,7 @@ describe('createApp', () => {
         const withoutCookieKey = await app.request('/api/push/key');
         const withoutCookieSave = await app.request('/api/push/subscriptions', { method: 'POST', body: subscription, headers: OWN_PAGE_HEADERS });
         const keyResponse = await requestWithSession(app, '/api/push/key', sessionToken);
-        const refusedResponse = await app.request('/api/push/subscriptions', { method: 'POST', body: subscription, headers: { ...OWN_PAGE_HEADERS, cookie: `cloudbot_session=${sessionToken}` } });
+        const refusedResponse = await app.request('/api/push/subscriptions', { method: 'POST', body: subscription, headers: { ...OWN_PAGE_HEADERS, cookie: `__Host-cloudbot_session=${sessionToken}` } });
 
         expect(withoutCookieKey.status)
             .toBe(401);
@@ -500,7 +500,7 @@ describe('createApp', () => {
         await expect(store.list())
             .resolves.toHaveLength(1);
 
-        const withCookie = await app.request('/api/push/subscriptions', { method: 'DELETE', body, headers: { ...OWN_PAGE_HEADERS, cookie: `cloudbot_session=${sessionToken}` } });
+        const withCookie = await app.request('/api/push/subscriptions', { method: 'DELETE', body, headers: { ...OWN_PAGE_HEADERS, cookie: `__Host-cloudbot_session=${sessionToken}` } });
 
         expect(withCookie.status)
             .toBe(204);
@@ -515,7 +515,7 @@ describe('createApp', () => {
 
         const app = createApp({ version: '1.2.3', access, push: { store, publicKey: 'public-key-text' } });
         const sessionToken = await signIn(app, access);
-        const cookie = `cloudbot_session=${sessionToken}`;
+        const cookie = `__Host-cloudbot_session=${sessionToken}`;
         const body = JSON.stringify({ endpoint: 'https://fcm.googleapis.com/fcm/send/mine' });
         const crossSite = await app.request('/api/push/subscriptions', { method: 'DELETE', body, headers: { 'cookie': cookie, 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' } });
         const textBody = await app.request('/api/push/subscriptions', { method: 'DELETE', body, headers: { 'cookie': cookie, 'content-type': 'text/plain', 'content-length': String(body.length), 'sec-fetch-site': 'same-origin' } });
@@ -563,7 +563,7 @@ describe('createApp', () => {
         const screen = new ScreenHolder();
         const app = createApp({ version: '1.2.3', access, screen });
         const sessionToken = await signIn(app, access);
-        const post = (path: string): Response | Promise<Response> => app.request(path, { method: 'POST', headers: { cookie: `cloudbot_session=${sessionToken}`, origin: OWN_ORIGIN } });
+        const post = (path: string): Response | Promise<Response> => app.request(path, { method: 'POST', headers: { cookie: `__Host-cloudbot_session=${sessionToken}`, origin: OWN_ORIGIN } });
 
         expect(await (await requestWithSession(app, '/api/desktop/screen', sessionToken)).json())
             .toEqual({ holder: 'bot' });
@@ -592,7 +592,7 @@ describe('createApp', () => {
             .create({ name: 'Ana', title: 'Assistant', description: '' });
         const app = createApp({ version: '1.2.3', access, chatService });
         const sessionToken = await signIn(app, access);
-        const cookie = `cloudbot_session=${sessionToken}`;
+        const cookie = `__Host-cloudbot_session=${sessionToken}`;
         const messagesPath = `/api/bots/${bot.id}/messages`;
         const otherPort = await app.request('/api/bots', { method: 'POST', headers: { cookie, origin: 'http://localhost:5173' } });
         const noOrigin = await app.request('/api/bots', { method: 'POST', headers: { cookie } });
@@ -607,7 +607,7 @@ describe('createApp', () => {
         const chatService = buildChatService(opened);
         const app = createApp({ version: '1.2.3', access, chatService, publicUrl: 'https://bot.example.com' });
         const sessionToken = await signIn(app, access);
-        const cookie = `cloudbot_session=${sessionToken}`;
+        const cookie = `__Host-cloudbot_session=${sessionToken}`;
         const response = await app.request('/api/bots', { method: 'POST', headers: { cookie, origin: 'https://bot.example.com' } });
 
         expect(response.status)

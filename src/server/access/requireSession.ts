@@ -5,7 +5,8 @@ import { HUB_TRUST_HEADER } from '../../shared/hubProtocol.ts';
 import { isValidHubSecret } from './hubSession.ts';
 import type { SetupAccess } from './SetupAccess.ts';
 
-const SESSION_COOKIE_NAME = 'cloudbot_session';
+// The __Host- name makes the browser take this cookie only from this exact host, over HTTPS and without a Domain.
+const SESSION_COOKIE_NAME = '__Host-cloudbot_session';
 
 interface AccessErrorResponse {
     error: string;

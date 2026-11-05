@@ -24,7 +24,7 @@ const URL_PATTERN = /https:\/\/bot\.example\.com\/hooks\/([A-Za-z0-9_-]+)/;
 
 function readSessionCookie(response: Response): string | undefined {
     const setCookieHeader = response.headers.get('set-cookie') ?? '';
-    const match = /cloudbot_session=([^;]+)/.exec(setCookieHeader);
+    const match = /__Host-cloudbot_session=([^;]+)/.exec(setCookieHeader);
 
     return match?.[1];
 }
@@ -68,7 +68,7 @@ describe('createWebhookRoutes', () => {
         });
 
         app = createApp({ version: '1.2.3', access, chatService, webhookStore: store, publicBaseUrl: PUBLIC_BASE_URL });
-        cookie = `cloudbot_session=${await signIn(app, access)}`;
+        cookie = `__Host-cloudbot_session=${await signIn(app, access)}`;
     });
 
     afterEach(() => {

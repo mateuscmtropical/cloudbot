@@ -67,7 +67,7 @@ describe('passkey routes', () => {
         const app = buildApp();
         const setupCode = await access.issueSetupCode();
         const sessionToken = await access.redeemSetupCode(setupCode);
-        const cookie = `cloudbot_session=${sessionToken ?? ''}`;
+        const cookie = `__Host-cloudbot_session=${sessionToken ?? ''}`;
 
         const anonymous = await app.request('/api/passkeys/register/options', { method: 'POST', headers: JSON_HEADERS, body: '{}' });
         const options = await app.request('/api/passkeys/register/options', { method: 'POST', headers: { ...JSON_HEADERS, cookie }, body: '{}' });
@@ -88,7 +88,7 @@ describe('passkey routes', () => {
         const options = await app.request('/auth/passkey/options', { method: 'POST', headers: JSON_HEADERS, body: '{}' });
         const verified = await app.request('/auth/passkey/verify', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ id: 'cred-1' }) });
         const setCookie = verified.headers.get('set-cookie') ?? '';
-        const sessionToken = /cloudbot_session=([^;]+)/.exec(setCookie)?.[1];
+        const sessionToken = /__Host-cloudbot_session=([^;]+)/.exec(setCookie)?.[1];
 
         expect(options.status)
             .toBe(200);
