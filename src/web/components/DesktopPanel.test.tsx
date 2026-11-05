@@ -379,8 +379,10 @@ describe('DesktopPanel', () => {
 
         expect(await screen.findByText('You have the screen. The bot is paused.'))
             .toBeTruthy();
-        expect(clientAt(0).viewOnly)
-            .toBe(false);
+        await waitFor(() => {
+            expect(clientAt(0).viewOnly)
+                .toBe(false);
+        });
 
         fireEvent.click(screen.getByRole('button', { name: 'Done, take over' }));
 
