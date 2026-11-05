@@ -1,12 +1,19 @@
 // @vitest-environment happy-dom
-import { renderHook } from '@testing-library/react';
+import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
 
 import { readSwipe, useSwipeMenu } from './useSwipeMenu.ts';
+import type { SwipePanels } from './useSwipeMenu.ts';
 
 interface FakeTouch {
     clientX: number;
     clientY: number;
+}
+
+interface SwipePanelSpies {
+    setIsListOpen: Mock;
+    setIsDetailsOpen: Mock;
 }
 
 function touchEvent(type: 'touchstart' | 'touchend', clientX: number): Event {
@@ -19,12 +26,20 @@ function touchEvent(type: 'touchstart' | 'touchend', clientX: number): Event {
     return event;
 }
 
-function swipeRightOn(element: Element): void {
-    const start = touchEvent('touchstart', 20);
-    const end = touchEvent('touchend', 200);
+function swipeOn(element: Element, startX: number, endX: number): void {
+    const start = touchEvent('touchstart', startX);
+    const end = touchEvent('touchend', endX);
 
     element.dispatchEvent(start);
     element.dispatchEvent(end);
+}
+
+function swipeRightOn(element: Element): void {
+    swipeOn(element, 20, 200);
+}
+
+function swipeLeftOn(element: Element): void {
+    swipeOn(element, 200, 20);
 }
 
 describe('readSwipe', () => {
@@ -50,30 +65,145 @@ describe('readSwipe', () => {
 
 describe('useSwipeMenu', () => {
     afterEach(() => {
+        cleanup();
         vi.unstubAllGlobals();
         document.body.replaceChildren();
     });
 
-    it('opens the menu on a swipe, but leaves a drag on the bot screen to the screen', () => {
+    function renderPanels(state: Partial<SwipePanels> = {}): SwipePanelSpies {
         vi.stubGlobal('matchMedia', () => ({ matches: true }));
-        const setIsOpen = vi.fn();
-        const panel = document.createElement('section');
-        const message = document.createElement('p');
+        const setIsListOpen = vi.fn();
+        const setIsDetailsOpen = vi.fn();
 
-        panel.className = 'desktop-panel';
-        document.body.append(panel, message);
         renderHook(() => {
-            useSwipeMenu(false, setIsOpen);
+            useSwipeMenu({ isListOpen: false, setIsListOpen, isDetailsOpen: false, setIsDetailsOpen, canOpenDetails: true, ...state });
         });
 
-        swipeRightOn(panel);
+        return { setIsListOpen, setIsDetailsOpen };
+    }
 
-        expect(setIsOpen)
+    function addParagraph(): HTMLElement {
+        const paragraph = document.createElement('p');
+
+        document.body.append(paragraph);
+
+        return paragraph;
+    }
+
+    it('opens the list on a swipe to the right and the details on a swipe to the left', () => {
+        const spies = renderPanels();
+        const message = addParagraph();
+
+        swipeRightOn(message);
+
+        expect(spies.setIsListOpen)
+            .toHaveBeenCalledWith(true);
+        expect(spies.setIsDetailsOpen)
+            .not.toHaveBeenCalled();
+
+        swipeLeftOn(message);
+
+        expect(spies.setIsDetailsOpen)
+            .toHaveBeenCalledWith(true);
+    });
+
+    it('closes the open panel with the opposite swipe, and opens nothing with the same one', () => {
+        const message = addParagraph();
+        const withList = renderPanels({ isListOpen: true });
+
+        swipeRightOn(message);
+
+        expect(withList.setIsListOpen)
+            .not.toHaveBeenCalled();
+
+        swipeLeftOn(message);
+
+        expect(withList.setIsListOpen)
+            .toHaveBeenCalledWith(false);
+        expect(withList.setIsDetailsOpen)
+            .not.toHaveBeenCalled();
+
+        cleanup();
+
+        const withDetails = renderPanels({ isDetailsOpen: true });
+
+        swipeLeftOn(message);
+
+        expect(withDetails.setIsDetailsOpen)
             .not.toHaveBeenCalled();
 
         swipeRightOn(message);
 
-        expect(setIsOpen)
+        expect(withDetails.setIsDetailsOpen)
+            .toHaveBeenCalledWith(false);
+        expect(withDetails.setIsListOpen)
+            .not.toHaveBeenCalled();
+    });
+
+    it('opens no details where there is no chat with a bot', () => {
+        const spies = renderPanels({ canOpenDetails: false });
+
+        swipeLeftOn(addParagraph());
+
+        expect(spies.setIsDetailsOpen)
+            .not.toHaveBeenCalled();
+    });
+
+    it('leaves a drag on the bot screen, a dialog or a field to them', () => {
+        const spies = renderPanels();
+        const screenPanel = document.createElement('section');
+        const dialog = document.createElement('dialog');
+        const dialogText = document.createElement('p');
+        const field = document.createElement('select');
+
+        screenPanel.className = 'desktop-panel';
+        dialog.append(dialogText);
+        document.body.append(screenPanel, dialog, field);
+
+        [screenPanel, dialogText, field].forEach((element) => {
+            swipeRightOn(element);
+            swipeLeftOn(element);
+        });
+
+        expect(spies.setIsListOpen)
+            .not.toHaveBeenCalled();
+        expect(spies.setIsDetailsOpen)
+            .not.toHaveBeenCalled();
+    });
+
+    it('leaves a drag inside anything that scrolls sideways to it, also at the end of its scroll', () => {
+        const spies = renderPanels();
+        const scroller = document.createElement('div');
+        const chip = document.createElement('button');
+
+        scroller.style.overflowX = 'auto';
+        Object.defineProperty(scroller, 'scrollWidth', { value: 600 });
+        Object.defineProperty(scroller, 'clientWidth', { value: 300 });
+        scroller.scrollLeft = 300;
+        scroller.append(chip);
+        document.body.append(scroller);
+
+        swipeRightOn(chip);
+        swipeLeftOn(chip);
+
+        expect(spies.setIsListOpen)
+            .not.toHaveBeenCalled();
+        expect(spies.setIsDetailsOpen)
+            .not.toHaveBeenCalled();
+    });
+
+    it('still swipes on a scroller with nothing to scroll', () => {
+        const spies = renderPanels();
+        const scroller = document.createElement('div');
+
+        scroller.style.overflowX = 'auto';
+        Object.defineProperty(scroller, 'scrollWidth', { value: 300 });
+        Object.defineProperty(scroller, 'clientWidth', { value: 300 });
+        document.body.append(scroller);
+
+        swipeRightOn(scroller);
+
+        expect(spies.setIsListOpen)
             .toHaveBeenCalledWith(true);
     });
 });
