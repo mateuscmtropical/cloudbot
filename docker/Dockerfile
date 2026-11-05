@@ -20,14 +20,17 @@ RUN pnpm build
 
 # Server side voice input. Pinned by commit and by checksum, and built here so the build tools stay out of the image.
 # On x86 the CPU variants load at run time, so one image uses AVX2 where the machine has it and still runs where it does not.
-# The compiler in Debian does not know the newest Arm variants, so Arm gets one build with the NEON every 64 bit Arm CPU has.
+# The compiler in Debian does not know the newest Arm variants, so Arm gets one build. It uses dotprod and fp16 when the CPU
+# that builds the image has them, and otherwise the NEON every 64 bit Arm CPU has.
+# So an Arm image runs on a CPU like the one that built it. Every install builds its own image.
 FROM base AS whisper
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates cmake curl g++ git make \
     && git clone --depth 1 --branch v1.9.5 https://github.com/ggml-org/whisper.cpp.git /whisper-src \
     && test "$(git -C /whisper-src rev-parse HEAD)" = d1be6fde11ac6e0407606b4e42fe72d34add8037 \
     && case "$(uname -m)" in \
-        aarch64) cpu_flags='-DGGML_BACKEND_DL=OFF -DGGML_CPU_ALL_VARIANTS=OFF' ;; \
+        aarch64) cpu_flags='-DGGML_BACKEND_DL=OFF -DGGML_CPU_ALL_VARIANTS=OFF' \
+            && if grep -qw asimddp /proc/cpuinfo && grep -qw asimdhp /proc/cpuinfo; then cpu_flags="$cpu_flags -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16"; fi ;; \
         *) cpu_flags='-DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON' ;; \
     esac \
     && cmake -S /whisper-src -B /whisper-build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
