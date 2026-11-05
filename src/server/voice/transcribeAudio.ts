@@ -37,7 +37,8 @@ const DEFAULT_PROGRAMS: VoicePrograms = {
 };
 const MAX_AUDIO_SECONDS = 360;
 const CONVERT_TIMEOUT_MS = 60_000;
-const TRANSCRIBE_TIMEOUT_MS = 300_000;
+// A small Arm server takes about as long as the audio lasts, and a busy one takes longer.
+const TRANSCRIBE_TIMEOUT_MS = 900_000;
 // An instance has 1.5 CPUs, and more threads than that only make them wait for each other.
 const WHISPER_THREADS = 2;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
