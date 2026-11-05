@@ -95,6 +95,8 @@ describe('WhatsApp setup tools', () => {
 
 describe('Meeting tools', () => {
     it('reviews the start of a recording and skips reading and stopping it', () => {
+        expect(classify('mcp__cloudbot__meeting_join'))
+            .not.toBe('skip');
         expect(classify('mcp__cloudbot__meeting_record_start'))
             .not.toBe('skip');
         expect(classify('mcp__cloudbot__meeting_record_status'))

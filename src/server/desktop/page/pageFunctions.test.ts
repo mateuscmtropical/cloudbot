@@ -12,6 +12,7 @@ import { pageReadyState } from './pageReadyState.ts';
 import { pageSnapshot } from './pageSnapshot.ts';
 import { pageStartMeetingRecording, pageTakeMeetingRecording } from './pageMeetingRecording.ts';
 import { pageRecordSteps } from './pageRecordSteps.ts';
+import { pageSelectFocusedText } from './pageSelectFocusedText.ts';
 
 // Rebuilds a page function from its source with the given globals in scope, as the browser would run it.
 function runSource(source: string, globals: Record<string, unknown>): unknown {
@@ -25,7 +26,7 @@ function runSource(source: string, globals: Record<string, unknown>): unknown {
 describe('page functions', () => {
     it('is sent as source that compiles on its own, with no names from the server', () => {
         const sources = [pageSnapshot, pageReadyState, pageFocusCheck, pageClickFocus, pageOrigin, pageUrl, pageActiveElement,
-            pageElementAtPoint, pageClickableElements, pageDescribeElements, pageStartMeetingRecording, pageTakeMeetingRecording, pageRecordSteps]
+            pageElementAtPoint, pageClickableElements, pageDescribeElements, pageStartMeetingRecording, pageTakeMeetingRecording, pageRecordSteps, pageSelectFocusedText]
             .map(pageFunction => pageFunction.toString());
 
         sources.forEach((source) => {

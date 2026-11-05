@@ -93,7 +93,7 @@ keeps the volumes and the install folder. Docker stays installed. Back up the
 - **Keep secrets away from the bot.** Passwords and keys go through a secure
   form into a vault. The bot uses them without being able to read them.
 - **Fill logins from Bitwarden.** Connect your Bitwarden vault in Connect apps with an API key and your master password. The bot can then type a website login into the page that is open. It never sees the values, it can fill only the site that the login is saved for, and you approve each login in the chat.
-- **Take meeting notes.** Give the bot a Google Meet link and ask it to take notes. It joins as a guest from its own browser, says who it is in the meeting chat, and transcribes the call on the server with a local model. When you ask it to leave, or the meeting ends, it posts a summary with the action items and shares the transcript.
+- **Take meeting notes.** Give the bot a Google Meet link and ask it to take notes. It joins as a guest from its own browser, knocks again when Google Meet refuses, says who it is in the meeting chat, and transcribes the call on the server with a local model. When you ask it to leave, or the meeting ends, it posts a summary with the action items and shares the transcript.
 - **Ask before it acts.** Rules written in plain language, and a review step
   before sensitive actions such as sending a message or paying.
 - **Run routines.** Scheduled tasks, tasks that run once at a set time, and tasks started by events.

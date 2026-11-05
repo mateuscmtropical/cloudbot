@@ -11,6 +11,7 @@ import { pageElementAtPoint } from './page/pageElementAtPoint.ts';
 import { pageFocusCheck } from './page/pageFocusCheck.ts';
 import { pageOrigin, pageUrl } from './page/pageLocation.ts';
 import { pageReadyState } from './page/pageReadyState.ts';
+import { pageSelectFocusedText } from './page/pageSelectFocusedText.ts';
 import { pageSnapshot } from './page/pageSnapshot.ts';
 
 interface BrowserControlOptions {
@@ -448,6 +449,19 @@ class BrowserControl {
 
     read(): Promise<PageText> {
         return this.withPage(page => this.readPage(page));
+    }
+
+    // Replaces the text of the focused field. The old text is selected first, so a prefilled name is overwritten.
+    replaceFocusedText(text: string): Promise<void> {
+        return this.withPage(async (page) => {
+            const result = await evaluateInPage(page, pageSelectFocusedText, [], { returnByValue: true });
+
+            if (readEvaluatedValue(result) !== true) {
+                throw new BrowserError('No text field has the focus. Click the field first.');
+            }
+
+            await page.call('Input.insertText', { text });
+        });
     }
 
     // A connection the caller keeps open, such as the live view of the screen. The caller closes it.

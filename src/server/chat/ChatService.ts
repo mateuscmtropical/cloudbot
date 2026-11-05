@@ -4023,7 +4023,7 @@ class ChatService {
                         announce: (event) => { this.announcePeopleCredentials(event); },
                     });
             const telegramTools = this.telegram === undefined ? [] : createTelegramTools(this.telegram, botId);
-            const meetingTools = this.meetingRecorder === undefined ? [] : createMeetingTools(this.meetingRecorder, botId);
+            const meetingTools = this.meetingRecorder === undefined || this.browser === undefined ? [] : createMeetingTools(this.meetingRecorder, botId, this.browser);
             const whatsappTools = this.whatsapp === undefined ? [] : createWhatsAppTools(this.whatsapp, botId);
             const profileTools = createProfileTools(
                 this.botStore,
@@ -4486,7 +4486,7 @@ class ChatService {
         const peopleToolNames = this.peopleToolNames();
         const telegramToolNames = this.telegram === undefined ? [] : TELEGRAM_TOOL_FULL_NAMES;
         const whatsappToolNames = this.whatsapp === undefined ? [] : WHATSAPP_TOOL_FULL_NAMES;
-        const meetingToolNames = this.meetingRecorder === undefined ? [] : MEETING_TOOL_FULL_NAMES;
+        const meetingToolNames = this.meetingRecorder === undefined || this.browser === undefined ? [] : MEETING_TOOL_FULL_NAMES;
 
         return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...meetingToolNames, ...browserToolNames, ...desktopToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...whatsappToolNames];
     }
