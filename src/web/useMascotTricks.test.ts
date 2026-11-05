@@ -48,9 +48,12 @@ describe('useMascotTricks', () => {
 
     it('plays after a pause, and waits for the trick before the next pause', async () => {
         const play = makePlay();
+        // The second trick never ends. A finished one would let a short random pause start a third inside the wait below.
+        const nextPlay = makePlay();
 
         vi.mocked(playTrick)
-            .mockReturnValue(play);
+            .mockReturnValueOnce(play)
+            .mockReturnValue(nextPlay);
         renderHook(() => {
             useMascotTricks(true, 'bot-1');
         });

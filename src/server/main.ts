@@ -71,6 +71,7 @@ import { WhatsAppStore } from './store/WhatsAppStore.ts';
 import { WatchScheduler } from './watches/WatchScheduler.ts';
 import { fetchWatchedPage } from './watches/fetchWatchedPage.ts';
 import { ensureDefaultBot } from './store/ensureDefaultBot.ts';
+import { ActionLog } from './logs/ActionLog.ts';
 import { openDatabase } from './store/openDatabase.ts';
 import { databasePath, resolveDataDir } from './store/resolveDataDir.ts';
 import { PasskeyStore } from './store/PasskeyStore.ts';
@@ -508,7 +509,10 @@ const providerTools: ProviderToolDependencies = {
     setProvider: (botId, provider) => providerChoices.setForBot(botId, provider),
     offerProviders: () => setup.offerProviders(),
 };
+const actionLogPath = join(dataDir, 'actions.log');
+const actionLog = new ActionLog(actionLogPath);
 const chatService: ChatService = new ChatService({
+    actionLog,
     notifyOwner: notice => pushNotifier.notify(notice),
     passkeys,
     peopleAdmin,

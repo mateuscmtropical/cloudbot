@@ -407,6 +407,8 @@ The database is `cloudbot.db` in the folder given by `CLOUDBOT_DATA_DIR`
 and foreign keys, then applies the migrations in `drizzle/` that have not run
 yet. `BotStore`, `MessageStore`, `SettingsStore` and `PushSubscriptionStore` wrap the tables.
 
+`actions.log` in the same folder is a debugging log with one JSON line per review, finished tool and turn error. It holds names, outcomes and times, never a tool input, a reply or a refusal reason. The file is mode 600. At 5 MB it moves to `actions.log.1`, so a container that is made again keeps it.
+
 After a schema change, run `pnpm db:generate` to write a new migration into
 `drizzle/`. Generated migrations are append only: never edit one that has
 shipped, add a new one instead.
@@ -1441,6 +1443,8 @@ unless the review asks for it.
   people cards remain. A prompt injection can do anything the bot can, and the owner takes that risk.
 
 Only the owner changes it, through a route behind the session check. No bot tool reaches it.
+
+In Auto and YOLO, Codex does not ask about MCP tool calls. So `CodexEngine` sets those servers to `approve`, and CloudBot reviews each call when it reaches the loopback server or the app proxy. The canary checks this in both modes.
 
 | CLI | Auto | YOLO |
 | --- | --- | --- |

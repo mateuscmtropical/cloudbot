@@ -15,13 +15,20 @@ All notable changes to this project are listed here. The format follows
 - The site sends `Strict-Transport-Security` with a one day lifetime and no longer offers HTTP/3, which never worked because UDP 443 is not published.
 - The hub and server databases are mode 600.
 
+### Changed
+
+- The review asks the owner before the bot gives personal details, such as an address, phone or document, to a site the owner did not name. It also asks before the bot changes or deletes something in an outside account, accepts terms or signs something, unless the owner asked for it. Other browser use never asks.
+
 ### Fixed
 
 - A message you send while a bot on ChatGPT or an OpenAI key is working now goes straight into the running turn, as it does on Claude, instead of waiting in the queue. A message with files still waits.
+- A bot on ChatGPT or an OpenAI key can use its own tools, such as the browser, and connected apps in Auto and YOLO. Codex does not ask about these calls in those modes, so every one was refused with no card. CloudBot now reviews each call when it arrives. Harmless ones run at once, and dangerous ones still show a card in Auto.
+- A tool call that arrives with no review decision no longer tells the bot that the owner refused it.
 - Webhooks and the WhatsApp callback work behind the hub. The hub refused them because they have no browser headers and no session. Only `POST /hooks/<token>` and `GET` and `POST /whatsapp` pass, and a call to a stopped instance gets a 503 without waking it.
 
 ### Added
 
+- The server keeps a log of what each bot did in `actions.log` in the data folder: every tool review with its outcome and time, every finished tool and every turn error. It holds only names and outcomes, never what a tool received or what the chat said.
 - The mascot in the chat header now does a random trick every minute or two while the bot rests. It hangs from a web, sneezes rain, snow or lightning, flies around, falls and climbs back, dances, inflates like a balloon, and leaves to visit the other bots in the chat list. Work, another chat or a hidden tab ends a trick at once, and reduced motion turns them off.
 - Voice input keeps listening until you press stop, and browsers without a working speech service, such as Firefox, record instead. The recording goes to your own server, which turns it into text with ffmpeg and whisper.cpp and deletes the audio. The image grows by about 250 MB.
 - Bot replies have a button that reads them aloud with the browser's voices, and the conversation options can read each new reply.

@@ -226,6 +226,99 @@ describe.skipIf(CODEX_PATH === '')('Codex canary for a message during a turn', (
     }, 120000);
 });
 
+// Auto and YOLO: Codex never asks about a tool call, so CloudBot must review it when it reaches the server.
+const MODE_MODEL_CALLS = [
+    { name: 'echo', namespace: `mcp__${PROFILE_SERVER_NAME}`, arguments: JSON.stringify({ text: 'refused' }) },
+    { name: 'echo', namespace: `mcp__${PROFILE_SERVER_NAME}`, arguments: JSON.stringify({ text: 'allowed' }) },
+    { name: 'lookup', namespace: `mcp__${REMOTE_SERVER_NAME}`, arguments: JSON.stringify({ query: 'refused' }) },
+    { name: 'lookup', namespace: `mcp__${REMOTE_SERVER_NAME}`, arguments: JSON.stringify({ query: 'allowed' }) },
+];
+
+describe.skipIf(CODEX_PATH === '')
+    .each(['auto', 'yolo'] as const)('Codex canary in %s', (permissionMode) => {
+        it('reviews each tool call at the server and runs only the allowed ones', async () => {
+            const requests: ModelRequest[] = [];
+            const reviewed: ToolCall[] = [];
+            const echoed: string[] = [];
+            const remoteReceived: RemoteMessage[] = [];
+            const folder = mkdtempSync(join(tmpdir(), 'cloudbot-codex-mode-canary-'));
+            const workspaceFolder = mkdtempSync(join(folder, 'workspace-'));
+            const model = await startFakeModel(requests, MODE_MODEL_CALLS);
+            const loopback = await startLoopbackToolServer(PROFILE_SERVER_NAME);
+            const remote = await startFakeRemoteServer(remoteReceived);
+            const proxy = new AppProxy({ checkUpstream: () => Promise.resolve(['127.0.0.1']) });
+
+            await proxy.start();
+            const remoteAddress = proxy.register('remote-app', { upstream: remote.url, readToken: () => undefined });
+            const engine = new CodexEngine({
+                loopback,
+                callGates: proxy,
+                codexPath: CODEX_PATH,
+                codexHomeFor: () => join(folder, 'codex-home'),
+                environment: { PATH: process.env.PATH ?? '', FAKE_PROVIDER_KEY: FAKE_KEY, NO_PROXY: '127.0.0.1', no_proxy: '127.0.0.1' },
+                extraConfig: [
+                    'model_provider="fake"',
+                    'model="fake-model"',
+                    'model_providers.fake.name="fake"',
+                    `model_providers.fake.base_url="${model.url}"`,
+                    'model_providers.fake.wire_api="responses"',
+                    'model_providers.fake.env_key="FAKE_PROVIDER_KEY"',
+                ],
+            });
+            const turn = engine.runTurn({
+                botId: 'canary',
+                workspaceDir: workspaceFolder,
+                prompt: 'Run the canary.',
+                permissionMode,
+                abortSignal: new AbortController().signal,
+                mcpServers: { [REMOTE_SERVER_NAME]: { type: 'http', url: remoteAddress } },
+                tools: [{
+                    name: 'echo',
+                    description: 'Repeats the text.',
+                    inputSchema: { text: z.string() },
+                    handler: (args: Record<string, unknown>) => {
+                        echoed.push(String(args.text));
+
+                        return Promise.resolve({ content: [{ type: 'text', text: `echo ${String(args.text)}` }] });
+                    },
+                }],
+                reviewToolCall: (call) => {
+                    reviewed.push(call);
+                    const isAllowed = JSON.stringify(call.input)
+                        .includes('allowed');
+
+                    return Promise.resolve(isAllowed ? { isAllowed: true } : { isAllowed: false, reason: 'The canary refuses this call.' });
+                },
+            });
+
+            // The events are an async iterator, so `for await` is the only loop form that fits.
+            for await (const event of turn) {
+                expect(event.type)
+                    .not.toBe('turn_error');
+            }
+
+            const remoteCalls = remoteReceived.filter(message => message.method === 'tools/call')
+                .map(message => message.params?.arguments);
+
+            expect(reviewed)
+                .toEqual([
+                    { toolName: `mcp__${PROFILE_SERVER_NAME}__echo`, input: { text: 'refused' } },
+                    { toolName: `mcp__${PROFILE_SERVER_NAME}__echo`, input: { text: 'allowed' } },
+                    { toolName: `mcp__${REMOTE_SERVER_NAME}__lookup`, input: { query: 'refused' } },
+                    { toolName: `mcp__${REMOTE_SERVER_NAME}__lookup`, input: { query: 'allowed' } },
+                ]);
+            expect(echoed)
+                .toEqual(['allowed']);
+            expect(remoteCalls)
+                .toEqual([{ query: 'allowed' }]);
+            model.close();
+            remote.close();
+            await proxy.close();
+            await loopback.close();
+            rmSync(folder, { recursive: true, force: true });
+        }, 120000);
+    });
+
 describe.skipIf(CODEX_PATH === '')(`Codex canary (checked with ${CODEX_PROTOCOL_VERSION})`, () => {
     const requests: ModelRequest[] = [];
     const reviewed: ToolCall[] = [];

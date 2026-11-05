@@ -3,7 +3,7 @@ import type { ChildProcess } from 'node:child_process';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
-import type { ProxyCallGate } from '../apps/AppProxy.ts';
+import type { ProxyCallGate, ProxyCallReview } from '../apps/AppProxy.ts';
 import type { AgentEvent } from './AgentEvent.ts';
 import type { AgentRunner, TurnRequest } from './AgentRunner.ts';
 import { answerCodexRequest } from './answerCodexRequest.ts';
@@ -35,7 +35,7 @@ interface CodexEngineOptions {
     loopback?: LoopbackToolServer | undefined;
     // Opens a gated address of a connected server for one turn, the app proxy in production. Unset means a Codex turn
     // gets no connected servers, since a call to the plain address would not be checked again at the proxy.
-    callGates?: { openCallGate: (address: string) => ProxyCallGate | undefined } | undefined;
+    callGates?: { openCallGate: (address: string, reviewCall?: ProxyCallReview) => ProxyCallGate | undefined } | undefined;
     // How long a review may take before the call is declined. The approval gate waits one hour, so this outlasts it.
     reviewTimeoutMs?: number | undefined;
     // Runs Codex as this user through docker/cloudbot-codex, which keeps CODEX_HOME in that user's home. codexHomeFor is then unused.
@@ -158,16 +158,45 @@ function exitsWithin(exited: Promise<unknown>, milliseconds: number): Promise<bo
     return Promise.race([exited.then(() => true), timeout]);
 }
 
-// The bot's own server for Codex. Every call asks first (prompt), so each one comes to CloudBot as a question.
-function toolServerConfig(turn: LoopbackTurn): string[] {
+// In Auto and YOLO, Codex decides a tool call alone and never asks CloudBot (seen with codex-cli 0.166.0). So CloudBot
+// reviews each call when it reaches the server, and Codex is told not to judge it as well.
+function reviewsCallsAtServer(request: TurnRequest): boolean {
+    return (request.permissionMode ?? 'ask') !== 'ask';
+}
+
+function toolApprovalMode(request: TurnRequest): string {
+    return reviewsCallsAtServer(request) ? 'approve' : 'prompt';
+}
+
+// The bot's own server for Codex. In Ask every call asks first (prompt), so each one comes to CloudBot as a question.
+function toolServerConfig(turn: LoopbackTurn, request: TurnRequest): string[] {
     const prefix = `mcp_servers.${PROFILE_SERVER_NAME}`;
+    const approvalMode = toolApprovalMode(request);
 
     return [
         `${prefix}.url="${turn.mcpUrl}"`,
         `${prefix}.bearer_token_env_var="${TOOL_TOKEN_VARIABLE}"`,
-        `${prefix}.default_tools_approval_mode="prompt"`,
+        `${prefix}.default_tools_approval_mode="${approvalMode}"`,
         `${prefix}.tool_timeout_sec=${String(TOOL_TIMEOUT_SECONDS)}`,
     ];
+}
+
+// The review of a connected server's call that reaches the proxy. Returns the refusal reason, or undefined when it may run.
+async function reviewRemoteCall(request: TurnRequest, serverName: string, plainToolName: string, input: unknown): Promise<string | undefined> {
+    const toolName = `mcp__${serverName}__${plainToolName}`;
+    const blockedTools = request.disallowedTools ?? [];
+
+    if (blockedTools.includes(toolName) || blockedTools.includes(`mcp__${serverName}`)) {
+        return 'The owner blocked this tool.';
+    }
+
+    if (request.reviewToolCall === undefined) {
+        return 'Tool calls are not reviewed for this turn.';
+    }
+
+    const decision = await request.reviewToolCall({ toolName, input }, request.abortSignal);
+
+    return decision.isAllowed ? undefined : decision.reason;
 }
 
 interface RemoteServer {
@@ -176,8 +205,8 @@ interface RemoteServer {
 }
 
 // The owner's connected servers, each at a gated proxy address of this turn. Only http servers are added, under a plain
-// name, so a name cannot reach another config key. Every call asks first, like the bot's own server. Each gate is added
-// to opened right away, so the caller closes every gate even when a later one fails to open.
+// name, so a name cannot reach another config key. Every call is reviewed, like one of the bot's own server. Each gate is
+// added to opened right away, so the caller closes every gate even when a later one fails to open.
 function openRemoteServers(request: TurnRequest, callGates: CodexEngineOptions['callGates'], opened: RemoteServer[]): void {
     if (callGates === undefined) {
         return;
@@ -187,7 +216,10 @@ function openRemoteServers(request: TurnRequest, callGates: CodexEngineOptions['
         .filter((entry): entry is [string, { type: 'http'; url: string }] => entry[1].type === 'http')
         .filter(([name]) => REMOTE_SERVER_NAME_PATTERN.test(name) && name !== PROFILE_SERVER_NAME)
         .forEach(([name, config]) => {
-            const gate = callGates.openCallGate(config.url);
+            const reviewCall = reviewsCallsAtServer(request)
+                ? (toolName: string, input: unknown) => reviewRemoteCall(request, name, toolName, input)
+                : undefined;
+            const gate = callGates.openCallGate(config.url, reviewCall);
 
             if (gate !== undefined) {
                 opened.push({ name, gate });
@@ -195,13 +227,18 @@ function openRemoteServers(request: TurnRequest, callGates: CodexEngineOptions['
         });
 }
 
-function remoteServerConfig(servers: RemoteServer[]): string[] {
+function remoteServerConfig(servers: RemoteServer[], request: TurnRequest): string[] {
+    const approvalMode = toolApprovalMode(request);
+    // A review at the proxy can wait for the owner's card, as long as a call of the bot's own server.
+    const timeoutConfig = (prefix: string): string[] => reviewsCallsAtServer(request) ? [`${prefix}.tool_timeout_sec=${String(TOOL_TIMEOUT_SECONDS)}`] : [];
+
     return servers.flatMap(({ name, gate }) => {
         const prefix = `mcp_servers.${name}`;
 
         return [
             `${prefix}.url=${JSON.stringify(gate.address)}`,
-            `${prefix}.default_tools_approval_mode="prompt"`,
+            `${prefix}.default_tools_approval_mode="${approvalMode}"`,
+            ...timeoutConfig(prefix),
         ];
     });
 }
@@ -284,10 +321,17 @@ class CodexEngine implements AgentRunner {
         }
 
         const tools = request.tools ?? [];
-        // The engine decides each call itself, so the prompt route of the loopback server refuses everything.
+        // In Ask the engine decides each call itself through a question, so the prompt route of the loopback server refuses everything.
+        const isReviewedAtServer = reviewsCallsAtServer(request);
         const toolTurn = this.options.loopback === undefined || tools.length === 0
             ? undefined
-            : this.options.loopback.grantTurn({ tools, reviewToolCall: refuseOnPromptRoute, disallowedTools: request.disallowedTools, offersPromptTool: false });
+            : this.options.loopback.grantTurn({
+                    tools,
+                    reviewToolCall: isReviewedAtServer ? request.reviewToolCall ?? refuseOnPromptRoute : refuseOnPromptRoute,
+                    disallowedTools: request.disallowedTools,
+                    offersPromptTool: false,
+                    reviewsEachCall: isReviewedAtServer,
+                });
         let images: CodexTurnImages | undefined;
 
         const remoteServers: RemoteServer[] = [];
@@ -309,8 +353,9 @@ class CodexEngine implements AgentRunner {
     private async* runProcess(request: TurnRequest, codexHome: string, userHome: string, toolTurn: LoopbackTurn | undefined, remoteServers: RemoteServer[], imagePaths: string[]): AsyncGenerator<AgentEvent> {
         const tokenVariable = toolTurn === undefined ? {} : { [TOOL_TOKEN_VARIABLE]: toolTurn.token };
         const environment = { PATH: process.env.PATH ?? '', ...this.options.environment, ...request.extraEnvironment, ...tokenVariable, HOME: userHome, CODEX_HOME: codexHome };
-        const toolConfig = toolTurn === undefined ? [] : toolServerConfig(toolTurn);
-        const args = buildCodexArguments([...toolConfig, ...remoteServerConfig(remoteServers), ...(this.options.extraConfig ?? [])]);
+        const toolConfig = toolTurn === undefined ? [] : toolServerConfig(toolTurn, request);
+        const remoteConfig = remoteServerConfig(remoteServers, request);
+        const args = buildCodexArguments([...toolConfig, ...remoteConfig, ...(this.options.extraConfig ?? [])]);
         const child = this.spawnFunction(this.options.codexPath, args, {
             cwd: request.workspaceDir,
             env: environment,
