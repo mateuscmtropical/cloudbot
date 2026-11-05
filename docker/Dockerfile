@@ -19,15 +19,20 @@ COPY . .
 RUN pnpm build
 
 # Server side voice input. Pinned by commit and by checksum, and built here so the build tools stay out of the image.
-# The CPU variants load at run time, so one image uses AVX2 or NEON where the machine has it and still runs where it does not.
+# On x86 the CPU variants load at run time, so one image uses AVX2 where the machine has it and still runs where it does not.
+# The compiler in Debian does not know the newest Arm variants, so Arm gets one build with the NEON every 64 bit Arm CPU has.
 FROM base AS whisper
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates cmake curl g++ git make \
     && git clone --depth 1 --branch v1.9.5 https://github.com/ggml-org/whisper.cpp.git /whisper-src \
     && test "$(git -C /whisper-src rev-parse HEAD)" = d1be6fde11ac6e0407606b4e42fe72d34add8037 \
+    && case "$(uname -m)" in \
+        aarch64) cpu_flags='-DGGML_BACKEND_DL=OFF -DGGML_CPU_ALL_VARIANTS=OFF' ;; \
+        *) cpu_flags='-DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON' ;; \
+    esac \
     && cmake -S /whisper-src -B /whisper-build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
         -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON '-DCMAKE_INSTALL_RPATH=$ORIGIN' \
-        -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON \
+        -DGGML_NATIVE=OFF $cpu_flags \
         -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF \
     && cmake --build /whisper-build --config Release --target whisper-cli -j "$(nproc)" \
     && install -d /whisper \
