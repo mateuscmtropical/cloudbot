@@ -314,7 +314,7 @@ function useVoiceInput(options: VoiceInputOptions): VoiceInput {
             recognitionRef.current = undefined;
 
             // Opera has the API, but it ends at once with no error and never starts.
-            const neverStarted = !hasStarted && !isFailed && !isStoppingRef.current && heardNow === '';
+            const neverStarted = !hasStarted && !isFailed && !isStoppingRef.current && heardBefore === '' && heardNow === '';
 
             if (neverStarted && !canRecordVoice()) {
                 setErrorText(NO_SERVICE_STATUS);

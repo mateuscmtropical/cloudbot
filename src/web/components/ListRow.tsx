@@ -3,7 +3,7 @@ import type { ReactElement } from 'react';
 
 interface ListRowProps {
     title: string;
-    description?: string;
+    description?: ReactNode;
     value?: string | undefined;
     leadingIcon?: ReactNode;
     trailingControl?: ReactNode;

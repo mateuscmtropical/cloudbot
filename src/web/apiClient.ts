@@ -1,4 +1,5 @@
-import type { BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName, ScreenViewName } from '../shared/chatTypes.ts';
+import type { BotMemory, BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName, ScreenViewName } from '../shared/chatTypes.ts';
+import type { MessageSearchHit } from '../shared/searchTypes.ts';
 import type { BitwardenStatus, BitwardenTestResult } from '../shared/bitwarden.ts';
 import type { AppSignInStart, ConnectedAppSummary } from '../shared/connectedApps.ts';
 import type { BotRoutine } from '../shared/routineTypes.ts';
@@ -9,7 +10,7 @@ import type { ChannelDetail, ChannelPostView, ChannelSummary } from '../shared/c
 import type { PermissionMode } from '../shared/permissionModes.ts';
 import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse } from '../shared/providerTypes.ts';
 import type { PushKeyResponse, PushSubscriptionInput, PushUnsubscribeInput } from '../shared/pushTypes.ts';
-import type { MascotChoice } from '../shared/mascot.ts';
+import type { MascotLook } from '../shared/mascot.ts';
 import { compressImage } from './compressImage.ts';
 
 const API_ROOT = '/api';
@@ -381,8 +382,28 @@ function renameBot(botId: string, name: string): Promise<BotSummary> {
     return requestJson<BotSummary>(path, init);
 }
 
-// The owner picks the color and the shape of the mascot.
-function changeBotMascot(botId: string, mascot: MascotChoice): Promise<BotSummary> {
+function searchMessages(text: string): Promise<MessageSearchHit[]> {
+    const query = encodeURIComponent(text);
+
+    return requestJson<MessageSearchHit[]>(`/api/search?q=${query}`, {});
+}
+
+function getBotMemory(botId: string): Promise<BotMemory> {
+    const path = botPath(botId, '/memory');
+
+    return requestJson<BotMemory>(path, {});
+}
+
+// The server refuses the save when the file is no longer the text the owner saw.
+async function saveBotMemory(botId: string, text: string, expectedText: string): Promise<void> {
+    const path = botPath(botId, '/memory');
+    const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, expectedText }) };
+
+    await requestJson<unknown>(path, init);
+}
+
+// The owner picks the look of the mascot.
+function changeBotMascot(botId: string, mascot: MascotLook): Promise<BotSummary> {
     const path = botPath(botId, '/mascot');
     const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mascot) };
 
@@ -636,6 +657,9 @@ export {
     createBot,
     deleteBot,
     listBots,
+    getBotMemory,
+    saveBotMemory,
+    searchMessages,
     listChannels,
     getChannel,
     postChannelMessage,

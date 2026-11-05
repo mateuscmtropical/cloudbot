@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 
-import { MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES } from '../../shared/mascot.ts';
-import type { MascotChoice } from '../../shared/mascot.ts';
+import { MASCOT_BOLTS, MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES, MASCOT_WEATHERS } from '../../shared/mascot.ts';
+import type { MascotLook } from '../../shared/mascot.ts';
 import { parseSchedule } from '../routines/schedule.ts';
 import type { RoutineSchedule } from '../routines/schedule.ts';
 import { isRuleInputError, isToolRuleName, parseRuleInput } from '../rules/parseRuleInput.ts';
@@ -37,7 +37,7 @@ interface BotTemplate {
     name: string;
     title: string;
     description: string;
-    mascot?: MascotChoice;
+    mascot?: MascotLook;
     rules?: BotTemplateRule[];
     routines?: BotTemplateRoutine[];
 }
@@ -46,7 +46,7 @@ interface BotTemplateSource {
     name: string;
     title: string;
     description: string;
-    mascot: MascotChoice;
+    mascot: MascotLook;
     rules: BotTemplateRule[];
     routines: BotTemplateRoutine[];
 }
@@ -106,6 +106,10 @@ const mascotSchema = z.object({
     // Templates made before the eyes existed have none, so they get the default smile.
     eyes: z.enum(MASCOT_EYES)
         .default('smile'),
+    weather: z.enum(MASCOT_WEATHERS)
+        .default('auto'),
+    bolt: z.enum(MASCOT_BOLTS)
+        .default('down'),
 })
     .strict();
 

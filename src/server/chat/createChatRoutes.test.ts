@@ -32,6 +32,11 @@ async function postUpload(app: Hono, botId: string, files: MultipartFile[]): Pro
     });
 }
 
+// A whole one pixel PNG.
+function buildSmallPng(): Buffer {
+    return Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+}
+
 function describeEvent(event: ChatEvent): string {
     if (event.type === 'turn') {
         return `turn:${String(event.isRunning)}`;
@@ -709,6 +714,96 @@ describe('shared files', () => {
             .toBe('nosniff');
         expect(await response.text())
             .toBe('a,b\n');
+    });
+
+    it('shows a pending image as a thumbnail, keeps it after sending and never serves other types inline', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: '', description: '' });
+        const other = await botStore.create({ name: 'Ben', title: '', description: '' });
+        const png = buildSmallPng();
+
+        await postUpload(app, bot.id, [
+            { name: 'cat.png', bytes: png },
+            { name: 'evil.svg', bytes: Buffer.from('<svg onload="alert(1)"></svg>') },
+            { name: 'page.html', bytes: Buffer.from('<script>alert(1)</script>') },
+        ]);
+
+        const pending = (await chatService.listPendingUploads(bot.id)) ?? [];
+        const [image, svg, html] = pending;
+        const thumbnail = await app.request(`/api/bots/${bot.id}/uploads/${image?.id ?? ''}`);
+
+        expect(thumbnail.status)
+            .toBe(200);
+        expect(thumbnail.headers.get('content-type'))
+            .toBe('image/png');
+        expect(thumbnail.headers.get('content-disposition'))
+            .toMatch(/^inline; /);
+        expect(thumbnail.headers.get('x-content-type-options'))
+            .toBe('nosniff');
+        expect(thumbnail.headers.get('cache-control'))
+            .toContain('max-age=');
+        expect(Buffer.from(await thumbnail.arrayBuffer()))
+            .toEqual(png);
+
+        const svgThumbnail = await app.request(`/api/bots/${bot.id}/uploads/${svg?.id ?? ''}`);
+        const htmlThumbnail = await app.request(`/api/bots/${bot.id}/uploads/${html?.id ?? ''}`);
+        const otherBotThumbnail = await app.request(`/api/bots/${other.id}/uploads/${image?.id ?? ''}`);
+
+        expect([svgThumbnail.status, htmlThumbnail.status, otherBotThumbnail.status])
+            .toEqual([404, 404, 404]);
+
+        const sent = await chatService.sendMessage(bot.id, 'Look');
+
+        if (sent?.body.kind !== 'text') {
+            throw new Error('The message was not sent.');
+        }
+
+        const attachments = sent.body.attachments ?? [];
+        const fileId = attachments[0]?.fileId ?? '';
+
+        expect(attachments.map(file => file.fileId === undefined))
+            .toEqual([false, true, true]);
+        expect(attachments[0])
+            .toMatchObject({ width: 1, height: 1 });
+
+        // Past the retention time the uploads and shared copies go, and the sent image stays.
+        await chatService.cleanUploads(Date.now() + 1000 * 24 * 60 * 60 * 1000);
+
+        const shown = await app.request(`/api/bots/${bot.id}/messages/${sent.id}/attachments/${fileId}`);
+
+        expect(shown.status)
+            .toBe(200);
+        expect(shown.headers.get('content-disposition'))
+            .toMatch(/^inline; /);
+        expect(Buffer.from(await shown.arrayBuffer()))
+            .toEqual(png);
+
+        const otherBot = await app.request(`/api/bots/${other.id}/messages/${sent.id}/attachments/${fileId}`);
+        const unknownFile = await app.request(`/api/bots/${bot.id}/messages/${sent.id}/attachments/${'0'.repeat(36)}`);
+        const traversal = await app.request(`/api/bots/${bot.id}/messages/${sent.id}/attachments/..%2F..%2Fsecret`);
+
+        expect([otherBot.status, unknownFile.status, traversal.status])
+            .toEqual([404, 404, 404]);
+    });
+
+    it('sends a shared image inline and every other type as a download', async () => {
+        const bot = await botStore.create({ name: 'Ana', title: '', description: '' });
+
+        await seedWorkspaceFile(bot.id, 'made.png', buildSmallPng()
+            .toString('latin1'));
+        await seedWorkspaceFile(bot.id, 'page.svg', '<svg onload="alert(1)"></svg>');
+        await chatService.shareFile(bot.id, 'made.png');
+        await chatService.shareFile(bot.id, 'page.svg');
+
+        const fileMessages = (await chatService.listMessages(bot.id) ?? []).filter(message => message.body.kind === 'file');
+        const image = await app.request(`/api/bots/${bot.id}/messages/${fileMessages[0]?.id ?? ''}/file`);
+        const svg = await app.request(`/api/bots/${bot.id}/messages/${fileMessages[1]?.id ?? ''}/file`);
+
+        expect(image.headers.get('content-disposition'))
+            .toMatch(/^inline; /);
+        expect(svg.headers.get('content-type'))
+            .toBe('application/octet-stream');
+        expect(svg.headers.get('content-disposition'))
+            .toMatch(/^attachment; /);
     });
 
     it('encodes quotes and brackets in the download name', async () => {

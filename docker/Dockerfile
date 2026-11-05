@@ -90,6 +90,7 @@ RUN install -d -m 0755 /usr/local/share/cloudbot
 COPY --chmod=0644 docker/tint2rc docker/jgmenurc /usr/local/share/cloudbot/
 COPY --chmod=0755 docker/cloudbot-remove-workspace /usr/local/bin/cloudbot-remove-workspace
 COPY --chmod=0755 docker/cloudbot-read-memory /usr/local/bin/cloudbot-read-memory
+COPY --chmod=0755 docker/cloudbot-write-memory /usr/local/bin/cloudbot-write-memory
 COPY --chmod=0755 docker/cloudbot-signal-group /usr/local/bin/cloudbot-signal-group
 COPY --chmod=0755 docker/cloudbot-end-turn /usr/local/bin/cloudbot-end-turn
 COPY --chmod=0755 docker/cloudbot-codex /usr/local/bin/cloudbot-codex

@@ -31,7 +31,7 @@ const bot: BotSummary = {
     title: 'Coworker',
     mascotColor: 'blue',
     mascotShape: 'puff',
-    mascotEyes: 'smile',
+    mascotEyes: 'smile', mascotWeather: 'auto', mascotBolt: 'down',
     lastMessagePreview: '',
     hasUnread: false,
     lastMessageSequence: 0,

@@ -2,17 +2,18 @@ import { useState } from 'react';
 import type { KeyboardEvent, ReactElement } from 'react';
 
 import type { BotSummary } from '../../shared/chatTypes.ts';
-import { MASCOT_COLORS, MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_PRESETS, MASCOT_SHAPES } from '../../shared/mascot.ts';
-import type { MascotChoice } from '../../shared/mascot.ts';
+import { MASCOT_BOLTS, MASCOT_COLORS, MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_PRESETS, MASCOT_SHAPES, MASCOT_WEATHERS, readShownWeather } from '../../shared/mascot.ts';
+import type { MascotLook } from '../../shared/mascot.ts';
 import { NotificationsSection } from './AccountPanel.tsx';
 import type { PushControls } from './AccountPanel.tsx';
 import { Button } from './Button.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { Field } from './Field.tsx';
-import { AppsGridIcon, BackIcon, MoreIcon, MonitorIcon, TrashIcon } from './icons.tsx';
+import { AppsGridIcon, BackIcon, LibraryIcon, MoreIcon, MonitorIcon, TrashIcon } from './icons.tsx';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
+import { MemoryPanel } from './MemoryPanel.tsx';
 import { PanelHeader } from './PanelHeader.tsx';
 import { PopoverMenu, PopoverMenuItem } from './PopoverMenu.tsx';
 
@@ -23,7 +24,7 @@ interface BotProfilePanelProps {
     bot: BotSummary;
     onClose: () => void;
     onRenameBot: BotChangeHandler<string>;
-    onChangeMascot: BotChangeHandler<MascotChoice>;
+    onChangeMascot: BotChangeHandler<MascotLook>;
     onDeleteBot: (botId: string) => Promise<string | undefined>;
     onOpenConnectApps: () => void;
     onOpenScreen: () => void;
@@ -31,7 +32,10 @@ interface BotProfilePanelProps {
     pushControls?: PushControls | undefined;
 }
 
-interface BotDraft extends MascotChoice {
+// Lightning shows only in a sneeze, so a preview starts just before one.
+const PREVIEW_SNEEZE_DELAY_S = -11;
+
+interface BotDraft extends MascotLook {
     name: string;
 }
 
@@ -40,7 +44,7 @@ interface BotEditFormProps {
     draft: BotDraft;
     onDraftChange: (draft: BotDraft) => void;
     onRenameBot: BotChangeHandler<string>;
-    onChangeMascot: BotChangeHandler<MascotChoice>;
+    onChangeMascot: BotChangeHandler<MascotLook>;
     onDone: () => void;
 }
 
@@ -52,14 +56,14 @@ function BotEditForm({ bot, draft, onDraftChange, onRenameBot, onChangeMascot, o
     async function save(): Promise<void> {
         const name = draft.name.trim();
         const isNameChanged = name !== bot.name;
-        const isMascotChanged = draft.color !== bot.mascotColor || draft.shape !== bot.mascotShape || draft.eyes !== bot.mascotEyes;
+        const isMascotChanged = draft.color !== bot.mascotColor || draft.shape !== bot.mascotShape || draft.eyes !== bot.mascotEyes || draft.weather !== bot.mascotWeather || draft.bolt !== bot.mascotBolt;
 
         setIsSaving(true);
         setProblem(undefined);
 
         const nameProblem = isNameChanged ? await onRenameBot(bot.id, name) : undefined;
         const mascotProblem = nameProblem === undefined && isMascotChanged
-            ? await onChangeMascot(bot.id, { color: draft.color, shape: draft.shape, eyes: draft.eyes })
+            ? await onChangeMascot(bot.id, { color: draft.color, shape: draft.shape, eyes: draft.eyes, weather: draft.weather, bolt: draft.bolt })
             : undefined;
         const saveProblem = nameProblem ?? mascotProblem;
 
@@ -176,6 +180,44 @@ function BotEditForm({ bot, draft, onDraftChange, onRenameBot, onChangeMascot, o
                     </label>
                 ))}
             </fieldset>
+            <fieldset className="bot-edit-choices">
+                <legend>Weather</legend>
+                {MASCOT_WEATHERS.map(weatherName => (
+                    <label key={weatherName} className="bot-edit-choice" title={weatherName === 'auto' ? 'By shape' : weatherName}>
+                        <input
+                            type="radio"
+                            name="mascot-weather"
+                            aria-label={weatherName === 'auto' ? 'By shape' : weatherName}
+                            checked={draft.weather === weatherName}
+                            onChange={() => {
+                                onDraftChange({ ...draft, weather: weatherName });
+                            }}
+                        />
+                        <CloudMascot color={draft.color} shape={draft.shape} eyes={draft.eyes} state="idle" size={36} mood="weather" moodDelaySeconds={PREVIEW_SNEEZE_DELAY_S} weather={weatherName} bolt={draft.bolt} />
+                    </label>
+                ))}
+            </fieldset>
+            {readShownWeather(draft.weather, draft.shape) === 'lightning'
+                ? (
+                        <fieldset className="bot-edit-choices">
+                            <legend>Lightning goes</legend>
+                            {MASCOT_BOLTS.map(boltName => (
+                                <label key={boltName} className="bot-edit-choice" title={boltName}>
+                                    <input
+                                        type="radio"
+                                        name="mascot-bolt"
+                                        aria-label={boltName}
+                                        checked={draft.bolt === boltName}
+                                        onChange={() => {
+                                            onDraftChange({ ...draft, bolt: boltName });
+                                        }}
+                                    />
+                                    <CloudMascot color={draft.color} shape={draft.shape} eyes={draft.eyes} state="idle" size={36} mood="weather" moodDelaySeconds={PREVIEW_SNEEZE_DELAY_S} weather="lightning" bolt={boltName} />
+                                </label>
+                            ))}
+                        </fieldset>
+                    )
+                : null}
             {' '}
             {problem === undefined ? null : <p className="bot-edit-problem" role="alert">{problem}</p>}
             <div className="bot-edit-actions">
@@ -191,10 +233,24 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [deleteError, setDeleteError] = useState<string | undefined>(undefined);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isMemoryOpen, setIsMemoryOpen] = useState(false);
     // While editing, the mascot shows the look that Save would keep.
     const shownColor = draft?.color ?? bot.mascotColor;
     const shownShape = draft?.shape ?? bot.mascotShape;
     const shownEyes = draft?.eyes ?? bot.mascotEyes;
+    const shownWeather = draft?.weather ?? bot.mascotWeather;
+    const shownBolt = draft?.bolt ?? bot.mascotBolt;
+
+    if (isMemoryOpen) {
+        return (
+            <MemoryPanel
+                bot={bot}
+                onClose={() => {
+                    setIsMemoryOpen(false);
+                }}
+            />
+        );
+    }
 
     async function confirmDelete(): Promise<void> {
         setIsDeleting(true);
@@ -234,7 +290,7 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
 
             <div className="bot-profile-content">
                 <div className="bot-profile-hero">
-                    <CloudMascot color={shownColor} shape={shownShape} eyes={shownEyes} state="idle" size={90} isActive />
+                    <CloudMascot color={shownColor} shape={shownShape} eyes={shownEyes} state="idle" size={90} isActive mood={draft === undefined ? undefined : 'weather'} moodDelaySeconds={PREVIEW_SNEEZE_DELAY_S} weather={shownWeather} bolt={shownBolt} />
                     {draft === undefined
                         ? (
                                 <>
@@ -242,7 +298,7 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
                                     <Button
                                         className="bot-profile-edit"
                                         onClick={() => {
-                                            setDraft({ name: bot.name, color: bot.mascotColor, shape: bot.mascotShape, eyes: bot.mascotEyes });
+                                            setDraft({ name: bot.name, color: bot.mascotColor, shape: bot.mascotShape, eyes: bot.mascotEyes, weather: bot.mascotWeather, bolt: bot.mascotBolt });
                                         }}
                                     >
                                         Edit
@@ -266,6 +322,14 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
                 <ListGroup ariaLabel="Bot settings">
                     <ListRow title="Connected apps" leadingIcon={<AppsGridIcon />} onClick={onOpenConnectApps} chevron />
                     <ListRow title="Computer" leadingIcon={<MonitorIcon />} value={computerState} onClick={onOpenScreen} chevron />
+                    <ListRow
+                        title="Memory"
+                        leadingIcon={<LibraryIcon />}
+                        onClick={() => {
+                            setIsMemoryOpen(true);
+                        }}
+                        chevron
+                    />
                 </ListGroup>
 
                 <NotificationsSection pushControls={pushControls} />

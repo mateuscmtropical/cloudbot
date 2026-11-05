@@ -12,9 +12,29 @@ const MASCOT_SHAPES = ['puff', 'tall', 'wide', 'bubble', 'bubbles', 'curl', 'wis
 
 const MASCOT_EYES = ['smile', 'cross', 'arch', 'dots', 'wink', 'hearts', 'stars', 'excited', 'sleepy', 'peek', 'happy'] as const;
 
+// The weather around an idle cloud. "auto" follows the shape and comes on some days only. Any other choice stays on.
+const MASCOT_WEATHERS = ['auto', 'lightning', 'rain', 'snow', 'sun', 'wind', 'bubbles', 'rainbow'] as const;
+
+// Where the lightning goes.
+const MASCOT_BOLTS = ['down', 'up', 'left', 'right', 'around'] as const;
+
 type MascotColorName = (typeof MASCOT_COLOR_NAMES)[number];
 type MascotShape = (typeof MASCOT_SHAPES)[number];
 type MascotEyes = (typeof MASCOT_EYES)[number];
+type MascotWeather = (typeof MASCOT_WEATHERS)[number];
+type ShownWeather = Exclude<MascotWeather, 'auto'>;
+type MascotBolt = (typeof MASCOT_BOLTS)[number];
+
+// Each shape has its own weather until the owner picks another.
+const SHAPE_WEATHER: Record<MascotShape, ShownWeather> = {
+    puff: 'lightning',
+    tall: 'rain',
+    wide: 'snow',
+    bubble: 'sun',
+    bubbles: 'bubbles',
+    curl: 'rainbow',
+    wisp: 'wind',
+};
 
 const MASCOT_COLORS: Record<MascotColorName, string> = {
     blue: '#1a7cff',
@@ -49,6 +69,12 @@ interface MascotChoice {
     color: MascotColorName;
     shape: MascotShape;
     eyes: MascotEyes;
+}
+
+// The whole look of a bot. A preset from the sheet sets only the choice above and leaves the weather as it is.
+interface MascotLook extends MascotChoice {
+    weather: MascotWeather;
+    bolt: MascotBolt;
 }
 
 interface MascotPreset extends MascotChoice {
@@ -91,6 +117,8 @@ function randomMascot(random: RandomSource = Math.random): MascotChoice {
 const FALLBACK_MASCOT_COLOR: MascotColorName = 'blue';
 const FALLBACK_MASCOT_SHAPE: MascotShape = 'puff';
 const FALLBACK_MASCOT_EYES: MascotEyes = 'smile';
+const FALLBACK_MASCOT_WEATHER: MascotWeather = 'auto';
+const FALLBACK_MASCOT_BOLT: MascotBolt = 'down';
 
 function readKnownName<Name extends string>(known: readonly Name[], stored: string, fallback: Name): Name {
     const knownNames: readonly string[] = known;
@@ -111,16 +139,33 @@ function readMascotEyes(storedEyes: string): MascotEyes {
     return readKnownName(MASCOT_EYES, storedEyes, FALLBACK_MASCOT_EYES);
 }
 
+function readMascotWeather(storedWeather: string): MascotWeather {
+    return readKnownName(MASCOT_WEATHERS, storedWeather, FALLBACK_MASCOT_WEATHER);
+}
+
+function readMascotBolt(storedBolt: string): MascotBolt {
+    return readKnownName(MASCOT_BOLTS, storedBolt, FALLBACK_MASCOT_BOLT);
+}
+
+function readShownWeather(weather: MascotWeather, shape: MascotShape): ShownWeather {
+    return weather === 'auto' ? SHAPE_WEATHER[shape] : weather;
+}
+
 export {
+    MASCOT_BOLTS,
     MASCOT_COLORS,
     MASCOT_COLOR_NAMES,
     MASCOT_EYES,
     MASCOT_FACE_COLORS,
     MASCOT_PRESETS,
     MASCOT_SHAPES,
+    MASCOT_WEATHERS,
     randomMascot,
+    readMascotBolt,
     readMascotColor,
     readMascotEyes,
     readMascotShape,
+    readMascotWeather,
+    readShownWeather,
 };
-export type { MascotChoice, MascotColorName, MascotEyes, MascotPreset, MascotShape, RandomSource };
+export type { MascotBolt, MascotChoice, MascotColorName, MascotEyes, MascotLook, MascotPreset, MascotShape, MascotWeather, RandomSource, ShownWeather };

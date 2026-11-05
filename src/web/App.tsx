@@ -3,7 +3,8 @@ import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatEvent, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../shared/chatTypes.ts';
 import type { ChannelDetail, ChannelSummary } from '../shared/channelTypes.ts';
-import type { MascotChoice } from '../shared/mascot.ts';
+import type { MascotLook } from '../shared/mascot.ts';
+import type { MessageSearchHit } from '../shared/searchTypes.ts';
 import { BotList } from './components/BotList.tsx';
 import { ChannelView } from './components/ChannelView.tsx';
 import type { MessageActions } from './components/MessageItem.tsx';
@@ -68,6 +69,12 @@ interface ChatState {
 
 interface FinishedTurn {
     botId: string;
+}
+
+// The message the chat should scroll to. A search hit also knows its place, so older pages load until it shows.
+interface FocusMessage {
+    id: string;
+    sequence?: number;
 }
 
 // The tool a bot is using now. Only the thinking bubble reads it.
@@ -218,7 +225,7 @@ function App(): ReactElement {
     // A reply arrived while the tab was hidden. The tab icon shows a dot until the owner looks at the tab again.
     const [hasUnreadReply, setHasUnreadReply] = useState(false);
     // The message a tapped notification was about. The conversation scrolls to it once, then clears it.
-    const [focusMessageId, setFocusMessageId] = useState<string | undefined>(undefined);
+    const [focusMessage, setFocusMessage] = useState<FocusMessage | undefined>(undefined);
     const [mascotHopRequest, setMascotHopRequest] = useState<MascotHopRequest | undefined>(undefined);
     const mascotHopRequestIdRef = useRef(0);
     const startedMascotHopRequestIdRef = useRef<number | undefined>(undefined);
@@ -293,7 +300,7 @@ function App(): ReactElement {
                 }
 
                 appliedListRequest.current[botId] = requestNumber;
-                setAttachmentsByBot(previous => ({ ...previous, [botId]: mergeLoadedUploads(previous[botId] ?? [], uploads) }));
+                setAttachmentsByBot(previous => ({ ...previous, [botId]: mergeLoadedUploads(previous[botId] ?? [], uploads, botId) }));
                 setErrorText(currentError => currentError === UPLOADS_LOAD_ERROR_TEXT ? undefined : currentError);
             })
             .catch(() => {
@@ -402,7 +409,7 @@ function App(): ReactElement {
                 setSelectedBotId(targetBot?.id ?? loadedBots[0]?.id);
 
                 if (targetBot !== undefined) {
-                    setFocusMessageId(target?.messageId);
+                    setFocusMessage(target?.messageId === undefined ? undefined : { id: target.messageId });
                 }
             })
             .catch((error: unknown) => {
@@ -910,10 +917,10 @@ function App(): ReactElement {
             });
     }
 
-    function handleChangeMascot(botId: string, mascot: MascotChoice): Promise<string | undefined> {
+    function handleChangeMascot(botId: string, mascot: MascotLook): Promise<string | undefined> {
         return changeBotMascot(botId, mascot)
             .then((changed) => {
-                setBots(previousBots => previousBots.map(bot => (bot.id === changed.id ? { ...bot, mascotColor: changed.mascotColor, mascotShape: changed.mascotShape, mascotEyes: changed.mascotEyes } : bot)));
+                setBots(previousBots => previousBots.map(bot => (bot.id === changed.id ? { ...bot, mascotColor: changed.mascotColor, mascotShape: changed.mascotShape, mascotEyes: changed.mascotEyes, mascotWeather: changed.mascotWeather, mascotBolt: changed.mascotBolt } : bot)));
 
                 return undefined;
             })
@@ -1001,10 +1008,22 @@ function App(): ReactElement {
         }
 
         handleSelectBot(target.botId);
-        setFocusMessageId(target.messageId);
+        setFocusMessage(target.messageId === undefined ? undefined : { id: target.messageId });
     }
 
     useNotificationOpen(handleNotificationOpen);
+
+    // A search hit opens its chat at the message. Opening another bot reloads its chat, which drops older pages, so its
+    // paging is forgotten here and the view holds the jump until that reload ends.
+    function handleOpenSearchHit(hit: MessageSearchHit): void {
+        if (hit.botId !== selectedBotId) {
+            setChatState(previousState => ({ ...previousState, olderPaging: { ...previousState.olderPaging, [hit.botId]: undefined } }));
+        }
+
+        setIsConnectAppsOpen(false);
+        handleSelectBot(hit.botId);
+        setFocusMessage({ id: hit.messageId, sequence: hit.sequence });
+    }
 
     const nextAttachmentNumber = useRef(0);
 
@@ -1304,6 +1323,7 @@ function App(): ReactElement {
                 onNewBot={handleNewBot}
                 onRenameBot={handleRenameBot}
                 onDeleteBot={handleDeleteBot}
+                onOpenSearchHit={handleOpenSearchHit}
                 personName={personName}
                 onConnectApps={() => {
                     setIsBotListOpen(false);
@@ -1477,9 +1497,10 @@ function App(): ReactElement {
                                         handleSelectBot(setupBotId);
                                     }}
                                     screenRequestId={screenRequestId}
-                                    focusMessageId={focusMessageId}
+                                    focusMessageId={selectedPaging === undefined ? undefined : focusMessage?.id}
+                                    focusSequence={focusMessage?.sequence}
                                     onFocusHandled={() => {
-                                        setFocusMessageId(undefined);
+                                        setFocusMessage(undefined);
                                     }}
                                     webhookUrls={botWebhookUrls}
                                     onHideWebhookUrl={(hidden) => {

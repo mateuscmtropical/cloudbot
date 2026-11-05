@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 
 import type { BotSummary } from '../../shared/chatTypes.ts';
 import type { ChannelSummary } from '../../shared/channelTypes.ts';
+import type { MessageSearchHit } from '../../shared/searchTypes.ts';
 import type { MascotState } from '../mascotState.ts';
 import { nextTap } from '../doubleTap.ts';
 import type { Tap } from '../doubleTap.ts';
@@ -13,6 +14,7 @@ import { BotListItem } from './BotListItem.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { ListRow } from './ListRow.tsx';
+import { MessageSearchResults } from './MessageSearchResults.tsx';
 import { PillField } from './PillField.tsx';
 import { RenameField } from './RenameField.tsx';
 import { RoundButton } from './RoundButton.tsx';
@@ -40,6 +42,8 @@ interface BotListProps {
     onRenameBot?: ((botId: string, name: string) => Promise<string | undefined>) | undefined;
     // Deletes a bot and answers with the server reason when it refuses.
     onDeleteBot?: ((botId: string) => Promise<string | undefined>) | undefined;
+    // Opens a chat at a message the search found. Without it the search field looks only at bot names.
+    onOpenSearchHit?: ((hit: MessageSearchHit) => void) | undefined;
 }
 
 function initialsFromName(name: string): string {
@@ -54,7 +58,7 @@ function initialsFromName(name: string): string {
     return initials.toLocaleUpperCase();
 }
 
-function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, onSelectBot, onSelectChannel, onNewBot, onConnectApps, personName, onAccount, onPeople, onRenameBot, onDeleteBot }: BotListProps): ReactElement {
+function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, onSelectBot, onSelectChannel, onNewBot, onConnectApps, personName, onAccount, onPeople, onRenameBot, onDeleteBot, onOpenSearchHit }: BotListProps): ReactElement {
     const [renamingBotId, setRenamingBotId] = useState<string | undefined>(undefined);
     const [actionsBotId, setActionsBotId] = useState<string | undefined>(undefined);
     const [deletingBotId, setDeletingBotId] = useState<string | undefined>(undefined);
@@ -223,6 +227,9 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
                             />
                         );
                     })}
+                    {onOpenSearchHit === undefined
+                        ? null
+                        : <MessageSearchResults query={searchValue} bots={bots} onOpenHit={onOpenSearchHit} />}
                 </div>
                 <div className="bot-list-footer">
                     <RoundButton label="Connect apps" onClick={onConnectApps}><AppsGridIcon /></RoundButton>
@@ -231,7 +238,7 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
                             ref={searchInputRef}
                             type="search"
                             className="bot-list-search-input"
-                            aria-label="Search bots"
+                            aria-label="Search bots and messages"
                             placeholder="Search"
                             value={searchValue}
                             onChange={(event) => {

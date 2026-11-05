@@ -2,7 +2,7 @@ import { tool } from './cloudbotTool.ts';
 import type { CloudbotTool } from './cloudbotTool.ts';
 import { z } from 'zod/v4';
 
-import { MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES } from '../../shared/mascot.ts';
+import { MASCOT_BOLTS, MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES, MASCOT_WEATHERS } from '../../shared/mascot.ts';
 import type { BotStore } from '../store/BotStore.ts';
 import { ShareFileError } from '../files/shareFile.ts';
 import type { BotProfile } from '../store/types.ts';
@@ -12,7 +12,7 @@ const PROFILE_SERVER_NAME = 'cloudbot';
 const UPDATE_PROFILE_TOOL_NAME = 'update_profile';
 const SET_MASCOT_TOOL_NAME = 'profile_set_mascot';
 const SET_MASCOT_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${SET_MASCOT_TOOL_NAME}`;
-const SET_MASCOT_DESCRIPTION = `Change this bot's mascot, the cloud the owner sees next to its name. Pass a color, one of ${MASCOT_COLOR_NAMES.join(', ')}, a shape, one of ${MASCOT_SHAPES.join(', ')}, or eyes, one of ${MASCOT_EYES.join(', ')}. The eyes are the face it shows at rest. Only the fields you pass change.`;
+const SET_MASCOT_DESCRIPTION = `Change this bot's mascot, the cloud the owner sees next to its name. Pass a color, one of ${MASCOT_COLOR_NAMES.join(', ')}, a shape, one of ${MASCOT_SHAPES.join(', ')}, eyes, one of ${MASCOT_EYES.join(', ')}, a weather, one of ${MASCOT_WEATHERS.join(', ')}, or a bolt, one of ${MASCOT_BOLTS.join(', ')}. The eyes are the face it shows at rest. The weather plays around it at rest, and auto follows the shape on some days only. The bolt is where lightning goes. Only the fields you pass change.`;
 
 const SET_MASCOT_TOOL_SHAPE = {
     color: z.enum(MASCOT_COLOR_NAMES)
@@ -21,12 +21,16 @@ const SET_MASCOT_TOOL_SHAPE = {
         .optional(),
     eyes: z.enum(MASCOT_EYES)
         .optional(),
+    weather: z.enum(MASCOT_WEATHERS)
+        .optional(),
+    bolt: z.enum(MASCOT_BOLTS)
+        .optional(),
 };
 // The model calls the tool by this full name, and allowedTools needs it too.
 const UPDATE_PROFILE_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${UPDATE_PROFILE_TOOL_NAME}`;
 const SHARE_FILE_TOOL_NAME = 'share_file';
 const SHARE_FILE_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${SHARE_FILE_TOOL_NAME}`;
-const SHARE_FILE_DESCRIPTION = 'Send a file from your workspace to the owner in the chat, as a download. Pass the path of the file, relative to your workspace or absolute inside it. Only regular files inside your workspace can be shared.';
+const SHARE_FILE_DESCRIPTION = 'Send a file from your workspace to the owner in the chat. PNG, JPEG, GIF and WebP images show in the chat, and other files come as a download. Pass the path of the file, relative to your workspace or absolute inside it. Only regular files inside your workspace can be shared.';
 const UPDATE_PROFILE_DESCRIPTION = 'Change this bot\'s name, title or description. Only the fields you pass change.';
 
 // The limits keep a profile short enough to sit in the system prompt without crowding it.
@@ -133,14 +137,16 @@ function createSetMascotTool(botStore: BotStore, botId: string): CloudbotTool<ty
         SET_MASCOT_DESCRIPTION,
         SET_MASCOT_TOOL_SHAPE,
         async (args): Promise<ProfileToolResult> => {
-            if (args.color === undefined && args.shape === undefined && args.eyes === undefined) {
-                return textResult('Pass a color, a shape, eyes or several. Nothing changed.', true);
+            if (args.color === undefined && args.shape === undefined && args.eyes === undefined && args.weather === undefined && args.bolt === undefined) {
+                return textResult('Pass a color, a shape, eyes, a weather, a bolt or several. Nothing changed.', true);
             }
 
             const changes = {
                 ...(args.color === undefined ? {} : { color: args.color }),
                 ...(args.shape === undefined ? {} : { shape: args.shape }),
                 ...(args.eyes === undefined ? {} : { eyes: args.eyes }),
+                ...(args.weather === undefined ? {} : { weather: args.weather }),
+                ...(args.bolt === undefined ? {} : { bolt: args.bolt }),
             };
             const updatedBot = await botStore.updateMascot(botId, changes);
 
@@ -148,7 +154,7 @@ function createSetMascotTool(botStore: BotStore, botId: string): CloudbotTool<ty
                 return textResult('This bot no longer exists, so its mascot cannot change.', true);
             }
 
-            return textResult(`Mascot updated. Color: ${updatedBot.mascotColor}. Shape: ${updatedBot.mascotShape}. Eyes: ${updatedBot.mascotEyes}.`, false);
+            return textResult(`Mascot updated. Color: ${updatedBot.mascotColor}. Shape: ${updatedBot.mascotShape}. Eyes: ${updatedBot.mascotEyes}. Weather: ${updatedBot.mascotWeather}. Bolt: ${updatedBot.mascotBolt}.`, false);
         },
     );
 }

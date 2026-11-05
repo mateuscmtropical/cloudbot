@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 
 import type { ChannelDetail, ChannelMemberView, ChannelPostView, ChannelSummary } from '../../shared/channelTypes.ts';
 import type { ChatService } from '../chat/ChatService.ts';
+import { respondWithStoredFile } from '../files/storedFileResponse.ts';
 import type { BotStore } from '../store/BotStore.ts';
 import type { Channel, ChannelMessage, ChannelStore } from '../store/ChannelStore.ts';
 import type { Bot } from '../store/types.ts';
@@ -10,7 +11,7 @@ interface ChannelRoutesOptions {
     channels: ChannelStore;
     bots: BotStore;
     // Starts the bot turns of a channel round, and stops them. Without it posts are stored but nothing answers.
-    rounds?: Pick<ChatService, 'startChannelRound' | 'stopChannelRound' | 'hasActiveChannelRound'> | undefined;
+    rounds?: Pick<ChatService, 'startChannelRound' | 'stopChannelRound' | 'hasActiveChannelRound' | 'findChannelFile'> | undefined;
 }
 
 interface ChannelErrorResponse {
@@ -18,6 +19,7 @@ interface ChannelErrorResponse {
 }
 
 const CHANNEL_NOT_FOUND: ChannelErrorResponse = { error: 'No channel has this id.' };
+const NO_CHANNEL_FILE: ChannelErrorResponse = { error: 'This post has no file.' };
 const EMPTY_TEXT: ChannelErrorResponse = { error: 'Send a non-empty "text" string.' };
 // The longest post the owner can send to a channel. A longer one would fill the prompt of every bot that reads it.
 const MAX_OWNER_POST_LENGTH = 4000;
@@ -100,6 +102,15 @@ function createChannelRoutes(options: ChannelRoutesOptions): Hono {
         const detail: ChannelDetail = { ...toSummary(channel, bots), messages: messages.map(toPostView), hasActiveRound };
 
         return context.json(detail);
+    });
+
+    routes.get('/api/channels/:id/messages/:mid/file', async (context) => {
+        const channelId = context.req.param('id');
+        const postId = context.req.param('mid');
+        const file = await options.rounds?.findChannelFile(channelId, postId);
+        const response = file === undefined ? undefined : await respondWithStoredFile(context, file);
+
+        return response ?? context.json(NO_CHANNEL_FILE, 404);
     });
 
     // The owner's post is stored in the channel only. The manager's turn that answers it comes with the hand-off dispatch.

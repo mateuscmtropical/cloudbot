@@ -7,8 +7,8 @@ import type { ChannelSummary } from '../../shared/channelTypes.ts';
 import { BotList } from './BotList.tsx';
 
 const BOTS: BotSummary[] = [
-    { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 },
-    { id: 'bot-b', name: 'Bia', title: 'Assistant', mascotColor: 'pink', mascotShape: 'bubble', mascotEyes: 'smile', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 },
+    { id: 'bot-a', name: 'Ana', title: 'Assistant', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile', mascotWeather: 'auto', mascotBolt: 'down', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 },
+    { id: 'bot-b', name: 'Bia', title: 'Assistant', mascotColor: 'pink', mascotShape: 'bubble', mascotEyes: 'smile', mascotWeather: 'auto', mascotBolt: 'down', lastMessagePreview: '', hasUnread: false, lastMessageSequence: 0 },
 ];
 
 describe('BotList', () => {
@@ -58,7 +58,7 @@ describe('BotList', () => {
             <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} onPeople={vi.fn()} onAccount={vi.fn()} />,
         );
 
-        const searchInput = screen.getByRole('searchbox', { name: 'Search bots' });
+        const searchInput = screen.getByRole('searchbox', { name: 'Search bots and messages' });
 
         fireEvent.click(screen.getByRole('button', { name: 'Focus search' }));
 
@@ -71,7 +71,7 @@ describe('BotList', () => {
             <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} onPeople={vi.fn()} />,
         );
 
-        fireEvent.change(screen.getByRole('searchbox', { name: 'Search bots' }), { target: { value: 'bia' } });
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Search bots and messages' }), { target: { value: 'bia' } });
 
         expect(screen.getByText('Bia'))
             .toBeTruthy();

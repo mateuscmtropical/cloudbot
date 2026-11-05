@@ -1,7 +1,3 @@
-import { createReadStream } from 'node:fs';
-import { once } from 'node:events';
-import { Readable } from 'node:stream';
-
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -9,11 +5,12 @@ import { streamSSE } from 'hono/streaming';
 import type { SSEStreamingApi } from 'hono/streaming';
 
 import type { ChatEvent, ChatMessage } from '../../shared/chatTypes.ts';
-import { MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES } from '../../shared/mascot.ts';
+import { MASCOT_BOLTS, MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES, MASCOT_WEATHERS } from '../../shared/mascot.ts';
 import { MAX_FILES_PER_UPLOAD, readMaxUploadBytes } from '../attachments/saveUpload.ts';
 import { DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError } from './ChatService.ts';
-import type { ChatService, DeleteBotOutcome, MessagePageOptions } from './ChatService.ts';
+import type { ChatService, DeleteBotOutcome, MessagePageOptions, SaveMemoryOutcome } from './ChatService.ts';
 import { BotDeletingError } from '../bots/BotDeletingError.ts';
+import { respondWithStoredFile, setStoredFileHeaders } from '../files/storedFileResponse.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
 import type { SetupAction } from '../setup/SetupConversation.ts';
 
@@ -24,7 +21,7 @@ interface ChatErrorResponse {
 const BOT_NOT_FOUND: ChatErrorResponse = { error: 'No bot has this id.' };
 const BOT_DELETING: ChatErrorResponse = { error: 'This bot is being deleted.' };
 const INVALID_NAME: ChatErrorResponse = { error: 'Send a name of 1 to 40 characters on one line.' };
-const INVALID_MASCOT: ChatErrorResponse = { error: `Send a "color", one of ${MASCOT_COLOR_NAMES.join(', ')}, a "shape", one of ${MASCOT_SHAPES.join(', ')}, or "eyes", one of ${MASCOT_EYES.join(', ')}.` };
+const INVALID_MASCOT: ChatErrorResponse = { error: `Send a "color", one of ${MASCOT_COLOR_NAMES.join(', ')}, a "shape", one of ${MASCOT_SHAPES.join(', ')}, "eyes", one of ${MASCOT_EYES.join(', ')}, a "weather", one of ${MASCOT_WEATHERS.join(', ')}, or a "bolt", one of ${MASCOT_BOLTS.join(', ')}.` };
 const DELETE_FAILED: ChatErrorResponse = { error: 'Could not delete this bot. Try again.' };
 // Each refusal has its own text, so the web app can show the owner why.
 const DELETE_REFUSED: Record<Exclude<DeleteBotOutcome, 'deleted' | 'missing'>, ChatErrorResponse> = {
@@ -43,6 +40,13 @@ const NO_SHARED_FILE: ChatErrorResponse = { error: 'No shared file has this mess
 const TOO_LARGE: ChatErrorResponse = { error: 'The upload is larger than CLOUDBOT_MAX_UPLOAD_MB.' };
 const UPLOAD_DURING_TURN: ChatErrorResponse = { error: 'Wait until the reply finishes.' };
 const TOO_MANY_FILES: ChatErrorResponse = { error: `Send at most ${String(MAX_FILES_PER_UPLOAD)} files at once.` };
+const INVALID_MEMORY: ChatErrorResponse = { error: 'Send "text" and "expectedText" strings.' };
+const MEMORY_SAVE_FAILED: ChatErrorResponse = { error: 'Could not save the memory. Try again.' };
+const MEMORY_REFUSED: Record<'changed' | 'tooLong', ChatErrorResponse> = {
+    changed: { error: 'The bot changed its memory just now, so this was not saved. Check the memory and try again.' },
+    tooLong: { error: 'The memory is larger than 64 KB, so it cannot be saved here.' },
+};
+const MAX_SEARCH_LENGTH = 200;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 25_000;
 // An SSE comment line. Clients ignore it, and it keeps idle proxies from closing the stream.
 const HEARTBEAT_FRAME = ': heartbeat\n\n';
@@ -53,14 +57,6 @@ interface ChatRoutesOptions {
 }
 
 // Only plain digits count. Anything else, including 0, a sign or a decimal, is rejected.
-// RFC 5987 leaves out the characters that encodeURIComponent keeps.
-function encodeHeaderFileName(name: string): string {
-    const encodedName = encodeURIComponent(name);
-
-    return encodedName.replaceAll(/['()*!]/g, character => `%${character.charCodeAt(0)
-        .toString(16)
-        .toUpperCase()}`);
-}
 
 function parsePositiveInteger(rawValue: string): number | undefined {
     if (!/^\d+$/.test(rawValue)) {
@@ -251,8 +247,13 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
         const isShapeValid = fields.shape === undefined || shape !== undefined;
         const eyes = MASCOT_EYES.find(name => name === fields.eyes);
         const isEyesValid = fields.eyes === undefined || eyes !== undefined;
+        const weather = MASCOT_WEATHERS.find(name => name === fields.weather);
+        const isWeatherValid = fields.weather === undefined || weather !== undefined;
+        const bolt = MASCOT_BOLTS.find(name => name === fields.bolt);
+        const isBoltValid = fields.bolt === undefined || bolt !== undefined;
+        const isEmpty = color === undefined && shape === undefined && eyes === undefined && weather === undefined && bolt === undefined;
 
-        if (!isColorValid || !isShapeValid || !isEyesValid || (color === undefined && shape === undefined && eyes === undefined)) {
+        if (!isColorValid || !isShapeValid || !isEyesValid || !isWeatherValid || !isBoltValid || isEmpty) {
             return context.json(INVALID_MASCOT, 400);
         }
 
@@ -260,10 +261,55 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
             ...(color === undefined ? {} : { color }),
             ...(shape === undefined ? {} : { shape }),
             ...(eyes === undefined ? {} : { eyes }),
+            ...(weather === undefined ? {} : { weather }),
+            ...(bolt === undefined ? {} : { bolt }),
         };
         const changedBot = await chatService.changeBotMascot(botId, changes);
 
         return changedBot === undefined ? context.json(BOT_NOT_FOUND, 404) : context.json(changedBot);
+    });
+
+    routes.get('/api/search', async (context) => {
+        const text = context.req.query('q') ?? '';
+        const searchedText = text.slice(0, MAX_SEARCH_LENGTH);
+        const hits = await chatService.searchMessages(searchedText);
+
+        return context.json(hits);
+    });
+
+    routes.get('/api/bots/:id/memory', async (context) => {
+        const botId = context.req.param('id');
+        const memory = await chatService.readBotMemory(botId);
+
+        return memory === undefined ? context.json(BOT_NOT_FOUND, 404) : context.json(memory);
+    });
+
+    routes.put('/api/bots/:id/memory', async (context) => {
+        const botId = context.req.param('id');
+        const payload: unknown = await context.req.json()
+            .catch(() => undefined);
+        const fields = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {};
+
+        if (typeof fields.text !== 'string' || typeof fields.expectedText !== 'string') {
+            return context.json(INVALID_MEMORY, 400);
+        }
+
+        let outcome: SaveMemoryOutcome;
+
+        try {
+            outcome = await chatService.saveBotMemory(botId, fields.text, fields.expectedText);
+        } catch (error: unknown) {
+            // The owner sees only the generic message. The log keeps the error for the operator.
+            console.error('Saving a memory file failed', error);
+
+            return context.json(MEMORY_SAVE_FAILED, 500);
+        }
+
+        if (outcome === 'missing') {
+            return context.json(BOT_NOT_FOUND, 404);
+        }
+
+        return outcome === 'saved' ? context.json({ saved: true }) : context.json(MEMORY_REFUSED[outcome], 409);
     });
 
     routes.get('/api/bots/:id/messages', async (context) => {
@@ -376,26 +422,42 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
             return context.json(NO_SHARED_FILE, 404);
         }
 
-        const fileStream = createReadStream(sharedFile.absolutePath);
-        const encodedName = encodeHeaderFileName(sharedFile.name);
-        const fallbackName = sharedFile.name.replaceAll(/[^\x20-\x7E]|["\\%]/g, '_');
+        const response = await respondWithStoredFile(context, sharedFile);
 
-        // An error such as a missing copy ends the stream before any byte, so it becomes a 404 below.
-        try {
-            await once(fileStream, 'open');
-        } catch {
+        return response ?? context.json(NO_SHARED_FILE, 404);
+    });
+
+    // An image the owner sent with this message.
+    routes.get('/api/bots/:id/messages/:mid/attachments/:fileId', async (context) => {
+        const botId = context.req.param('id');
+        const messageId = context.req.param('mid');
+        const fileId = context.req.param('fileId');
+        const sentImage = await chatService.findSentImage(botId, messageId, fileId);
+
+        if (sentImage === undefined) {
             return context.json(NO_SHARED_FILE, 404);
         }
 
-        context.header('content-type', sharedFile.mimeType);
-        const lengthText = String(sharedFile.sizeBytes);
+        const response = await respondWithStoredFile(context, sentImage);
 
-        context.header('content-length', lengthText);
-        context.header('content-disposition', `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodedName}`);
-        context.header('x-content-type-options', 'nosniff');
-        context.header('cache-control', 'private, no-store');
+        return response ?? context.json(NO_SHARED_FILE, 404);
+    });
 
-        return context.body(Readable.toWeb(fileStream) as ReadableStream);
+    // The thumbnail of an image that waits for the next message.
+    routes.get('/api/bots/:id/uploads/:uploadId', (context) => {
+        const botId = context.req.param('id');
+        const uploadId = context.req.param('uploadId');
+        const upload = chatService.findPendingImage(botId, uploadId);
+
+        if (upload === undefined) {
+            return context.json(NO_PENDING_UPLOAD, 404);
+        }
+
+        setStoredFileHeaders(context, upload);
+
+        const bytes = new Uint8Array(upload.bytes);
+
+        return context.body(bytes);
     });
 
     routes.get('/api/bots/:id/uploads', async (context) => {

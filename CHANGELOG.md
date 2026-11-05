@@ -23,10 +23,15 @@ All notable changes to this project are listed here. The format follows
 
 - Voice input keeps listening until you press stop, and browsers without a working speech service, such as Firefox, record instead. The recording goes to your own server, which turns it into text with ffmpeg and whisper.cpp and deletes the audio. The image grows by about 250 MB.
 - Bot replies have a button that reads them aloud with the browser's voices, and the conversation options can read each new reply.
+- The Search field in the sidebar also searches the chats of all bots. A result opens its chat at that message, loading older messages when needed. Accents do not matter, and words match while they are being typed.
+- Each bot has a Memory page in its profile. It lists what the bot wrote in its memory file, and the owner can delete a line or edit the whole text.
+- Attachments look good now. Images waiting to be sent show as small thumbnails, and each one has its own remove button. Sent images show in the message as one large picture or a mosaic, and open in a viewer with arrows, swipe, Escape and download. Other files show as a card with an icon, the name and the size. Sent images stay after the upload cleanup, and every JPEG is drawn again in the browser, which drops its EXIF data such as the GPS position.
+- A bot's images show in the chat up to 30 MB, and an image made in a channel turn is posted in the channel. Files shared there show in the channel too.
 - Each bot has a Permissions choice in the provider menu. Auto is the new default and uses the auto mode of each CLI, or the closest one it has. Ask keeps the old behavior. YOLO starts each CLI with its skip flag and stops all checks, at the owner's risk. Only the owner can change it, in the web app.
 
 ### Changed
 
+- Each cloud shape has its own weather: lightning, rain, snow, sun, wind, bubbles or a rainbow. Pick another one in the bot's profile, or ask the bot, and it stays on while the bot rests. Lightning goes down by default, and you can send it up, left, right or all around.
 - The clouds have moods. A quiet chat falls asleep with drifting letters, and a chat you just left stays awake for a minute and nods off first. Some days a bot has a cold and sneezes small lightning bolts. Rain falls after an error, a question mark floats while a bot waits for you, and stars pop when a turn ends.
 - Messages between bots now look like messages. The bot that sent one shows beside it with its name, instead of a gray line of text.
 - Panel headers, form fields and text buttons now share one component each, so they look and behave the same everywhere. Buttons in Connect apps, the screen panel and the secret forms get the same press feedback and focus ring as the rest of the app.
