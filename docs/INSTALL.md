@@ -133,6 +133,7 @@ starts a hibernated instance again.
 | `sudo cloudbot status` | Shows the hub, Docker socket proxy, Caddy, instances and instance memory use |
 | `sudo cloudbot logs` | Follows hub logs. Press Ctrl+C to stop. |
 | `sudo cloudbot update [--all]` | Pulls code and service images, rebuilds the CloudBot image and recreates the hub. `--all` also removes every instance container that uses an old image. |
+| `sudo cloudbot install-update` | Lets the owner start an update in the web app, under Account, Update CloudBot. The installer already runs it. |
 | `sudo cloudbot reset-password [name]` | Prints a new one-time password. The default name is `owner`. |
 | `sudo cloudbot uninstall [--keep-data] [--yes]` | Asks you to type `uninstall`, then removes the containers, networks, image, volumes and `/opt/cloudbot`. `--keep-data` keeps the volumes and the folder. `--yes` skips the question. Docker stays installed. |
 

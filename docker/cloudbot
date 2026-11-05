@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs CloudBot on this server. install.sh links it as /usr/local/bin/cloudbot.
 #
-# Usage: sudo cloudbot <status|logs|update [--all]|reset-password [name]|uninstall>
+# Usage: sudo cloudbot <status|logs|update [--all]|install-update|reset-password [name]|uninstall>
 
 set -euo pipefail
 
@@ -21,6 +21,8 @@ find_home() {
 
 CLOUDBOT_HOME="${CLOUDBOT_HOME:-$(find_home)}"
 COMMAND_PATH="/usr/local/bin/cloudbot"
+UPDATE_STATE_DIR="/var/lib/cloudbot-update"
+SYSTEMD_DIR="/etc/systemd/system"
 
 usage() {
     cat <<'EOF'
@@ -31,6 +33,7 @@ Commands:
   logs                   Follow the hub logs (Ctrl+C to stop)
   update [--all]         Pull the latest code and rebuild the hub image. --all also
                          removes the instance containers that use an old image
+  install-update         Let the owner start an update from the web app
   reset-password [name]  Print a new password for a person (default owner)
   uninstall [--keep-data] [--yes]
                          Remove CloudBot. --keep-data leaves the volumes and the install
@@ -125,6 +128,113 @@ Their cbi-* volumes remain. The hub creates each one from the new image on the n
 EOF
 }
 
+hub_data_dir() {
+    docker volume inspect hub-data --format '{{.Mountpoint}}'
+}
+
+# Tells the hub the state of the update. The hub user owns the folder, so the file is made elsewhere and moved in. A rename
+# never follows a link, so that user cannot point this root write at another file.
+write_update_status() {
+    local state="$1"
+    local commit
+    local latest
+    local temp_file
+
+    commit="$(git -C "$CLOUDBOT_HOME" rev-parse HEAD)"
+    latest="$(git -C "$CLOUDBOT_HOME" rev-parse '@{upstream}' 2>/dev/null || printf '%s' "$commit")"
+    mkdir -p "$UPDATE_STATE_DIR"
+    temp_file="$(mktemp "$UPDATE_STATE_DIR/status.XXXXXX")"
+    printf '{"state":"%s","commit":"%s","latest":"%s","at":"%s"}\n' "$state" "$commit" "$latest" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$temp_file"
+    chmod 644 "$temp_file"
+    mv -fT "$temp_file" "$(hub_data_dir)/update-status.json"
+}
+
+# Started by systemd when the hub leaves a request file. Only the file's presence counts. Its content is never read.
+# The update runs as its own process, so a failure in it stops it as it does when run by hand.
+command_update_from_request() {
+    rm -f "$(hub_data_dir)/update-request"
+    write_update_status running
+
+    if "$COMMAND_PATH" update --all; then
+        write_update_status "done"
+    else
+        write_update_status failed
+    fi
+}
+
+# Started by a systemd timer, so the web app can say when a new version is out. It keeps the result of the last update.
+command_check_update() {
+    local previous
+
+    if systemctl is-active --quiet cloudbot-update.service; then
+        return 0
+    fi
+
+    git -C "$CLOUDBOT_HOME" fetch --quiet
+    previous="$(sed -n -E 's/.*"state":"(done|failed)".*/\1/p' "$(hub_data_dir)/update-status.json" 2>/dev/null || true)"
+    write_update_status "${previous:-idle}"
+}
+
+command_install_update() {
+    if ! command -v systemctl > /dev/null; then
+        echo "This server has no systemd, so updates run only with: sudo cloudbot update --all"
+        return 0
+    fi
+
+    cat > "$SYSTEMD_DIR/cloudbot-update.path" <<EOF
+[Unit]
+Description=Watch for an update request from the CloudBot web app
+
+[Path]
+PathExists=$(hub_data_dir)/update-request
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    cat > "$SYSTEMD_DIR/cloudbot-update.service" <<EOF
+[Unit]
+Description=Update CloudBot
+
+[Service]
+Type=oneshot
+Environment=HOME=/root
+ExecStart=$COMMAND_PATH update-from-request
+EOF
+    cat > "$SYSTEMD_DIR/cloudbot-update-check.service" <<EOF
+[Unit]
+Description=Check for a new CloudBot version
+
+[Service]
+Type=oneshot
+Environment=HOME=/root
+ExecStart=$COMMAND_PATH check-update
+EOF
+    cat > "$SYSTEMD_DIR/cloudbot-update-check.timer" <<EOF
+[Unit]
+Description=Check for a new CloudBot version every hour
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target
+EOF
+    systemctl daemon-reload
+    systemctl enable --now cloudbot-update.path cloudbot-update-check.timer
+    command_check_update
+    echo "The owner can now update CloudBot from the web app."
+}
+
+remove_update_service() {
+    if command -v systemctl > /dev/null; then
+        systemctl disable --now cloudbot-update.path cloudbot-update-check.timer 2>/dev/null || true
+    fi
+
+    rm -f "$SYSTEMD_DIR/cloudbot-update.path" "$SYSTEMD_DIR/cloudbot-update.service" "$SYSTEMD_DIR/cloudbot-update-check.service" "$SYSTEMD_DIR/cloudbot-update-check.timer"
+    rm -rf "$UPDATE_STATE_DIR"
+}
+
 command_reset_password() {
     local person_name="${1:-owner}"
     compose exec -T hub node dist/hub/main.js reset-password "$person_name"
@@ -173,6 +283,7 @@ command_uninstall() {
         fi
     fi
 
+    remove_update_service
     docker ps -aq --filter name=^cloudbot-i- | xargs --no-run-if-empty docker rm -f
 
     if [ "$keeps_data" = "true" ]; then
@@ -217,6 +328,18 @@ main() {
             require_root "$command"
             shift
             command_update "$@"
+            ;;
+        install-update)
+            require_root "$command"
+            command_install_update
+            ;;
+        update-from-request)
+            require_root "$command"
+            command_update_from_request
+            ;;
+        check-update)
+            require_root "$command"
+            command_check_update
             ;;
         reset-password)
             require_root "$command"

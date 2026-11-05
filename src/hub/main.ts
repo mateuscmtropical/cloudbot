@@ -1,3 +1,4 @@
+import { AppUpdateRequests } from './admin/AppUpdateRequests.ts';
 import { randomBytes } from 'node:crypto';
 import type { Server } from 'node:http';
 import { resolve } from 'node:path';
@@ -170,6 +171,7 @@ async function main(): Promise<void> {
         },
         activity,
         hubPort: settings.port,
+        updates: new AppUpdateRequests(settings.dataDir),
     };
     const app = createHubApp(appOptions);
     const unreachablePeople = await instances.reconnectHub();

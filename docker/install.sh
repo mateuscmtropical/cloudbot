@@ -223,6 +223,7 @@ main() {
     write_env_file
     install_command
     start_hub
+    "$COMMAND_PATH" install-update
     print_owner_access
 }
 

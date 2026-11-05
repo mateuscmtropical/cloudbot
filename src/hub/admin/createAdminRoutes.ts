@@ -2,12 +2,13 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 
-import { HUB_PEOPLE_PATH, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER } from '../../shared/hubProtocol.ts';
+import { HUB_PEOPLE_PATH, HUB_UPDATE_PATH, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER } from '../../shared/hubProtocol.ts';
 import { checkPersonName } from '../../shared/peopleTypes.ts';
-import type { Person, PersonWithPassword, ResetPasswordResult } from '../../shared/peopleTypes.ts';
+import type { AppUpdateStatus, Person, PersonWithPassword, ResetPasswordResult } from '../../shared/peopleTypes.ts';
 import type { LoginSessions } from '../auth/LoginSessions.ts';
 import type { InstanceManager, PeopleStore, PersonRecord } from '../contract.ts';
 import { generatePassword, hashPassword } from '../passwords.ts';
+import type { AppUpdateRequests } from './AppUpdateRequests.ts';
 
 interface CreateAdminRoutesOptions {
     people: PeopleStore;
@@ -15,6 +16,8 @@ interface CreateAdminRoutesOptions {
     sessions: Pick<LoginSessions, 'deletePerson'>;
     domain: string;
     secure: boolean;
+    // Without it the update routes answer that this install has no update service.
+    updates?: AppUpdateRequests | undefined;
 }
 
 interface ErrorResponse {
@@ -28,6 +31,7 @@ interface UnknownRecord {
 const UNAUTHORIZED_MESSAGE = 'Owner authentication is required.';
 const NOT_FOUND_MESSAGE = 'Person not found.';
 const NAME_TAKEN_MESSAGE = 'That name is taken.';
+const UPDATE_UNAVAILABLE: AppUpdateStatus = { state: 'unavailable' };
 
 function hasMatchingSecret(candidate: string, expected: string): boolean {
     const candidateDigest = createHash('sha256')
@@ -298,6 +302,28 @@ function createAdminRoutes(options: CreateAdminRoutesOptions): Hono {
         const people = await Promise.all(personRequests);
 
         return context.json(people);
+    });
+    app.get(HUB_UPDATE_PATH, (context) => {
+        if (authorize(context, options.people) === undefined) {
+            return errorResponse(context, UNAUTHORIZED_MESSAGE, 401);
+        }
+
+        const status = options.updates?.status() ?? UPDATE_UNAVAILABLE;
+
+        return context.json(status);
+    });
+    app.post(HUB_UPDATE_PATH, (context) => {
+        if (authorize(context, options.people) === undefined) {
+            return errorResponse(context, UNAUTHORIZED_MESSAGE, 401);
+        }
+
+        const status = options.updates?.start();
+
+        if (status === undefined) {
+            return errorResponse(context, 'An update is running, or this install cannot update from the web app.', 409);
+        }
+
+        return context.json(status);
     });
     app.post(HUB_PEOPLE_PATH, context => addPerson(context, options));
     app.post(`${HUB_PEOPLE_PATH}/:name/deactivate`, context => changePersonState(context, options, 'inactive'));

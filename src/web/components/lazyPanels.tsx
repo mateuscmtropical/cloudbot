@@ -24,6 +24,11 @@ const lazyActionLogPanel = lazyPanel(async () => {
 
     return panelModule.ActionLogPanel;
 });
+const lazyAppUpdatePanel = lazyPanel(async () => {
+    const panelModule = await import('./AppUpdatePanel.tsx');
+
+    return panelModule.AppUpdatePanel;
+});
 const lazyPeoplePanel = lazyPanel(async () => {
     const panelModule = await import('./PeoplePanel.tsx');
 
@@ -48,8 +53,12 @@ function ActionLogPanel(props: ComponentProps<typeof lazyActionLogPanel>): React
     return <Suspense fallback={LOADING}>{createElement(lazyActionLogPanel, props)}</Suspense>;
 }
 
+function AppUpdatePanel(props: ComponentProps<typeof lazyAppUpdatePanel>): ReactElement {
+    return <Suspense fallback={LOADING}>{createElement(lazyAppUpdatePanel, props)}</Suspense>;
+}
+
 function PeoplePanel(props: ComponentProps<typeof lazyPeoplePanel>): ReactElement {
     return <Suspense fallback={LOADING}>{createElement(lazyPeoplePanel, props)}</Suspense>;
 }
 
-export { AccountPanel, ActionLogPanel, BotProfilePanel, ConnectAppsPanel, PeoplePanel };
+export { AccountPanel, ActionLogPanel, AppUpdatePanel, BotProfilePanel, ConnectAppsPanel, PeoplePanel };

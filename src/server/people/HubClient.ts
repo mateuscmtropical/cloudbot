@@ -1,5 +1,5 @@
-import { HUB_PEOPLE_PATH, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER } from '../../shared/hubProtocol.ts';
-import type { InstanceStatus, Person, PersonRole, PersonState, PersonWithPassword, ResetPasswordResult } from '../../shared/peopleTypes.ts';
+import { HUB_PEOPLE_PATH, HUB_UPDATE_PATH, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER } from '../../shared/hubProtocol.ts';
+import type { AppUpdateStatus, InstanceStatus, Person, PersonRole, PersonState, PersonWithPassword, ResetPasswordResult } from '../../shared/peopleTypes.ts';
 import type { HubConfig } from './hubConfig.ts';
 import { PeopleAdminError } from './PeopleAdmin.ts';
 import type { PeopleAdmin } from './PeopleAdmin.ts';
@@ -101,6 +101,18 @@ class HubClient implements PeopleAdmin {
         const encodedName = encodeURIComponent(name);
 
         await this.request('DELETE', `${HUB_PEOPLE_PATH}/${encodedName}?confirm=${encodedName}`);
+    }
+
+    async updateStatus(): Promise<AppUpdateStatus> {
+        const answer = await this.request('GET', HUB_UPDATE_PATH);
+
+        return answer as AppUpdateStatus;
+    }
+
+    async startUpdate(): Promise<AppUpdateStatus> {
+        const answer = await this.request('POST', HUB_UPDATE_PATH);
+
+        return answer as AppUpdateStatus;
     }
 
     private personPath(name: string, action: string): string {

@@ -18,6 +18,11 @@ const INSTANCE_SECRET_HEADER = 'x-cloudbot-secret';
 // Only the owner's instance may call it. Every error is { error: string } with a 4xx status.
 const HUB_PEOPLE_PATH = '/internal/people';
 
+// The owner's update of the whole install. Only the owner's instance may call it.
+//   GET  /internal/update   answers AppUpdateStatus
+//   POST /internal/update   answers AppUpdateStatus, 409 while an update runs
+const HUB_UPDATE_PATH = '/internal/update';
+
 // What an instance reports to the hub when asked. The hub calls it before it stops the instance.
 //   GET /api/hub/activity   answers InstanceActivity
 const HUB_ACTIVITY_PATH = '/api/hub/activity';
@@ -31,5 +36,5 @@ interface InstanceActivity {
     reasons: string[];
 }
 
-export { HUB_ACTIVITY_PATH, HUB_PEOPLE_PATH, HUB_TRUST_HEADER, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER, WHATSAPP_CALLBACK_PATH };
+export { HUB_ACTIVITY_PATH, HUB_PEOPLE_PATH, HUB_UPDATE_PATH, HUB_TRUST_HEADER, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER, WHATSAPP_CALLBACK_PATH };
 export type { InstanceActivity };
