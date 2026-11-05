@@ -4,6 +4,7 @@ import { CdpConnection } from './CdpConnection.ts';
 import { ScreenRecorder, buildRecorderScript, describeRecordedSteps } from './ScreenRecorder.ts';
 import { createFakeSocketFactory } from './testCdp.ts';
 import type { FakeCdpSocket } from './testCdp.ts';
+import { pageRecordSteps } from './page/pageRecordSteps.ts';
 
 async function startRecording(): Promise<{ recorder: ScreenRecorder; socket: FakeCdpSocket; bindingName: string }> {
     const { factory, sockets } = createFakeSocketFactory(() => ({ result: {} }));
@@ -36,7 +37,7 @@ describe('ScreenRecorder', () => {
         expect(bindingName)
             .toMatch(/^cloudbotRecord_[0-9a-f]{16}$/);
         expect(methods)
-            .toEqual(['Runtime.enable', 'Page.enable', 'Runtime.addBinding', 'Page.addScriptToEvaluateOnNewDocument', 'Runtime.evaluate']);
+            .toEqual(['Runtime.enable', 'Page.enable', 'Runtime.addBinding', 'Page.addScriptToEvaluateOnNewDocument', 'Runtime.evaluate', 'Runtime.callFunctionOn']);
     });
 
     it('records page opens without query or fragment, clicks, typed text, secret fields and submits', async () => {
@@ -114,17 +115,19 @@ describe('ScreenRecorder', () => {
             .not.toContain('4111 1111 1111 1111');
     });
 
-    it('names the binding and a flag of its own in the page script, and never labels a field by its value', () => {
+    it('passes the binding name to the page script for new pages, and never labels a field by its value', () => {
         const script = buildRecorderScript('cloudbotRecord_abc');
 
         expect(script)
-            .toContain('window["cloudbotRecord_abc"]');
+            .toContain(pageRecordSteps.toString());
         expect(script)
-            .toContain('"cloudbotRecord_abc_on"');
-        expect(script)
-            .toContain('isButtonInput ? element.value');
-        expect(script)
-            .toContain('type === \'password\'');
+            .toContain('"cloudbotRecord_abc"');
+        expect(pageRecordSteps.toString())
+            .toContain('const flagName = `${bindingName}_on`;');
+        expect(pageRecordSteps.toString())
+            .toContain('isButtonInput ? field.value');
+        expect(pageRecordSteps.toString())
+            .toMatch(/type === ["']password["']/);
     });
 });
 

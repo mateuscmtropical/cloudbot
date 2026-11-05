@@ -17,5 +17,6 @@
     "types": ["node"]
   },
   "include": ["src", "test", "*.config.ts"],
-  "exclude": ["src/web"]
+  "exclude": ["src/web", "src/server/desktop/page"],
+  "references": [{ "path": "./src/server/desktop/page" }]
 }
