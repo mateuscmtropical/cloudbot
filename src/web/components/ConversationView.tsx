@@ -7,6 +7,7 @@ import type { Tap } from '../doubleTap.ts';
 import type { DraftStore } from '../draftStore.ts';
 import { lazyPanel } from '../lazyPanel.ts';
 import type { MascotState } from '../mascotState.ts';
+import { useMascotTricks } from '../useMascotTricks.ts';
 import { countProviderChanges } from '../providerChanges.ts';
 import { sentMessageTexts } from '../sentHistory.ts';
 import { BUBBLE_DELAY_MS, isThinkingBubbleShown } from '../thinkingBubble.ts';
@@ -373,6 +374,8 @@ function ConversationView({
             onLoadOlder?.();
         }
     }, [messages, hasOlderMessages, isLoadingOlder, onLoadOlder]);
+
+    useMascotTricks(mascotState === 'idle' && !isRenaming, bot?.id);
 
     function handleScroll(): void {
         const messageListElement = messageListRef.current;

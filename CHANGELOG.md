@@ -21,6 +21,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- The mascot in the chat header now does a random trick every minute or two while the bot rests. It hangs from a web, sneezes rain, snow or lightning, flies around, falls and climbs back, dances, inflates like a balloon, and leaves to visit the other bots in the chat list. Work, another chat or a hidden tab ends a trick at once, and reduced motion turns them off.
 - The Search field in the sidebar also searches the chats of all bots. A result opens its chat at that message, loading older messages when needed. Accents do not matter, and words match while they are being typed.
 - Each bot has a Memory page in its profile. It lists what the bot wrote in its memory file, and the owner can delete a line or edit the whole text.
 - Attachments look good now. Images waiting to be sent show as small thumbnails, and each one has its own remove button. Sent images show in the message as one large picture or a mosaic, and open in a viewer with arrows, swipe, Escape and download. Other files show as a card with an icon, the name and the size. Sent images stay after the upload cleanup, and every JPEG is drawn again in the browser, which drops its EXIF data such as the GPS position.
