@@ -19,6 +19,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- The bot joins a Google Meet call by itself with `meeting_join`. Meet often refuses a guest at random, so the bot knocks again, up to 10 times.
 - The bot takes notes of a Google Meet call. It joins as a guest from its own browser, says who it is in the meeting chat, and transcribes the call in 5 minute parts with the local whisper model, so there is no cost per minute. When you ask it to leave, or the meeting ends, it posts a summary with the action items and shares the transcript.
 - Web search, check-ins and webhooks are kinds of work with their own provider, model and effort. With a search helper the chat hands every web search to it, so the chat provider's quota is not spent on searching. Each routine can also run on its own provider, model and effort. Only connected providers can be chosen.
 - Account has an Action log screen with what each bot did: tool reviews and their outcome, finished tools and turn errors. Entries are deleted after 30 days.
