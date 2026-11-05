@@ -4,7 +4,7 @@ import { asc, eq } from 'drizzle-orm';
 
 import { randomMascot, readMascotBolt, readMascotColor, readMascotEyes, readMascotShape, readMascotWeather } from '../../shared/mascot.ts';
 import type { PermissionMode } from '../../shared/permissionModes.ts';
-import type { MascotLook } from '../../shared/mascot.ts';
+import type { MascotChoice, MascotLook } from '../../shared/mascot.ts';
 import { bots, turnQueue, turnWaits } from './schema.ts';
 import type { StoredUploadRecord } from './schema.ts';
 import type { AppDatabase, Bot, BotProfile, StoreOptions } from './types.ts';
@@ -41,8 +41,8 @@ class BotStore {
         this.now = options.now ?? (() => Date.now());
     }
 
-    async create(profile: BotProfile): Promise<Bot> {
-        const mascot = randomMascot();
+    // A new bot gets a random cloud of the mascot sheet, unless a look is given.
+    async create(profile: BotProfile, mascot: MascotChoice = randomMascot()): Promise<Bot> {
         const newBot = {
             id: randomUUID(),
             name: profile.name,

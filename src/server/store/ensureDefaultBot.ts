@@ -1,3 +1,4 @@
+import type { MascotChoice } from '../../shared/mascot.ts';
 import type { BotStore } from './BotStore.ts';
 import type { BotProfile } from './types.ts';
 
@@ -6,6 +7,8 @@ const DEFAULT_BOT_PROFILE: BotProfile = {
     title: 'Your coworker',
     description: '',
 };
+// The first bot wears the blue of the project, not a random cloud.
+const DEFAULT_BOT_MASCOT: MascotChoice = { color: 'blue', shape: 'puff', eyes: 'smile' };
 
 // Creates the default bot on the first start, so the web app never opens on an empty list.
 async function ensureDefaultBot(botStore: BotStore): Promise<void> {
@@ -15,7 +18,7 @@ async function ensureDefaultBot(botStore: BotStore): Promise<void> {
         return;
     }
 
-    await botStore.create(DEFAULT_BOT_PROFILE);
+    await botStore.create(DEFAULT_BOT_PROFILE, DEFAULT_BOT_MASCOT);
 }
 
 export { ensureDefaultBot };
