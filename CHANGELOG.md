@@ -17,6 +17,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- A message you send while a bot on ChatGPT or an OpenAI key is working now goes straight into the running turn, as it does on Claude, instead of waiting in the queue. A message with files still waits.
 - Webhooks and the WhatsApp callback work behind the hub. The hub refused them because they have no browser headers and no session. Only `POST /hooks/<token>` and `GET` and `POST /whatsapp` pass, and a call to a stopped instance gets a 503 without waking it.
 
 ### Added

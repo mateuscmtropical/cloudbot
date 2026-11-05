@@ -74,9 +74,10 @@ interface TurnRequest {
 }
 
 // An engine that can take a message in the middle of a turn sets deliver while its input is open, and clears it when the input
-// closes. deliver returns false when the turn can no longer take the message, so the chat queues it instead.
+// closes. deliver returns false when the turn can no longer take the message, so the chat queues it instead. An engine that
+// must wait for an answer returns a promise.
 interface TurnInbox {
-    deliver?: ((text: string) => boolean) | undefined;
+    deliver?: ((text: string) => boolean | Promise<boolean>) | undefined;
 }
 
 interface AgentRunner {

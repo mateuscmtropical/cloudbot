@@ -590,6 +590,19 @@ class CodexEngine implements AgentRunner {
             }
 
             progress.turnId = turnId;
+
+            // The inbox opens once the turn runs. A stop answers every open call with an error, so a steer never hangs the chat.
+            if (request.inbox !== undefined) {
+                request.inbox.deliver = async (text: string): Promise<boolean> => {
+                    if (progress.isTurnOver || stop.isStopped || hasExited) {
+                        return false;
+                    }
+
+                    const answer = await call('turn/steer', { threadId, expectedTurnId: turnId, input: [{ type: 'text', text, text_elements: [] }] });
+
+                    return answer.error === undefined;
+                };
+            }
         };
 
         // The line iterator is made before the first call, so an answer that comes at once is not lost.
@@ -663,6 +676,10 @@ class CodexEngine implements AgentRunner {
                 }
             }
         } finally {
+            if (request.inbox !== undefined) {
+                request.inbox.deliver = undefined;
+            }
+
             request.abortSignal.removeEventListener('abort', onAbort);
             // Every path ends here, so the group is killed even after a clean end: an approved command may still run in it.
             await stopChild();

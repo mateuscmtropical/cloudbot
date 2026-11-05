@@ -2730,7 +2730,7 @@ class ChatService {
             // The inbox is read again, since the turn may have closed its input while the message was saved.
             const deliver = this.turnInboxes.get(botId)?.deliver;
 
-            if (deliver?.(text) === true) {
+            if (await deliver?.(text) === true) {
                 return userMessage;
             }
 

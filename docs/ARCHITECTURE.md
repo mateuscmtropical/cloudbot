@@ -501,7 +501,8 @@ input is open. The Claude CLI engine opens it after the CLI's `init` and writes
 the message to the CLI's stdin as a user message with a `uuid`. The CLI folds
 it into the running turn between tool rounds, or answers it as one more result
 in the same process. The input stays open while a result reports
-`queued_turn_count`, and closes after the last result. Any other message, a
+`queued_turn_count`, and closes after the last result. The Codex engine opens it
+after `turn/start` and sends the message with `turn/steer`. Any other message, a
 message with files and a message the engine refuses join the bot's queue and
 run after the turn. Such a message is saved at once and marked as queued until
 its turn starts. When the
