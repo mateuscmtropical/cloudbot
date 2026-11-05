@@ -156,7 +156,7 @@ command_update_from_request() {
     write_update_status running
 
     if "$COMMAND_PATH" update --all; then
-        write_update_status done
+        write_update_status "done"
     else
         write_update_status failed
     fi
