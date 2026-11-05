@@ -179,9 +179,6 @@ function App(): ReactElement {
     // The screen holder seen on the last check. The Screen panel opens only when it changes to the owner.
     const lastScreenHolderRef = useRef<string | undefined>(undefined);
     const [isBotListOpen, setIsBotListOpen] = useState(false);
-
-    useSwipeMenu(isBotListOpen, setIsBotListOpen);
-
     const [hubRole, setHubRole] = useState<HubRole>('standalone');
     const [personName, setPersonName] = useState<string | undefined>(undefined);
     const [isPeopleOpen, setIsPeopleOpen] = useState(false);
@@ -1321,6 +1318,27 @@ function App(): ReactElement {
     }), [selectedBotId, showMessageResult]);
 
     const selectedBot = bots.find(bot => bot.id === selectedBotId);
+
+    // Stable, because a new function restarts the swipe listeners and loses a drag in progress.
+    const setIsBotDetailsOpen = useCallback((isOpen: boolean) => {
+        if (isOpen) {
+            setIsBotListOpen(false);
+            setIsConnectAppsOpen(false);
+            setIsAccountOpen(false);
+            setIsPeopleOpen(false);
+        }
+
+        setIsBotProfileOpen(isOpen);
+    }, []);
+
+    useSwipeMenu({
+        isListOpen: isBotListOpen,
+        setIsListOpen: setIsBotListOpen,
+        isDetailsOpen: isBotProfileOpen,
+        setIsDetailsOpen: setIsBotDetailsOpen,
+        canOpenDetails: selectedBot !== undefined && selectedChannelId === undefined && !isPeopleOpen && !isAccountOpen && !isConnectAppsOpen,
+    });
+
     const visibleMessages = useMemo(() => {
         const selectedMessages = messages.filter(message => message.botId === selectedBotId);
 
@@ -1551,11 +1569,7 @@ function App(): ReactElement {
                                     }}
                                     onRenameBot={handleRenameBot}
                                     onOpenProfile={() => {
-                                        setIsBotListOpen(false);
-                                        setIsConnectAppsOpen(false);
-                                        setIsAccountOpen(false);
-                                        setIsPeopleOpen(false);
-                                        setIsBotProfileOpen(true);
+                                        setIsBotDetailsOpen(true);
                                     }}
                                     onOpenSetupChat={(setupBotId) => {
                                         handleSelectBot(setupBotId);

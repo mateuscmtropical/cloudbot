@@ -18,6 +18,8 @@ All notable changes to this project are listed here. The format follows
 ### Changed
 
 - The Screen panel closes by itself when the bot's turn ends, unless the owner holds the screen or asked to see it.
+- On a phone, a swipe to the left in a chat opens the bot's details, and a swipe to the right closes them. Anything that scrolls sideways, such as filter chips, keeps the drag also at the end of its scroll. Dialogs keep it too.
+- In the message box, the up and down arrows move through the lines first, wrapped lines too. On the first or last line they go to the edge of the text, and only from there to the older or newer message.
 - The review asks the owner before the bot gives personal details, such as an address, phone or document, to a site the owner did not name. It also asks before the bot changes or deletes something in an outside account, accepts terms or signs something, unless the owner asked for it. Other browser use never asks.
 
 ### Fixed
