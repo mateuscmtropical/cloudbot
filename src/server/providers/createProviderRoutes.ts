@@ -5,6 +5,7 @@ import type { PermissionMode } from '../../shared/permissionModes.ts';
 import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse } from '../../shared/providerTypes.ts';
 import { EFFORT_LEVELS, isClaudeModel, isEffortLevel } from '../models/modelChoices.ts';
 import type { ModelStore } from '../store/ModelStore.ts';
+import { ConnectedProviders } from './ConnectedProviders.ts';
 import type { ProviderModelCatalogs } from './ProviderModelCatalogs.ts';
 import { claudeModelOptions } from './WorkSettings.ts';
 import type { WorkSettings } from './WorkSettings.ts';
@@ -135,69 +136,14 @@ async function summarize(options: ProviderRoutesOptions, botId: string): Promise
     };
 }
 
-// A check of the sign-ins can take a minute, since each provider is asked through its own CLI. The answer is kept this long.
-const CONNECTED_FRESH_MS = 20_000;
-
-interface ConnectedCheck {
-    connected: ProviderId[];
-    checkedAt: number;
-    // The sign-ins changed since this check when this number is behind.
-    version: number;
-}
-
 function createProviderRoutes(options: ProviderRoutesOptions): Hono {
     const routes = new Hono();
-    let lastCheck: ConnectedCheck | undefined;
-    let runningCheck: Promise<ConnectedCheck> | undefined;
-
-    function readVersion(): number {
-        return options.providers.connectionVersion?.() ?? 0;
-    }
-
-    function startCheck(): Promise<ConnectedCheck> {
-        if (runningCheck !== undefined) {
-            return runningCheck;
-        }
-
-        const version = readVersion();
-        const check = options.providers.connected()
-            .then((connected) => {
-                lastCheck = { connected, checkedAt: Date.now(), version };
-
-                return lastCheck;
-            })
-            .finally(() => {
-                runningCheck = undefined;
-            });
-
-        runningCheck = check;
-
-        return check;
-    }
-
-    // The last answer is used at once, and an old one is checked again in the background. Only the first call, and the first
-    // after a sign-in changed, waits for the CLIs. A check that was running during the change does not count.
-    async function readConnected(): Promise<ProviderId[]> {
-        const version = readVersion();
-
-        if (lastCheck === undefined || lastCheck.version !== version) {
-            const check = await startCheck();
-            const current = check.version === version ? check : await startCheck();
-
-            return current.connected;
-        }
-
-        if (Date.now() - lastCheck.checkedAt > CONNECTED_FRESH_MS) {
-            startCheck()
-                .catch(() => undefined);
-        }
-
-        return lastCheck.connected;
-    }
+    const askProviders = (): Promise<ProviderId[]> => options.providers.checkConnected?.() ?? options.providers.connected();
+    const connectedProviders = new ConnectedProviders(askProviders, () => options.providers.connectionVersion?.() ?? 0);
 
     // Whether a provider is connected is checked with its CLI, which takes time. So the list is its own route, read when the menu opens.
     routes.get('/api/providers', async (context) => {
-        const connected = await readConnected();
+        const connected = await connectedProviders.read();
         const providers: ProviderChoiceSummary[] = options.providers.available.map(id => ({ id, label: PROVIDER_LABELS[id], isConnected: connected.includes(id) }));
 
         return context.json(providers);
@@ -237,10 +183,11 @@ function createProviderRoutes(options: ProviderRoutesOptions): Hono {
         }
 
         // A provider the last check saw connected is accepted at once. Otherwise it may have been connected since, so it is checked again.
-        const knownConnected = lastCheck?.connected.includes(requested) === true;
-        const checked = knownConnected ? undefined : await startCheck();
+        const knownConnected = connectedProviders.last()
+            ?.includes(requested) === true;
+        const checked = knownConnected ? undefined : await connectedProviders.check();
 
-        if (!knownConnected && checked?.connected.includes(requested) !== true) {
+        if (!knownConnected && checked?.includes(requested) !== true) {
             return context.json(NOT_CONNECTED, 400);
         }
 

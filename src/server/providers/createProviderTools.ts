@@ -16,6 +16,8 @@ interface ProviderToolDependencies {
     // The providers this server can run. A provider without its CLI is left out.
     available: ProviderId[];
     connected: () => Promise<ProviderId[]>;
+    // Asks the CLIs now, without a kept answer. Without it, connected is asked.
+    checkConnected?: (() => Promise<ProviderId[]>) | undefined;
     providerFor: (botId: string) => Promise<ProviderId>;
     setProvider: (botId: string, provider: ProviderId) => Promise<void>;
     // Posts the provider list in the setup chat. A provider the owner already picked skips the list.
