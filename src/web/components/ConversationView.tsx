@@ -6,6 +6,7 @@ import { nextTap } from '../doubleTap.ts';
 import type { Tap } from '../doubleTap.ts';
 import type { DraftStore } from '../draftStore.ts';
 import { lazyPanel } from '../lazyPanel.ts';
+import { canReadAloud, useAutoRead } from '../readAloud.ts';
 import type { MascotState } from '../mascotState.ts';
 import { useMascotTricks } from '../useMascotTricks.ts';
 import { countProviderChanges } from '../providerChanges.ts';
@@ -17,7 +18,7 @@ import { Composer } from './Composer.tsx';
 import { DraftBubble } from './DraftBubble.tsx';
 import type { DraftAttachment } from './Composer.tsx';
 import { MessageItem } from './MessageItem.tsx';
-import { PopoverMenu } from './PopoverMenu.tsx';
+import { PopoverMenu, PopoverMenuSection } from './PopoverMenu.tsx';
 import { ProviderPicker } from './ProviderPicker.tsx';
 import { RoundButton } from './RoundButton.tsx';
 import { RenameField } from './RenameField.tsx';
@@ -161,6 +162,7 @@ function ConversationView({
     const isBubbleDue = isThinkingBubbleShown({ isRunning, messages });
     const isThinkingShown = useDelayedFlag(isBubbleDue, BUBBLE_DELAY_MS);
     const [isDesktopOpen, setIsDesktopOpen] = useState(false);
+    const autoRead = useAutoRead(bot?.id, messages, isRunning);
 
     useBackButton(isDesktopOpen, () => {
         setIsDesktopOpen(false);
@@ -446,9 +448,29 @@ function ConversationView({
                             </button>
                         )}
                 <PopoverMenu label="Conversation options" triggerLabel="More options" triggerIcon={<MoreIcon />} placement="below-end" variant="panel">
-                    {(close, isOptionsOpen) => bot === undefined || onOpenSetupChat === undefined
-                        ? null
-                        : <ProviderPicker key={bot.id} botId={bot.id} isOpen={isOptionsOpen} changeCount={providerChangeCount} onOpenSetupChat={onOpenSetupChat} onClose={close} />}
+                    {(close, isOptionsOpen) => (
+                        <>
+                            {bot === undefined || onOpenSetupChat === undefined
+                                ? null
+                                : <ProviderPicker key={bot.id} botId={bot.id} isOpen={isOptionsOpen} changeCount={providerChangeCount} onOpenSetupChat={onOpenSetupChat} onClose={close} />}
+                            {canReadAloud()
+                                ? (
+                                        <PopoverMenuSection title="Voice">
+                                            <label className="auto-read-option">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={autoRead.isAutoRead}
+                                                    onChange={(event) => {
+                                                        autoRead.setAutoRead(event.target.checked);
+                                                    }}
+                                                />
+                                                <span>Read replies aloud</span>
+                                            </label>
+                                        </PopoverMenuSection>
+                                    )
+                                : null}
+                        </>
+                    )}
                 </PopoverMenu>
             </header>
             {/* Notices and the Screen panel sit below the pill, so their title and Close stay clear of it. Empty when none show. */}

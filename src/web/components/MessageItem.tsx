@@ -17,6 +17,7 @@ import { ChatCard } from './ChatCard.tsx';
 import { CodeField } from './CodeField.tsx';
 import { FileCard } from './FileCard.tsx';
 import { LinkCard } from './LinkCard.tsx';
+import { ReadAloudButton } from './ReadAloudButton.tsx';
 import { SecureForm } from './SecureForm.tsx';
 import { SharedFile } from './SharedFile.tsx';
 
@@ -80,6 +81,7 @@ function renderBody(message: ChatMessage, actions: MessageActions, ownFileUrl: s
                     {body.attachments === undefined || body.attachments.length === 0 ? null : renderAttachments(message, body.attachments)}
                     <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(body.text) }} />
                     {body.isQueued === true ? <span className="queued-label">Queued</span> : null}
+                    {message.role === 'assistant' ? <ReadAloudButton messageId={message.id} text={body.text} /> : null}
                 </div>
             );
         case 'choice':

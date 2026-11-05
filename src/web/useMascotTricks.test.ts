@@ -19,7 +19,11 @@ function makePlay(): TrickPlay & { end: () => void } {
         end = resolve;
     });
 
-    return { cancel: vi.fn(() => { end(); }), finished, end };
+    const cancel = vi.fn(() => {
+        end();
+    });
+
+    return { cancel, finished, end };
 }
 
 describe('useMascotTricks', () => {
