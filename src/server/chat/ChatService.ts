@@ -28,6 +28,8 @@ import { readImageSize } from '../attachments/readImageSize.ts';
 import { PREVIEW_IMAGE_TYPES } from '../../shared/previewImageTypes.ts';
 import { readMaxUploadBytes, removeFiles, saveFiles } from '../attachments/saveUpload.ts';
 import { readMaxShareBytes, shareWorkspaceFile } from '../files/shareFile.ts';
+import { logReviews } from '../logs/ActionLog.ts';
+import type { ActionLog } from '../logs/ActionLog.ts';
 import type { BrowserControl } from '../desktop/BrowserControl.ts';
 import { BROWSER_TOOL_FULL_NAMES, createBrowserTools } from '../desktop/createBrowserTools.ts';
 import { DESKTOP_TOOL_FULL_NAMES, createDesktopTools } from '../desktop/createDesktopTools.ts';
@@ -231,6 +233,8 @@ interface ChatServiceOptions {
     maxShareBytes?: number | undefined;
     // How long used files stay. Defaults to CLOUDBOT_UPLOAD_RETENTION_DAYS, or 30 days.
     uploadRetentionMs?: number | undefined;
+    // Notes each action of a bot for debugging, with names and outcomes only. Without it nothing is noted.
+    actionLog?: ActionLog | undefined;
     // The browser on the bot's desktop. Without it the bot gets no browser tools.
     browser?: BrowserControl | undefined;
     // The whole desktop of the bot, every app and not only the browser. Without it the bot gets no desktop tools.
@@ -726,6 +730,7 @@ class ChatService {
     private readonly maxPendingBytes: number;
     private readonly uploadRetentionMs: number;
     private readonly maxShareBytes: number;
+    private readonly actionLog: ActionLog | undefined;
     private readonly browser: BrowserControl | undefined;
     private readonly desktopInput: DesktopInput | undefined;
     private readonly botSecrets: BotSecrets | undefined;
@@ -820,6 +825,7 @@ class ChatService {
         this.maxPendingBytes = options.maxUploadBytes ?? readMaxUploadBytes(process.env);
         this.uploadRetentionMs = options.uploadRetentionMs ?? readUploadRetentionMs(process.env);
         this.maxShareBytes = options.maxShareBytes ?? readMaxShareBytes();
+        this.actionLog = options.actionLog;
         this.browser = options.browser;
         this.desktopInput = options.desktopInput;
         this.botSecrets = options.botSecrets;
@@ -4154,6 +4160,12 @@ class ChatService {
     // Every turn has a review, because the CLI refuses any call without one. Without an approval gate the owner cannot be
     // asked, so only the profile tools and the rule list run, the same list that allowedToolNames offers up front.
     private createToolCallReview(botId: string, permissionMode: PermissionMode, channelId?: string): NonNullable<TurnRequest['reviewToolCall']> {
+        const review = this.buildToolCallReview(botId, permissionMode, channelId);
+
+        return logReviews(review, this.actionLog, botId);
+    }
+
+    private buildToolCallReview(botId: string, permissionMode: PermissionMode, channelId?: string): NonNullable<TurnRequest['reviewToolCall']> {
         const approvals = this.approvals;
 
         // The owner chose to run with no checks. A call that still reaches the review, such as a bot tool, runs at once.
@@ -4489,6 +4501,9 @@ class ChatService {
                 return;
             case 'tool_finished': {
                 const toolName = toolNamesById.get(agentEvent.toolUseId) ?? 'tool';
+
+                this.actionLog?.write({ botId, event: 'tool_finished', tool: toolName, isError: agentEvent.isError });
+
                 const toolBody: MessageBody = {
                     kind: 'toolActivity',
                     toolName,
@@ -4502,6 +4517,8 @@ class ChatService {
                 return;
             }
             case 'turn_error': {
+                this.actionLog?.write({ botId, event: 'turn_error' });
+
                 const errorBody: TextBody = { kind: 'text', text: agentEvent.message };
 
                 // A usage limit error comes before the wait. A quiet continuation removes it with the rest.
