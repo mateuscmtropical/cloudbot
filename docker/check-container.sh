@@ -243,18 +243,26 @@ if [ -n "$HUB_CONTAINER_NAME" ]; then
     [ "$HUB_DATA_OWNER_AND_MODE" = "cloudbot 700" ] || fail "/var/lib/cloudbot-hub is '$HUB_DATA_OWNER_AND_MODE', expected 'cloudbot 700'"
     echo "ok: cloudbot owns the private hub data folder"
 
-    PROXY_URL="http://docker-proxy:2375"
-    CONTAINER_LIST_STATUS="$(docker exec "$HUB_CONTAINER_NAME" curl -sS -o /dev/null -w '%{http_code}' "$PROXY_URL/containers/json")"
-    [ "$CONTAINER_LIST_STATUS" = "200" ] || fail "container list returned HTTP $CONTAINER_LIST_STATUS through the socket proxy"
-    echo "ok: the socket proxy allows a container list"
+    GUARD_URL="http://docker-guard:2375"
+    INSPECT_STATUS="$(docker exec "$HUB_CONTAINER_NAME" curl -sS -o /dev/null -w '%{http_code}' "$GUARD_URL/containers/cloudbot-i-nobody/json")"
+    [ "$INSPECT_STATUS" = "404" ] || fail "inspecting a missing instance returned HTTP $INSPECT_STATUS through the Docker guard, expected 404"
+    echo "ok: the Docker guard passes an instance inspection on to Docker"
 
-    for PROXY_PATH in /images/json /info; do
-        PROXY_STATUS="$(docker exec "$HUB_CONTAINER_NAME" curl -sS -o /dev/null -w '%{http_code}' "$PROXY_URL$PROXY_PATH")"
-        [ "$PROXY_STATUS" = "403" ] || fail "$PROXY_PATH returned HTTP $PROXY_STATUS through the socket proxy, expected 403"
+    for GUARD_PATH in /containers/json /images/json /info; do
+        GUARD_STATUS="$(docker exec "$HUB_CONTAINER_NAME" curl -sS -o /dev/null -w '%{http_code}' "$GUARD_URL$GUARD_PATH")"
+        [ "$GUARD_STATUS" = "403" ] || fail "$GUARD_PATH returned HTTP $GUARD_STATUS through the Docker guard, expected 403"
     done
 
-    EXEC_STATUS="$(docker exec "$HUB_CONTAINER_NAME" curl -sS -o /dev/null -w '%{http_code}' -X POST "$PROXY_URL/exec/x/start")"
-    [ "$EXEC_STATUS" = "403" ] || fail "starting an exec returned HTTP $EXEC_STATUS through the socket proxy, expected 403"
-    echo "ok: the socket proxy refuses image, info and exec start requests"
+    EXEC_STATUS="$(docker exec "$HUB_CONTAINER_NAME" curl -sS -o /dev/null -w '%{http_code}' -X POST "$GUARD_URL/exec/x/start")"
+    [ "$EXEC_STATUS" = "403" ] || fail "starting an exec returned HTTP $EXEC_STATUS through the Docker guard, expected 403"
+
+    PRIVILEGED_BODY='{"Image":"cloudbot:local","HostConfig":{"Privileged":true}}'
+    PRIVILEGED_STATUS="$(docker exec "$HUB_CONTAINER_NAME" curl -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d "$PRIVILEGED_BODY" "$GUARD_URL/containers/create?name=cloudbot-i-nobody")"
+    [ "$PRIVILEGED_STATUS" = "403" ] || fail "creating a privileged container returned HTTP $PRIVILEGED_STATUS through the Docker guard, expected 403"
+
+    if docker exec "$HUB_CONTAINER_NAME" curl -sS -o /dev/null --max-time 5 "http://docker-proxy:2375/containers/json" > /dev/null 2>&1; then
+        fail "the hub reaches the socket proxy without the Docker guard"
+    fi
+    echo "ok: the Docker guard refuses lists, images, info, exec and a privileged container, and the hub cannot skip it"
 fi
 echo "All container checks passed."

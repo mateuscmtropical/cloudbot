@@ -19,7 +19,7 @@ kernel keeps them apart, and the existing code needs almost no change.
 browser --> Caddy --> hub --> instance of maria   (own network, own volumes)
                         |---> instance of joao
                         |---> instance of the owner
-                        '---> docker socket proxy --> Docker
+                        '---> Docker guard --> docker socket proxy --> Docker
 ```
 
 - **Caddy** terminates HTTPS for the domain and for `*.domain`. It asks the hub
@@ -29,9 +29,14 @@ browser --> Caddy --> hub --> instance of maria   (own network, own volumes)
   `node dist/hub/main.js`. It keeps the people, signs them in, starts and stops
   their containers and proxies traffic to them. It listens on port 3001 inside
   the compose network.
+- **Docker guard** runs `node dist/hub/dockerGuardMain.js` from the same image.
+  It lets through only the requests the hub makes, for `cloudbot-i-`,
+  `cloudbot-net-` and `cbi-` names. A new container must use the CloudBot
+  image, stay unprivileged and mount only its own `cbi-` volumes. Binds,
+  capabilities, devices and host networking are refused.
 - **Docker socket proxy** is a stock `tecnativa/docker-socket-proxy` container.
-  It allows only the container, network and volume calls the hub needs. The hub
-  never mounts the Docker socket.
+  It allows only container, network and volume calls, and only the Docker guard
+  can reach it. The hub never mounts the Docker socket.
 - **Instance** is the normal CloudBot server in its own container, named
   `cloudbot-i-<name>`. It has its own network `cloudbot-net-<name>`, and the hub
   is the only other member. So instances cannot reach each other. It has four
@@ -109,8 +114,9 @@ The desktop's own ports do not count. Otherwise the hub stops it. The next sign-
 
 ## Security notes
 
-- The hub holds no Docker socket. The socket proxy allows containers, networks
-  and volumes, and nothing else.
+- The hub holds no Docker socket. It reaches Docker only through the Docker
+  guard, which checks every request against the few the hub makes. A hub taken
+  over cannot start a privileged container or mount the host.
 - The hub makes containers only from the image of the running hub, with fixed
   options and a validated name. No setting from a person reaches the Docker call.
 - Passwords are hashed with scrypt. Sign-in attempts are limited by name and by
@@ -184,7 +190,7 @@ A failed call returns a short generic result to the model. The details of the hu
 
 ## Hub settings
 
-The hub reads `CLOUDBOT_DOMAIN`, `CLOUDBOT_LOGIN_ALLOWED_IPS`, `HUB_PORT`, `HUB_HOST`, `HUB_DATA_DIR`, `DOCKER_API_URL`, `CLOUDBOT_INSTANCE_IMAGE`, `CLOUDBOT_INSTANCE_MEMORY_MB`, `CLOUDBOT_INSTANCE_BUDGET_MB`, `CLOUDBOT_INSTANCE_CPUS`, `CLOUDBOT_OWNER_NAME` and `HUB_CONTAINER_ID`. Only `CLOUDBOT_DOMAIN` is required. The hub container id defaults to `HOSTNAME`.
+The hub reads `CLOUDBOT_DOMAIN`, `CLOUDBOT_LOGIN_ALLOWED_IPS`, `HUB_PORT`, `HUB_HOST`, `HUB_DATA_DIR`, `DOCKER_API_URL`, `CLOUDBOT_INSTANCE_IMAGE`, `CLOUDBOT_INSTANCE_MEMORY_MB`, `CLOUDBOT_INSTANCE_BUDGET_MB`, `CLOUDBOT_INSTANCE_CPUS`, `CLOUDBOT_OWNER_NAME` and `HUB_CONTAINER_ID`. Only `CLOUDBOT_DOMAIN` is required. The hub container id defaults to `HOSTNAME`. Compose sets it to `cloudbot-hub-1`, the name the Docker guard expects.
 
 Each person gets a container, a bridge network and four named volumes. The network is not internal, so the instance reaches AI providers and the web. Another network cannot reach it. The hub joins the network as `hub`, and it leaves the network before the network is removed. The instance has no published ports and fixed memory and CPU caps. The hub checks the total memory cap before it starts an instance and waits up to two minutes for its health check.
 
@@ -212,9 +218,9 @@ In hub mode an instance accepts a request with the trust header and the right se
 
 ## Install
 
-The Compose stack runs the hub, the Docker socket proxy and Caddy. The hub and per-person instances use the same `cloudbot:local` image. The hub stores its records in the `hub-data` volume. Instance data stays in separate `cbi-*` volumes.
+The Compose stack runs the hub, the Docker guard, the Docker socket proxy and Caddy. The hub and per-person instances use the same `cloudbot:local` image. The hub stores its records in the `hub-data` volume. Instance data stays in separate `cbi-*` volumes.
 
-The socket proxy is reachable only from the hub on the internal `hubctl` network. It permits container, network and volume operations. Caddy sends requests to the hub and asks it before issuing an on-demand certificate. The `localhost` configuration serves plain HTTP for local checks.
+The Docker guard is reachable only from the hub on the internal `hubctl` network. The socket proxy is reachable only from the guard on the internal `dockerctl` network. Caddy sends requests to the hub and asks it before issuing an on-demand certificate. The `localhost` configuration serves plain HTTP for local checks.
 
 The installer writes the domain, owner name, memory budget and per-instance limits to `.env`. The defaults are a 10240 MB running-instance budget, 2560 MB per instance and 2 CPUs per instance. Idle instances hibernate after five minutes by default.
 

@@ -53,7 +53,7 @@ require_root() {
 }
 
 command_status() {
-    compose ps hub docker-proxy caddy
+    compose ps hub docker-guard docker-proxy caddy
     docker ps --filter name=cloudbot-i-
     docker ps -q --filter name=cloudbot-i- | xargs --no-run-if-empty docker stats --no-stream
 }
@@ -107,7 +107,7 @@ command_update() {
     git -C "$CLOUDBOT_HOME" pull --ff-only
     compose pull docker-proxy caddy
     compose build hub
-    compose up -d --force-recreate hub docker-proxy caddy
+    compose up -d --force-recreate hub docker-guard docker-proxy caddy
 
     if [ "$moves_instances" = "true" ]; then
         remove_outdated_instances

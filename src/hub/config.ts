@@ -111,7 +111,7 @@ function readHubSettings(env: NodeJS.ProcessEnv): HubSettings {
         port: readPositiveNumber(env, 'HUB_PORT', 3001, true),
         host: readRequiredText(env, 'HUB_HOST', '0.0.0.0'),
         dataDir: readRequiredText(env, 'HUB_DATA_DIR', '/var/lib/cloudbot-hub'),
-        dockerApiUrl: readRequiredText(env, 'DOCKER_API_URL', 'http://docker-proxy:2375'),
+        dockerApiUrl: readRequiredText(env, 'DOCKER_API_URL', 'http://docker-guard:2375'),
         instanceImage: readRequiredText(env, 'CLOUDBOT_INSTANCE_IMAGE', 'cloudbot:local'),
         instanceMemoryMb: readPositiveNumber(env, 'CLOUDBOT_INSTANCE_MEMORY_MB', 2560, true),
         instanceBudgetMb: readPositiveNumber(env, 'CLOUDBOT_INSTANCE_BUDGET_MB', 10240, true),

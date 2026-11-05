@@ -19,7 +19,7 @@ export default defineConfig([
     },
     {
         ...sharedOptions,
-        entry: ['src/hub/main.ts'],
+        entry: ['src/hub/main.ts', 'src/hub/dockerGuardMain.ts'],
         outDir: 'dist/hub',
     },
 ]);
