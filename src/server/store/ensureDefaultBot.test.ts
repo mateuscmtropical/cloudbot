@@ -24,7 +24,7 @@ describe('ensureDefaultBot', () => {
         const bots = await botStore.list();
 
         expect(bots)
-            .toEqual([expect.objectContaining({ name: 'CloudBot', title: 'Your coworker' })]);
+            .toEqual([expect.objectContaining({ name: 'CloudBot', title: 'Your coworker', mascotColor: 'blue', mascotShape: 'puff', mascotEyes: 'smile' })]);
     });
 
     it('creates nothing when a bot already exists', async () => {
