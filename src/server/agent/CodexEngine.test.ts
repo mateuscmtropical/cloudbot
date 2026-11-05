@@ -13,6 +13,7 @@ import { CodexEngine, buildCodexArguments } from './CodexEngine.ts';
 import { ProviderModelCatalogs } from '../providers/ProviderModelCatalogs.ts';
 import type { SpawnFunction } from './ClaudeCliEngine.ts';
 import type { LoopbackToolServer, LoopbackTurnGrant } from './createLoopbackToolServer.ts';
+import type { ProxyCallReview } from '../apps/AppProxy.ts';
 
 interface SentMessage {
     id?: number;
@@ -113,7 +114,7 @@ function completeTurn(server: FakeAppServer): void {
     server.say({ method: 'turn/completed', params: { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed', error: null, durationMs: 50 } } });
 }
 
-function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThreadStart?: boolean; loopback?: LoopbackToolServer; environment?: Record<string, string>; apiKeyLogin?: string; modelList?: unknown; modelCatalogs?: ProviderModelCatalogs } = {}): {
+function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThreadStart?: boolean; loopback?: LoopbackToolServer; environment?: Record<string, string>; apiKeyLogin?: string; modelList?: unknown; modelCatalogs?: ProviderModelCatalogs; onOpenGate?: (reviewCall: ProxyCallReview | undefined) => void } = {}): {
     engine: CodexEngine;
     servers: FakeAppServer[];
     spawnOptions: SpawnOptions[];
@@ -125,17 +126,21 @@ function makeEngine(onTurn: (server: FakeAppServer) => void, options: { failThre
     const gates: { allowed: unknown[][]; closed: string[] } = { allowed: [], closed: [] };
     // A stand-in for the app proxy. An address ending in key9 is not one it gave out.
     const callGates = {
-        openCallGate: (address: string) => address.endsWith('key9')
-            ? undefined
-            : {
-                    address: `${address}/gate`,
-                    allowCall: (...call: unknown[]) => {
-                        gates.allowed.push(call);
-                    },
-                    close: () => {
-                        gates.closed.push(address);
-                    },
-                },
+        openCallGate: (address: string, reviewCall?: ProxyCallReview) => {
+            options.onOpenGate?.(reviewCall);
+
+            return address.endsWith('key9')
+                ? undefined
+                : {
+                        address: `${address}/gate`,
+                        allowCall: (...call: unknown[]) => {
+                            gates.allowed.push(call);
+                        },
+                        close: () => {
+                            gates.closed.push(address);
+                        },
+                    };
+        },
     };
     const servers: FakeAppServer[] = [];
     const spawnOptions: SpawnOptions[] = [];
@@ -614,6 +619,64 @@ describe('CodexEngine', () => {
             .resolves.toMatchObject({ isAllowed: false });
         expect(releases)
             .toBe(1);
+    });
+
+    it.each(['auto', 'yolo'] as const)('reviews each bot tool call at the server in %s, since Codex does not ask', async (permissionMode) => {
+        const grants: LoopbackTurnGrant[] = [];
+        const loopback: LoopbackToolServer = {
+            grantTurn: (grant) => {
+                grants.push(grant);
+
+                return {
+                    folder: '/t',
+                    mcpConfigPath: '/t/mcp.json',
+                    settingsPath: '/t/settings.json',
+                    noteToolUse: () => undefined,
+                    writeFile: name => `/t/${name}`,
+                    allowCall: () => undefined,
+                    mcpUrl: 'http://127.0.0.1:5555/mcp',
+                    token: 'fake-loopback-token',
+                    release: () => undefined,
+                };
+            },
+            close: () => Promise.resolve(),
+        };
+        const { engine, spawnArgs } = makeEngine(completeTurn, { loopback });
+        const tool = { name: 'echo', description: 'Repeats.', inputSchema: {}, handler: () => Promise.resolve({ content: [] }) };
+        const reviewToolCall = vi.fn((): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: true }));
+
+        await collect(engine.runTurn(makeRequest({ tools: [tool], permissionMode, reviewToolCall })));
+
+        expect(spawnArgs[0])
+            .toContain('mcp_servers.cloudbot.default_tools_approval_mode="approve"');
+        expect(grants[0])
+            .toMatchObject({ reviewsEachCall: true, reviewToolCall });
+    });
+
+    it('gives the proxy a review in auto that names the full tool and honors a blocked tool', async () => {
+        const reviews: ProxyCallReview[] = [];
+        const reviewToolCall = vi.fn((): Promise<ToolCallDecision> => Promise.resolve({ isAllowed: false, reason: 'No.' }));
+        const server = { type: 'http' as const, url: 'http://127.0.0.1:6000/key1' };
+        const { engine, spawnArgs } = makeEngine(completeTurn, {
+            onOpenGate: (reviewCall) => {
+                if (reviewCall !== undefined) {
+                    reviews.push(reviewCall);
+                }
+            },
+        });
+
+        await collect(engine.runTurn(makeRequest({ mcpServers: { linear: server }, permissionMode: 'auto', reviewToolCall, disallowedTools: ['mcp__linear__blocked'] })));
+
+        expect(spawnArgs[0])
+            .toContain('mcp_servers.linear.default_tools_approval_mode="approve"');
+        await expect(reviews[0]?.('lookup', { query: 'a' }))
+            .resolves.toBe('No.');
+        await expect(reviews[0]?.('blocked', {}))
+            .resolves.toBe('The owner blocked this tool.');
+        expect(reviewToolCall)
+            .toHaveBeenCalledTimes(1);
+        expect(reviewToolCall.mock.calls[0])
+            .toEqual([{ toolName: 'mcp__linear__lookup', input: { query: 'a' } }, expect.any(AbortSignal)]);
     });
 
     it('gives Codex the connected http servers at a gated address of the turn, and leaves the rest out', async () => {

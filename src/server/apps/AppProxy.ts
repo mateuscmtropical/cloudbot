@@ -29,6 +29,14 @@ interface ProxyCallGate {
     close: () => void;
 }
 
+// Reviews a tool call that no allow came before. Returns the refusal reason, or undefined when the call may be sent.
+type ProxyCallReview = (toolName: string, input: unknown) => Promise<string | undefined>;
+
+interface GatedToolCall {
+    name: string;
+    input: unknown;
+}
+
 interface GatedCall {
     toolName: string;
     inputKey: string;
@@ -38,6 +46,7 @@ interface GatedCall {
 interface GateState {
     routeKey: string;
     calls: Map<string, GatedCall>;
+    reviewCall: ProxyCallReview | undefined;
 }
 
 interface ProxyErrorResponse {
@@ -144,7 +153,7 @@ function readMethod(message: unknown): unknown {
     return typeof message === 'object' && message !== null ? Reflect.get(message, 'method') : undefined;
 }
 
-type GateCheck = { kind: 'pass' } | { kind: 'unreadable' } | { kind: 'refused'; id: unknown; isBatch: boolean; message: string };
+type GateCheck = { kind: 'pass' } | { kind: 'unreadable' } | { kind: 'refused'; id: unknown; isBatch: boolean; message: string; toolCall?: GatedToolCall | undefined };
 
 function readRecord(value: unknown): Record<string, unknown> | undefined {
     return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -170,6 +179,23 @@ function consumeGatedCall(gate: GateState, message: unknown): boolean {
     call.isConsumed = true;
 
     return true;
+}
+
+// The name and input of a single tool call, so a review can judge it. A call with no plain name has nothing to judge.
+function readToolCall(message: unknown): GatedToolCall | undefined {
+    const rawParams: unknown = Reflect.get(message as object, 'params');
+    const params = readRecord(rawParams);
+
+    return typeof params?.name === 'string' ? { name: params.name, input: params.arguments ?? {} } : undefined;
+}
+
+// A review that throws is a refusal, so a broken review never lets a call through.
+async function reviewGatedCall(reviewCall: ProxyCallReview, toolCall: GatedToolCall): Promise<string | undefined> {
+    try {
+        return await reviewCall(toolCall.name, toolCall.input);
+    } catch {
+        return CALL_NOT_ALLOWED_MESSAGE;
+    }
 }
 
 // An empty body, such as the GET that opens an event stream, passes. A body that is not JSON cannot be checked, so it is refused.
@@ -202,7 +228,7 @@ function checkGatedRequest(body: Buffer, gate: GateState): GateCheck {
 }
 
 // Why one message of a gated request is refused, or undefined when it may be sent.
-function refusalOf(message: unknown, gate: GateState, isBatch: boolean): { id: unknown; message: string } | undefined {
+function refusalOf(message: unknown, gate: GateState, isBatch: boolean): { id: unknown; message: string; toolCall?: GatedToolCall | undefined } | undefined {
     const method = readMethod(message);
     const id: unknown = typeof message === 'object' && message !== null ? Reflect.get(message, 'id') : undefined;
 
@@ -211,8 +237,12 @@ function refusalOf(message: unknown, gate: GateState, isBatch: boolean): { id: u
     }
 
     // A batch cannot be partly sent, so a tool call in a batch is refused as a whole. It never uses up an allowed call.
-    if (method === TOOL_CALL_METHOD && (isBatch || !consumeGatedCall(gate, message))) {
+    if (method === TOOL_CALL_METHOD && isBatch) {
         return { id, message: CALL_NOT_ALLOWED_MESSAGE };
+    }
+
+    if (method === TOOL_CALL_METHOD && !consumeGatedCall(gate, message)) {
+        return { id, message: CALL_NOT_ALLOWED_MESSAGE, toolCall: readToolCall(message) };
     }
 
     return undefined;
@@ -300,7 +330,8 @@ class AppProxy {
     }
 
     // A gated address of a server for one turn, or undefined when the address is not one this proxy gave out.
-    openCallGate(address: string): ProxyCallGate | undefined {
+    // With reviewCall, a single tool call that no allow came before is reviewed when it arrives, for an engine that does not ask first.
+    openCallGate(address: string, reviewCall?: ProxyCallReview): ProxyCallGate | undefined {
         const baseUrl = this.requireBaseUrl();
         const prefix = `${baseUrl}/`;
         const routeKey = address.startsWith(prefix) ? address.slice(prefix.length) : '';
@@ -311,7 +342,7 @@ class AppProxy {
 
         const gateKey = randomBytes(RANDOM_KEY_BYTES)
             .toString('hex');
-        const gate: GateState = { routeKey, calls: new Map() };
+        const gate: GateState = { routeKey, calls: new Map(), reviewCall };
 
         this.gates.set(gateKey, gate);
 
@@ -417,9 +448,18 @@ class AppProxy {
             }
 
             if (check.kind === 'refused') {
-                refuseGatedRequest(outgoingResponse, check);
+                const refusal = gate.reviewCall === undefined || check.toolCall === undefined ? check.message : await reviewGatedCall(gate.reviewCall, check.toolCall);
 
-                return;
+                if (refusal !== undefined) {
+                    refuseGatedRequest(outgoingResponse, { ...check, message: refusal });
+
+                    return;
+                }
+
+                // A client that gave up during a long review already saw a failure and may ask again, so the call is not sent.
+                if (outgoingResponse.socket?.destroyed !== false) {
+                    return;
+                }
             }
         }
 
@@ -471,4 +511,4 @@ class AppProxy {
 }
 
 export { AppProxy };
-export type { AppProxyOptions, AppRoute, ProxyCallGate };
+export type { AppProxyOptions, AppRoute, ProxyCallGate, ProxyCallReview };

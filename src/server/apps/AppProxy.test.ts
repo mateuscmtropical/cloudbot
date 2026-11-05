@@ -1,7 +1,7 @@
 import { createServer, request as httpRequest } from 'node:http';
 import type { IncomingHttpHeaders, Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppProxy } from './AppProxy.ts';
 
@@ -329,6 +329,47 @@ describe('AppProxy', () => {
                 .toMatchObject({ id: 3, error: { message: 'This call was not approved, so it was not sent.' } });
             expect(upstream.received)
                 .toHaveLength(1);
+        });
+
+        it('reviews a tool call with no allow when the gate has a review, and sends it only when the review passes', async () => {
+            const address = proxy.register('app-review', { upstream: upstream.url, readToken: () => undefined });
+            const review = vi.fn((toolName: string) => Promise.resolve(toolName === 'search' ? undefined : 'The review refused this.'));
+            const gate = proxy.openCallGate(address, review);
+
+            if (gate === undefined) {
+                throw new Error('No gate.');
+            }
+
+            const allowed = await fetch(gate.address, { method: 'POST', body: toolCall(undefined, 'search', { query: 'a' }) });
+            const refused = await fetch(gate.address, { method: 'POST', body: toolCall(undefined, 'delete', {}) });
+            const batch = await fetch(gate.address, { method: 'POST', body: `[${toolCall(undefined, 'search', {})}]` });
+
+            expect(await allowed.text())
+                .toBe(toolCall(undefined, 'search', { query: 'a' }));
+            expect(await refused.json())
+                .toMatchObject({ id: 3, error: { message: 'The review refused this.' } });
+            expect(batch.status)
+                .toBe(403);
+            expect(review.mock.calls)
+                .toEqual([['search', { query: 'a' }], ['delete', {}]]);
+            expect(upstream.received)
+                .toHaveLength(1);
+        });
+
+        it('refuses a tool call when its review throws', async () => {
+            const address = proxy.register('app-review-fail', { upstream: upstream.url, readToken: () => undefined });
+            const gate = proxy.openCallGate(address, () => Promise.reject(new Error('down')));
+
+            if (gate === undefined) {
+                throw new Error('No gate.');
+            }
+
+            const response = await fetch(gate.address, { method: 'POST', body: toolCall(undefined, 'search', {}) });
+
+            expect(await response.json())
+                .toMatchObject({ error: { message: 'This call was not approved, so it was not sent.' } });
+            expect(upstream.received)
+                .toHaveLength(0);
         });
 
         it('refuses a tool call that was not allowed, or that differs from the allowed one', async () => {

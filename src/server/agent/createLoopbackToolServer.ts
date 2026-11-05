@@ -120,7 +120,8 @@ const BLOCKED_REASON = 'The owner blocked this tool.';
 const REVIEW_FAILED_REASON = 'This action could not be reviewed, so it was not run.';
 const REPEATED_DECISION_REASON = 'This call was already decided, so it was not run again.';
 const APPROVE_AS_TOOL_REASON = 'The permission tool is not a tool for the model.';
-const NOT_APPROVED_TEXT = 'The owner has not approved this call, so it was not run.';
+// The model repeats this to the owner, so it must not blame the owner, and it must not suggest that asking in the chat helps.
+const NOT_APPROVED_TEXT = 'This call reached the tool with no review decision, so it was not run. The owner did not refuse it, and a yes in the chat does not change this. Tell the owner the tool failed.';
 const REPEATED_REFUSAL_REASON = 'The owner already denied this same action in this turn, so it was not asked again. Do not try it again. Tell the owner what you wanted to do and why.';
 
 const stringSchema = z.string();

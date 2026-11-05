@@ -116,7 +116,7 @@ describe('loopback tool server', () => {
         expect(JSON.stringify(first.json))
             .toContain('echo hi');
         expect(JSON.stringify(second.json))
-            .toContain('not approved');
+            .toContain('no review decision');
         turn.release();
     });
 
@@ -129,7 +129,7 @@ describe('loopback tool server', () => {
         const response = await postMcp(turn, toolCall('echo', { text: 'hi' }, undefined));
 
         expect(JSON.stringify(response.json))
-            .toContain('not approved');
+            .toContain('The owner did not refuse it');
         expect(handler)
             .not.toHaveBeenCalled();
         turn.release();
