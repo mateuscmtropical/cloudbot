@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
 
 import type { DraftAttachment } from './Composer.tsx';
@@ -328,53 +328,159 @@ describe('Composer', () => {
 });
 
 describe('Composer message history', () => {
-    afterEach(() => {
-        cleanup();
+    beforeEach(() => {
+        vi.useFakeTimers();
     });
 
-    it('brings back the sent messages with arrow up, newest first', () => {
+    afterEach(() => {
+        cleanup();
+        vi.useRealTimers();
+    });
+
+    // Presses an arrow. The optional caret stands for the browser moving the caret to another line.
+    function pressArrow(textarea: HTMLTextAreaElement, key: 'ArrowUp' | 'ArrowDown', caretAfterBrowser?: number): void {
+        fireEvent.keyDown(textarea, { key });
+
+        if (caretAfterBrowser !== undefined) {
+            textarea.setSelectionRange(caretAfterBrowser, caretAfterBrowser);
+        }
+
+        act(() => {
+            vi.runAllTimers();
+        });
+    }
+
+    function typeText(textarea: HTMLTextAreaElement, text: string, caret: number): void {
+        fireEvent.change(textarea, { target: { value: text } });
+        textarea.setSelectionRange(caret, caret);
+    }
+
+    it('brings back the sent messages with arrow up, one press each, newest first', () => {
         const textarea = renderComposer({ sentHistory: ['first', 'second', 'third'] });
 
-        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+        pressArrow(textarea, 'ArrowUp');
 
         expect(textarea.value)
             .toBe('third');
 
-        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
-        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
-        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+        pressArrow(textarea, 'ArrowUp');
+        pressArrow(textarea, 'ArrowUp');
+        pressArrow(textarea, 'ArrowUp');
 
         expect(textarea.value)
             .toBe('first');
     });
 
-    it('goes forward with arrow down and returns the text that was being typed', () => {
+    it('moves up a line, then to the start of the text, and only then to the older message', () => {
+        const textarea = renderComposer({ sentHistory: ['old'] });
+
+        typeText(textarea, 'line one\nline two', 13);
+        pressArrow(textarea, 'ArrowUp', 4);
+
+        expect(textarea.value)
+            .toBe('line one\nline two');
+
+        pressArrow(textarea, 'ArrowUp');
+
+        expect(textarea.value)
+            .toBe('line one\nline two');
+        expect(textarea.selectionStart)
+            .toBe(0);
+
+        pressArrow(textarea, 'ArrowUp');
+
+        expect(textarea.value)
+            .toBe('old');
+    });
+
+    it('moves down a line, then to the end of the text, and only then to the newer message', () => {
+        const textarea = renderComposer({ sentHistory: ['first\nsecond line', 'newest'] });
+
+        pressArrow(textarea, 'ArrowUp');
+        pressArrow(textarea, 'ArrowUp');
+
+        expect(textarea.value)
+            .toBe('first\nsecond line');
+        expect(textarea.selectionStart)
+            .toBe(0);
+
+        pressArrow(textarea, 'ArrowDown', 6);
+        pressArrow(textarea, 'ArrowDown');
+
+        expect(textarea.value)
+            .toBe('first\nsecond line');
+        expect(textarea.selectionStart)
+            .toBe(textarea.value.length);
+
+        pressArrow(textarea, 'ArrowDown');
+
+        expect(textarea.value)
+            .toBe('newest');
+    });
+
+    it('goes forward with arrow down, one press each, and returns the text that was being typed', () => {
         const textarea = renderComposer({ sentHistory: ['first', 'second'] });
 
-        fireEvent.change(textarea, { target: { value: 'half written' } });
-        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
-        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+        typeText(textarea, 'half written', 0);
+        pressArrow(textarea, 'ArrowUp');
+        pressArrow(textarea, 'ArrowUp');
 
         expect(textarea.value)
             .toBe('first');
 
-        fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+        pressArrow(textarea, 'ArrowDown');
 
         expect(textarea.value)
             .toBe('second');
 
-        fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+        pressArrow(textarea, 'ArrowDown');
 
         expect(textarea.value)
             .toBe('half written');
+        expect(textarea.selectionStart)
+            .toBe(textarea.value.length);
     });
 
-    it('does nothing without history and leaves arrow down alone outside the history', () => {
+    it('walks with one press also where the browser jumps the caret across a one line message', () => {
+        const textarea = renderComposer({ sentHistory: ['older', 'newer'] });
+
+        pressArrow(textarea, 'ArrowUp');
+        pressArrow(textarea, 'ArrowUp');
+
+        expect(textarea.value)
+            .toBe('older');
+
+        pressArrow(textarea, 'ArrowDown', textarea.value.length);
+
+        expect(textarea.value)
+            .toBe('newer');
+
+        pressArrow(textarea, 'ArrowUp', 0);
+
+        expect(textarea.value)
+            .toBe('older');
+    });
+
+    it('goes to the edge first when the caret is in the middle of a message from the history', () => {
+        const textarea = renderComposer({ sentHistory: ['older', 'newer'] });
+
+        pressArrow(textarea, 'ArrowUp');
+        textarea.setSelectionRange(2, 2);
+        pressArrow(textarea, 'ArrowUp');
+
+        expect(textarea.value)
+            .toBe('newer');
+        expect(textarea.selectionStart)
+            .toBe(0);
+    });
+
+    it('leaves the text alone without history and outside the history', () => {
         const textarea = renderComposer();
 
-        fireEvent.change(textarea, { target: { value: 'typed' } });
-        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
-        fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+        typeText(textarea, 'typed', 0);
+        pressArrow(textarea, 'ArrowUp');
+        textarea.setSelectionRange(5, 5);
+        pressArrow(textarea, 'ArrowDown');
 
         expect(textarea.value)
             .toBe('typed');
@@ -384,9 +490,9 @@ describe('Composer message history', () => {
         const onSend = vi.fn();
         const textarea = renderComposer({ onSend, sentHistory: ['one', 'two'] });
 
-        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
-        fireEvent.change(textarea, { target: { value: 'two edited' } });
-        fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+        pressArrow(textarea, 'ArrowUp');
+        typeText(textarea, 'two edited', 10);
+        pressArrow(textarea, 'ArrowDown');
 
         expect(textarea.value)
             .toBe('two edited');
@@ -397,27 +503,24 @@ describe('Composer message history', () => {
             .toHaveBeenCalledWith('two edited');
     });
 
-    it('keeps the arrows for the caret inside a message with several lines', () => {
+    it('leaves a selection to the browser', () => {
         const textarea = renderComposer({ sentHistory: ['old'] });
 
-        fireEvent.change(textarea, { target: { value: 'line one\nline two' } });
-        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+        fireEvent.change(textarea, { target: { value: 'typed' } });
+        textarea.setSelectionRange(0, 5);
+        pressArrow(textarea, 'ArrowUp');
 
         expect(textarea.value)
-            .toBe('line one\nline two');
-
-        textarea.setSelectionRange(0, 0);
-        fireEvent.keyDown(textarea, { key: 'ArrowUp' });
-
-        expect(textarea.value)
-            .toBe('old');
+            .toBe('typed');
     });
 
     it('ignores the arrows with a modifier key', () => {
         const textarea = renderComposer({ sentHistory: ['old'] });
 
         fireEvent.keyDown(textarea, { key: 'ArrowUp', shiftKey: true });
+        act(() => {
+            vi.runAllTimers();
+        });
 
         expect(textarea.value)
             .toBe('');
