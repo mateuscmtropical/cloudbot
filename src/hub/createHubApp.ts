@@ -3,6 +3,7 @@ import type { BlockList } from 'node:net';
 
 import type { ActivityTracker, InstanceManager, PeopleStore } from './contract.ts';
 import { createAdminRoutes } from './admin/createAdminRoutes.ts';
+import type { AppUpdateRequests } from './admin/AppUpdateRequests.ts';
 import { createFrontDoorRoutes } from './auth/createFrontDoorRoutes.ts';
 import type { OwnerSetupOptions } from './auth/createFrontDoorRoutes.ts';
 import type { LoginSessions } from './auth/LoginSessions.ts';
@@ -26,6 +27,7 @@ interface CreateHubAppOptions {
     ownerSetup?: OwnerSetupOptions;
     activity: ActivityTracker;
     hubPort?: number;
+    updates?: AppUpdateRequests;
     now?: () => number;
     upstreamFor?: (name: string) => { hostname: string; port: number };
 }

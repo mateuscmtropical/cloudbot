@@ -16,6 +16,8 @@ import { readPublicBaseUrl } from './access/setupLinkUrl.ts';
 import type { PeopleAdmin } from './people/PeopleAdmin.ts';
 import type { ActionLog } from './logs/ActionLog.ts';
 import { createActionLogRoutes } from './logs/createActionLogRoutes.ts';
+import { createAppUpdateRoutes } from './people/createAppUpdateRoutes.ts';
+import type { AppUpdater } from './people/createAppUpdateRoutes.ts';
 import { createPeopleRoutes } from './people/createPeopleRoutes.ts';
 import type { PersonRole } from '../shared/peopleTypes.ts';
 import { readHubConfig } from './people/hubConfig.ts';
@@ -83,6 +85,8 @@ interface AppOptions {
     passkeys?: PasskeyService | undefined;
     // Only on the owner's instance inside the hub. It adds and removes people through the hub.
     peopleAdmin?: PeopleAdmin | undefined;
+    // Only on the owner's instance inside the hub. It starts an update of the whole install.
+    appUpdater?: AppUpdater | undefined;
     webRoot?: string;
     // What the bots did, for the owner's action log screen. Without it the route is not served.
     actionLog?: ActionLog;
@@ -258,6 +262,12 @@ function createApp(options: AppOptions): Hono {
         const actionLogRoutes = createActionLogRoutes({ actionLog: options.actionLog });
 
         app.route('/', actionLogRoutes);
+    }
+
+    if (options.appUpdater !== undefined) {
+        const appUpdateRoutes = createAppUpdateRoutes({ appUpdater: options.appUpdater });
+
+        app.route('/', appUpdateRoutes);
     }
 
     if (hubMode) {

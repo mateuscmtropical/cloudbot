@@ -28,6 +28,16 @@ interface PersonWithPassword {
     password: string;
 }
 
+// The state of an update of the whole install. An install without the update service is unavailable.
+type AppUpdateState = 'idle' | 'running' | 'done' | 'failed' | 'unavailable';
+
+interface AppUpdateStatus {
+    state: AppUpdateState;
+    commit?: string;
+    latest?: string;
+    at?: string;
+}
+
 interface ResetPasswordResult {
     password: string;
 }
@@ -55,4 +65,4 @@ function checkPersonName(name: string): string | undefined {
 }
 
 export { PERSON_NAME_PATTERN, RESERVED_PERSON_NAMES, checkPersonName };
-export type { AddPersonRequest, InstanceStatus, PeopleErrorResponse, Person, PersonRole, PersonState, PersonWithPassword, ResetPasswordResult };
+export type { AddPersonRequest, AppUpdateState, AppUpdateStatus, InstanceStatus, PeopleErrorResponse, Person, PersonRole, PersonState, PersonWithPassword, ResetPasswordResult };

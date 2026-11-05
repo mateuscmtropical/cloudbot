@@ -20,6 +20,8 @@ interface AccountPanelProps {
     onClose: () => void;
     onPeople?: (() => void) | undefined;
     onActionLog?: (() => void) | undefined;
+    // Only for the owner inside a hub.
+    onAppUpdate?: (() => void) | undefined;
     personName?: string | undefined;
     personRole?: string | undefined;
     // Inside the hub the hub keeps the password, the passkeys and the sign-in. A CloudBot on its own has none of them.
@@ -117,7 +119,7 @@ function NotificationsSection({ pushControls = BROWSER_PUSH_CONTROLS, groupLabel
 }
 
 // The hub keeps the password, the passkeys and the sign-in of each person, so those parts only lead to its pages.
-function AccountPanel({ onClose, onPeople, onActionLog, personName, personRole = 'Owner', isHub = true, pushControls = BROWSER_PUSH_CONTROLS }: AccountPanelProps): ReactElement {
+function AccountPanel({ onClose, onPeople, onActionLog, onAppUpdate, personName, personRole = 'Owner', isHub = true, pushControls = BROWSER_PUSH_CONTROLS }: AccountPanelProps): ReactElement {
     const displayName = personName ?? 'Owner';
     const trimmedName = displayName.trim();
     const nameParts = trimmedName.split(/\s+/);
@@ -165,6 +167,9 @@ function AccountPanel({ onClose, onPeople, onActionLog, personName, personRole =
                                     />
                                     {onPeople !== undefined
                                         ? <ListRow title="People" leadingIcon={<PeopleIcon />} onClick={onPeople} chevron />
+                                        : null}
+                                    {onAppUpdate !== undefined
+                                        ? <ListRow title="Update CloudBot" description="See the version and install the newest one." onClick={onAppUpdate} chevron />
                                         : null}
                                 </>
                             )

@@ -1,4 +1,4 @@
-import type { Person, PersonWithPassword, ResetPasswordResult } from '../shared/peopleTypes.ts';
+import type { AppUpdateStatus, Person, PersonWithPassword, ResetPasswordResult } from '../shared/peopleTypes.ts';
 import { RequestFailedError } from './apiClient.ts';
 
 interface ErrorResponseBody {
@@ -113,5 +113,15 @@ async function deletePerson(name: string): Promise<void> {
     await requestPeople(path, init, 204);
 }
 
-export { addPerson, deactivatePerson, deletePerson, getHubContext, getHubRole, listPeople, reactivatePerson, resetPersonPassword };
+function getAppUpdate(): Promise<AppUpdateStatus> {
+    return requestPeopleJson<AppUpdateStatus>('/api/update', { method: 'GET' }, 200);
+}
+
+function startAppUpdate(): Promise<AppUpdateStatus> {
+    const init = jsonRequest('POST', {});
+
+    return requestPeopleJson<AppUpdateStatus>('/api/update', init, 200);
+}
+
+export { getAppUpdate, startAppUpdate, addPerson, deactivatePerson, deletePerson, getHubContext, getHubRole, listPeople, reactivatePerson, resetPersonPassword };
 export type { HubContext, HubRole };
