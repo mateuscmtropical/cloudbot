@@ -17,6 +17,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- The Screen panel closes by itself when the bot's turn ends, unless the owner holds the screen or asked to see it.
 - The review asks the owner before the bot gives personal details, such as an address, phone or document, to a site the owner did not name. It also asks before the bot changes or deletes something in an outside account, accepts terms or signs something, unless the owner asked for it. Other browser use never asks.
 
 ### Fixed

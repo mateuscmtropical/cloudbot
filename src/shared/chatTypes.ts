@@ -197,6 +197,8 @@ interface ChatPersonCredentialsEvent {
 interface ChatScreenEvent {
     type: 'screen';
     botId: string;
+    // True when the owner asked to see the screen. The panel then stays until the owner closes it, not only for the turn.
+    keepsOpen?: boolean | undefined;
 }
 
 // The bot was deleted. The web app drops it from the list. Sent before the bot's listeners are dropped.

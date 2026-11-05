@@ -508,6 +508,63 @@ describe('DesktopPanel', () => {
             .toBeTruthy();
     });
 
+    it('closes by itself when the bot is done and holds the screen', async () => {
+        const onClose = vi.fn();
+        const { rerender } = render(<DesktopPanel onClose={onClose} isBotDone={false} />);
+
+        await screen.findByRole('button', { name: 'Take the screen' });
+
+        expect(onClose)
+            .not.toHaveBeenCalled();
+
+        rerender(<DesktopPanel onClose={onClose} isBotDone />);
+
+        await waitFor(() => {
+            expect(onClose)
+                .toHaveBeenCalledTimes(1);
+        });
+    });
+
+    it('stays while the owner holds the screen, and closes when the owner gives it back', async () => {
+        vi.mocked(apiClient.getScreenHolder)
+            .mockResolvedValue('person');
+
+        const onClose = vi.fn();
+
+        render(<DesktopPanel onClose={onClose} isBotDone />);
+
+        const giveBack = await screen.findByRole('button', { name: 'Done, take over' });
+
+        expect(onClose)
+            .not.toHaveBeenCalled();
+
+        vi.mocked(apiClient.getScreenHolder)
+            .mockResolvedValue('bot');
+        fireEvent.click(giveBack);
+
+        await waitFor(() => {
+            expect(onClose)
+                .toHaveBeenCalledTimes(1);
+        });
+    });
+
+    it('stays when the bot handed over the screen after the last poll', async () => {
+        const onClose = vi.fn();
+        const { rerender } = render(<DesktopPanel onClose={onClose} isBotDone={false} />);
+
+        await screen.findByRole('button', { name: 'Take the screen' });
+        vi.mocked(apiClient.getScreenHolder)
+            .mockResolvedValue('person');
+        rerender(<DesktopPanel onClose={onClose} isBotDone />);
+
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(onClose)
+            .not.toHaveBeenCalled();
+    });
+
     it('disconnects when closed', async () => {
         const onClose = vi.fn();
         const { unmount } = render(<DesktopPanel onClose={onClose} />);

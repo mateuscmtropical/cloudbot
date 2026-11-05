@@ -2461,7 +2461,7 @@ class ChatService {
 
     // Opens the Screen panel for the owner, when the owner asks to see the bot's screen.
     showScreen(botId: string): void {
-        this.publish(botId, { type: 'screen', botId });
+        this.publish(botId, { type: 'screen', botId, keepsOpen: true });
     }
 
     // Posts a secure form the bot asked for. Throws BotSecretError with a message for the model.

@@ -291,7 +291,9 @@ generic message.
 The first page that `browser_open` loads in a turn sends the `screen` event to
 the open web app, which opens the Screen panel. The owner then sees the live
 browser without asking for it. A panel the owner closes stays closed until the
-next turn.
+next turn. The panel closes by itself when the turn ends, unless the owner holds
+the screen. In that case it closes when the owner gives the screen back. When the
+owner asks to see the screen, `screen_show` marks the event so the panel stays.
 
 Chromium runs with `--no-sandbox`, because Docker's default seccomp profile
 blocks the namespaces its sandbox needs. Open choices like this one are listed
