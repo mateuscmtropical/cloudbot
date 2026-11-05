@@ -44,6 +44,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- A Gemini subscription offers Gemini 3.8 Flash with low, medium or high effort, so the chat, a kind of work or a routine can run on it. Before, no Gemini model could be chosen, because agy reports no model list. When the bot picks a model that is not offered, it is told which ones are.
 - A message you send while a bot on ChatGPT or an OpenAI key is working now goes straight into the running turn, as it does on Claude, instead of waiting in the queue. A message with files still waits.
 - A bot on ChatGPT or an OpenAI key can use its own tools, such as the browser, and connected apps in Auto and YOLO. Codex does not ask about these calls in those modes, so every one was refused with no card. CloudBot now reviews each call when it arrives. Harmless ones run at once, and dangerous ones still show a card in Auto.
 - A tool call that arrives with no review decision no longer tells the bot that the owner refused it.

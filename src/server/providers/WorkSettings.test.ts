@@ -153,7 +153,7 @@ describe('WorkSettings', () => {
         expect(await workSettings.checkChoice('bot-1', { provider: 'gemini', model: 'flash', effort: 'low' }))
             .toBeUndefined();
         expect(await workSettings.checkChoice('bot-1', { provider: 'gemini', model: 'nope', effort: null }))
-            .toBe('Choose a model from the list of that provider.');
+            .toBe('Choose one of the models of that provider: flash.');
         expect(await workSettings.checkChoice('bot-1', { provider: 'kimi', model: null, effort: null }))
             .toBe('Connect that provider first.');
         expect(await workSettings.checkChoice('bot-1', { provider: null, model: 'opus', effort: 'max' }))

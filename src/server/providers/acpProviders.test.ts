@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { ACP_PROVIDERS, LOCAL_ACP_ARGS, PLACEHOLDER_KEY } from './acpProviders.ts';
+import { ACP_PROVIDERS, LOCAL_ACP_ARGS, PLACEHOLDER_KEY, offerAgyModels } from './acpProviders.ts';
+import { ProviderModelCatalogs } from './ProviderModelCatalogs.ts';
 
 describe('Grok ACP provider', () => {
     it('starts ACP with updates disabled and Ask permission mode forced', () => {
@@ -30,5 +31,31 @@ describe('Grok ACP provider', () => {
             });
         expect(apiKey?.environment('http://127.0.0.1:3456'))
             .toEqual({ XAI_API_KEY: PLACEHOLDER_KEY, GROK_XAI_API_BASE_URL: 'http://127.0.0.1:3456/v1' });
+    });
+});
+
+describe('Gemini subscription models', () => {
+    it('offers the agy model when the subscription reported none', () => {
+        const catalogs = new ProviderModelCatalogs();
+
+        offerAgyModels(catalogs, 'gemini', 'signIn');
+
+        expect(catalogs.get('gemini')?.models)
+            .toEqual([{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', efforts: ['low', 'medium', 'high'] }]);
+    });
+
+    it('leaves a Gemini key and a reported list alone', () => {
+        const keyCatalogs = new ProviderModelCatalogs();
+        const reportedCatalogs = new ProviderModelCatalogs();
+        const reported = { models: [{ id: 'pro', label: 'Pro', efforts: [] }], defaultModel: 'pro', defaultEffort: null };
+
+        reportedCatalogs.set('gemini', reported);
+        offerAgyModels(keyCatalogs, 'gemini', 'apiKey');
+        offerAgyModels(reportedCatalogs, 'gemini', undefined);
+
+        expect(keyCatalogs.get('gemini'))
+            .toBeUndefined();
+        expect(reportedCatalogs.get('gemini'))
+            .toEqual(reported);
     });
 });

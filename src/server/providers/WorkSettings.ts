@@ -304,7 +304,11 @@ class WorkSettings {
         const option = catalog?.models.find(candidate => candidate.id === (model ?? catalog.defaultModel));
 
         if (model !== null && (catalog === undefined || !catalog.models.some(candidate => candidate.id === model))) {
-            return 'Choose a model from the list of that provider.';
+            const ids = catalog?.models.map(candidate => candidate.id) ?? [];
+
+            return ids.length === 0
+                ? 'That provider has reported no models yet. Leave the model empty to use its default.'
+                : `Choose one of the models of that provider: ${ids.join(', ')}.`;
         }
 
         return effort !== null && option?.efforts.includes(effort) !== true ? 'Choose an effort offered for that model.' : undefined;
