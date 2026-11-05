@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 
+import { childHome } from '../childEnvironment.ts';
+
 interface DesktopCommand {
     command: string;
     args: string[];
@@ -30,7 +32,7 @@ const MAX_STDERR_TAIL_LENGTH = 500;
 // Only HOME and PATH are passed. sudoers keeps the ANTHROPIC_ variables for the CLI,
 // so a key in the server environment would otherwise reach the bot's desktop.
 function buildDesktopEnvironment(): Record<string, string> {
-    return { HOME: process.env.HOME ?? '/', PATH: DESKTOP_PATH };
+    return { HOME: childHome(), PATH: DESKTOP_PATH };
 }
 
 function spawnDesktopProcess(command: string, args: string[]): ChildProcess {

@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline';
 
 import type { AcpLaunch } from '../agent/AcpEngine.ts';
 import { toAgyModel } from '../agent/AgyEngine.ts';
+import { childPath } from '../childEnvironment.ts';
 import type { ReviewModel } from './createToolCallReviewer.ts';
 
 interface AgyReviewModelOptions {
@@ -50,7 +51,7 @@ function createAgyReviewModel(options: AgyReviewModelOptions): ReviewModel {
         const agyModel = toAgyModel(model, effort) ?? DEFAULT_AGY_REVIEW_MODEL;
         const child = options.launch.spawnFunction(options.command, options.args, {
             cwd: tmpdir(),
-            env: { PATH: process.env.PATH ?? '', CLOUDBOT_AGY_MODEL: agyModel },
+            env: { PATH: childPath(), CLOUDBOT_AGY_MODEL: agyModel },
             stdio: ['pipe', 'pipe', 'ignore'],
             shell: false,
             windowsHide: true,

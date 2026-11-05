@@ -1,12 +1,13 @@
+import { readServerConfig } from './config.ts';
 import { SetupAccess } from './access/SetupAccess.ts';
 import { buildSetupLink } from './access/setupLinkUrl.ts';
 import { openDatabase } from './store/openDatabase.ts';
-import { databasePath, resolveDataDir } from './store/resolveDataDir.ts';
+import { databasePath } from './store/resolveDataDir.ts';
 import { SettingsStore } from './store/SettingsStore.ts';
 
 // Run with `pnpm setup-link`. The running server reads the code from the database
 // on every request, so the new code works without a restart.
-const dataDirectory = resolveDataDir();
+const dataDirectory = readServerConfig(process.env).dataDir;
 const databaseFilePath = databasePath(dataDirectory);
 const opened = await openDatabase(databaseFilePath);
 const access = new SetupAccess(new SettingsStore(opened.db));

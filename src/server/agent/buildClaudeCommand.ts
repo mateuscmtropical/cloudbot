@@ -1,5 +1,6 @@
 import { join, resolve } from 'node:path';
 
+import { inheritedEnvironment } from '../childEnvironment.ts';
 import { buildAgentEnvironment, validateAgentUser } from './createAgentUserSpawn.ts';
 
 interface ClaudeCommand {
@@ -8,7 +9,7 @@ interface ClaudeCommand {
     env?: Record<string, string>;
 }
 
-function validateAgentIsolation(agentUser: string | undefined, nodeEnv = process.env.NODE_ENV): void {
+function validateAgentIsolation(agentUser: string | undefined, nodeEnv: string | undefined): void {
     if (nodeEnv === 'production' && !agentUser) {
         throw new Error('CLOUDBOT_AGENT_USER must be set in production to isolate the agent from the server user.');
     }
@@ -36,12 +37,13 @@ function filterOwnerEnvironment(environment: NodeJS.ProcessEnv): Record<string, 
 }
 
 function localEnvironment(configDir: string): Record<string, string> {
-    const inheritedEnvironment = filterOwnerEnvironment(process.env);
+    const serverEnvironment = inheritedEnvironment();
+    const inherited = filterOwnerEnvironment(serverEnvironment);
 
-    return { ...inheritedEnvironment, CLAUDE_CONFIG_DIR: configDir };
+    return { ...inherited, CLAUDE_CONFIG_DIR: configDir };
 }
 
-function buildClaudeCommand(claudePath: string, args: string[], agentUser = process.env.CLOUDBOT_AGENT_USER, configDir?: string): ClaudeCommand {
+function buildClaudeCommand(claudePath: string, args: string[], agentUser: string | undefined, configDir?: string): ClaudeCommand {
     if (!agentUser) {
         if (configDir === undefined) {
             return { command: claudePath, args };

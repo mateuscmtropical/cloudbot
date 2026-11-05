@@ -1,16 +1,13 @@
 import { createServer, request as sendRequest } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
+import { readDockerGuardSettings } from './config.ts';
 import { isAllowedDockerRequest } from './docker/dockerGuard.ts';
 import type { DockerGuardRequest, DockerGuardRules } from './docker/dockerGuard.ts';
 
 const MAX_BODY_BYTES = 1024 * 1024;
-const upstream = new URL(process.env.DOCKER_GUARD_UPSTREAM ?? 'http://docker-proxy:2375');
-const port = Number(process.env.DOCKER_GUARD_PORT ?? '2375');
-const rules: DockerGuardRules = {
-    image: process.env.CLOUDBOT_INSTANCE_IMAGE ?? 'cloudbot:local',
-    hubContainer: process.env.HUB_CONTAINER_ID ?? 'cloudbot-hub-1',
-};
+const { upstream, port, image, hubContainer } = readDockerGuardSettings(process.env);
+const rules: DockerGuardRules = { image, hubContainer };
 
 function refuse(response: ServerResponse, status: number, message: string): void {
     const body = JSON.stringify({ message });

@@ -13,6 +13,7 @@ import type { LoopbackToolServer, LoopbackTurn } from './createLoopbackToolServe
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
 import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
 import { readAcpModelCatalog } from './readAcpModelCatalog.ts';
+import { childPath } from '../childEnvironment.ts';
 import type { ProviderModelCatalog, ProviderModelCatalogs } from '../providers/ProviderModelCatalogs.ts';
 import type { ProviderId } from '../providers/providerIds.ts';
 
@@ -376,7 +377,7 @@ class AcpEngine implements AgentRunner {
         }
 
         const permissionMode = request.permissionMode ?? 'ask';
-        const environment = { PATH: process.env.PATH ?? '', ...this.options.environment, ...request.extraEnvironment, CLOUDBOT_PERMISSION_MODE: permissionMode, ...(home === undefined ? {} : { HOME: home }) };
+        const environment = { PATH: childPath(), ...this.options.environment, ...request.extraEnvironment, CLOUDBOT_PERMISSION_MODE: permissionMode, ...(home === undefined ? {} : { HOME: home }) };
         const spawnFunction = launch?.spawnFunction ?? this.options.spawnFunction ?? spawn;
         const signalChild = this.options.signalProcess ?? launch?.signalProcess ?? ((target: ChildProcess, action: SignalAction) => {
             signalProcessTree(target, action, undefined);

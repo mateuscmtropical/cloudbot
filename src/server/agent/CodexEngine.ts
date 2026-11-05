@@ -19,6 +19,7 @@ import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
 import { codexAgentLaunch } from './codexAgentLaunch.ts';
 import { writeCodexTurnImages } from './writeCodexTurnImages.ts';
 import type { CodexTurnImages } from './writeCodexTurnImages.ts';
+import { childPath } from '../childEnvironment.ts';
 import type { ProviderModelCatalog, ProviderModelCatalogs } from '../providers/ProviderModelCatalogs.ts';
 import { readCodexModelCatalog } from './readCodexModelCatalog.ts';
 
@@ -352,7 +353,7 @@ class CodexEngine implements AgentRunner {
 
     private async* runProcess(request: TurnRequest, codexHome: string, userHome: string, toolTurn: LoopbackTurn | undefined, remoteServers: RemoteServer[], imagePaths: string[]): AsyncGenerator<AgentEvent> {
         const tokenVariable = toolTurn === undefined ? {} : { [TOOL_TOKEN_VARIABLE]: toolTurn.token };
-        const environment = { PATH: process.env.PATH ?? '', ...this.options.environment, ...request.extraEnvironment, ...tokenVariable, HOME: userHome, CODEX_HOME: codexHome };
+        const environment = { PATH: childPath(), ...this.options.environment, ...request.extraEnvironment, ...tokenVariable, HOME: userHome, CODEX_HOME: codexHome };
         const toolConfig = toolTurn === undefined ? [] : toolServerConfig(toolTurn, request);
         const remoteConfig = remoteServerConfig(remoteServers, request);
         const args = buildCodexArguments([...toolConfig, ...remoteConfig, ...(this.options.extraConfig ?? [])]);

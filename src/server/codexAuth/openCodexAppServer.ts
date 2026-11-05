@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline';
 import { signalProcessTree } from '../agent/ClaudeCliEngine.ts';
 import type { SignalAction, SpawnFunction } from '../agent/ClaudeCliEngine.ts';
 import { buildCodexArguments, codexUserHomeFor, preparePrivateFolder } from '../agent/CodexEngine.ts';
+import { childPath } from '../childEnvironment.ts';
 import { codexAgentLaunch } from '../agent/codexAgentLaunch.ts';
 import type { CodexMessage, CodexRequestId } from '../agent/codexProtocol.ts';
 
@@ -85,7 +86,7 @@ async function openCodexAppServer(options: CodexAppServerOptions): Promise<Codex
         preparePrivateFolder(userHome);
     }
 
-    const environment = { PATH: process.env.PATH ?? '', ...options.environment, HOME: userHome, CODEX_HOME: options.codexHome };
+    const environment = { PATH: childPath(), ...options.environment, HOME: userHome, CODEX_HOME: options.codexHome };
     const args = buildCodexArguments([]);
     const child = spawnFunction(options.codexPath, args, {
         // The agent user's home is not open to the server, so that run starts in the root folder.

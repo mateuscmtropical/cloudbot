@@ -19,7 +19,18 @@ interface HubSettings {
     loginAllowedIps?: BlockList;
     // The Google Cloud client the admin set in the install .env. The hub gives it to each instance it starts.
     googleClient?: GoogleClientEnv;
+    // How long an instance may be idle before it stops, in ms. Unset means the IdleWatcher default.
+    idleMs?: number;
 }
+
+interface DockerGuardSettings {
+    upstream: URL;
+    port: number;
+    image: string;
+    hubContainer: string;
+}
+
+const MINUTE_MS = 60 * 1000;
 
 function readRequiredText(env: NodeJS.ProcessEnv, key: string, fallback?: string): string {
     const value = env[key] ?? fallback;
@@ -94,6 +105,14 @@ function readLoginAllowedIps(env: NodeJS.ProcessEnv): BlockList | undefined {
     return blockList;
 }
 
+function readIdleMs(env: NodeJS.ProcessEnv): number | undefined {
+    const configuredMinutes = Number(env.CLOUDBOT_IDLE_MINUTES);
+
+    return Number.isFinite(configuredMinutes) && configuredMinutes > 0
+        ? configuredMinutes * MINUTE_MS
+        : undefined;
+}
+
 function readHubSettings(env: NodeJS.ProcessEnv): HubSettings {
     const domain = readDomain(env);
     const ownerName = readRequiredText(env, 'CLOUDBOT_OWNER_NAME', 'owner');
@@ -106,6 +125,7 @@ function readHubSettings(env: NodeJS.ProcessEnv): HubSettings {
     const containerId = readRequiredText(env, 'HUB_CONTAINER_ID', env.HOSTNAME);
     const loginAllowedIps = readLoginAllowedIps(env);
     const googleClient = readGoogleClientEnv(env);
+    const idleMs = readIdleMs(env);
     const settings: HubSettings = {
         domain,
         port: readPositiveNumber(env, 'HUB_PORT', 3001, true),
@@ -120,6 +140,7 @@ function readHubSettings(env: NodeJS.ProcessEnv): HubSettings {
         containerId,
         ...(loginAllowedIps === undefined ? {} : { loginAllowedIps }),
         ...(googleClient === undefined ? {} : { googleClient }),
+        ...(idleMs === undefined ? {} : { idleMs }),
     };
 
     if (settings.port > 65535) {
@@ -141,5 +162,14 @@ function readHubSettings(env: NodeJS.ProcessEnv): HubSettings {
     return settings;
 }
 
-export { readHubSettings };
-export type { HubSettings };
+function readDockerGuardSettings(env: NodeJS.ProcessEnv): DockerGuardSettings {
+    return {
+        upstream: new URL(env.DOCKER_GUARD_UPSTREAM ?? 'http://docker-proxy:2375'),
+        port: Number(env.DOCKER_GUARD_PORT ?? '2375'),
+        image: env.CLOUDBOT_INSTANCE_IMAGE ?? 'cloudbot:local',
+        hubContainer: env.HUB_CONTAINER_ID ?? 'cloudbot-hub-1',
+    };
+}
+
+export { readDockerGuardSettings, readHubSettings };
+export type { DockerGuardSettings, HubSettings };

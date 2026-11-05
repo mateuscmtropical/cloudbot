@@ -8,6 +8,7 @@ import { join, resolve as resolvePath, win32 } from 'node:path';
 import { BrowserControl, BrowserError, DESKTOP_DEVTOOLS_URL, GATE_REFUSED_ERROR, devtoolsSocketUrl } from './BrowserControl.ts';
 import { CdpConnection } from './CdpConnection.ts';
 import type { DesktopCommand } from './DesktopSupervisor.ts';
+import { inheritedEnvironment } from '../childEnvironment.ts';
 
 interface LocalBrowserEnvironment {
     platform: NodeJS.Platform;
@@ -796,7 +797,7 @@ function buildLocalBrowserCommand(browserPath: string, options: LocalBrowserArgu
 }
 
 function defaultLocalBrowserEnvironment(): LocalBrowserEnvironment {
-    return { platform: process.platform, env: process.env, exists: existsSync };
+    return { platform: process.platform, env: inheritedEnvironment(), exists: existsSync };
 }
 
 export { BROWSER_PATH_VARIABLE, GATE_NOT_VERIFIED_MESSAGE, answerFromResponse, buildLocalBrowserArguments, buildLocalBrowserCommand, buildLocalBrowserTools, checkLocalBrowserGate, commandLineNamesGate, createLocalBrowserSpawn, defaultLocalBrowserEnvironment, findLocalBrowser, inspectProfileBrowser, localBrowserProfileDir, localGatePortFor, minimalBrowserEnvironment, parsePort, planLocalBrowser, readDevtoolsPort, saveLocalGatePort, startPlannedGate, verifyLocalBrowserGate };

@@ -9,48 +9,6 @@ import { SettingsStore } from '../store/SettingsStore.ts';
 import { createHubActivityRoutes } from './createHubActivityRoutes.ts';
 import type { ActivitySources } from './activity.ts';
 
-interface HubEnvironment {
-    secret: string | undefined;
-    hubUrl: string | undefined;
-    personName: string | undefined;
-    personRole: string | undefined;
-}
-
-function saveHubEnvironment(): HubEnvironment {
-    return {
-        secret: process.env.CLOUDBOT_HUB_SECRET,
-        hubUrl: process.env.CLOUDBOT_HUB_URL,
-        personName: process.env.CLOUDBOT_PERSON_NAME,
-        personRole: process.env.CLOUDBOT_PERSON_ROLE,
-    };
-}
-
-function restoreHubEnvironment(environment: HubEnvironment): void {
-    if (environment.secret === undefined) {
-        delete process.env.CLOUDBOT_HUB_SECRET;
-    } else {
-        process.env.CLOUDBOT_HUB_SECRET = environment.secret;
-    }
-
-    if (environment.hubUrl === undefined) {
-        delete process.env.CLOUDBOT_HUB_URL;
-    } else {
-        process.env.CLOUDBOT_HUB_URL = environment.hubUrl;
-    }
-
-    if (environment.personName === undefined) {
-        delete process.env.CLOUDBOT_PERSON_NAME;
-    } else {
-        process.env.CLOUDBOT_PERSON_NAME = environment.personName;
-    }
-
-    if (environment.personRole === undefined) {
-        delete process.env.CLOUDBOT_PERSON_ROLE;
-    } else {
-        process.env.CLOUDBOT_PERSON_ROLE = environment.personRole;
-    }
-}
-
 function readSessionToken(response: Response): string {
     const setCookieHeader = response.headers.get('set-cookie') ?? '';
     const match = /__Host-cloudbot_session=([^;]+)/.exec(setCookieHeader);
@@ -93,17 +51,12 @@ describe('createHubActivityRoutes', () => {
     });
 
     it('mounts the route only in hub mode and protects it with the app session check', async () => {
-        const originalEnvironment = saveHubEnvironment();
         const database = await openDatabase(':memory:');
         const access = new SetupAccess(new SettingsStore(database.db));
+        const hubConfig = { hubUrl: 'http://hub:3001', secret: 'hub-secret', personName: 'maria', role: 'member' } as const;
 
         try {
-            process.env.CLOUDBOT_HUB_SECRET = 'hub-secret';
-            process.env.CLOUDBOT_HUB_URL = 'http://hub:3001';
-            process.env.CLOUDBOT_PERSON_NAME = 'maria';
-            process.env.CLOUDBOT_PERSON_ROLE = 'member';
-
-            const hubApp = createApp({ version: '1.2.3', access, hubSecret: 'hub-secret' });
+            const hubApp = createApp({ version: '1.2.3', access, hubSecret: 'hub-secret', hubConfig });
             const denied = await hubApp.request(HUB_ACTIVITY_PATH);
             const authorized = await hubApp.request(HUB_ACTIVITY_PATH, {
                 headers: { [HUB_TRUST_HEADER]: 'hub-secret' },
@@ -115,11 +68,6 @@ describe('createHubActivityRoutes', () => {
                 .toBe(200);
             expect(await authorized.json())
                 .toEqual({ isBusy: false, reasons: [] });
-
-            delete process.env.CLOUDBOT_HUB_SECRET;
-            delete process.env.CLOUDBOT_HUB_URL;
-            delete process.env.CLOUDBOT_PERSON_NAME;
-            delete process.env.CLOUDBOT_PERSON_ROLE;
 
             const standaloneApp = createApp({ version: '1.2.3', access });
             const setupCode = await access.issueSetupCode();
@@ -133,7 +81,6 @@ describe('createHubActivityRoutes', () => {
                 .toBe(404);
         } finally {
             database.close();
-            restoreHubEnvironment(originalEnvironment);
         }
     });
 });

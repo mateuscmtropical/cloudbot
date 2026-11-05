@@ -155,6 +155,7 @@ async function main(): Promise<void> {
             fetch,
             instanceUrl: name => 'http://cloudbot-i-' + name + ':3000',
         }),
+        ...(settings.idleMs === undefined ? {} : { idleMs: settings.idleMs }),
     });
     const appOptions: CreateHubAppOptions = {
         people,
