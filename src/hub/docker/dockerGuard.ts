@@ -143,6 +143,8 @@ const ROUTES: GuardRoute[] = [
     { method: 'GET', pattern: new RegExp(`^/containers/cloudbot-i-${NAME}/json$`), check: allowed },
     { method: 'POST', pattern: new RegExp(`^/containers/cloudbot-i-${NAME}/(?:start|stop)$`), check: allowed },
     { method: 'DELETE', pattern: new RegExp(`^/containers/cloudbot-i-${NAME}$`), check: allowed },
+    // The health check of the guard. Docker answers OK and nothing else.
+    { method: 'GET', pattern: /^\/_ping$/, check: allowed },
     { method: 'POST', pattern: /^\/networks\/create$/, check: checkNetworkCreate },
     { method: 'DELETE', pattern: new RegExp(`^/networks/cloudbot-net-${NAME}$`), check: allowed },
     { method: 'POST', pattern: new RegExp(`^/networks/cloudbot-net-${NAME}/connect$`), check: checkHubConnect },
