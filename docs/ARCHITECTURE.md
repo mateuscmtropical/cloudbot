@@ -1688,6 +1688,9 @@ the shape or the eyes. A stored name the app does not know reads as the default,
 from before the eyes gets the smile.
 
 The weather is the mood of an idle cloud, in two more columns of `bots`. `mascot_weather` is `auto` or one of lightning, rain, snow, sun, wind, bubbles and rainbow. `mascot_bolt` says where lightning goes, down by default. With `auto` the weather follows `SHAPE_WEATHER` in `src/shared/mascot.ts` and shows on one day in five for each bot. A chosen weather stays on. Sleep and every real state still win over it.
+
+While a bot rests, the mascot in the chat header does a random trick every 45 to 120 seconds (`src/web/useMascotTricks.ts`). `playTrick` in `src/web/mascotStage.ts` hides the mascot and moves a copy on a fixed layer that takes no clicks, using only transform and opacity through the Web Animations API. The tricks are in `mascotTricksMove.ts`, `mascotTricksWeather.ts` and `mascotTricksVisit.ts`, and a visit also moves the real mascots of the chat list. Work, another chat, a hidden tab or a resize cancels a trick, and cancelling the animations returns everything to its place. Reduced motion plays none.
+
 The owner changes them on the bot profile page. Edit turns the name into a field and shows the ready looks, the colors,
 the shapes and the eyes. A ready look sets the color, the shape and the eyes at once, and the rows after it change one
 part. The mascot above shows the pick. Save sends `PUT /api/bots/:id/name` when the name changed and then

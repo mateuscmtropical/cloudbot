@@ -10,6 +10,81 @@
     pointer-events: none;
 }
 
+/* A trick plays on a layer of its own over the whole page, and nothing on it can be clicked. */
+.mascot-trick-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.mascot-trick-copy {
+    position: fixed;
+}
+
+.cloud-mascot[data-trick-away] {
+    visibility: hidden;
+}
+
+.trick-piece {
+    position: fixed;
+    overflow: visible;
+    opacity: 0;
+}
+
+.trick-piece path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.trick-piece[data-kind='bolt'] path,
+.trick-piece[data-kind='heart'] path,
+.trick-piece[data-kind='star'] path,
+.trick-piece[data-kind='puff'] path {
+    fill: currentColor;
+    stroke: none;
+}
+
+.trick-piece[data-kind='rain'] {
+    color: #7cc4ff;
+}
+
+.trick-piece[data-kind='flake'] {
+    color: #ffffff;
+}
+
+.trick-piece[data-kind='bolt'] {
+    color: #ffd23f;
+}
+
+.trick-piece[data-kind='note'] {
+    color: #c9b6ff;
+}
+
+.trick-piece[data-kind='heart'] {
+    color: #ff6b8a;
+}
+
+.trick-piece[data-kind='star'] {
+    color: #ffd23f;
+}
+
+.trick-piece[data-kind='puff'] {
+    color: #c8ced6;
+}
+
+.trick-thread {
+    position: fixed;
+    width: 1.5px;
+    background: #d7dde5;
+    transform: scaleY(0);
+    transform-origin: top;
+}
+
 .mascot-fx {
     position: absolute;
     height: auto;

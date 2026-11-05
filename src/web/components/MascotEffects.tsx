@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 
 import type { MascotBolt, ShownWeather } from '../../shared/mascot.ts';
 import type { MascotEffect } from '../mascotMood.ts';
+import { BOLT, BUBBLE, FLAKE, RAIN_LINE, STAR } from '../mascotPiecePaths.ts';
 import './mascotEffects.css';
 
 // One drawn piece of an effect. Its place is in percent of the mascot and its motion comes from its class.
@@ -15,15 +16,10 @@ interface EffectPiece {
 }
 
 const LETTER_Z = 'M3 3 H13 L3 13 H13';
-const BOLT = 'M9 0 L2 9 H7 L5 16 L13 6 H8 Z';
-const RAIN_LINE = 'M8 2 L6 14';
 const QUESTION = 'M4 5 A4 4 0 1 1 9 9 Q8 10 8 12 M8 15 V15.2';
-const STAR = 'M8 0 Q8 8 16 8 Q8 8 8 16 Q8 8 0 8 Q8 8 8 0 Z';
-const FLAKE = 'M8 1 V15 M2 4.5 L14 11.5 M14 4.5 L2 11.5';
 const SUN_CORE = 'M8 4 A4 4 0 1 1 7.99 4 Z';
 const SUN_RAYS = 'M8 0.5 V2.5 M8 13.5 V15.5 M0.5 8 H2.5 M13.5 8 H15.5 M2.7 2.7 L4.1 4.1 M11.9 11.9 L13.3 13.3 M13.3 2.7 L11.9 4.1 M4.1 11.9 L2.7 13.3';
 const GUST = 'M1 6 H10 Q14 6 13 3 M1 11 H13';
-const BUBBLE = 'M8 3 A5 5 0 1 1 7.99 3 Z';
 const RAINBOW_OUTER = 'M1.5 15 A6.5 6.5 0 0 1 14.5 15';
 const RAINBOW_MIDDLE = 'M3 15 A5 5 0 0 1 13 15';
 const RAINBOW_INNER = 'M4.5 15 A3.5 3.5 0 0 1 11.5 15';
