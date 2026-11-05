@@ -17,6 +17,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Changed
 
+- On a phone, a swipe to the left in a chat opens the bot's details, and a swipe to the right closes them. Anything that scrolls sideways, such as filter chips, keeps the drag also at the end of its scroll. Dialogs keep it too.
 - The review asks the owner before the bot gives personal details, such as an address, phone or document, to a site the owner did not name. It also asks before the bot changes or deletes something in an outside account, accepts terms or signs something, unless the owner asked for it. Other browser use never asks.
 
 ### Fixed
