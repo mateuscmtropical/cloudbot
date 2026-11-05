@@ -6,6 +6,7 @@ import { z } from 'zod/v4';
 import { namesProtectedFolder, toReviewedCall } from './AcpEngine.ts';
 import type { AcpLaunch } from './AcpEngine.ts';
 import type { AgentEvent } from './AgentEvent.ts';
+import { childPath } from '../childEnvironment.ts';
 import type { AgentRunner, ToolCall, ToolCallDecision, TurnRequest } from './AgentRunner.ts';
 import type { LoopbackTool, LoopbackToolServer, OwnToolCall } from './createLoopbackToolServer.ts';
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
@@ -253,7 +254,7 @@ class AgyEngine implements AgentRunner {
         const model = toAgyModel(request.model ?? undefined, request.effort ?? undefined);
         const effort = request.effort !== undefined && request.effort !== null && AGY_EFFORTS.has(request.effort) ? request.effort : undefined;
         const environment: Record<string, string> = {
-            PATH: process.env.PATH ?? '',
+            PATH: childPath(),
             ...request.extraEnvironment,
             CLOUDBOT_TOOLS_TOKEN: toolTurn.token,
             CLOUDBOT_AGY_REVIEW_URL: toolTurn.mcpUrl,

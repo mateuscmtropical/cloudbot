@@ -3,6 +3,8 @@ import { chmodSync, mkdirSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { serve } from '@hono/node-server';
 import { filterOwnerEnvironment, localClaudeConfigDir, validateAgentIsolation } from './agent/buildClaudeCommand.ts';
+import { readServerConfig } from './config.ts';
+import { inheritedEnvironment } from './childEnvironment.ts';
 
 import { CLEANUP_INTERVAL_MS } from './attachments/cleanUploads.ts';
 import { ClaudeCliEngine } from './agent/ClaudeCliEngine.ts';
@@ -14,16 +16,15 @@ import { ProviderRunner } from './providers/ProviderRunner.ts';
 import { ProviderModelCatalogs } from './providers/ProviderModelCatalogs.ts';
 import type { ProviderEngine } from './providers/ProviderRunner.ts';
 import { createChatgptSignIn } from './providers/chatgptSignIn.ts';
-import { BEARER, PLACEHOLDER_KEY, checkKeyAt, createAcpProviders, methodRunner, readLocalAcpPaths } from './providers/acpProviders.ts';
+import { BEARER, PLACEHOLDER_KEY, checkKeyAt, createAcpProviders, methodRunner } from './providers/acpProviders.ts';
 import type { ProviderMethod } from './setup/SetupConversation.ts';
 import type { ProviderId } from './providers/providerIds.ts';
 import { PROFILE_SERVER_NAME } from './agent/createProfileToolServer.ts';
 import { AGENT_TURN_ROOT, startLoopbackToolServer } from './agent/createLoopbackToolServer.ts';
 import { SetupAccess } from './access/SetupAccess.ts';
 import { HubClient } from './people/HubClient.ts';
-import { readHubConfig } from './people/hubConfig.ts';
 import { PasskeyService } from './access/PasskeyService.ts';
-import { buildSetupLink, readPublicBaseUrl, readServerHost, readServerPort } from './access/setupLinkUrl.ts';
+import { buildSetupLink } from './access/setupLinkUrl.ts';
 import { createAgyReviewModel } from './approvals/createAgyReviewModel.ts';
 import { createCodexReviewModel } from './approvals/createCodexReviewModel.ts';
 import { skipAfterFailure } from './approvals/skipAfterFailure.ts';
@@ -74,7 +75,7 @@ import { fetchWatchedPage } from './watches/fetchWatchedPage.ts';
 import { ensureDefaultBot } from './store/ensureDefaultBot.ts';
 import { ActionLog } from './logs/ActionLog.ts';
 import { openDatabase } from './store/openDatabase.ts';
-import { databasePath, resolveDataDir } from './store/resolveDataDir.ts';
+import { databasePath } from './store/resolveDataDir.ts';
 import { PasskeyStore } from './store/PasskeyStore.ts';
 import { SettingsStore } from './store/SettingsStore.ts';
 import { checkApiKey } from './setup/checkApiKey.ts';
@@ -90,8 +91,7 @@ import { AppProxy } from './apps/AppProxy.ts';
 import { AppOAuth } from './apps/AppOAuth.ts';
 import { AppOAuthTokens } from './apps/AppOAuthTokens.ts';
 import { readGoogleHubRoute } from './apps/googleEndpoints.ts';
-import { readGoogleClientEnv } from '../shared/googleClientEnv.ts';
-import { createVoiceTranscriber, readVoicePrograms } from './voice/transcribeAudio.ts';
+import { createVoiceTranscriber } from './voice/transcribeAudio.ts';
 import { MeetingRecorder } from './meetings/MeetingRecorder.ts';
 import { saveFiles } from './attachments/saveUpload.ts';
 import { BitwardenAccountStore } from './bitwarden/bitwardenAccount.ts';
@@ -110,7 +110,6 @@ import { PushSubscriptionStore } from './store/PushSubscriptionStore.ts';
 import { createPushSender } from './push/createPushSender.ts';
 import { loadOrCreateVapidKeys } from './push/loadVapidKeys.ts';
 import { PushNotifier } from './push/PushNotifier.ts';
-import { readPushSubject } from './push/readPushSubject.ts';
 import { TELEGRAM_API_ORIGIN, createTelegramApi } from './telegram/TelegramApi.ts';
 import { TelegramBridge } from './telegram/TelegramBridge.ts';
 import { TELEGRAM_TOKEN_SECRET_NAME } from './telegram/createTelegramTools.ts';
@@ -125,20 +124,19 @@ interface RuntimeConnection {
     proxy?: KeyProxy;
 }
 
-validateAgentIsolation(process.env.CLOUDBOT_AGENT_USER);
+// The server reads its environment once here. The modules below take the values as options.
+const config = readServerConfig(process.env);
 
-const port = readServerPort(process.env);
-const host = readServerHost(process.env);
-const version = process.env.CLOUDBOT_VERSION ?? 'dev';
-const dataDir = resolveDataDir();
+validateAgentIsolation(config.agentUser, config.nodeEnv);
+
+const { port, host, version, dataDir, hubConfig } = config;
 const databaseFilePath = databasePath(dataDir);
-const hubConfig = readHubConfig(process.env);
 // One database handle serves the setup access and the chat stores.
 const opened = await openDatabase(databaseFilePath);
 
 function createPasskeyService(): PasskeyService | undefined {
     try {
-        return new PasskeyService({ store: new PasskeyStore(opened.db), access, publicUrl: readPublicBaseUrl(process.env) });
+        return new PasskeyService({ store: new PasskeyStore(opened.db), access, publicUrl: config.publicBaseUrl });
     } catch {
         console.error('Passkeys are off: CLOUDBOT_PUBLIC_URL is not a full address such as https://bot.example.com.');
 
@@ -157,8 +155,7 @@ const messageStore = new MessageStore(opened.db);
 
 await ensureDefaultBot(botStore);
 
-const claudePath = process.env.CLAUDE_PATH;
-const agentUser = process.env.CLOUDBOT_AGENT_USER;
+const { claudePath, agentUser } = config;
 
 // Without an agent user the bot runs as the owner's own account, so the owner should know it at start.
 if (!agentUser) {
@@ -180,7 +177,8 @@ const authOptions = {
     ...(agentUser ? { agentUser } : {}),
     ...(claudeConfigDir === undefined ? {} : { configDir: claudeConfigDir }),
 };
-const environment = filterOwnerEnvironment(process.env);
+const serverEnvironment = inheritedEnvironment();
+const environment = filterOwnerEnvironment(serverEnvironment);
 
 if (claudeConfigDir !== undefined) {
     environment.CLAUDE_CONFIG_DIR = claudeConfigDir;
@@ -192,9 +190,9 @@ const loopback = await startLoopbackToolServer(PROFILE_SERVER_NAME, {
     turnRoot: agentUser ? AGENT_TURN_ROOT : undefined,
     agentReadable: agentUser !== undefined,
 });
-const claudeRunner = new ClaudeCliEngine({ loopback, pathToClaudeCodeExecutable: claudePath, environment });
+const claudeRunner = new ClaudeCliEngine({ loopback, pathToClaudeCodeExecutable: claudePath, environment, agentUser, nodeEnv: config.nodeEnv });
 // The Codex CLI runs bots on a ChatGPT subscription. The image sets CODEX_PATH. Without it, ChatGPT is not offered.
-const codexPath = process.env.CODEX_PATH?.startsWith('/') === true ? process.env.CODEX_PATH : undefined;
+const codexPath = config.codexPath;
 // Local mode keeps CloudBot's ChatGPT sign-in under the data dir, never in the owner's ~/.codex. Docker keeps it in the bot home.
 const codexHome = join(dataDir, 'codex', 'home');
 const codexAuthOptions = codexPath === undefined ? undefined : { codexPath, codexHome, ...(agentUser ? { agentUser } : {}) };
@@ -202,7 +200,7 @@ const chatgptSignIn = codexAuthOptions === undefined ? undefined : createChatgpt
 const providerChoices = new ProviderChoices(settings);
 // The image sets CLOUDBOT_DESKTOP_COMMAND, and its desktop starts Chromium. Without it, local runs start an installed
 // Chrome, Chromium or Edge with its own profile, and the browser tools stay off when none is found.
-const desktopCommand = buildDesktopCommand(process.env.CLOUDBOT_DESKTOP_COMMAND, agentUser);
+const desktopCommand = buildDesktopCommand(config.desktopCommand, agentUser);
 const desktop = desktopCommand === undefined ? undefined : new DesktopSupervisor({ desktopCommand });
 // The bot sees and drives the whole desktop through a fixed helper that runs as the agent user, like the desktop itself.
 const desktopInputCommand = desktop === undefined ? undefined : buildDesktopCommand(DESKTOP_INPUT_PATH, agentUser);
@@ -266,8 +264,8 @@ const appOAuthFetch = createGuardedFetch(allowedPrivateHosts);
 const appOAuthTokens = new AppOAuthTokens({ secrets: botSecrets, fetchFunction: appOAuthFetch });
 const connectedApps = new ConnectedApps({ store: connectedAppStore, secrets: botSecrets, proxy: appProxy, allowedHosts: allowedPrivateHosts, oauthTokens: appOAuthTokens });
 // The Google client comes from the install .env, never from the bot. On a hub, Google sends the owner back to the apex.
-const googleClient = readGoogleClientEnv(process.env);
-const googleHub = hubConfig === undefined ? undefined : readGoogleHubRoute(process.env.CLOUDBOT_PUBLIC_URL, hubConfig.personName);
+const googleClient = config.googleClient;
+const googleHub = hubConfig === undefined ? undefined : readGoogleHubRoute(config.publicUrl, hubConfig.personName);
 // The Bitwarden CLI runs only in this process. Its state lives in a folder inside the data folder, which the bot cannot open.
 const bitwardenVault = new BitwardenVault({ accounts: new BitwardenAccountStore(botSecrets), baseDir: join(dataDir, 'bitwarden') });
 const appOAuth = new AppOAuth({ connectedApps, tokens: appOAuthTokens, fetchFunction: appOAuthFetch, googleClient: googleClient === undefined ? undefined : { clientId: googleClient.clientId, clientSecret: googleClient.clientSecret }, googleHub });
@@ -310,7 +308,7 @@ function readIntegrationUser(agentUserName: string | undefined, integrationUserN
     return integrationUserName;
 }
 
-const integrationUser = readIntegrationUser(agentUser, process.env.CLOUDBOT_INTEGRATION_USER);
+const integrationUser = readIntegrationUser(agentUser, config.integrationUser);
 const integrationService = integrationUser === undefined
     ? undefined
     : new IntegrationService({
@@ -397,10 +395,10 @@ const pushNotifier = new PushNotifier({
     store: pushSubscriptionStore,
     keys: vapidKeys,
     send: createPushSender(),
-    subject: readPushSubject(process.env),
+    subject: config.pushSubject,
 });
 // The public gallery of templates. CLOUDBOT_GALLERY_REPO points it at another repository, such as a fork.
-const templateGallery = new TemplateGallery({ repo: readGalleryRepo(process.env.CLOUDBOT_GALLERY_REPO), transport: createDefaultGalleryTransport() });
+const templateGallery = new TemplateGallery({ repo: readGalleryRepo(config.galleryRepo), transport: createDefaultGalleryTransport() });
 // How long a ChatGPT sign-in check is trusted, so a turn does not start an extra app server each time.
 const CHATGPT_STATUS_CACHE_MS = 5 * 60 * 1000;
 let chatgptCheckedAt = 0;
@@ -413,7 +411,7 @@ const methodFor = async (provider: ProviderId): Promise<ProviderMethod | undefin
 
     return method;
 };
-const acpProviders = await createAcpProviders({ agentUser, vault, loopback, methodFor, dataDir, localPaths: readLocalAcpPaths(process.env), modelCatalogs: providerModelCatalogs });
+const acpProviders = await createAcpProviders({ agentUser, vault, loopback, methodFor, dataDir, localPaths: config.localAcpPaths, modelCatalogs: providerModelCatalogs });
 const engines: Partial<Record<ProviderId, ProviderEngine>> = {
     ...acpProviders.engines,
     claude: {
@@ -490,7 +488,7 @@ const whatsappSetup = new WhatsAppSetup({
     store: whatsappStore,
     secrets: botSecrets,
     requestSecret: (botId, name, purpose, site) => chatService.requestSecret(botId, name, purpose, site),
-    publicBaseUrl: readPublicBaseUrl(process.env),
+    publicBaseUrl: config.publicBaseUrl,
 });
 // Only the owner's instance inside the hub manages people through the hub.
 const peopleAdmin = hubConfig?.role === 'owner' ? new HubClient(hubConfig) : undefined;
@@ -519,7 +517,7 @@ const meetingWorkDir = join(dataDir, 'meeting-jobs');
 
 await rm(meetingWorkDir, { recursive: true, force: true });
 
-const meetingPrograms = readVoicePrograms(process.env);
+const meetingPrograms = config.voicePrograms;
 const transcribeMeeting = createVoiceTranscriber({ workDir: meetingWorkDir, programs: meetingPrograms });
 const MEETING_ENDED_MESSAGE = 'The meeting you were recording has ended. Leave the call if you are still in it, read the transcript, post a short summary with the action items and share the file. Transcript:';
 // The transcript goes to the bot's upload folder, which it can read. chatService is set below, before a meeting can start.
@@ -549,7 +547,7 @@ const chatService: ChatService = new ChatService({
     passkeys,
     peopleAdmin,
     telegram: telegramBridge,
-    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser: process.env.CLOUDBOT_AGENT_USER, claudeConfigDir, browser, desktopInput, botSecrets, bitwarden: bitwardenVault, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, skillStore, routineStore, taskStore, modelStore, limitStore, screen,
+    botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser, claudeConfigDir, browser, desktopInput, botSecrets, bitwarden: bitwardenVault, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, skillStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     templateGallery,
     providerTools,
@@ -560,7 +558,9 @@ const chatService: ChatService = new ChatService({
     integrationService,
     browserAllowStore,
     whatsapp: whatsappSetup,
-    webhookBaseUrl: readPublicBaseUrl(process.env),
+    webhookBaseUrl: config.publicBaseUrl,
+    maxUploadBytes: config.maxUploadBytes,
+    uploadRetentionMs: config.uploadRetentionMs,
     webhookRefusals,
     webhookDeliveries,
     toolCallReviewer,
@@ -629,10 +629,11 @@ await appProxy.start();
 await connectedApps.start();
 
 // The browser starts after the gate listens, so it gets the gate's real port. Only a new local browser is started here.
+const localBrowserServerEnvironment = inheritedEnvironment();
 const localBrowser = localPlan.kind === 'start' && browserGate !== undefined
     ? new DesktopSupervisor({
             desktopCommand: buildLocalBrowserCommand(localPlan.browserPath, { profileDir: localProfileDir, gatePort: browserGate.listeningPort }),
-            spawnFunction: createLocalBrowserSpawn(localProfileDir, process.env),
+            spawnFunction: createLocalBrowserSpawn(localProfileDir, localBrowserServerEnvironment),
         })
     : undefined;
 
@@ -699,9 +700,9 @@ const voiceWorkDir = join(dataDir, 'voice-jobs');
 
 await rm(voiceWorkDir, { recursive: true, force: true });
 
-const voicePrograms = readVoicePrograms(process.env);
+const voicePrograms = config.voicePrograms;
 const transcribeVoice = createVoiceTranscriber({ workDir: voiceWorkDir, programs: voicePrograms });
-const app = createApp({ actionLog, appUpdater: peopleAdmin, transcribeVoice, push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, workSettings, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, bitwardenVault, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ actionLog, appUpdater: peopleAdmin, transcribeVoice, push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: config.publicUrl, publicBaseUrl: config.publicBaseUrl, hubConfig, agentUser, maxUploadBytes: config.maxUploadBytes, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, workSettings, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, bitwardenVault, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.
@@ -730,7 +731,7 @@ const server = serve({ fetch: app.fetch, port, hostname: host }, (address) => {
 
 // The live view is VNC on the desktop. Local runs show the browser's own frames instead.
 // The owner's public address may differ from the host the panel is opened on, so its host is allowed too.
-const publicUrl = process.env.CLOUDBOT_PUBLIC_URL;
+const publicUrl = config.publicUrl;
 
 if (desktop !== undefined) {
     const mobileSites = new MobileSites({ devtoolsUrl: DESKTOP_DEVTOOLS_URL });

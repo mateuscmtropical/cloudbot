@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 
+import { childPath } from '../childEnvironment.ts';
 import { AcpEngine } from '../agent/AcpEngine.ts';
 import { AgyEngine } from '../agent/AgyEngine.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
@@ -311,7 +312,7 @@ async function checkKeyAt(url: string, keyHeader: KeyHeader, key: string, badKey
 
 // Asks the wrapper whether the provider keeps a sign-in. It ends with 0 when it does.
 function readWrapperStatus(launch: { spawnFunction: SpawnFunction }, provider: AcpProviderId): Promise<boolean> {
-    const child = launch.spawnFunction(PROVIDER_AGENT_WRAPPER, [provider, 'status'], { stdio: 'ignore', env: { PATH: process.env.PATH ?? '' } });
+    const child = launch.spawnFunction(PROVIDER_AGENT_WRAPPER, [provider, 'status'], { stdio: 'ignore', env: { PATH: childPath() } });
 
     return new Promise((resolve) => {
         child.once('error', () => {
@@ -463,7 +464,7 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
                     }
                 : createCliSignIn({
                         id: spec.id, label: spec.label, site: signInSpec.site, optionLabel: signInSpec.optionLabel, needsCode: signInSpec.needsCode,
-                        command, args: loginArgs, environment: { PATH: process.env.PATH ?? '', HOME: home }, isSignedIn,
+                        command, args: loginArgs, environment: { PATH: childPath(), HOME: home }, isSignedIn,
                         spawnFunction: launch?.spawnFunction, signalProcess: signalLocal,
                     }));
         }
@@ -521,4 +522,4 @@ async function createAcpProviders(options: AcpProvidersOptions): Promise<AcpProv
 }
 
 export { ACP_PROVIDERS, BEARER, LOCAL_ACP_ARGS, PLACEHOLDER_KEY, checkKeyAt, createAcpProviders, methodRunner, offerAgyModels, openCodeKeyEnvironment, readLocalAcpPaths };
-export type { AcpProviderSpec, AcpProviders };
+export type { AcpProviderId, AcpProviderSpec, AcpProviders };

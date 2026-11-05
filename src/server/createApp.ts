@@ -20,7 +20,7 @@ import { createAppUpdateRoutes } from './people/createAppUpdateRoutes.ts';
 import type { AppUpdater } from './people/createAppUpdateRoutes.ts';
 import { createPeopleRoutes } from './people/createPeopleRoutes.ts';
 import type { PersonRole } from '../shared/peopleTypes.ts';
-import { readHubConfig } from './people/hubConfig.ts';
+import type { HubConfig } from './people/hubConfig.ts';
 
 import { createChannelRoutes } from './channels/createChannelRoutes.ts';
 import { createChatRoutes } from './chat/createChatRoutes.ts';
@@ -77,6 +77,8 @@ interface AppOptions {
     version: string;
     access: SetupAccess;
     hubSecret?: string | undefined;
+    // The hub this instance belongs to. Without it, the instance runs on its own and the hub routes are not served.
+    hubConfig?: HubConfig | undefined;
     // The role of this instance inside a hub. Without it, the instance runs on its own.
     hubRole?: PersonRole | undefined;
     // The signed-in person's configured display name, shown in the bot list when this instance belongs to a hub.
@@ -131,6 +133,10 @@ interface AppOptions {
     push?: PushRoutesOptions;
     // Turns a recording into text for browsers without speech recognition. Without it the voice route is not served.
     transcribeVoice?: TranscribeAudio;
+    // The largest upload in bytes. Without it the default size is used.
+    maxUploadBytes?: number | undefined;
+    // The Linux user the agent runs as. Without it the owner's own account runs the agent.
+    agentUser?: string | undefined;
 }
 
 const DEFAULT_WEB_ROOT = 'dist/web';
@@ -178,7 +184,7 @@ function skipApiRoutes(serve: MiddlewareHandler): MiddlewareHandler {
 
 // The server sends the owner back to the address the owner opens CloudBot at.
 function createSignInOptions(oauth: AppOAuth, chatService: Pick<ChatService, 'hasBot'>, publicBaseUrl: string | undefined): AppSignInOptions {
-    const baseUrl = publicBaseUrl ?? readPublicBaseUrl(process.env);
+    const baseUrl = publicBaseUrl ?? readPublicBaseUrl({});
 
     return { oauth, redirectUri: `${baseUrl}${APP_OAUTH_CALLBACK_PATH}`, hasBot: botId => chatService.hasBot(botId) };
 }
@@ -188,7 +194,7 @@ function createApp(options: AppOptions): Hono {
     const webRoot = options.webRoot ?? DEFAULT_WEB_ROOT;
     const webhookRefusals = options.webhookRefusals ?? new WebhookRefusalLog();
     const webhookDeliveries = options.webhookDeliveries ?? new DeliveryMemory();
-    const hubMode = readHubConfig(process.env) !== undefined;
+    const hubMode = options.hubConfig !== undefined;
 
     const publicHost = readPublicHost(options.publicUrl);
     const securityHeaders = createSecurityHeaders(publicHost);
@@ -279,7 +285,7 @@ function createApp(options: AppOptions): Hono {
                 ...(options.watchStore === undefined ? {} : { watchStore: options.watchStore }),
                 ...(options.webhookStore === undefined ? {} : { webhookStore: options.webhookStore }),
                 ...(options.whatsappStore === undefined ? {} : { whatsappStore: options.whatsappStore }),
-                hasAgentProgram: () => hasAgentProgramListening({ agentUser: process.env.CLOUDBOT_AGENT_USER }),
+                hasAgentProgram: () => hasAgentProgramListening({ agentUser: options.agentUser }),
                 isReady: options.isReady ?? (() => true),
                 ...(options.appOAuth === undefined ? {} : { hasAppSignIn: () => options.appOAuth?.hasPending() ?? false }),
             }),
@@ -290,13 +296,13 @@ function createApp(options: AppOptions): Hono {
 
     // Chat routes sit behind the session check. The web fallback would otherwise answer them.
     if (options.chatService !== undefined) {
-        const chatRoutes = createChatRoutes(options.chatService);
+        const chatRoutes = createChatRoutes(options.chatService, { maxUploadBytes: options.maxUploadBytes });
 
         app.route('/', chatRoutes);
     }
 
     if (options.transcribeVoice !== undefined) {
-        const voiceRoutes = createVoiceRoutes({ transcribe: options.transcribeVoice });
+        const voiceRoutes = createVoiceRoutes({ transcribe: options.transcribeVoice, maxUploadBytes: options.maxUploadBytes });
 
         app.route('/', voiceRoutes);
     }
@@ -343,7 +349,7 @@ function createApp(options: AppOptions): Hono {
 
     if (options.chatService !== undefined && options.webhookStore !== undefined) {
         const chatService = options.chatService;
-        const publicBaseUrl = options.publicBaseUrl ?? readPublicBaseUrl(process.env);
+        const publicBaseUrl = options.publicBaseUrl ?? readPublicBaseUrl({});
         const webhookRoutes = createWebhookRoutes({ webhookStore: options.webhookStore, hasBot: botId => chatService.hasBot(botId), publicBaseUrl, refusals: webhookRefusals, deliveries: webhookDeliveries });
 
         app.route('/', webhookRoutes);

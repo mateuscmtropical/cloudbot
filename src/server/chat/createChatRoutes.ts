@@ -53,7 +53,7 @@ const HEARTBEAT_FRAME = ': heartbeat\n\n';
 
 interface ChatRoutesOptions {
     heartbeatIntervalMs?: number;
-    maxUploadBytes?: number;
+    maxUploadBytes?: number | undefined;
 }
 
 // Only plain digits count. Anything else, including 0, a sign or a decimal, is rejected.
@@ -133,7 +133,7 @@ async function readUploadedFiles(context: Context): Promise<File[]> {
 function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions = {}): Hono {
     const routes = new Hono();
     const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
-    const maxUploadBytes = options.maxUploadBytes ?? readMaxUploadBytes(process.env);
+    const maxUploadBytes = options.maxUploadBytes ?? readMaxUploadBytes({});
     const setupActions: SetupAction[] = ['choice', 'code', 'secret'];
 
     setupActions.forEach((action) => {

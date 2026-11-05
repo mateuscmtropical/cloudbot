@@ -40,10 +40,9 @@ describe('startClaudeLogin', () => {
     it('wraps sudo in the pseudo terminal with only the bot environment', async () => {
         const spawnProcess = vi.fn(SPAWN_FAKE);
 
-        vi.stubEnv('CLOUDBOT_AGENT_USER', 'bot');
         vi.stubEnv('SERVER_SECRET', 'private');
         try {
-            const session = startClaudeLogin({ claudePath: '/home/bot/.local/bin/claude', spawnProcess });
+            const session = startClaudeLogin({ claudePath: '/home/bot/.local/bin/claude', agentUser: 'bot', spawnProcess });
 
             SESSIONS.push(session);
             expect(spawnProcess)

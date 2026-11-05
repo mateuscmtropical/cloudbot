@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 
 import { DEFAULT_BITWARDEN_SERVER_URL } from '../../shared/bitwarden.ts';
+import { childPath } from '../childEnvironment.ts';
 
 // The owner's Bitwarden sign-in, as the server keeps it in the vault.
 interface BitwardenAccount {
@@ -81,7 +82,7 @@ const SESSION_KEY_PATTERN = /^\S{16,}$/;
 
 // The environment bw gets. It does not inherit the server's variables, so no unrelated secret reaches the child.
 function buildBaseEnv(appDataDir: string): Record<string, string> {
-    const pathValue = process.env.PATH ?? '';
+    const pathValue = childPath();
 
     return {
         PATH: pathValue,

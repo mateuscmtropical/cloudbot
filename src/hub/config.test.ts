@@ -1,8 +1,56 @@
 import { describe, expect, it } from 'vitest';
 
-import { readHubSettings } from './config.ts';
+import { readDockerGuardSettings, readHubSettings } from './config.ts';
+
+describe('readDockerGuardSettings', () => {
+    it('reads the defaults when no variable is set', () => {
+        const settings = readDockerGuardSettings({});
+
+        expect(settings.upstream.href)
+            .toBe('http://docker-proxy:2375/');
+        expect(settings.port)
+            .toBe(2375);
+        expect(settings.image)
+            .toBe('cloudbot:local');
+        expect(settings.hubContainer)
+            .toBe('cloudbot-hub-1');
+    });
+
+    it('reads the values that are set', () => {
+        const settings = readDockerGuardSettings({
+            DOCKER_GUARD_UPSTREAM: 'http://proxy.internal:2376',
+            DOCKER_GUARD_PORT: '2377',
+            CLOUDBOT_INSTANCE_IMAGE: 'cloudbot:1.2',
+            HUB_CONTAINER_ID: 'hub-abc',
+        });
+
+        expect(settings.upstream.href)
+            .toBe('http://proxy.internal:2376/');
+        expect(settings.port)
+            .toBe(2377);
+        expect(settings.image)
+            .toBe('cloudbot:1.2');
+        expect(settings.hubContainer)
+            .toBe('hub-abc');
+    });
+});
 
 describe('readHubSettings', () => {
+    it('reads the idle minutes as milliseconds and leaves them out when unset', () => {
+        const base = { CLOUDBOT_DOMAIN: 'example.com', HUB_CONTAINER_ID: 'hub-id' };
+
+        const configured = readHubSettings({ ...base, CLOUDBOT_IDLE_MINUTES: '2' });
+        const zero = readHubSettings({ ...base, CLOUDBOT_IDLE_MINUTES: '0' });
+        const unset = readHubSettings(base);
+
+        expect(configured.idleMs)
+            .toBe(120_000);
+        expect(zero)
+            .not.toHaveProperty('idleMs');
+        expect(unset)
+            .not.toHaveProperty('idleMs');
+    });
+
     it('reads defaults when the required domain and container id are present', () => {
         const settings = readHubSettings({ CLOUDBOT_DOMAIN: 'example.com', HOSTNAME: 'hub-container' });
 

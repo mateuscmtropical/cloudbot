@@ -32,14 +32,6 @@ const DEFAULT_IDLE_MS = 5 * 60 * 1000;
 const DEFAULT_CHECK_EVERY_MS = 30 * 1000;
 const MINUTE_MS = 60 * 1000;
 
-function configuredIdleMs(): number {
-    const configuredMinutes = Number(process.env.CLOUDBOT_IDLE_MINUTES);
-
-    return Number.isFinite(configuredMinutes) && configuredMinutes > 0
-        ? configuredMinutes * MINUTE_MS
-        : DEFAULT_IDLE_MS;
-}
-
 function isRecord(value: unknown): value is UnknownRecord {
     return typeof value === 'object' && value !== null;
 }
@@ -99,7 +91,7 @@ class IdleWatcher implements ActivityTracker {
         this.people = options.people;
         this.instances = options.instances;
         this.fetchActivity = options.fetchActivity;
-        this.idleMs = options.idleMs ?? configuredIdleMs();
+        this.idleMs = options.idleMs ?? DEFAULT_IDLE_MS;
         this.checkEveryMs = options.checkEveryMs ?? DEFAULT_CHECK_EVERY_MS;
         this.now = options.now ?? (() => Date.now());
         this.log = options.log ?? ((message) => {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { createApp } from '../createApp.ts';
 import { SetupAccess } from './SetupAccess.ts';
@@ -10,7 +10,6 @@ describe('the setup route in hub mode', () => {
     let opened: OpenedDatabase | undefined;
 
     afterEach(() => {
-        vi.unstubAllEnvs();
         opened?.close();
         opened = undefined;
     });
@@ -19,13 +18,9 @@ describe('the setup route in hub mode', () => {
         opened = await openDatabase(':memory:');
         const access = new SetupAccess(new SettingsStore(opened.db));
         const setupCode = await access.issueSetupCode();
+        const hubConfig = { hubUrl: 'http://hub:3001', secret: 'instance-secret', personName: 'maria', role: 'member' } as const;
 
-        vi.stubEnv('CLOUDBOT_HUB_SECRET', 'instance-secret');
-        vi.stubEnv('CLOUDBOT_HUB_URL', 'http://hub:3001');
-        vi.stubEnv('CLOUDBOT_PERSON_NAME', 'maria');
-        vi.stubEnv('CLOUDBOT_PERSON_ROLE', 'member');
-
-        const app = createApp({ version: 'test', access, webRoot: 'missing-web-root' });
+        const app = createApp({ version: 'test', access, webRoot: 'missing-web-root', hubConfig });
         const response = await app.request(`/setup?code=${setupCode}`);
 
         expect(response.status)

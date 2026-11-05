@@ -855,8 +855,8 @@ class ChatService {
         this.dataDir = options.dataDir;
         this.agentUser = options.agentUser;
         this.claudeConfigDir = options.claudeConfigDir;
-        this.maxPendingBytes = options.maxUploadBytes ?? readMaxUploadBytes(process.env);
-        this.uploadRetentionMs = options.uploadRetentionMs ?? readUploadRetentionMs(process.env);
+        this.maxPendingBytes = options.maxUploadBytes ?? readMaxUploadBytes({});
+        this.uploadRetentionMs = options.uploadRetentionMs ?? readUploadRetentionMs({});
         this.maxShareBytes = options.maxShareBytes ?? readMaxShareBytes();
         this.actionLog = options.actionLog;
         this.browser = options.browser;

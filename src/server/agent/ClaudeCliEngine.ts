@@ -16,6 +16,7 @@ import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
 import { TURN_MARKER_VARIABLE, createTurnMarker, endTurnLeftovers } from './endTurnLeftovers.ts';
 import { mapCliMessage, rememberResetsAt, withResetsAt } from './mapCliMessage.ts';
 import type { CliMessage } from './mapCliMessage.ts';
+import { inheritedEnvironment } from '../childEnvironment.ts';
 import { isClaudeModel } from '../models/modelChoices.ts';
 
 type SpawnFunction = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -24,6 +25,8 @@ type SignalAction = 'TERM' | 'KILL';
 interface ClaudeCliEngineOptions {
     loopback: LoopbackToolServer;
     agentUser?: string | undefined;
+    // The NODE_ENV of the server. In production an engine without an agent user is refused.
+    nodeEnv?: string | undefined;
     pathToClaudeCodeExecutable?: string | undefined;
     environment?: Record<string, string> | undefined;
     // Tests inject a fake here. Production leaves it out and spawns the CLI.
@@ -187,7 +190,8 @@ function buildEnvironment(options: ClaudeCliEngineOptions, extraEnvironment: Rec
         return { ...options.environment, ...extraEnvironment };
     }
 
-    const definedEntries = Object.entries(process.env)
+    const liveEnvironment = inheritedEnvironment();
+    const definedEntries = Object.entries(liveEnvironment)
         .filter((entry): entry is [string, string] => entry[1] !== undefined);
     const inherited = Object.fromEntries(definedEntries);
 
@@ -277,10 +281,10 @@ class ClaudeCliEngine implements AgentRunner {
     private readonly stops = new Set<() => Promise<void>>();
 
     constructor(options: ClaudeCliEngineOptions) {
-        const agentUser = options.agentUser ?? process.env.CLOUDBOT_AGENT_USER;
-        const pathToClaudeCodeExecutable = options.pathToClaudeCodeExecutable ?? process.env.CLAUDE_PATH;
+        const agentUser = options.agentUser;
+        const pathToClaudeCodeExecutable = options.pathToClaudeCodeExecutable;
 
-        validateAgentIsolation(agentUser);
+        validateAgentIsolation(agentUser, options.nodeEnv);
         if (agentUser) {
             validateAgentUser(agentUser);
             if (!(pathToClaudeCodeExecutable ?? '').startsWith('/')) {
@@ -345,7 +349,7 @@ class ClaudeCliEngine implements AgentRunner {
         const agentsText = request.agents === undefined ? undefined : JSON.stringify(request.agents);
         const agentsPath = agentsText === undefined ? undefined : turn.writeFile('agents.json', agentsText);
         const args = buildCliArguments(request, { mcpConfigPath: turn.mcpConfigPath, settingsPath: turn.settingsPath, systemPromptPath, agentsPath });
-        const inherited = this.options.environment ?? process.env;
+        const inherited = this.options.environment ?? inheritedEnvironment();
         // The marker comes last, so no variable of the request can replace it.
         const turnMarker = createTurnMarker();
         const extraEnvironment = { ...noProxyValues(inherited), ...request.extraEnvironment, [TURN_MARKER_VARIABLE]: turnMarker };

@@ -7,10 +7,9 @@ describe('getClaudeAuthStatus', () => {
         const runCommand = vi.fn()
             .mockResolvedValue('{"loggedIn":true}');
 
-        vi.stubEnv('CLOUDBOT_AGENT_USER', 'bot');
         vi.stubEnv('SERVER_SECRET', 'private');
         try {
-            await getClaudeAuthStatus({ claudePath: '/home/bot/.local/bin/claude', runCommand });
+            await getClaudeAuthStatus({ claudePath: '/home/bot/.local/bin/claude', agentUser: 'bot', runCommand });
             expect(runCommand)
                 .toHaveBeenCalledExactlyOnceWith('/usr/bin/sudo', [
                     '-n', '-u', 'bot', '--', '/home/bot/.local/bin/claude', 'auth', 'status', '--json',

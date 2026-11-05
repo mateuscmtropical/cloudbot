@@ -9,7 +9,7 @@ import type { TranscribeAudio } from './transcribeAudio.ts';
 
 interface VoiceRoutesOptions {
     transcribe: TranscribeAudio;
-    maxUploadBytes?: number;
+    maxUploadBytes?: number | undefined;
 }
 
 const NO_AUDIO = { error: 'Send one audio file.' };
@@ -19,7 +19,7 @@ const FAILED = { error: 'The recording could not be transcribed.' };
 // The session and origin checks of /api/* run first, as for an upload. The audio is deleted when the job ends.
 function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
     const routes = new Hono();
-    const maxSize = options.maxUploadBytes ?? readMaxUploadBytes(process.env);
+    const maxSize = options.maxUploadBytes ?? readMaxUploadBytes({});
     const tooLarge = (context: Context): Response => context.json(TOO_LARGE, 413);
 
     const uploadLimit = bodyLimit({ maxSize, onError: tooLarge });
