@@ -65,10 +65,12 @@ describe('isAllowedDockerRequest', () => {
         await docker.disconnectContainerFromNetwork('cloudbot-net-maria', 'cloudbot-hub-1');
         await docker.removeNetwork('cloudbot-net-maria');
 
+        seen.push(guardRequest('GET', '/_ping'));
+
         const results = seen.map(request => isAllowedDockerRequest(request, RULES));
 
         expect(results)
-            .toHaveLength(11);
+            .toHaveLength(12);
         expect(results.every(Boolean))
             .toBe(true);
     });

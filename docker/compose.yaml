@@ -70,9 +70,9 @@ services:
       HUB_CONTAINER_ID: cloudbot-hub-1
     expose:
       - "2375"
-    # The image checks the CloudBot server on port 3000. The guard is healthy when it answers at all.
+    # The image checks the CloudBot server on port 3000. The guard is healthy when Docker answers a ping through it.
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:2375/_ping').then(() => process.exit(0), () => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:2375/_ping').then((response) => process.exit(response.ok ? 0 : 1), () => process.exit(1))"]
       interval: 30s
       timeout: 5s
       start_period: 10s
