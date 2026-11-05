@@ -409,7 +409,7 @@ The database is `cloudbot.db` in the folder given by `CLOUDBOT_DATA_DIR`
 and foreign keys, then applies the migrations in `drizzle/` that have not run
 yet. `BotStore`, `MessageStore`, `SettingsStore` and `PushSubscriptionStore` wrap the tables.
 
-`actions.log` in the same folder is a debugging log with one JSON line per review, finished tool and turn error. It holds names, outcomes and times, never a tool input, a reply or a refusal reason. The file is mode 600. At 5 MB it moves to `actions.log.1`, so a container that is made again keeps it.
+`actions.log` in the same folder is a debugging log with one JSON line per review, finished tool and turn error. It holds names, outcomes and times, never a tool input, a reply or a refusal reason. The file is mode 600. At 5 MB it moves to `actions.log.1`, so a container that is made again keeps it. Entries older than 30 days are removed at each start and once a day. The owner reads it in Account, Action log, through `GET /api/action-log`.
 
 After a schema change, run `pnpm db:generate` to write a new migration into
 `drizzle/`. Generated migrations are append only: never edit one that has

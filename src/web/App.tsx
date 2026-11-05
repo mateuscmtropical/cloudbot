@@ -37,7 +37,7 @@ import { addPasskey, describePasskeyResult, removePasskey } from './passkeyClien
 import { SignInScreen } from './components/SignInScreen.tsx';
 import { PeopleHubHint } from './components/PeopleHubHint.tsx';
 import { createDraftStore, EMPTY_DRAFT } from './draftStore.ts';
-import { AccountPanel, BotProfilePanel, ConnectAppsPanel, PeoplePanel } from './components/lazyPanels.tsx';
+import { AccountPanel, ActionLogPanel, BotProfilePanel, ConnectAppsPanel, PeoplePanel } from './components/lazyPanels.tsx';
 import { getHubContext } from './peopleClient.ts';
 import type { HubRole } from './peopleClient.ts';
 
@@ -183,6 +183,7 @@ function App(): ReactElement {
     const [personName, setPersonName] = useState<string | undefined>(undefined);
     const [isPeopleOpen, setIsPeopleOpen] = useState(false);
     const [isAccountOpen, setIsAccountOpen] = useState(false);
+    const [isActionLogOpen, setIsActionLogOpen] = useState(false);
     const [isBotProfileOpen, setIsBotProfileOpen] = useState(false);
     // The connected remote MCP servers panel, opened from the sidebar.
     // It opens by itself when the owner comes back from an app's sign-in page.
@@ -204,6 +205,9 @@ function App(): ReactElement {
     });
     useBackButton(isAccountOpen, () => {
         setIsAccountOpen(false);
+    });
+    useBackButton(isActionLogOpen, () => {
+        setIsActionLogOpen(false);
     });
     useBackButton(isBotProfileOpen, () => {
         setIsBotProfileOpen(false);
@@ -1467,7 +1471,17 @@ function App(): ReactElement {
                             />
                         )
                     : null}
-                {isAccountOpen && !isPeopleOpen && !isConnectAppsOpen
+                {isActionLogOpen && isAccountOpen
+                    ? (
+                            <ActionLogPanel
+                                bots={bots}
+                                onClose={() => {
+                                    setIsActionLogOpen(false);
+                                }}
+                            />
+                        )
+                    : null}
+                {isAccountOpen && !isActionLogOpen && !isPeopleOpen && !isConnectAppsOpen
                     ? (
                             <AccountPanel
                                 isHub={hubRole !== 'standalone'}
@@ -1476,6 +1490,9 @@ function App(): ReactElement {
                                 onPeople={() => {
                                     setIsBotListOpen(false);
                                     setIsPeopleOpen(true);
+                                }}
+                                onActionLog={() => {
+                                    setIsActionLogOpen(true);
                                 }}
                                 onClose={() => {
                                     setIsAccountOpen(false);

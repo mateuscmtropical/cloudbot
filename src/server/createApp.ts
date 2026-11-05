@@ -14,6 +14,8 @@ import { createPasskeyRoutes } from './access/createPasskeyRoutes.ts';
 import type { PasskeyService } from './access/PasskeyService.ts';
 import { readPublicBaseUrl } from './access/setupLinkUrl.ts';
 import type { PeopleAdmin } from './people/PeopleAdmin.ts';
+import type { ActionLog } from './logs/ActionLog.ts';
+import { createActionLogRoutes } from './logs/createActionLogRoutes.ts';
 import { createPeopleRoutes } from './people/createPeopleRoutes.ts';
 import type { PersonRole } from '../shared/peopleTypes.ts';
 import { readHubConfig } from './people/hubConfig.ts';
@@ -82,6 +84,8 @@ interface AppOptions {
     // Only on the owner's instance inside the hub. It adds and removes people through the hub.
     peopleAdmin?: PeopleAdmin | undefined;
     webRoot?: string;
+    // What the bots did, for the owner's action log screen. Without it the route is not served.
+    actionLog?: ActionLog;
     chatService?: ChatService;
     // The channels the owner can see and post in. Without both stores the channel routes are not served.
     channelStore?: ChannelStore;
@@ -248,6 +252,12 @@ function createApp(options: AppOptions): Hono {
         const peopleRoutes = createPeopleRoutes({ peopleAdmin: options.peopleAdmin });
 
         app.route('/', peopleRoutes);
+    }
+
+    if (options.actionLog !== undefined) {
+        const actionLogRoutes = createActionLogRoutes({ actionLog: options.actionLog });
+
+        app.route('/', actionLogRoutes);
     }
 
     if (hubMode) {
