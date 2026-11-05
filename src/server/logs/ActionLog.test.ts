@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { ActionLog, logReviews } from './ActionLog.ts';
+import { ActionLog, RETENTION_DAYS, logReviews } from './ActionLog.ts';
 
 const SIGNAL = new AbortController().signal;
 const SECRET_INPUT = { text: 'private words' };
@@ -49,6 +49,63 @@ describe('ActionLog', () => {
             .toBe(true);
         expect(readEntries(filePath))
             .toMatchObject([{ botId: 'second' }]);
+    });
+
+    it('reads the newest entries first from both files, for one bot when asked', () => {
+        const filePath = makeLogPath();
+        const log = new ActionLog(filePath, 10);
+
+        log.write({ botId: 'first', event: 'turn_error' });
+        log.write({ botId: 'second', event: 'turn_error' });
+
+        const everyBot = log.read(2);
+        const oneBot = log.read(10, 'first');
+
+        expect(everyBot)
+            .toMatchObject([{ botId: 'second' }, { botId: 'first' }]);
+        expect(oneBot)
+            .toMatchObject([{ botId: 'first' }]);
+    });
+
+    it('drops what passed the retention from both files and keeps the rest', () => {
+        const filePath = makeLogPath();
+        const startTime = Date.parse('2026-01-01T00:00:00.000Z');
+        const retentionMs = RETENTION_DAYS * 24 * 60 * 60 * 1000;
+        const clock = { time: startTime };
+        // Two lines fit under the limit, so the third moves both to the old file.
+        const log = new ActionLog(filePath, 100, () => clock.time);
+
+        log.write({ botId: 'too-old', event: 'turn_error' });
+        clock.time = startTime + retentionMs - 1000;
+        log.write({ botId: 'fresh-in-old-file', event: 'turn_error' });
+        log.write({ botId: 'fresh', event: 'turn_error' });
+        clock.time = startTime + retentionMs + 1;
+
+        const visible = log.read(10);
+        const visibleBots = visible.map(entry => entry.botId);
+
+        expect(visibleBots)
+            .toEqual(['fresh', 'fresh-in-old-file']);
+
+        log.prune();
+
+        expect(readEntries(`${filePath}.1`))
+            .toMatchObject([{ botId: 'fresh-in-old-file' }]);
+        expect(readEntries(filePath))
+            .toMatchObject([{ botId: 'fresh' }]);
+    });
+
+    it('removes a file when nothing in it is fresh', () => {
+        const filePath = makeLogPath();
+        const clock = { time: Date.parse('2026-01-01T00:00:00.000Z') };
+        const log = new ActionLog(filePath, undefined, () => clock.time);
+
+        log.write({ botId: 'old', event: 'turn_error' });
+        clock.time += (RETENTION_DAYS + 1) * 24 * 60 * 60 * 1000;
+        log.prune();
+
+        expect(existsSync(filePath))
+            .toBe(false);
     });
 
     it('never throws when the file cannot be written', () => {

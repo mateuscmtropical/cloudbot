@@ -1,3 +1,4 @@
+import type { ActionLogRecord } from '../shared/actionLogTypes.ts';
 import type { BotMemory, BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName, ScreenViewName } from '../shared/chatTypes.ts';
 import type { MessageSearchHit } from '../shared/searchTypes.ts';
 import type { BitwardenStatus, BitwardenTestResult } from '../shared/bitwarden.ts';
@@ -681,8 +682,16 @@ async function removePushSubscription(endpoint: string): Promise<void> {
         throw new RequestFailedError(path, response.status, serverMessage);
     }
 }
+// What the bots did, newest first. A bot id leaves only that bot's actions.
+function listActionLog(botId?: string): Promise<ActionLogRecord[]> {
+    const query = botId === undefined ? '' : `?botId=${encodeURIComponent(botId)}`;
+
+    return requestJson<ActionLogRecord[]>(`${API_ROOT}/action-log${query}`, {});
+}
+
 export type { EffortLevel, LimitBound, LimitsResponse, MessagePageRequest, ModelSettings, ModelSettingsResponse, NewRuleRequest, WorkChoiceInput };
 export {
+    listActionLog,
     RequestFailedError,
     listConnectedApps,
     getBitwardenStatus,

@@ -503,6 +503,14 @@ const providerTools: ProviderToolDependencies = {
 };
 const actionLogPath = join(dataDir, 'actions.log');
 const actionLog = new ActionLog(actionLogPath);
+const ACTION_LOG_PRUNE_MS = 24 * 60 * 60 * 1000;
+const actionLogPrune = setInterval(() => {
+    actionLog.prune();
+}, ACTION_LOG_PRUNE_MS);
+
+// An instance may sleep for days, so the log is also pruned at each start.
+actionLogPrune.unref();
+actionLog.prune();
 const chatService: ChatService = new ChatService({
     actionLog,
     notifyOwner: notice => pushNotifier.notify(notice),
@@ -661,7 +669,7 @@ await rm(voiceWorkDir, { recursive: true, force: true });
 
 const voicePrograms = readVoicePrograms(process.env);
 const transcribeVoice = createVoiceTranscriber({ workDir: voiceWorkDir, programs: voicePrograms });
-const app = createApp({ transcribeVoice, push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, workSettings, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, bitwardenVault, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ actionLog, transcribeVoice, push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: process.env.CLOUDBOT_PUBLIC_URL, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, workSettings, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, bitwardenVault, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.

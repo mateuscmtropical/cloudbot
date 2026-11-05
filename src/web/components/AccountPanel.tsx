@@ -19,6 +19,7 @@ interface PushControls {
 interface AccountPanelProps {
     onClose: () => void;
     onPeople?: (() => void) | undefined;
+    onActionLog?: (() => void) | undefined;
     personName?: string | undefined;
     personRole?: string | undefined;
     // Inside the hub the hub keeps the password, the passkeys and the sign-in. A CloudBot on its own has none of them.
@@ -116,7 +117,7 @@ function NotificationsSection({ pushControls = BROWSER_PUSH_CONTROLS, groupLabel
 }
 
 // The hub keeps the password, the passkeys and the sign-in of each person, so those parts only lead to its pages.
-function AccountPanel({ onClose, onPeople, personName, personRole = 'Owner', isHub = true, pushControls = BROWSER_PUSH_CONTROLS }: AccountPanelProps): ReactElement {
+function AccountPanel({ onClose, onPeople, onActionLog, personName, personRole = 'Owner', isHub = true, pushControls = BROWSER_PUSH_CONTROLS }: AccountPanelProps): ReactElement {
     const displayName = personName ?? 'Owner';
     const trimmedName = displayName.trim();
     const nameParts = trimmedName.split(/\s+/);
@@ -171,6 +172,14 @@ function AccountPanel({ onClose, onPeople, personName, personRole = 'Owner', isH
                 </ListGroup>
 
                 <NotificationsSection pushControls={pushControls} groupLabel="Bot" />
+
+                {onActionLog === undefined
+                    ? null
+                    : (
+                            <ListGroup ariaLabel="Action log">
+                                <ListRow title="Action log" description="What your bots did in the last 30 days." onClick={onActionLog} chevron />
+                            </ListGroup>
+                        )}
 
                 {isHub
                     ? (
