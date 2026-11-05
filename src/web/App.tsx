@@ -2,11 +2,12 @@ import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useO
 import type { ReactElement } from 'react';
 
 import type { BotSummary, ChatEvent, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../shared/chatTypes.ts';
-import type { ChannelDetail, ChannelSummary } from '../shared/channelTypes.ts';
+import type { ChannelDetail, ChannelSettings, ChannelSummary } from '../shared/channelTypes.ts';
 import type { MascotLook } from '../shared/mascot.ts';
 import type { MessageSearchHit } from '../shared/searchTypes.ts';
 import { BotList } from './components/BotList.tsx';
 import { ChannelView } from './components/ChannelView.tsx';
+import { GroupDialog } from './components/GroupDialog.tsx';
 import type { MessageActions } from './components/MessageItem.tsx';
 import { deriveMascotState } from './mascotState.ts';
 import { useBackButton } from './useBackButton.ts';
@@ -20,7 +21,7 @@ import type { DraftAttachment } from './components/Composer.tsx';
 import { ConversationView } from './components/ConversationView.tsx';
 import { PullIndicator } from './components/PullIndicator.tsx';
 import { UpdateBanner } from './components/UpdateBanner.tsx';
-import { changeBotMascot, createBot, deleteBot, getChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToAllBotEvents, subscribeToEvents, uploadAttachments, listUploads, removeUpload, renameBot } from './apiClient.ts';
+import { changeBotMascot, createBot, createChannel, deleteBot, deleteChannel, getChannel, updateChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToAllBotEvents, subscribeToEvents, uploadAttachments, listUploads, removeUpload, renameBot } from './apiClient.ts';
 import { mergeLoadedUploads } from './attachmentChips.ts';
 import { loadSeen, markUnread, saveSeen, updateSeen } from './unreadMarks.ts';
 import { applyTabIcon } from './tabIcon.ts';
@@ -150,6 +151,10 @@ function App(): ReactElement {
     const botIdList = bots.map(bot => bot.id);
     const botIdsKey = botIdList.join(',');
     const [channelDetail, setChannelDetail] = useState<ChannelDetail | undefined>(undefined);
+    // Goes up each time the event stream says the open channel changed, which reloads it.
+    const [channelVersion, setChannelVersion] = useState(0);
+    const selectedChannelIdRef = useRef<string | undefined>(undefined);
+    const [groupDialog, setGroupDialog] = useState<'new' | 'edit' | undefined>(undefined);
     const [chatState, setChatState] = useState<ChatState>(emptyChatState);
     const [draftStore] = useState(() => createDraftStore());
     const [runningBotId, setRunningBotId] = useState<string | undefined>(undefined);
@@ -359,6 +364,10 @@ function App(): ReactElement {
     }, [selectedBotId]);
 
     useEffect(() => {
+        selectedChannelIdRef.current = selectedChannelId;
+    }, [selectedChannelId]);
+
+    useEffect(() => {
         saveSeen(seenSequences);
     }, [seenSequences]);
 
@@ -387,9 +396,14 @@ function App(): ReactElement {
             if (isChannelToolRow(event)) {
                 setChannelListVersion(current => current + 1);
             }
+
+            if (event.type === 'channel' && event.channelId === selectedChannelIdRef.current) {
+                setChannelVersion(current => current + 1);
+            }
         }, () => {
             refreshBots();
             setChannelListVersion(current => current + 1);
+            setChannelVersion(current => current + 1);
         });
 
         return () => {
@@ -432,10 +446,12 @@ function App(): ReactElement {
                 setChannels(previousChannels => keepIfSame(previousChannels, loadedChannels));
             })
             .catch(() => {
-                setErrorText('Could not load the channels.');
+                setErrorText('Could not load the groups.');
             });
     }, [botIdsKey, channelListVersion]);
 
+    // The event stream bumps the version when a post lands or a round starts or ends, so each reply shows as it is posted.
+    // A newer load replaces an older one, so a burst of events cannot show an old answer.
     useEffect(() => {
         if (selectedChannelId === undefined) {
             return;
@@ -446,42 +462,21 @@ function App(): ReactElement {
         getChannel(selectedChannelId)
             .then((detail) => {
                 if (isCurrent) {
-                    setChannelDetail(detail);
+                    setChannelDetail(previousDetail => keepIfSame(previousDetail, detail));
                 }
             })
             .catch(() => {
-                setErrorText('Could not load this channel.');
+                if (isCurrent) {
+                    setErrorText('Could not load this group.');
+                }
             });
 
         return () => {
             isCurrent = false;
         };
-    }, [selectedChannelId]);
+    }, [selectedChannelId, channelVersion]);
 
-    // While a bot works on the channel, the view reloads so each reply shows as it is posted. It stops when the round ends.
     const isChannelRoundActive = channelDetail !== undefined && channelDetail.id === selectedChannelId && channelDetail.hasActiveRound;
-
-    useEffect(() => {
-        if (selectedChannelId === undefined || !isChannelRoundActive) {
-            return;
-        }
-
-        const channelId = selectedChannelId;
-        const CHANNEL_POLL_INTERVAL_MS = 2000;
-        const timer = window.setInterval(() => {
-            getChannel(channelId)
-                .then((detail) => {
-                    setChannelDetail(current => (current?.id === channelId ? detail : current));
-                })
-                .catch(() => {
-                    setErrorText('Could not load this channel.');
-                });
-        }, CHANNEL_POLL_INTERVAL_MS);
-
-        return () => {
-            window.clearInterval(timer);
-        };
-    }, [selectedChannelId, isChannelRoundActive]);
 
     // The address names the open bot. The service worker reads it, so a tab that shows a bot gets no notification about it.
     // A tab that shows a channel shows no bot chat, so it names none.
@@ -709,6 +704,11 @@ function App(): ReactElement {
                     setHasUnreadReply(true);
                 }
 
+                return;
+            }
+
+            // Only the stream of all bots carries this one.
+            if (event.type === 'channel') {
                 return;
             }
 
@@ -959,15 +959,12 @@ function App(): ReactElement {
             return;
         }
 
-        const channelId = selectedChannelId;
-
-        postChannelMessage(channelId, text)
-            .then(() => getChannel(channelId))
-            .then((detail) => {
-                setChannelDetail(current => (current?.id === channelId ? detail : current));
+        postChannelMessage(selectedChannelId, text)
+            .then(() => {
+                setChannelVersion(current => current + 1);
             })
             .catch(() => {
-                setErrorText('Could not post to the channel.');
+                setErrorText('Could not post to the group.');
             });
     }
 
@@ -977,16 +974,54 @@ function App(): ReactElement {
             return;
         }
 
-        const channelId = selectedChannelId;
-
-        stopChannel(channelId)
-            .then(() => getChannel(channelId))
-            .then((detail) => {
-                setChannelDetail(current => (current?.id === channelId ? detail : current));
+        stopChannel(selectedChannelId)
+            .then(() => {
+                setChannelVersion(current => current + 1);
             })
             .catch(() => {
-                setErrorText('Could not stop the channel.');
+                setErrorText('Could not stop the group.');
             });
+    }
+
+    function readRefusal(error: unknown): string {
+        const serverMessage = error instanceof RequestFailedError ? error.serverMessage : undefined;
+
+        return serverMessage ?? 'The group could not be saved.';
+    }
+
+    // Answers why the group was refused, or nothing. A new group opens at once.
+    function handleSaveGroup(settings: ChannelSettings): Promise<string | undefined> {
+        const groupId = groupDialog === 'edit' ? selectedChannelId : undefined;
+        const saving = groupId === undefined ? createChannel(settings) : updateChannel(groupId, settings);
+
+        return saving
+            .then((saved) => {
+                setChannelListVersion(current => current + 1);
+                setChannelVersion(current => current + 1);
+
+                if (groupId === undefined) {
+                    handleSelectChannel(saved.id);
+                }
+
+                return undefined;
+            })
+            .catch(readRefusal);
+    }
+
+    function handleDeleteGroup(): Promise<string | undefined> {
+        if (selectedChannelId === undefined) {
+            return Promise.resolve(undefined);
+        }
+
+        return deleteChannel(selectedChannelId)
+            .then(() => {
+                setSelectedChannelId(undefined);
+                setChannelDetail(undefined);
+                setChannelListVersion(current => current + 1);
+
+                return undefined;
+            })
+            .catch(readRefusal);
     }
 
     // The new bot's chat opens at once. Its question about its name and job is the first message there.
@@ -1311,6 +1346,19 @@ function App(): ReactElement {
     return (
         <div className="app">
             <PullIndicator distance={pullToRefresh.distance} isRefreshing={pullToRefresh.isRefreshing} />
+            {groupDialog === undefined
+                ? null
+                : (
+                        <GroupDialog
+                            bots={bots}
+                            group={groupDialog === 'edit' && channelDetail?.id === selectedChannelId ? channelDetail : undefined}
+                            onSave={handleSaveGroup}
+                            onDelete={groupDialog === 'edit' ? handleDeleteGroup : undefined}
+                            onClose={() => {
+                                setGroupDialog(undefined);
+                            }}
+                        />
+                    )}
             <BotList
                 bots={botsWithUnread}
                 selectedBotId={highlightedBotId}
@@ -1321,6 +1369,10 @@ function App(): ReactElement {
                 onSelectBot={handleSelectBot}
                 onSelectChannel={handleSelectChannel}
                 onNewBot={handleNewBot}
+                onNewGroup={() => {
+                    setIsBotListOpen(false);
+                    setGroupDialog('new');
+                }}
                 onRenameBot={handleRenameBot}
                 onDeleteBot={handleDeleteBot}
                 onOpenSearchHit={handleOpenSearchHit}
@@ -1454,11 +1506,17 @@ function App(): ReactElement {
                 {!isPeopleOpen && !isAccountOpen && !isConnectAppsOpen && selectedChannelId !== undefined
                     ? (
                             <ChannelView
+                                key={selectedChannelId}
                                 channel={channelDetail?.id === selectedChannelId ? channelDetail : undefined}
                                 onPost={handlePostToChannel}
                                 onStop={handleStopChannel}
                                 onOpenBotList={() => {
                                     setIsBotListOpen(true);
+                                }}
+                                onEdit={() => {
+                                    if (channelDetail?.id === selectedChannelId) {
+                                        setGroupDialog('edit');
+                                    }
                                 }}
                             />
                         )

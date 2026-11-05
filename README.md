@@ -114,8 +114,7 @@ keeps the volumes and the install folder. Docker stays installed. Back up the
 - **Copy a bot.** Ask a bot to export itself and you get a template file in the chat. Attach that file and ask for a new bot from it. You see the whole template before the bot is made. Secrets, sign-ins, webhook addresses, shared files and learned memory are never in the file. Its routines start turned off.
 - **Import a bot.** Paste instructions from another platform or attach a `.txt`, `.md` or JSON export. CloudBot prepares a name, description and instruction draft for you to approve in the chat. The instructions become memory text only. Platform actions, tools, skills, files, credentials, approval settings and routines are not imported. Recognizable credential values in the draft are redacted.
 - **Share templates.** The template gallery lists public bot templates from a GitHub repository. Ask a bot to list them, to install one by its file name, or to share your bot there once GitHub is connected. The share opens a pull request from your fork of the gallery. You approve each card first. Set `CLOUDBOT_GALLERY_REPO` to read another repository.
-- **Work as a team.** Several bots that pass work to each other, group chats
-  and a manager bot.
+- **Work as a team.** Several bots that pass work to each other, and groups with a manager bot. Press the plus next to Groups to make one, or tap a group's name to change it. An isolated group limits which bots can message each other: its members message only each other, and other bots cannot message them. It is not a security boundary, since all the bots of a person share one system user.
 
 The full plan, version by version, is in the [roadmap](docs/ROADMAP.md).
 

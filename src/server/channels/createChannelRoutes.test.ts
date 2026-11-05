@@ -71,6 +71,37 @@ describe('channel routes', () => {
             .toBe(404);
     });
 
+    it('lets the owner make, change and delete a group, and speaks of a group in its refusals', async () => {
+        const list = await bots.list();
+        const ids = list.map(bot => bot.id);
+        const managerId = ids[0];
+        const created = await app.request('/api/channels', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ name: 'Launch', memberIds: ids, managerId, isIsolated: true }) });
+        const group = (await created.json()) as ChannelSummary;
+        const taken = await app.request('/api/channels', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ name: 'Project', memberIds: ids, managerId, isIsolated: false }) });
+        const badShape = await app.request('/api/channels', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ name: 'Solo' }) });
+        const changed = await app.request(`/api/channels/${group.id}`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ name: 'Launch 2', memberIds: [managerId], managerId, isIsolated: false }) });
+        const changedGroup = (await changed.json()) as ChannelSummary;
+        const deleted = await app.request(`/api/channels/${group.id}`, { method: 'DELETE' });
+        const gone = await app.request(`/api/channels/${group.id}`);
+
+        expect(created.status)
+            .toBe(201);
+        expect(group.isIsolated)
+            .toBe(true);
+        expect(taken.status)
+            .toBe(400);
+        expect(await taken.json())
+            .toEqual({ error: 'A group named Project already exists.' });
+        expect(badShape.status)
+            .toBe(400);
+        expect([changedGroup.name, changedGroup.isIsolated, changedGroup.members.length])
+            .toEqual(['Launch 2', false, 1]);
+        expect(deleted.status)
+            .toBe(204);
+        expect(gone.status)
+            .toBe(404);
+    });
+
     it('accepts a post of 4000 characters and refuses one longer', async () => {
         const atLimit = await app.request(`/api/channels/${channelId}/messages`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ text: 'a'.repeat(4000) }) });
         const overLimit = await app.request(`/api/channels/${channelId}/messages`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ text: 'a'.repeat(4001) }) });

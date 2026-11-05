@@ -116,7 +116,7 @@ import { SetupAnswerError } from '../setup/SetupConversation.ts';
 import type { StoredUploadRecord } from '../store/schema.ts';
 import type { Bot, BotProfile, Message } from '../store/types.ts';
 import { BOT_CREATE_TOOL_FULL_NAME, createBotCreateTool } from '../bots/createBotTool.ts';
-import { findNameClash } from '../channels/channelCommands.ts';
+import { findNameClash, reachableBots } from '../channels/channelCommands.ts';
 import { createStreamMasker, maskSensitiveNumbers } from '../sensitive/sensitiveNumbers.ts';
 import type { StreamMasker } from '../sensitive/sensitiveNumbers.ts';
 import { CHANNEL_TOOL_FULL_NAMES, createChannelTools } from '../channels/createChannelTools.ts';
@@ -2817,10 +2817,16 @@ class ChatService {
         }
 
         const bots = await this.botStore.list();
+        const reachable = await this.reachableBotsOf(senderBotId);
         const wantedName = input.bot.toLowerCase();
-        const matches = bots.filter(bot => bot.name.toLowerCase() === wantedName);
-        const target = matches[0];
         const sender = bots.find(bot => bot.id === senderBotId);
+        const senderList = sender === undefined ? [] : [sender];
+        const matches = [...reachable, ...senderList].filter(bot => bot.name.toLowerCase() === wantedName);
+        const target = matches[0];
+
+        if (target === undefined && bots.some(bot => bot.name.toLowerCase() === wantedName)) {
+            return { isError: true, text: `An isolated group keeps this bot apart from ${input.bot}, so the message was not sent.` };
+        }
 
         if (target === undefined || sender === undefined) {
             return { isError: true, text: `No bot is named ${input.bot}.` };
@@ -2854,6 +2860,20 @@ class ChatService {
                 this.handoffsInFlight.delete(target.id);
             }
         }
+    }
+
+    private async reachableBotsOf(botId: string): Promise<Bot[]> {
+        const bots = await this.botStore.list();
+        const channels = (await this.channelStore?.list()) ?? [];
+
+        return reachableBots(bots, channels, botId);
+    }
+
+    // The open web app reloads the channel. Only the stream of all bots carries this.
+    private publishChannelChanged(channelId: string): void {
+        this.allBotsListeners.forEach((listener) => {
+            listener({ type: 'channel', channelId });
+        });
     }
 
     private async sendHandoff(sender: Bot, target: Bot, senderDepth: number, text: string): Promise<BotSendOutcome> {
@@ -2982,6 +3002,7 @@ class ChatService {
 
         if (this.isBusy(botId)) {
             this.enqueueChannelTurn(botId, turn);
+            this.publishChannelChanged(round.channelId);
 
             return undefined;
         }
@@ -2992,6 +3013,7 @@ class ChatService {
         this.publishTurnState(botId);
         this.runTurn(turn, abortController)
             .catch(reportBackgroundError);
+        this.publishChannelChanged(round.channelId);
 
         return undefined;
     }
@@ -3056,6 +3078,7 @@ class ChatService {
             kind: 'text',
             body: { kind: 'text', text: requestText },
         });
+        this.publishChannelChanged(channel.channelId);
 
         const refusal = await this.startChannelTurn(round, target.botId, { kind: 'bot', fromName: sender.name, text: requestText }, depth);
 
@@ -3115,7 +3138,7 @@ class ChatService {
         return true;
     }
 
-    // A channel has work while one of its bots runs a turn or waits with one. The channel view polls while this is true.
+    // A channel has work while one of its bots runs a turn or waits with one.
     hasActiveChannelRound(channelId: string): boolean {
         const isRunning = [...this.channelRunning.values()].some(roundId => this.channelRounds.get(roundId)?.channelId === channelId);
         const isQueued = [...this.queuedTurns.values()].some(turns => turns.some(turn => turn.channel?.channelId === channelId));
@@ -3138,6 +3161,8 @@ class ChatService {
 
     // Forgets the rounds of a channel once no turn of it runs, waits or is queued. A round with no turn left is dropped.
     private forgetIdleRounds(channelId: string): void {
+        this.publishChannelChanged(channelId);
+
         if (this.hasActiveChannelRound(channelId)) {
             return;
         }
@@ -3257,6 +3282,7 @@ class ChatService {
             kind: body.kind,
             body,
         });
+        this.publishChannelChanged(channelId);
     }
 
     // A note from the app in a channel, such as a stop or a dropped reply. A failed save is reported, not thrown.
@@ -3272,6 +3298,7 @@ class ChatService {
                 kind: 'text',
                 body: { kind: 'text', text },
             });
+            this.publishChannelChanged(channelId);
         } catch (error: unknown) {
             reportBackgroundError(error);
         }
@@ -3980,9 +4007,8 @@ class ChatService {
                         efforts: { browsing: efforts?.browsing ?? null, documents: efforts?.documents ?? null },
                     });
             const helperKinds = Object.keys(helperAgents) as HelperKind[];
-            const allBots = await this.botStore.list();
-            const otherBotNames = allBots.filter(otherBot => otherBot.id !== botId)
-                .map(otherBot => otherBot.name);
+            const reachable = await this.reachableBotsOf(botId);
+            const otherBotNames = reachable.map(otherBot => otherBot.name);
             const memoryAccess = this.agentUser === undefined ? undefined : { agentUser: this.agentUser, botId };
             // The framed memory goes in the system prompt for every engine, since no provider CLI loads MEMORY.md itself.
             const memoryBlock = await readWorkspaceMemoryBlock(workspaceDir, memoryAccess);
