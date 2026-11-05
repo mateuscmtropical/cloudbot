@@ -846,5 +846,5 @@ function checkedSocketUrl(raw: unknown, devtoolsPort: string): string {
     return socketUrl;
 }
 
-export { BROWSER_KEYS, BrowserControl, BrowserError, DESKTOP_DEVTOOLS_URL, GATE_REFUSED_ERROR, KEY_DEFINITIONS, MAX_LISTED_ELEMENTS, MAX_PAGE_TEXT_LENGTH, devtoolsSocketUrl, parseWebUrl };
+export { BROWSER_KEYS, BrowserControl, BrowserError, DESKTOP_DEVTOOLS_URL, GATE_REFUSED_ERROR, KEY_DEFINITIONS, MAX_LISTED_ELEMENTS, MAX_PAGE_TEXT_LENGTH, createIsolatedContext, devtoolsSocketUrl, parseWebUrl, readEvaluatedValue };
 export type { BrowserControlOptions, BrowserKey, BrowserTarget, ClickResult, LoginField, PageElement, PageText };

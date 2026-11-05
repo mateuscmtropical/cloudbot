@@ -93,6 +93,17 @@ describe('WhatsApp setup tools', () => {
     });
 });
 
+describe('Meeting tools', () => {
+    it('reviews the start of a recording and skips reading and stopping it', () => {
+        expect(classify('mcp__cloudbot__meeting_record_start'))
+            .not.toBe('skip');
+        expect(classify('mcp__cloudbot__meeting_record_status'))
+            .toBe('skip');
+        expect(classify('mcp__cloudbot__meeting_record_stop'))
+            .toBe('skip');
+    });
+});
+
 describe('desktop tools', () => {
     it('skips a screenshot and the wheel, and reviews clicks, keys and typing', () => {
         expect(classify('mcp__cloudbot__desktop_screenshot'))
