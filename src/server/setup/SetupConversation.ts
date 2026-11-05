@@ -145,6 +145,7 @@ class SetupConversation {
     // Settles when the current start ends, so a message sent during the start can wait for it.
     private started = Promise.withResolvers<undefined>();
     private closed = false;
+    private savedStateCount = 0;
     private pending: Promise<unknown> = Promise.resolve();
 
     constructor(options: SetupConversationOptions) {
@@ -258,8 +259,14 @@ class SetupConversation {
         return claude === true ? ['claude', ...signedIn] : signedIn;
     }
 
+    // Goes up each time the saved setup changes, which includes every sign-in and sign-out.
+    connectionVersion(): number {
+        return this.savedStateCount;
+    }
+
     // Posts the provider list in the setup chat, so the owner can connect another provider.
-    offerProviders(): Promise<void> {
+    // A provider the owner already picked skips the list.
+    offerProviders(providerId?: string): Promise<void> {
         return this.serial(async () => {
             if (this.closed) {
                 return;
@@ -274,6 +281,13 @@ class SetupConversation {
             this.cancelSessions();
             await this.retireActive();
             this.state = { ...this.kept(), step: 'done' };
+
+            if (providerId !== undefined && this.isKnownProvider(providerId)) {
+                await this.chooseProvider(providerId);
+
+                return;
+            }
+
             await this.ask({ kind: 'choice', prompt: 'Which AI provider would you like to connect?', options: this.providerOptions() });
         });
     }
@@ -1067,6 +1081,7 @@ class SetupConversation {
         const serialized = JSON.stringify(this.state);
 
         await this.options.settings.set(SETUP_STATE_KEY, serialized);
+        this.savedStateCount += 1;
     }
 }
 

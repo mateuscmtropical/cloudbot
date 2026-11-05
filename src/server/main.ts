@@ -507,7 +507,8 @@ const providerTools: ProviderToolDependencies = {
     connected: () => setup.connectedProviders(),
     providerFor: botId => providerChoices.forBot(botId),
     setProvider: (botId, provider) => providerChoices.setForBot(botId, provider),
-    offerProviders: () => setup.offerProviders(),
+    offerProviders: provider => setup.offerProviders(provider),
+    connectionVersion: () => setup.connectionVersion(),
 };
 const actionLogPath = join(dataDir, 'actions.log');
 const actionLog = new ActionLog(actionLogPath);

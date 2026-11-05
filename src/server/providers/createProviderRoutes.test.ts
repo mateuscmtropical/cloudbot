@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PermissionMode } from '../../shared/permissionModes.ts';
-import type { ModelChoices } from '../models/modelChoices.ts';
+import type { BotProviderSummary, ProviderChoiceSummary } from '../../shared/providerTypes.ts';
+import type { EffortChoices, ModelChoices } from '../models/modelChoices.ts';
 import { createProviderRoutes, modelFor } from './createProviderRoutes.ts';
 import { ProviderModelCatalogs } from './ProviderModelCatalogs.ts';
 import type { ProviderModelChoice } from '../store/ModelStore.ts';
@@ -9,6 +10,7 @@ import type { ProviderToolDependencies } from './createProviderTools.ts';
 import type { ProviderId } from './providerIds.ts';
 
 const NO_CHOICES: ModelChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
+const NO_EFFORTS: EffortChoices = { chat: null, routines: null, review: null, browsing: null, documents: null };
 
 interface TestApp {
     request: (path: string, init?: RequestInit) => Response | Promise<Response>;
@@ -33,10 +35,23 @@ function createTestApp(connected: ProviderId[], chat: string | null = null, prov
         setProvider: vi.fn(() => Promise.resolve()),
         offerProviders: vi.fn(() => Promise.resolve()),
     };
+    let storedChoices: ModelChoices = { ...NO_CHOICES, chat };
+    let storedEfforts: EffortChoices = { ...NO_EFFORTS };
     const app = createProviderRoutes({
         providers: dependencies,
         modelStore: {
-            get: () => Promise.resolve({ ...NO_CHOICES, chat }),
+            get: () => Promise.resolve(storedChoices),
+            set: (_botId, choices) => {
+                storedChoices = choices;
+
+                return Promise.resolve();
+            },
+            getEfforts: () => Promise.resolve(storedEfforts),
+            setEfforts: (_botId, efforts) => {
+                storedEfforts = efforts;
+
+                return Promise.resolve();
+            },
             getProviderChoice: (botId, providerId) => Promise.resolve(providerChoices.get(`${botId}:${providerId}`)),
             setProviderChoice: vi.fn((botId: string, providerId: ProviderId, choice: ProviderModelChoice) => {
                 providerChoices.set(`${botId}:${providerId}`, choice);
@@ -94,7 +109,7 @@ describe('provider routes', () => {
         expect(response.status)
             .toBe(200);
         expect(await response.json())
-            .toEqual({ provider: 'claude', label: 'Claude', model: 'sonnet', modelOptions: [], selectedModel: null, selectedEffort: null, effortOptions: [], permissionMode: 'auto' });
+            .toMatchObject({ provider: 'claude', label: 'Claude', model: 'sonnet', selectedModel: 'sonnet', selectedEffort: null, permissionMode: 'auto' });
     });
 
     it('lists the providers of the server with the state of each', async () => {
@@ -212,6 +227,77 @@ describe('provider routes', () => {
             .toEqual({ botId: 'setup-bot' });
         expect(dependencies.offerProviders)
             .toHaveBeenCalledTimes(1);
+    });
+
+    it('offers the Claude models and efforts and saves them as the chat choices of the bot', async () => {
+        const { request } = createTestApp(['claude']);
+
+        const first = await request('/api/bots/bot-1/provider');
+        const summary = await first.json() as BotProviderSummary;
+
+        expect(summary.modelOptions.map(option => option.label))
+            .toEqual(['Fable', 'Opus', 'Sonnet', 'Haiku']);
+        expect(summary.effortOptions)
+            .toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+
+        const saved = await request('/api/bots/bot-1/provider/model', putJson({ model: 'haiku', effort: 'low' }));
+        const savedSummary = await saved.json() as BotProviderSummary;
+
+        expect(savedSummary.selectedModel)
+            .toBe('haiku');
+        expect(savedSummary.selectedEffort)
+            .toBe('low');
+
+        const refused = await Promise.all([
+            request('/api/bots/bot-1/provider/model', putJson({ model: 'gpt-6' })),
+            request('/api/bots/bot-1/provider/model', putJson({ effort: 'huge' })),
+        ]);
+
+        expect(refused.map(response => response.status))
+            .toEqual([400, 400]);
+    });
+
+    it('reads the connected providers again right after a sign-in changed', async () => {
+        const connected: ProviderId[] = [];
+        let version = 1;
+        const { request, dependencies } = createTestApp(connected);
+
+        dependencies.connected = () => Promise.resolve([...connected]);
+        dependencies.connectionVersion = () => version;
+
+        await request('/api/providers');
+        connected.push('claude');
+
+        const kept = await request('/api/providers');
+        const keptList = await kept.json() as ProviderChoiceSummary[];
+
+        expect(keptList.find(provider => provider.id === 'claude')?.isConnected)
+            .toBe(false);
+
+        version = 2;
+
+        const fresh = await request('/api/providers');
+        const freshList = await fresh.json() as ProviderChoiceSummary[];
+
+        expect(freshList.find(provider => provider.id === 'claude')?.isConnected)
+            .toBe(true);
+    });
+
+    it('goes to the provider the owner picked and refuses one this server does not run', async () => {
+        const { request, dependencies } = createTestApp(['claude']);
+        const headers = { 'Content-Type': 'application/json' };
+
+        const picked = await request('/api/providers/connect', { method: 'POST', headers, body: JSON.stringify({ provider: 'claude' }) });
+        const unknown = await request('/api/providers/connect', { method: 'POST', headers, body: JSON.stringify({ provider: 'nothing' }) });
+
+        expect(picked.status)
+            .toBe(200);
+        expect(unknown.status)
+            .toBe(400);
+        expect(dependencies.offerProviders)
+            .toHaveBeenCalledTimes(1);
+        expect(dependencies.offerProviders)
+            .toHaveBeenCalledWith('claude');
     });
 });
 

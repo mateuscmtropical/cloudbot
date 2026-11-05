@@ -508,6 +508,30 @@ describe('setup conversation with other providers', () => {
             .toEqual(['chatgpt']);
     });
 
+    it('skips the provider list when the owner already picked the provider', async () => {
+        const context = await fixture();
+        const choice = await latest(context, 'choice');
+
+        await context.chat.answerSetup(context.botId, choice.id, 'choice', 'chatgpt');
+        context.finishChatgpt({ ok: true });
+        await vi.waitFor(() => {
+            expect(context.setup.isDone())
+                .toBe(true);
+        });
+
+        await context.setup.offerProviders('claude');
+        const offer = await latest(context, 'choice');
+
+        expect(offer.body)
+            .toMatchObject({ prompt: 'How would you like to use Claude?' });
+
+        await context.setup.offerProviders('not-a-provider');
+        const fallback = await latest(context, 'choice');
+
+        expect(fallback.body)
+            .toMatchObject({ prompt: 'Which AI provider would you like to connect?' });
+    });
+
     it('offers the list again when the only sign-in fails', async () => {
         const context = await fixture();
         const choice = await latest(context, 'choice');

@@ -5,7 +5,6 @@ import type { BotProviderSummary, ProviderChoiceSummary } from '../../shared/pro
 import { readPermissionMode } from '../../shared/permissionModes.ts';
 import type { PermissionMode } from '../../shared/permissionModes.ts';
 import { getBotProvider, listProviders, savePermissionMode, saveProviderModel, startProviderConnect, switchBotProvider } from '../apiClient.ts';
-import { Button } from './Button.tsx';
 import { Field } from './Field.tsx';
 import { PopoverMenuSection } from './PopoverMenu.tsx';
 import { Select } from './Select.tsx';
@@ -101,10 +100,10 @@ function ProviderPicker({ botId, isOpen, changeCount = 0, onOpenSetupChat, onClo
             });
     }
 
-    function handleConnect(): void {
+    function handleConnect(provider: ProviderChoiceSummary): void {
         setProblem(undefined);
 
-        startProviderConnect()
+        startProviderConnect(provider.id)
             .then((started) => {
                 onClose();
                 onOpenSetupChat(started.botId);
@@ -185,11 +184,19 @@ function ProviderPicker({ botId, isOpen, changeCount = 0, onOpenSetupChat, onClo
                     );
                 })}
                 {notConnected.map(provider => (
-                    <div key={provider.id} className="provider-row is-off">
+                    <button
+                        key={provider.id}
+                        type="button"
+                        className="provider-row"
+                        aria-label={`Connect ${provider.label}`}
+                        onClick={() => {
+                            handleConnect(provider);
+                        }}
+                    >
                         <span className="provider-radio" aria-hidden="true" />
                         <span className="provider-row-name">{provider.label}</span>
-                        <Button tone="quiet" aria-label={`Connect ${provider.label}`} onClick={handleConnect}>Connect</Button>
-                    </div>
+                        <span className="provider-row-connect">Connect</span>
+                    </button>
                 ))}
             </PopoverMenuSection>
             {current.modelOptions.length === 0
