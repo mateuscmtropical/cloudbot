@@ -7,7 +7,7 @@ import type { PeopleErrorResponse, SentBotResult } from '../../shared/peopleType
 import type { HubClient } from './HubClient.ts';
 import { PeopleAdminError } from './PeopleAdmin.ts';
 
-type GroupsAdmin = Pick<HubClient, 'listGroups' | 'addGroup' | 'setGroupMember' | 'sendBotToGroup'>;
+type GroupsAdmin = Pick<HubClient, 'listGroups' | 'addGroup' | 'setGroupMember' | 'removeGroup' | 'sendBotToGroup'>;
 
 interface GroupRoutesOptions {
     groupsAdmin: GroupsAdmin;
@@ -134,6 +134,23 @@ function createGroupRoutes(options: GroupRoutesOptions): Hono {
     });
 
     routes.post('/api/groups/:name/bots', context => sendBot(context, options));
+
+    // The name is typed again, since the group's bots and chats go with it.
+    routes.delete('/api/groups/:name', async (context) => {
+        const name = context.req.param('name');
+
+        if (context.req.query('confirm') !== name) {
+            return refuse(context, 'Type the group name to confirm.');
+        }
+
+        try {
+            await options.groupsAdmin.removeGroup(name);
+
+            return context.body(null, 204);
+        } catch (error: unknown) {
+            return fail(context, error);
+        }
+    });
 
     return routes;
 }

@@ -19,6 +19,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- Shared groups let people on one server work together. Add person can invite the new person to a new or existing group, and each of your bots can stay with you, be copied to the group or move there. Everyone in a group sees it under Shared with people in their own CloudBot. Inside it, each message shows who wrote it, and Members lists the people. An admin or the owner adds and removes people and bots. Anyone approves bot actions, but money or a bot delete needs an admin or the owner. Nobody can remove the owner of a group.
 - In a bot's chat, a message that starts with @name goes to that bot, and @group goes to the manager of a group that is not isolated. It reaches that bot as your own message, and the reply comes back to the chat you wrote in. Typing @ at the start of a message lists the names you can pick, in a group too.
 - The bot joins a Google Meet call by itself with `meeting_join`. Meet often refuses a guest at random, so the bot knocks again, up to 10 times.
 - The bot takes notes of a Google Meet call. It joins as a guest from its own browser, says who it is in the meeting chat, and transcribes the call in 5 minute parts with the local whisper model, so there is no cost per minute. When you ask it to leave, or the meeting ends, it posts a summary with the action items and shares the transcript.

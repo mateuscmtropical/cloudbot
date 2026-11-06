@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 
 import type { BotSummary } from '../../shared/chatTypes.ts';
 import type { ChannelSummary } from '../../shared/channelTypes.ts';
+import type { MyGroup } from '../../shared/peopleTypes.ts';
 import type { MessageSearchHit } from '../../shared/searchTypes.ts';
 import type { MascotState } from '../mascotState.ts';
 import { nextTap } from '../doubleTap.ts';
@@ -48,7 +49,11 @@ interface BotListProps {
     onDeleteBot?: ((botId: string) => Promise<string | undefined>) | undefined;
     // Opens a chat at a message the search found. Without it the search field looks only at bot names.
     onOpenSearchHit?: ((hit: MessageSearchHit) => void) | undefined;
+    // The shared groups this person works in with other people. Each opens through the hub.
+    sharedGroups?: MyGroup[];
 }
+
+const SHARED_ROLE_LABELS: Record<MyGroup['role'], string> = { owner: 'You own it', admin: 'Admin', member: 'Member' };
 
 function initialsFromName(name: string): string {
     const words = name.trim()
@@ -62,7 +67,7 @@ function initialsFromName(name: string): string {
     return initials.toLocaleUpperCase();
 }
 
-function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, onSelectBot, onSelectChannel, onNewBot, onNewGroup, onConnectApps, personName, onAccount, onPeople, onRenameBot, onDeleteBot, onOpenSearchHit }: BotListProps): ReactElement {
+function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedChannelId, isOpen, onSelectBot, onSelectChannel, onNewBot, onNewGroup, onConnectApps, personName, onAccount, onPeople, onRenameBot, onDeleteBot, onOpenSearchHit, sharedGroups = [] }: BotListProps): ReactElement {
     const [renamingBotId, setRenamingBotId] = useState<string | undefined>(undefined);
     const [actionsBotId, setActionsBotId] = useState<string | undefined>(undefined);
     const [deletingBotId, setDeletingBotId] = useState<string | undefined>(undefined);
@@ -239,6 +244,25 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
                             />
                         );
                     })}
+                    {sharedGroups.length === 0
+                        ? null
+                        : (
+                                <div className="channel-section-header">
+                                    <p className="channel-section-title">Shared with people</p>
+                                </div>
+                            )}
+                    {sharedGroups.map(group => (
+                        <ListRow
+                            key={group.name}
+                            title={group.name}
+                            description={SHARED_ROLE_LABELS[group.role]}
+                            leadingIcon={<PeopleIcon />}
+                            className="bot-item channel-list-row"
+                            onClick={() => {
+                                window.location.assign(group.openPath);
+                            }}
+                        />
+                    ))}
                     {onOpenSearchHit === undefined
                         ? null
                         : <MessageSearchResults query={searchValue} bots={bots} onOpenHit={onOpenSearchHit} />}

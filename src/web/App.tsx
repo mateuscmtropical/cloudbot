@@ -37,10 +37,10 @@ import { addPasskey, describePasskeyResult, removePasskey } from './passkeyClien
 import { SignInScreen } from './components/SignInScreen.tsx';
 import { PeopleHubHint } from './components/PeopleHubHint.tsx';
 import { GroupMembersPanel } from './components/GroupMembersPanel.tsx';
-import type { GroupRole } from '../shared/peopleTypes.ts';
+import type { GroupRole, MyGroup } from '../shared/peopleTypes.ts';
 import { createDraftStore, EMPTY_DRAFT } from './draftStore.ts';
 import { AccountPanel, ActionLogPanel, AppUpdatePanel, BotProfilePanel, ConnectAppsPanel, PeoplePanel } from './components/lazyPanels.tsx';
-import { getHubContext } from './peopleClient.ts';
+import { getHubContext, listMyGroups } from './peopleClient.ts';
 import type { HubRole } from './peopleClient.ts';
 
 // An answer equal to the state keeps the old reference, so nothing that depends on it runs again.
@@ -185,6 +185,7 @@ function App(): ReactElement {
     const [hubRole, setHubRole] = useState<HubRole>('standalone');
     const [personName, setPersonName] = useState<string | undefined>(undefined);
     const [groupRole, setGroupRole] = useState<GroupRole | undefined>(undefined);
+    const [sharedGroups, setSharedGroups] = useState<MyGroup[]>([]);
     const [isPeopleOpen, setIsPeopleOpen] = useState(false);
     const [isAccountOpen, setIsAccountOpen] = useState(false);
     const [isActionLogOpen, setIsActionLogOpen] = useState(false);
@@ -803,6 +804,17 @@ function App(): ReactElement {
                     setPersonName(context.actingName ?? context.personName);
                     setGroupRole(context.groupRole);
                 }
+
+                // A hub that cannot list groups leaves the list without them. The role above stays.
+                if (context.role === 'owner' || context.role === 'member') {
+                    listMyGroups()
+                        .then((groups) => {
+                            if (isCurrent) {
+                                setSharedGroups(groups);
+                            }
+                        })
+                        .catch(() => undefined);
+                }
             })
             .catch(() => {
                 if (isCurrent) {
@@ -1406,6 +1418,7 @@ function App(): ReactElement {
                         />
                     )}
             <BotList
+                sharedGroups={sharedGroups}
                 bots={botsWithUnread}
                 selectedBotId={highlightedBotId}
                 selectedMascotState={liveMascotState}

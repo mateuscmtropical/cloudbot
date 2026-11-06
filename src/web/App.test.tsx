@@ -55,6 +55,7 @@ vi.mock('./apiClient.ts', () => ({
 
 vi.mock('./peopleClient.ts', () => ({
     getHubContext: vi.fn(() => Promise.resolve({ role: 'standalone' })),
+    listMyGroups: vi.fn(() => Promise.resolve([])),
     listPeople: vi.fn(() => Promise.resolve([])),
 }));
 
