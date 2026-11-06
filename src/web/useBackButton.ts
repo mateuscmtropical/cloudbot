@@ -49,7 +49,9 @@ function takeLeftEntriesBack(): void {
 }
 
 // Chrome skips a history entry that was added without a tap when the back button is pressed. So a layer that opens
-// by itself, such as the chat on start, adds its entry on the next tap.
+// by itself, such as the chat on start, adds its entry on the next tap. It waits for the click and not the
+// pointerdown, because a touch counts as a tap only when the finger lifts. An entry added on a touch pointerdown is
+// skipped, and the back press leaves the app.
 function addEntryWhenAllowed(layer: () => void): () => void {
     const add = (): void => {
         const currentState: unknown = window.history.state;
@@ -78,10 +80,10 @@ function addEntryWhenAllowed(layer: () => void): () => void {
         return () => undefined;
     }
 
-    window.addEventListener('pointerdown', add, { once: true, capture: true });
+    window.addEventListener('click', add, { once: true, capture: true });
 
     return () => {
-        window.removeEventListener('pointerdown', add, { capture: true });
+        window.removeEventListener('click', add, { capture: true });
     };
 }
 

@@ -135,6 +135,32 @@ describe('useBackButton', () => {
             .toHaveBeenCalled();
     });
 
+    it('waits for a click, not a touch, before a layer opened without a tap adds its entry', () => {
+        // happy-dom has no userActivation, so a page that was not tapped yet is set up by hand.
+        Object.defineProperty(navigator, 'userActivation', {
+            configurable: true,
+            value: { hasBeenActive: false, isActive: false },
+        });
+
+        try {
+            renderHook(() => {
+                useBackButton(true, vi.fn());
+            });
+
+            window.dispatchEvent(new Event('pointerdown'));
+
+            expect(history.index)
+                .toBe(0);
+
+            window.dispatchEvent(new Event('click'));
+
+            expect(history.index)
+                .toBe(1);
+        } finally {
+            Reflect.deleteProperty(navigator, 'userActivation');
+        }
+    });
+
     it('never leaves the app when one layer closes and another opens in the same tap', async () => {
         const first = renderHook((props: LayerProps) => {
             useBackButton(props.isOpen, vi.fn());
