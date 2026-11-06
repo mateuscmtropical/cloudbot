@@ -210,6 +210,69 @@ describe('attachVncProxy', () => {
         hubServer.close();
     });
 
+    it('waits for the desktop before it opens the VNC bridge, and ends the hold when the viewer closes', async () => {
+        const releases: string[] = [];
+        const holds = { count: 0 };
+        let vncConnections = 0;
+        const countingVncServer = createTcpServer((connection) => {
+            vncConnections += 1;
+            connection.write('RFB 003.008\n');
+        });
+        const vncPort = await listenOnFreePort(countingVncServer);
+        let openDesktop: () => void = () => undefined;
+        const desktopReady = new Promise<void>((resolve) => {
+            openDesktop = () => {
+                resolve();
+            };
+        });
+        const holdDesktop = async (): Promise<() => void> => {
+            holds.count += 1;
+            await desktopReady;
+
+            return () => {
+                releases.push('released');
+            };
+        };
+        const holdServer = createServer();
+
+        attachVncProxy({ server: holdServer, access, screen, vncPort, holdDesktop });
+
+        const holdPort = await listenOnFreePort(holdServer);
+        const webSocket = new WebSocket(`ws://127.0.0.1:${String(holdPort)}/api/desktop/vnc`, {
+            headers: { cookie: `__Host-cloudbot_session=${sessionToken}`, origin: `http://127.0.0.1:${String(holdPort)}` },
+        });
+        const messages: string[] = [];
+
+        webSocket.on('message', (data: Buffer) => {
+            messages.push(data.toString());
+        });
+
+        await vi.waitFor(() => {
+            expect(holds.count)
+                .toBe(1);
+        });
+        expect(vncConnections)
+            .toBe(0);
+
+        openDesktop();
+        await vi.waitFor(() => {
+            expect(messages)
+                .toEqual(['RFB 003.008\n']);
+        });
+        expect(vncConnections)
+            .toBe(1);
+
+        webSocket.close();
+        await vi.waitFor(() => {
+            expect(releases)
+                .toEqual(['released']);
+        });
+
+        holdServer.closeAllConnections();
+        holdServer.close();
+        countingVncServer.close();
+    });
+
     it('closes the socket when the desktop is not running', async () => {
         vncServer.close();
         httpServer.closeAllConnections();

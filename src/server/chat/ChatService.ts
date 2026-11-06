@@ -3654,6 +3654,11 @@ class ChatService {
         return this.runningTurns.has(botId);
     }
 
+    // True while any bot runs a turn. A turn may use the desktop, so the desktop stays up meanwhile.
+    hasRunningTurn(): boolean {
+        return this.runningTurns.size > 0;
+    }
+
     // True while a web app is subscribed to the bot's events. A webhook URL may only go to such a listener.
     hasListener(botId: string): boolean {
         return (this.listenersByBot.get(botId)?.size ?? 0) > 0;

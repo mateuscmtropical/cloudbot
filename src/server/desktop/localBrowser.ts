@@ -8,6 +8,7 @@ import { join, resolve as resolvePath, win32 } from 'node:path';
 import { BrowserControl, BrowserError, DESKTOP_DEVTOOLS_URL, GATE_REFUSED_ERROR, devtoolsSocketUrl } from './BrowserControl.ts';
 import { CdpConnection } from './CdpConnection.ts';
 import type { DesktopCommand } from './DesktopSupervisor.ts';
+import type { DesktopHold } from './OnDemandDesktop.ts';
 import { inheritedEnvironment } from '../childEnvironment.ts';
 
 interface LocalBrowserEnvironment {
@@ -505,9 +506,10 @@ function localGatePortFor(plan: LocalBrowserPlan): number | undefined {
 
 // The browser tools for a plan. A local browser starts disabled, until it passes the gate check.
 // The gate probe is a separate control that is never disabled, since the check must navigate while the tools are off.
-function buildLocalBrowserTools(plan: LocalBrowserPlan, profileDir: string): LocalBrowserTools {
+// The desktop's browser gets the hold that starts the desktop on demand. A local browser has no desktop to hold.
+function buildLocalBrowserTools(plan: LocalBrowserPlan, profileDir: string, holdDesktop?: DesktopHold): LocalBrowserTools {
     if (plan.kind === 'desktop') {
-        return { browser: new BrowserControl({ devtoolsUrl: DESKTOP_DEVTOOLS_URL }), gateProbe: undefined, noBrowserReason: undefined };
+        return { browser: new BrowserControl({ devtoolsUrl: DESKTOP_DEVTOOLS_URL, holdDesktop }), gateProbe: undefined, noBrowserReason: undefined };
     }
 
     if (plan.kind === 'off') {

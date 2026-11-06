@@ -95,4 +95,45 @@ describe('DesktopInput', () => {
 
         await expect(desktop.click(1, 1, 'left', 1)).rejects.toThrow('The desktop did not answer. Try again in a few seconds.');
     });
+
+    it('holds the desktop while the helper runs, and ends the hold after it', async () => {
+        const events: string[] = [];
+        const desktop = new DesktopInput(
+            SUDO_COMMAND,
+            () => {
+                events.push('run');
+
+                return Promise.resolve(Buffer.alloc(0));
+            },
+            () => {
+                events.push('hold');
+
+                return Promise.resolve(() => {
+                    events.push('release');
+                });
+            },
+        );
+
+        await desktop.pressKey('Return');
+
+        expect(events)
+            .toEqual(['hold', 'run', 'release']);
+    });
+
+    it('does not run the helper when the desktop does not get ready', async () => {
+        const events: string[] = [];
+        const desktop = new DesktopInput(
+            SUDO_COMMAND,
+            () => {
+                events.push('run');
+
+                return Promise.resolve(Buffer.alloc(0));
+            },
+            () => Promise.reject(new Error('The desktop did not get ready in time.')),
+        );
+
+        await expect(desktop.pressKey('Return')).rejects.toThrow('The desktop did not answer. Try again in a few seconds.');
+        expect(events)
+            .toEqual([]);
+    });
 });

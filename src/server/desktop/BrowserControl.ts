@@ -3,6 +3,8 @@ import type { CdpSocketFactory } from './CdpConnection.ts';
 import { evaluateInPage } from './evaluateInPage.ts';
 import { cursorSteps, pressHoldMs } from './humanCursor.ts';
 import type { CursorPoint } from './humanCursor.ts';
+import { holdDesktopIfAny } from './OnDemandDesktop.ts';
+import type { DesktopHold } from './OnDemandDesktop.ts';
 import { pageActiveElement } from './page/pageActiveElement.ts';
 import { pageClickFocus } from './page/pageClickFocus.ts';
 import { pageClickableElements } from './page/pageClickableElements.ts';
@@ -22,6 +24,8 @@ interface BrowserControlOptions {
     fetchFunction?: typeof fetch;
     socketFactory?: CdpSocketFactory;
     sleep?: (delayMs: number) => Promise<void>;
+    // Starts the bot's desktop when an action needs it, and holds it until the action ends. Only the desktop's browser has one.
+    holdDesktop?: DesktopHold | undefined;
 }
 
 interface PageTarget {
@@ -282,6 +286,7 @@ class BrowserControl {
     private readonly fetchFunction: typeof fetch;
     private readonly socketFactory: CdpSocketFactory | undefined;
     private readonly sleep: (delayMs: number) => Promise<void>;
+    private readonly holdDesktop: DesktopHold | undefined;
     private dismissedDialogs: string[] = [];
     // Where the pointer was left, so the next click moves from there.
     private cursor: CursorPoint = { x: 0, y: 0 };
@@ -291,6 +296,7 @@ class BrowserControl {
         this.fetchFunction = options.fetchFunction ?? fetch;
         this.socketFactory = options.socketFactory;
         this.sleep = options.sleep ?? defaultSleep;
+        this.holdDesktop = options.holdDesktop;
     }
 
     // Turns the browser tools off. Each action then fails with the reason.
@@ -466,10 +472,36 @@ class BrowserControl {
 
     // A connection the caller keeps open, such as the live view of the screen. The caller closes it.
     async connectPage(): Promise<CdpConnection> {
+        const release = await this.holdDesktopForAction();
+
+        try {
+            const page = await this.openPageConnection();
+
+            // A recording or a meeting keeps the page open, so the desktop stays up until the page closes.
+            page.onClose(release);
+
+            return page;
+        } catch (error: unknown) {
+            release();
+
+            throw error;
+        }
+    }
+
+    private async openPageConnection(): Promise<CdpConnection> {
         const socketUrl = await this.findPageSocketUrl();
 
         try {
             return await CdpConnection.open(socketUrl, this.socketFactory);
+        } catch {
+            throw new BrowserError('The browser is not running. Try again in a few seconds.');
+        }
+    }
+
+    // The desktop starts for an action and stays up until it ends. A desktop that does not get ready is reported as not running.
+    private async holdDesktopForAction(): Promise<() => void> {
+        try {
+            return await holdDesktopIfAny(this.holdDesktop);
         } catch {
             throw new BrowserError('The browser is not running. Try again in a few seconds.');
         }
@@ -679,6 +711,16 @@ class BrowserControl {
     }
 
     private async withPage<T>(action: (page: CdpConnection) => Promise<T>, options: WithPageOptions = {}): Promise<T> {
+        const release = await this.holdDesktopForAction();
+
+        try {
+            return await this.runOnPage(action, options);
+        } finally {
+            release();
+        }
+    }
+
+    private async runOnPage<T>(action: (page: CdpConnection) => Promise<T>, options: WithPageOptions): Promise<T> {
         const socketUrl = await this.findPageSocketUrl();
         let page: CdpConnection;
 

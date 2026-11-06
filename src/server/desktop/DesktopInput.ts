@@ -2,6 +2,8 @@ import { execFile } from 'node:child_process';
 
 import { buildDesktopEnvironment } from './DesktopSupervisor.ts';
 import type { DesktopCommand } from './DesktopSupervisor.ts';
+import { holdDesktopIfAny } from './OnDemandDesktop.ts';
+import type { DesktopHold } from './OnDemandDesktop.ts';
 
 interface DesktopRunOptions {
     // Sent on stdin. Typed text goes this way, so it is never read as an option.
@@ -66,10 +68,12 @@ function cleanWindowName(output: Buffer): string {
 class DesktopInput {
     private readonly command: DesktopCommand;
     private readonly run: DesktopInputRunner;
+    private readonly holdDesktop: DesktopHold | undefined;
 
-    constructor(command: DesktopCommand, run: DesktopInputRunner = runDesktopHelper) {
+    constructor(command: DesktopCommand, run: DesktopInputRunner = runDesktopHelper, holdDesktop?: DesktopHold) {
         this.command = command;
         this.run = run;
+        this.holdDesktop = holdDesktop;
     }
 
     // A PNG of the whole screen, as base64.
@@ -128,7 +132,14 @@ class DesktopInput {
         const options: DesktopRunOptions = input === undefined ? { timeoutMs } : { input, timeoutMs };
 
         try {
-            return await this.run(this.command.command, args, options);
+            // The desktop starts for the action and stays up until the helper ends.
+            const release = await holdDesktopIfAny(this.holdDesktop);
+
+            try {
+                return await this.run(this.command.command, args, options);
+            } finally {
+                release();
+            }
         } catch {
             throw new DesktopError(NOT_RUNNING_MESSAGE);
         }

@@ -12,6 +12,8 @@ import { SESSION_COOKIE_NAME } from '../access/requireSession.ts';
 import type { SetupAccess } from '../access/SetupAccess.ts';
 import { DesktopResizeCoordinator } from './DesktopResizeCoordinator.ts';
 import type { MobileSites } from './MobileSites.ts';
+import { holdDesktopIfAny } from './OnDemandDesktop.ts';
+import type { DesktopHold } from './OnDemandDesktop.ts';
 import { RfbInputFilter } from './RfbInputFilter.ts';
 import type { ScreenHolder } from './ScreenHolder.ts';
 
@@ -25,6 +27,8 @@ interface VncProxyOptions {
     publicUrl?: string | undefined;
     // Asks sites for their mobile page while a phone holds the screen.
     mobileSites?: MobileSites;
+    // Starts the desktop when a viewer connects. The desktop stays up until the viewer is gone.
+    holdDesktop?: DesktopHold | undefined;
 }
 
 const VNC_PATH = '/api/desktop/vnc';
@@ -95,7 +99,7 @@ function resumeWhenDrained(webSocket: WebSocket, vncSocket: Socket): void {
 }
 
 // Binary frames in, raw RFB bytes out, and the other way round. noVNC speaks WebSocket, TigerVNC speaks TCP.
-function bridgeToVnc(webSocket: WebSocket, vncPort: number, screen: ScreenHolder, resizeCoordinator: DesktopResizeCoordinator): void {
+function bridgeToVnc(webSocket: WebSocket, vncPort: number, screen: ScreenHolder, resizeCoordinator: DesktopResizeCoordinator, release: () => void): void {
     const vncSocket = connect({ host: VNC_HOST, port: vncPort });
     const resizeOwner = {};
     const inputFilter = new RfbInputFilter(
@@ -112,6 +116,7 @@ function bridgeToVnc(webSocket: WebSocket, vncPort: number, screen: ScreenHolder
 
     function closeBridge(): void {
         stopListening();
+        release();
         const didQueueDefaultSize = resizeCoordinator.release(resizeOwner, vncSocket);
 
         if (didQueueDefaultSize || vncSocket.destroyed || vncSocket.writableEnded) {
@@ -226,6 +231,23 @@ function attachSessionSocket(options: SessionSocketOptions): void {
     });
 }
 
+// The viewer waits for the desktop to answer. The bridge opens then, and the hold ends when the viewer is gone.
+function bridgeWhenDesktopReady(webSocket: WebSocket, options: VncProxyOptions, vncPort: number, resizeCoordinator: DesktopResizeCoordinator): void {
+    const hold = holdDesktopIfAny(options.holdDesktop);
+
+    void hold.then((release) => {
+        if (webSocket.readyState !== webSocket.OPEN) {
+            release();
+
+            return;
+        }
+
+        bridgeToVnc(webSocket, vncPort, options.screen, resizeCoordinator, release);
+    }, () => {
+        webSocket.close();
+    });
+}
+
 function attachVncProxy(options: VncProxyOptions): void {
     const vncPort = options.vncPort ?? DEFAULT_VNC_PORT;
     const resizeCoordinator = new DesktopResizeCoordinator((isPhoneHolding) => {
@@ -239,10 +261,10 @@ function attachVncProxy(options: VncProxyOptions): void {
         path: VNC_PATH,
         publicUrl: options.publicUrl,
         accept: (webSocket) => {
-            bridgeToVnc(webSocket, vncPort, options.screen, resizeCoordinator);
+            bridgeWhenDesktopReady(webSocket, options, vncPort, resizeCoordinator);
         },
     });
 }
 
-export { MAX_CLIENT_MESSAGE_BYTES, attachSessionSocket, attachVncProxy, readCookie, refuse, VNC_PATH };
+export { DEFAULT_VNC_PORT, MAX_CLIENT_MESSAGE_BYTES, attachSessionSocket, attachVncProxy, readCookie, refuse, VNC_PATH };
 export type { SessionSocketOptions, VncProxyOptions };

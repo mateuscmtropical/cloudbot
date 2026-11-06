@@ -45,6 +45,7 @@ class CdpConnection {
     private readonly socket: CdpSocket;
     private readonly pending = new Map<number, PendingCall>();
     private eventListener: CdpEventListener | undefined;
+    private closeListener: (() => void) | undefined;
     private nextId = 1;
 
     private constructor(socket: CdpSocket) {
@@ -54,6 +55,7 @@ class CdpConnection {
         });
         socket.addEventListener('close', () => {
             this.failAll('The browser connection closed.');
+            this.notifyClosed();
         });
     }
 
@@ -113,9 +115,23 @@ class CdpConnection {
         });
     }
 
+    // One listener for the end of the connection, whether the caller closed it or the browser did.
+    onClose(listener: () => void): void {
+        this.closeListener = listener;
+    }
+
     close(): void {
         this.failAll('The browser connection closed.');
         this.socket.close();
+        this.notifyClosed();
+    }
+
+    // Runs the close listener once, so a caller that closes and a browser that drops both end it only once.
+    private notifyClosed(): void {
+        const listener = this.closeListener;
+
+        this.closeListener = undefined;
+        listener?.();
     }
 
     private handleMessage(data: unknown): void {

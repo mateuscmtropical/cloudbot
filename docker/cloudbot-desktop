@@ -111,9 +111,10 @@ maximize_browser() {
     return 1
 }
 
+# It starts on a blank page, since a browser tool opens its own page and a desktop tool does not need one.
 run_browser() {
     while :; do
-        chromium --window-position=0,0 --start-maximized https://www.google.com/ >> "$LOG_FILE" 2>&1 9>&- &
+        chromium --window-position=0,0 --start-maximized about:blank >> "$LOG_FILE" 2>&1 9>&- &
         local browser_pid=$!
 
         if ! maximize_browser; then
