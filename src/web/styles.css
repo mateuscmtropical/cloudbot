@@ -1375,6 +1375,7 @@ button.list-row {
     display: flex;
     flex: 1;
     flex-direction: column;
+    min-width: 0;
     min-height: 0;
 }
 
@@ -1694,6 +1695,7 @@ button.list-row {
 
 /* The wrapper is the flex item, so it takes the width limit. A percentage on the bubble inside would shrink it below its text. */
 .text-message {
+    min-width: 0;
     max-width: min(640px, 80%);
 }
 
@@ -1746,6 +1748,11 @@ button.list-row {
 
 .markdown a {
     color: var(--color-accent);
+}
+
+/* A long line in a code block wraps, so it never makes the chat wider than a phone screen. */
+.markdown pre {
+    white-space: pre-wrap;
 }
 
 .setup-card p {
