@@ -2050,7 +2050,8 @@ button.list-row {
 }
 
 @media (max-width: 720px) {
-    .bot-list {
+    .bot-list,
+    .main-column {
         transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
     }
 
@@ -2083,6 +2084,7 @@ button.list-row {
     .choice-button,
     .link-card,
     .bot-list,
+    .main-column,
     .switch-track,
     .switch-track::after,
     .popover-menu-popover,
