@@ -48,6 +48,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- On a phone, New group opens its dialog over the bot list. Cancel goes back to the list instead of the chat.
 - The back button goes back one step everywhere. From Routines, Memory, Webhooks or the bot edit form it returns to the bot's details, and on an open dialog or image it closes just that. Before, it always went back to the chat.
 - On a phone, a reply with a long line in a code block no longer makes the whole chat wider than the screen. The line wraps inside its bubble.
 - The list of kinds of work and the routines page open at once. Before, each opening waited about a minute while every provider was asked again whether it is signed in. A routine on another provider no longer waits for that check either.
