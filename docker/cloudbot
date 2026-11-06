@@ -95,6 +95,44 @@ prune_old_images() {
     docker builder prune -f --filter until=24h
 }
 
+# The cloud metadata address answers HTTP on port 80 with facts about the server, and on some clouds with its credentials.
+# The bots run commands and read web pages, so a page could make a bot ask it. This firewall rule keeps containers away
+# from it, while the server itself still reaches it. Oracle Cloud also serves DNS on that address, so only port 80 is closed.
+install_metadata_block() {
+    if ! command -v systemctl > /dev/null || ! command -v iptables > /dev/null; then
+        return 0
+    fi
+
+    local rule="DOCKER-USER -d 169.254.169.254 -p tcp --dport 80 -j REJECT --reject-with tcp-reset"
+
+    cat > "$SYSTEMD_DIR/cloudbot-block-metadata.service" <<EOF
+[Unit]
+Description=Keep CloudBot containers away from the cloud metadata address
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c "iptables -C $rule 2>/dev/null || iptables -I $rule"
+ExecStop=/bin/sh -c "iptables -D $rule || true"
+
+[Install]
+WantedBy=multi-user.target docker.service
+EOF
+    systemctl daemon-reload
+    systemctl enable --now cloudbot-block-metadata.service
+}
+
+remove_metadata_block() {
+    if command -v systemctl > /dev/null; then
+        systemctl disable --now cloudbot-block-metadata.service 2>/dev/null || true
+    fi
+
+    rm -f "$SYSTEMD_DIR/cloudbot-block-metadata.service"
+}
+
 command_update() {
     local moves_instances="false"
 
@@ -109,6 +147,8 @@ command_update() {
     compose pull docker-proxy caddy
     compose build hub
     compose up -d --force-recreate hub docker-guard docker-proxy caddy
+    # A server installed before the rule existed gets it on its next update.
+    install_metadata_block
 
     if [ "$moves_instances" = "true" ]; then
         remove_outdated_instances
@@ -223,6 +263,7 @@ WantedBy=timers.target
 EOF
     systemctl daemon-reload
     systemctl enable --now cloudbot-update.path cloudbot-update-check.timer
+    install_metadata_block
     command_check_update
     echo "The owner can now update CloudBot from the web app."
 }
@@ -285,6 +326,7 @@ command_uninstall() {
     fi
 
     remove_update_service
+    remove_metadata_block
     docker ps -aq --filter name=^cloudbot-i- | xargs --no-run-if-empty docker rm -f
 
     if [ "$keeps_data" = "true" ]; then
