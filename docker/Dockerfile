@@ -96,6 +96,8 @@ COPY --chmod=0644 docker/chromium-flags /etc/chromium.d/cloudbot
 # The desktop panel and its app menu. COPY --chmod would give the folder the file mode too.
 RUN install -d -m 0755 /usr/local/share/cloudbot
 COPY --chmod=0644 docker/tint2rc docker/jgmenurc /usr/local/share/cloudbot/
+# The steps for a CloudBot update, which the bot reads when the owner asks. Root owns it, so the bot cannot change them.
+COPY --chmod=0644 docker/self-update.md /usr/local/share/cloudbot/self-update.md
 COPY --chmod=0755 docker/cloudbot-remove-workspace /usr/local/bin/cloudbot-remove-workspace
 COPY --chmod=0755 docker/cloudbot-read-memory /usr/local/bin/cloudbot-read-memory
 COPY --chmod=0755 docker/cloudbot-write-memory /usr/local/bin/cloudbot-write-memory

@@ -4223,6 +4223,8 @@ class ChatService {
                 hasNotifications: this.notifyOwner !== undefined,
                 hasPasskeys: this.passkeys !== undefined,
                 hasPeopleAdmin: this.peopleAdmin !== undefined,
+                // The agent user is set only in the Docker image, which has the update guide.
+                hasUpdateGuide: this.agentUser !== undefined,
                 hasEmail: this.emailAccountService !== undefined && this.emailSender !== undefined,
                 hasWhatsApp: this.whatsapp !== undefined,
                 ownerRules,
