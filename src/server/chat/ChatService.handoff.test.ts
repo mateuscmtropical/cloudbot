@@ -133,6 +133,32 @@ describe('ChatService bot hand-off', () => {
             ]));
     });
 
+    it('sends an owner message that starts with @name to that bot as the owner, and posts the reply where it was written', async () => {
+        const ana = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const ben = await botStore.create({ name: 'Ben', title: 'Assistant', description: '' });
+        const runner = new ReplyingRunner('Done.');
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const finished = waitForTurnFinish(service, ben.id);
+
+        const saved = await service.sendOwnerMessage(ana.id, '@ben Summarize the notes.');
+
+        await finished;
+
+        expect(saved?.role)
+            .toBe('user');
+        expect(runner.prompts)
+            .toHaveLength(1);
+        expect(runner.prompts[0])
+            .toContain('Summarize the notes.');
+        expect(runner.prompts[0])
+            .not.toContain('Message from bot');
+        expect(await readSystemTexts(service, ana.id))
+            .toEqual(expect.arrayContaining([
+                'Sent to Ben. The reply will appear in this chat.',
+                'Reply from Ben:\n\nDone.',
+            ]));
+    });
+
     it('refuses a hand-off to the sending bot itself', async () => {
         const ana = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
         const service = new ChatService({ botStore, messageStore, runner: new ReplyingRunner(''), dataDir });

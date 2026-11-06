@@ -31,9 +31,29 @@ interface ComposerProps {
     onTypingChange?: ((isTyping: boolean) => void) | undefined;
     // False hides the button that attaches files.
     canAttach?: boolean;
+    // The names a message can start with, as @name. Typing @ shows the ones that match.
+    mentionNames?: string[] | undefined;
 }
 
 const NO_HISTORY: string[] = [];
+const NO_NAMES: string[] = [];
+const MAX_MENTIONS_SHOWN = 6;
+
+// The names that match what follows an @ at the start of the draft. Nothing once the draft goes past a name.
+function findMentionMatches(draft: string, names: string[]): string[] {
+    if (!draft.startsWith('@')) {
+        return [];
+    }
+
+    const typed = draft
+        .slice(1)
+        .toLowerCase();
+
+    return names
+        .filter(name => name.toLowerCase()
+            .startsWith(typed))
+        .slice(0, MAX_MENTIONS_SHOWN);
+}
 // A phone or tablet keyboard. There Enter adds a line and only the send button sends.
 const TOUCH_KEYBOARD_QUERY = '(pointer: coarse)';
 
@@ -41,7 +61,7 @@ function readIsTouchKeyboard(): boolean {
     return typeof window.matchMedia === 'function' && window.matchMedia(TOUCH_KEYBOARD_QUERY).matches;
 }
 
-function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop, onAttach, onRemoveAttachment, onTypingChange, sentHistory = NO_HISTORY, canAttach = true }: ComposerProps): ReactElement {
+function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop, onAttach, onRemoveAttachment, onTypingChange, sentHistory = NO_HISTORY, canAttach = true, mentionNames = NO_NAMES }: ComposerProps): ReactElement {
     const [draft, setDraft] = useState('');
     const [isTouchKeyboard] = useState(readIsTouchKeyboard);
     // The message the arrow keys show, counted in sentHistory. Undefined while the person types their own text.
@@ -85,6 +105,7 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
     const canSend = trimmedDraft.length > 0 && !isUploading;
     // A message sent during a turn is queued. Stop shows only while the draft is empty.
     const showStop = isRunning && trimmedDraft.length === 0;
+    const mentionMatches = findMentionMatches(draft, mentionNames);
 
     useLayoutEffect(() => {
         const textArea = textAreaRef.current;
@@ -128,6 +149,12 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
         setDraft('');
         setHistoryIndex(undefined);
         onTypingChange?.(false);
+    }
+
+    function chooseMention(name: string): void {
+        caretAfterWalkRef.current = 'end';
+        showDraft(`@${name} `);
+        textAreaRef.current?.focus();
     }
 
     function stopTurn(): void {
@@ -260,6 +287,28 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
     return (
         <>
             <AttachmentTray attachments={attachments} onRemove={onRemoveAttachment} />
+            {mentionMatches.length === 0
+                ? null
+                : (
+                        <div className="composer-mentions" aria-label="Send to">
+                            {mentionMatches.map(name => (
+                                <button
+                                    key={name}
+                                    type="button"
+                                    className="composer-mention"
+                                    // The message box keeps the focus, so a phone keeps its keyboard open.
+                                    onPointerDown={(event) => {
+                                        event.preventDefault();
+                                    }}
+                                    onClick={() => {
+                                        chooseMention(name);
+                                    }}
+                                >
+                                    {`@${name}`}
+                                </button>
+                            ))}
+                        </div>
+                    )}
             <div className="composer">
                 {canAttach
                     ? (

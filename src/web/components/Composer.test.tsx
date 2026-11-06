@@ -13,6 +13,7 @@ interface RenderOptions {
     onSend?: (text: string) => void;
     onRemoveAttachment?: (attachmentId: string) => void;
     sentHistory?: string[];
+    mentionNames?: string[];
 }
 
 function renderComposer(options: RenderOptions = {}): HTMLTextAreaElement {
@@ -27,6 +28,7 @@ function renderComposer(options: RenderOptions = {}): HTMLTextAreaElement {
             onAttach={vi.fn()}
             onRemoveAttachment={options.onRemoveAttachment ?? vi.fn()}
             sentHistory={options.sentHistory}
+            mentionNames={options.mentionNames}
         />,
     );
 
@@ -49,6 +51,26 @@ describe('Composer', () => {
             .toHaveBeenCalledWith('hello');
         expect(textarea.value)
             .toBe('');
+    });
+
+    it('shows the names that match an @ at the start, and puts the chosen one in the draft', () => {
+        const textarea = renderComposer({ mentionNames: ['Trade', 'Team', 'Notes'] });
+
+        fireEvent.change(textarea, { target: { value: '@t' } });
+
+        expect(screen.getByRole('button', { name: '@Trade' }))
+            .toBeTruthy();
+        expect(screen.getByRole('button', { name: '@Team' }))
+            .toBeTruthy();
+        expect(screen.queryByRole('button', { name: '@Notes' }))
+            .toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: '@Trade' }));
+
+        expect(textarea.value)
+            .toBe('@Trade ');
+        expect(screen.queryByRole('button', { name: '@Team' }))
+            .toBeNull();
     });
 
     it('keeps the draft and sends nothing when Shift+Enter is pressed', () => {
