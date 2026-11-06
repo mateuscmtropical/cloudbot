@@ -1,4 +1,4 @@
-import type { AppUpdateStatus, GroupMember, GroupRole, Person, PersonWithPassword, ResetPasswordResult, SentBotResult, SharedGroup } from '../shared/peopleTypes.ts';
+import type { AppUpdateStatus, GroupMember, GroupRole, MyGroup, Person, PersonWithPassword, ResetPasswordResult, SentBotResult, SharedGroup } from '../shared/peopleTypes.ts';
 import { RequestFailedError } from './apiClient.ts';
 
 interface ErrorResponseBody {
@@ -185,5 +185,17 @@ function sendBotToGroup(group: string, botId: string, mode: 'copy' | 'move'): Pr
     return requestPeopleJson<SentBotResult>(path, init, 201);
 }
 
-export { getAppUpdate, startAppUpdate, addGroup, addPerson, changeGroupMember, deactivatePerson, deletePerson, getGroupMembers, getHubContext, getHubRole, listGroups, listPeople, reactivatePerson, resetPersonPassword, sendBotToGroup, setGroupMemberRole };
+// Deletes a shared group with its instance. The name is typed again to confirm.
+async function deleteGroup(name: string): Promise<void> {
+    const path = groupPath(name, `?confirm=${encodeURIComponent(name)}`);
+
+    await requestPeople(path, { method: 'DELETE' }, 204);
+}
+
+// The shared groups this person is in. Each opens through the hub on this address.
+function listMyGroups(): Promise<MyGroup[]> {
+    return requestPeopleJson<MyGroup[]>('/api/my-groups', { method: 'GET' }, 200);
+}
+
+export { getAppUpdate, startAppUpdate, addGroup, addPerson, changeGroupMember, deactivatePerson, deleteGroup, deletePerson, getGroupMembers, getHubContext, getHubRole, listGroups, listMyGroups, listPeople, reactivatePerson, resetPersonPassword, sendBotToGroup, setGroupMemberRole };
 export type { ChangeGroupMemberPayload, GroupMembersView, HubContext, HubRole };

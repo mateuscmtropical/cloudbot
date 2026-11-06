@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BotSummary } from '../../shared/chatTypes.ts';
 import type { Person, PersonWithPassword } from '../../shared/peopleTypes.ts';
 import { RequestFailedError } from '../apiClient.ts';
-import { addGroup, addPerson, deletePerson, listPeople, resetPersonPassword, sendBotToGroup, setGroupMemberRole } from '../peopleClient.ts';
+import { addGroup, addPerson, deleteGroup, deletePerson, listGroups, listPeople, resetPersonPassword, sendBotToGroup, setGroupMemberRole } from '../peopleClient.ts';
 import { PeoplePanel } from './PeoplePanel.tsx';
 
 vi.mock('../peopleClient.ts', () => ({
@@ -17,6 +17,7 @@ vi.mock('../peopleClient.ts', () => ({
     reactivatePerson: vi.fn(),
     resetPersonPassword: vi.fn(),
     addGroup: vi.fn(),
+    deleteGroup: vi.fn(),
     sendBotToGroup: vi.fn(),
     setGroupMemberRole: vi.fn(),
 }));
@@ -142,6 +143,33 @@ describe('PeoplePanel', () => {
             .toHaveBeenCalledWith('team', 'maria', 'member');
         expect(sendBotToGroup)
             .toHaveBeenCalledWith('team', 'bot-1', 'copy');
+    });
+
+    it('deletes a shared group only after its name is typed', async () => {
+        vi.mocked(listPeople)
+            .mockResolvedValue([]);
+        vi.mocked(listGroups)
+            .mockResolvedValueOnce([{ name: 'team', address: 'https://team.example.com', instance: 'running', members: [{ name: 'owner', role: 'owner' }], createdAt: 0 }]);
+        vi.mocked(deleteGroup)
+            .mockResolvedValue();
+
+        render(<PeoplePanel onClose={() => {}} />);
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Delete group' }));
+
+        const confirm = screen.getByRole('button', { name: 'Confirm delete' });
+
+        expect(confirm.hasAttribute('disabled'))
+            .toBe(true);
+        fireEvent.change(screen.getByLabelText('Type team to delete the group with its bots and chats'), { target: { value: 'team' } });
+        fireEvent.click(confirm);
+
+        await waitFor(() => {
+            expect(screen.queryByRole('button', { name: 'Delete group' }))
+                .toBeNull();
+        });
+        expect(deleteGroup)
+            .toHaveBeenCalledWith('team');
     });
 
     it('shows a one time password card after resetting a password', async () => {

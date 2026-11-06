@@ -10,6 +10,7 @@ import { Field } from './Field.tsx';
 import { EMPTY_GROUP_INVITE, GroupInviteFields, NEW_GROUP, runGroupInvite } from './GroupInvite.tsx';
 import type { GroupInviteChoice } from './GroupInvite.tsx';
 import { PanelHeader } from './PanelHeader.tsx';
+import { SharedGroupsSection } from './SharedGroupsSection.tsx';
 
 interface PeoplePanelProps {
     onClose: () => void;
@@ -360,6 +361,13 @@ function PeoplePanel({ onClose, bots = [], onBotsChanged }: PeoplePanelProps): R
                     );
                 })}
             </div>
+
+            <SharedGroupsSection
+                groups={groups}
+                onDeleted={(deletedName) => {
+                    setGroups(currentGroups => currentGroups.filter(group => group.name !== deletedName));
+                }}
+            />
         </section>
     );
 }

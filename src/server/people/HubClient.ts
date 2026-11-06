@@ -126,6 +126,13 @@ class HubClient implements PeopleAdmin {
         return answer as SharedGroup;
     }
 
+    // Deletes the group and its instance.
+    async removeGroup(name: string): Promise<void> {
+        const encodedName = encodeURIComponent(name);
+
+        await this.request('DELETE', `${HUB_GROUPS_PATH}/${encodedName}?confirm=${encodedName}`);
+    }
+
     // Hands a bot template to the group. Resolves with the name the group gave the new bot.
     async sendBotToGroup(group: string, template: string): Promise<string> {
         const path = `${HUB_GROUPS_PATH}/${encodeURIComponent(group)}/bots`;

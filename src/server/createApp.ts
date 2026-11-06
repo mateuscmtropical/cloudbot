@@ -23,6 +23,7 @@ import type { AppUpdater } from './people/createAppUpdateRoutes.ts';
 import { createPeopleRoutes } from './people/createPeopleRoutes.ts';
 import { createGroupRoutes } from './people/createGroupRoutes.ts';
 import type { GroupsAdmin } from './people/createGroupRoutes.ts';
+import { createMyGroupsRoute, fetchMyGroups } from './people/createMyGroupsRoute.ts';
 import type { PersonRole } from '../shared/peopleTypes.ts';
 import type { HubConfig } from './people/hubConfig.ts';
 
@@ -300,6 +301,15 @@ function createApp(options: AppOptions): Hono {
         });
 
         app.route('/', groupRoutes);
+    }
+
+    // A group has no groups of its own. Every person's CloudBot in a hub lists the groups they are in.
+    const personHub = options.hubRole === 'group' ? undefined : options.hubConfig;
+
+    if (personHub !== undefined) {
+        const myGroupsRoute = createMyGroupsRoute(() => fetchMyGroups(personHub));
+
+        app.route('/', myGroupsRoute);
     }
 
     if (options.actionLog !== undefined) {

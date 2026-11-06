@@ -11,6 +11,7 @@ function createAdmin(): GroupsAdmin {
         listGroups: () => Promise.resolve([TEAM]),
         addGroup: () => Promise.resolve(TEAM),
         setGroupMember: () => Promise.resolve(TEAM),
+        removeGroup: () => Promise.resolve(),
         sendBotToGroup: () => Promise.resolve('Ana'),
     };
 }
@@ -40,6 +41,21 @@ describe('createGroupRoutes', () => {
             .toEqual({ name: 'Ana', isMoved: true });
         expect(await stayedAnswer.json())
             .toEqual({ name: 'Ana', isMoved: false, problem: 'The group has a copy, but it stayed here too. The last bot cannot be deleted.' });
+    });
+
+    it('deletes a group only when its name is typed again', async () => {
+        const admin = createAdmin();
+        const removeGroup = vi.spyOn(admin, 'removeGroup');
+        const routes = createGroupRoutes({ groupsAdmin: admin, exportBot: () => Promise.resolve('{}'), removeBot: () => Promise.resolve('deleted') });
+        const unconfirmed = await routes.request('/api/groups/team?confirm=other', { method: 'DELETE' });
+        const confirmed = await routes.request('/api/groups/team?confirm=team', { method: 'DELETE' });
+
+        expect(unconfirmed.status)
+            .toBe(400);
+        expect(confirmed.status)
+            .toBe(204);
+        expect(removeGroup)
+            .toHaveBeenCalledTimes(1);
     });
 
     it('refuses an unknown mode', async () => {

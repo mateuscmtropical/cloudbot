@@ -133,7 +133,13 @@ owner's instance sends the template to `/internal/groups/:name/bots`, and the
 hub starts the group and hands it to `/api/hub/bot-template` there with the
 group's secret. That route refuses any request that names a person, so a
 browser cannot use it. A moved bot is deleted from the owner's CloudBot only
-after the group has its copy.
+after the group has its copy. The People panel also lists the groups, and the
+owner deletes one there by typing its name.
+
+Each person's CloudBot asks the hub for `/internal/my-groups` through its own
+`/api/my-groups`, and the bot list shows those groups under Shared with people.
+A tap goes to the group's `openPath` on the person's own address, which starts
+the ticket hand-off above.
 
 ## Memory budget
 

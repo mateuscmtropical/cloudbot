@@ -28,6 +28,22 @@ describe('BotList', () => {
             .toEqual(['People', 'Focus search', 'New bot']);
     });
 
+    it('lists the shared groups and opens one through the hub', () => {
+        const assign = vi.spyOn(window.location, 'assign')
+            .mockImplementation(() => undefined);
+
+        render(
+            <BotList bots={BOTS} selectedBotId={undefined} selectedMascotState="idle" channels={[]} selectedChannelId={undefined} isOpen={false} onSelectBot={vi.fn()} onSelectChannel={vi.fn()} onNewBot={vi.fn()} onConnectApps={vi.fn()} sharedGroups={[{ name: 'team', openPath: '/__hub/groups/team/open', role: 'admin' }]} />,
+        );
+
+        expect(screen.getByText('Shared with people'))
+            .toBeTruthy();
+        fireEvent.click(screen.getByText('team'));
+        expect(assign)
+            .toHaveBeenCalledWith('/__hub/groups/team/open');
+        assign.mockRestore();
+    });
+
     it('keeps Account and People reachable on standalone and hub lists', () => {
         const props = { bots: BOTS, selectedBotId: undefined, selectedMascotState: 'idle' as const, channels: [], selectedChannelId: undefined, isOpen: false, onSelectBot: vi.fn(), onSelectChannel: vi.fn(), onNewBot: vi.fn(), onConnectApps: vi.fn(), onPeople: vi.fn() };
         const onAccount = vi.fn();
