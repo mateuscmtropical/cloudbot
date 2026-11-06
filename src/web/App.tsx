@@ -1401,8 +1401,8 @@ function App(): ReactElement {
                 onSelectBot={handleSelectBot}
                 onSelectChannel={handleSelectChannel}
                 onNewBot={handleNewBot}
+                // The list stays open under the dialog, so a cancel goes back to it. A saved group opens its chat.
                 onNewGroup={() => {
-                    setIsBotListOpen(false);
                     setGroupDialog('new');
                 }}
                 onRenameBot={handleRenameBot}
