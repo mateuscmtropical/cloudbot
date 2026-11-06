@@ -112,7 +112,9 @@ import type { BitwardenVault } from '../bitwarden/BitwardenVault.ts';
 import type { SavedUpload } from '../attachments/saveUpload.ts';
 import type { BotStore, QueuedTurnRecord } from '../store/BotStore.ts';
 import type { MascotLook } from '../../shared/mascot.ts';
-import type { ChannelStore } from '../store/ChannelStore.ts';
+import type { Channel, ChannelStore } from '../store/ChannelStore.ts';
+import { findOwnerAddress } from './ownerAddress.ts';
+import type { OwnerAddress } from './ownerAddress.ts';
 import type { RuleStore } from '../store/RuleStore.ts';
 import type { RoutineStore } from '../store/RoutineStore.ts';
 import type { TaskStore } from '../store/TaskStore.ts';
@@ -2901,6 +2903,77 @@ class ChatService {
                 this.handoffsInFlight.delete(target.id);
             }
         }
+    }
+
+    // The owner's message in a bot's chat. One that starts with @name goes to that bot, or to the manager of that group, as the
+    // owner's own message. It is shown in this chat, and the reply comes back here as a note.
+    async sendOwnerMessage(botId: string, text: string): Promise<ChatMessage | undefined> {
+        const bots = await this.botStore.list();
+        const channels = (await this.channelStore?.list()) ?? [];
+        const address = findOwnerAddress(text, bots, channels, botId);
+
+        if (address === undefined || !bots.some(bot => bot.id === botId)) {
+            return this.sendMessage(botId, text);
+        }
+
+        if (this.deletingBots.has(botId)) {
+            throw new BotDeletingError();
+        }
+
+        const ownerMessage = await this.saveAndPublish(botId, 'user', { kind: 'text', text });
+        const note = await this.forwardOwnerMessage(botId, address, bots, channels);
+
+        await this.saveSenderNote(botId, note);
+
+        return ownerMessage;
+    }
+
+    // Sends the addressed message and says what happened, for the note in the chat it was written in.
+    private async forwardOwnerMessage(botId: string, address: OwnerAddress, bots: Bot[], channels: Channel[]): Promise<string> {
+        const group = address.group;
+
+        if (group?.isIsolated === true) {
+            return `${group.name} is an isolated group, so the message was not sent. Write in the group itself.`;
+        }
+
+        const managerId = group?.members.find(member => member.isManager)?.botId;
+        const target = address.bot ?? bots.find(bot => bot.id === managerId);
+
+        if (target === undefined) {
+            return `${address.name} has no manager, so the message was not sent.`;
+        }
+
+        if (target.id === botId) {
+            return `This bot is the manager of ${address.name}. Write without the @name, or in the group itself.`;
+        }
+
+        const reachable = reachableBots(bots, channels, botId);
+
+        if (!reachable.some(bot => bot.id === target.id)) {
+            return `An isolated group keeps this bot apart from ${target.name}, so the message was not sent.`;
+        }
+
+        const forwardText = group === undefined ? address.text : `About the group ${group.name}: ${address.text}`;
+        const route: BotHandoffSource = { senderBotId: botId, depth: 0 };
+        let sent: ChatMessage | undefined;
+
+        try {
+            sent = await this.sendMessage(target.id, forwardText, 'chat', route);
+        } catch (error: unknown) {
+            if (error instanceof BotDeletingError) {
+                return `${target.name} is being deleted, so the message was not sent.`;
+            }
+
+            throw error;
+        }
+
+        if (sent?.role !== 'user') {
+            return `${target.name} cannot take messages yet, so the message was not sent.`;
+        }
+
+        const via = group === undefined ? target.name : `${target.name}, the manager of ${group.name}`;
+
+        return `Sent to ${via}. The reply will appear in this chat.`;
     }
 
     private async reachableBotsOf(botId: string): Promise<Bot[]> {

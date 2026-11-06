@@ -353,7 +353,7 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
         let savedMessage: ChatMessage | undefined;
 
         try {
-            savedMessage = await chatService.sendMessage(botId, text);
+            savedMessage = await chatService.sendOwnerMessage(botId, text);
         } catch (error: unknown) {
             if (error instanceof BotDeletingError) {
                 return context.json(BOT_DELETING, 409);

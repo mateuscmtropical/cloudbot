@@ -1370,6 +1370,14 @@ function App(): ReactElement {
     const pullToRefresh = usePullToRefresh();
     const botWebhookUrls = webhookUrls.filter(notice => notice.botId === selectedBotId);
     const botPersonCredentials = personCredentials.filter(notice => notice.botId === selectedBotId);
+    // A message in a bot's chat can start with another bot or with a group that is not isolated, whose manager takes it.
+    const otherBotNames = bots
+        .filter(bot => bot.id !== selectedBotId)
+        .map(bot => bot.name);
+    const openGroupNames = channels
+        .filter(channel => !channel.isIsolated)
+        .map(channel => channel.name);
+    const mentionNames = [...otherBotNames, ...openGroupNames];
 
     if (needsSignIn) {
         return <SignInScreen />;
@@ -1586,6 +1594,7 @@ function App(): ReactElement {
                                 <ConversationView
                                     bot={selectedBot}
                                     bots={bots}
+                                    mentionNames={mentionNames}
                                     mascotState={liveMascotState}
                                     onTypingChange={setIsOwnerTyping}
                                     messages={visibleMessages}

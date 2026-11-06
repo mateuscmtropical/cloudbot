@@ -85,6 +85,8 @@ interface ConversationViewProps {
     onHideWebhookUrl?: (hidden: ChatWebhookUrlEvent) => void;
     personCredentials?: ChatPersonCredentialsEvent[] | undefined;
     onHidePersonCredentials?: (hidden: ChatPersonCredentialsEvent) => void;
+    // The other bots and the groups a message can start with, as @name.
+    mentionNames?: string[] | undefined;
 }
 
 // A message kept in place while older messages are added, and where it sat in the viewport.
@@ -146,6 +148,7 @@ function ConversationView({
     onHideWebhookUrl,
     personCredentials = [],
     onHidePersonCredentials,
+    mentionNames,
 }: ConversationViewProps): ReactElement {
     const messageListRef = useRef<HTMLDivElement>(null);
     const previousBotIdRef = useRef<string | undefined>(undefined);
@@ -548,6 +551,7 @@ function ConversationView({
                 onRemoveAttachment={onRemoveAttachment}
                 onTypingChange={onTypingChange}
                 sentHistory={sentHistory}
+                mentionNames={mentionNames}
                 onSend={onSend}
                 onStop={onStop}
                 onAttach={onAttach}

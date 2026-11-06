@@ -61,6 +61,7 @@ function ChannelView({ channel, onPost, onStop, onOpenBotList, onEdit }: Channel
     const isNearBottomRef = useRef(true);
     const postCount = channel?.messages.length ?? 0;
     const manager = channel?.members.find(member => member.isManager);
+    const memberNames = channel?.members.map(member => member.name);
 
     useLayoutEffect(() => {
         const messageList = messageListRef.current;
@@ -112,6 +113,7 @@ function ChannelView({ channel, onPost, onStop, onOpenBotList, onEdit }: Channel
                 attachments={NO_ATTACHMENTS}
                 isUploading={false}
                 canAttach={false}
+                mentionNames={memberNames}
                 onSend={(text) => {
                     isNearBottomRef.current = true;
                     onPost(text);
