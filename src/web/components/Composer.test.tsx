@@ -40,6 +40,34 @@ describe('Composer', () => {
         cleanup();
     });
 
+    it('attaches files dropped on the page, and ignores them while a turn runs', () => {
+        const onAttach = vi.fn();
+        const file = new File(['hello'], 'notes.txt', { type: 'text/plain' });
+        const dropFile = (): Event => {
+            const event = new Event('drop', { bubbles: true, cancelable: true });
+
+            Object.defineProperty(event, 'dataTransfer', { value: { files: [file], types: ['Files'] } });
+            window.dispatchEvent(event);
+
+            return event;
+        };
+        const props = { botName: 'CloudBot', isUploading: false, attachments: [], onSend: vi.fn(), onStop: vi.fn(), onAttach, onRemoveAttachment: vi.fn() };
+        const { rerender } = render(<Composer {...props} isRunning={false} />);
+
+        expect(dropFile().defaultPrevented)
+            .toBe(true);
+        expect(onAttach)
+            .toHaveBeenCalledWith([file]);
+
+        rerender(<Composer {...props} isRunning />);
+        onAttach.mockClear();
+
+        // The browser must still not open the file in place of the app.
+        expect(dropFile().defaultPrevented)
+            .toBe(true);
+        expect(onAttach).not.toHaveBeenCalled();
+    });
+
     it('sends the draft when Enter is pressed', () => {
         const onSend = vi.fn();
         const textarea = renderComposer({ onSend });
