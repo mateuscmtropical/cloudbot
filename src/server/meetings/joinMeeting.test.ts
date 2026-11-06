@@ -36,7 +36,7 @@ interface FakeCalls {
 }
 
 function page(text: string, elements: PageElement[]): PageText {
-    return { title: 'Meet', url: MEET_URL, text, isTruncated: false, elements };
+    return { title: 'Meet', url: MEET_URL, text, textStart: 0, textLength: text.length, elements };
 }
 
 function answerPage(answer: Answer): PageText {

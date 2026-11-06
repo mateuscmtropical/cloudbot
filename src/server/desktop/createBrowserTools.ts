@@ -4,7 +4,7 @@ import { z } from 'zod/v4';
 
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
 import type { ToolCall } from '../agent/AgentRunner.ts';
-import { BROWSER_KEYS, BrowserError, MAX_LISTED_ELEMENTS } from './BrowserControl.ts';
+import { BROWSER_KEYS, BrowserError, MAX_LISTED_ELEMENTS, MAX_PAGE_TEXT_LENGTH } from './BrowserControl.ts';
 import type { BrowserControl, BrowserKey, PageElement, PageText } from './BrowserControl.ts';
 import { SCREEN_HELD_BY_PERSON_MESSAGE } from './ScreenHolder.ts';
 import type { ScreenHolder } from './ScreenHolder.ts';
@@ -61,6 +61,12 @@ const OPEN_SHAPE = {
         .trim()
         .min(1),
 };
+const READ_SHAPE = {
+    textStart: z.number()
+        .int()
+        .min(0)
+        .optional(),
+};
 const TYPE_SHAPE = {
     text: z.string()
         .min(1)
@@ -79,7 +85,6 @@ const SCREENSHOT_SHAPE = {
     showOwner: z.boolean()
         .optional(),
 };
-const EMPTY_SHAPE = {};
 
 // Posts a PNG, as base64, to the chat. It throws when the image cannot be stored.
 type ScreenshotShareHandler = (pngBase64: string) => Promise<void>;
@@ -102,7 +107,8 @@ function describeElements(elements: PageElement[]): string {
 }
 
 function describePage(page: PageText): string {
-    const truncatedNote = page.isTruncated ? '\n\n(The text was cut. Scroll and read again for more.)' : '';
+    const textEnd = page.textStart + page.text.length;
+    const truncatedNote = textEnd < page.textLength ? `\n\n(The text was cut at character ${String(textEnd)} of ${String(page.textLength)}. Call browser_read with textStart ${String(textEnd)} for more.)` : '';
     const elementsText = describeElements(page.elements);
 
     return `Title: ${page.title}\nURL: ${page.url}\n\n${UNTRUSTED_PAGE_NOTE}\n\n${page.text}${truncatedNote}${elementsText}`;
@@ -184,7 +190,7 @@ async function shareIfAsked(data: string, showOwner: boolean | undefined, shareS
 function createBrowserTools(browser: BrowserControl, shareScreenshot?: ScreenshotShareHandler, screen?: ScreenHolder, onPageOpened?: () => void): CloudbotTool[] {
     const openTool = tool(
         `${BROWSER_TOOL_PREFIX}open`,
-        'Open a web page in your browser, on your screen. Returns the page title, its address and its visible text.',
+        'Open a web page in your browser, on your screen. Returns the page title, its address and the start of its visible text. For the rest of a long page, use browser_read with textStart.',
         OPEN_SHAPE,
         args => runBrowserAction(browser, screen, async () => {
             const page = await browser.open(args.url);
@@ -197,10 +203,10 @@ function createBrowserTools(browser: BrowserControl, shareScreenshot?: Screensho
     );
     const readTool = tool(
         `${BROWSER_TOOL_PREFIX}read`,
-        'Read the title, address, visible text and numbered elements of the page that is open in your browser.',
-        EMPTY_SHAPE,
-        () => runBrowserAction(browser, screen, async () => {
-            const page = await browser.read();
+        `Read the title, address, visible text and numbered elements of the page that is open in your browser. The text comes in parts of ${String(MAX_PAGE_TEXT_LENGTH)} characters. For the next part, pass textStart, the character that a cut note gives.`,
+        READ_SHAPE,
+        args => runBrowserAction(browser, screen, async () => {
+            const page = await browser.read(args.textStart ?? 0);
 
             const description = describePage(page);
 

@@ -188,7 +188,8 @@ describe('BrowserControl', () => {
             title: 'Example',
             url: 'https://example.com/',
             text: 'Hello',
-            isTruncated: false,
+            textStart: 0,
+            textLength: 5,
             elements: [],
         });
         expect(fetchCalls.calls[0])
@@ -227,15 +228,33 @@ describe('BrowserControl', () => {
             .toBe(60);
     });
 
-    it('cuts long page text', async () => {
+    it('cuts long page text and says where the whole text is', async () => {
         const longText = 'a'.repeat(MAX_PAGE_TEXT_LENGTH + 10);
         const { browser } = createBrowser(pageAnswer({ title: 'Long', url: 'https://long.example/', text: longText }));
         const page = await browser.read();
 
         expect(page.text)
             .toHaveLength(MAX_PAGE_TEXT_LENGTH);
-        expect(page.isTruncated)
-            .toBe(true);
+        expect(page.textStart)
+            .toBe(0);
+        expect(page.textLength)
+            .toBe(MAX_PAGE_TEXT_LENGTH + 10);
+    });
+
+    it('reads the rest of a long page from textStart', async () => {
+        const longText = `${'a'.repeat(MAX_PAGE_TEXT_LENGTH)}end`;
+        const { browser } = createBrowser(pageAnswer({ title: 'Long', url: 'https://long.example/', text: longText }));
+        const rest = await browser.read(MAX_PAGE_TEXT_LENGTH);
+
+        expect(rest)
+            .toMatchObject({ text: 'end', textStart: MAX_PAGE_TEXT_LENGTH, textLength: MAX_PAGE_TEXT_LENGTH + 3 });
+    });
+
+    it('refuses a textStart at or past the end of the page text', async () => {
+        const { browser } = createBrowser(pageAnswer({ title: 'Short', url: 'https://short.example/', text: 'Hello' }));
+
+        await expect(browser.read(5)).rejects.toThrow('The page text has 5 characters, so there is nothing at textStart 5.');
+        await expect(browser.read(9)).rejects.toThrow('nothing at textStart 9');
     });
 
     it('returns the screenshot data', async () => {

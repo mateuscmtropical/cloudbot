@@ -37,11 +37,13 @@ interface PageElement {
     name: string;
 }
 
+// The text is the part of the page text that starts at textStart. textLength is the length of the whole page text.
 interface PageText {
     title: string;
     url: string;
     text: string;
-    isTruncated: boolean;
+    textStart: number;
+    textLength: number;
     elements: PageElement[];
 }
 
@@ -319,7 +321,7 @@ class BrowserControl {
 
             await this.waitForLoad(page);
 
-            return this.readPage(page);
+            return this.readPage(page, 0);
         }, { canRecoverFromDialog: true });
     }
 
@@ -447,8 +449,9 @@ class BrowserControl {
         });
     }
 
-    read(): Promise<PageText> {
-        return this.withPage(page => this.readPage(page));
+    // A page text longer than one part is read part by part, from the textStart a cut note gives.
+    read(textStart = 0): Promise<PageText> {
+        return this.withPage(page => this.readPage(page, textStart));
     }
 
     // Replaces the text of the focused field. The old text is selected first, so a prefilled name is overwritten.
@@ -593,18 +596,24 @@ class BrowserControl {
         };
     }
 
-    private async readPage(page: CdpConnection): Promise<PageText> {
+    private async readPage(page: CdpConnection, textStart: number): Promise<PageText> {
         const result = await evaluateInPage(page, pageSnapshot, [], { returnByValue: true });
         const value = readEvaluatedValue(result);
         const fullText = readStringField(value, 'text');
-        const isTruncated = fullText.length > MAX_PAGE_TEXT_LENGTH;
+
+        // Start 0 is always allowed, so an empty page still reads. A later start past the end means the page got shorter or the number was made up.
+        if (textStart > 0 && textStart >= fullText.length) {
+            throw new BrowserError(`The page text has ${String(fullText.length)} characters, so there is nothing at textStart ${String(textStart)}. Call browser_read again with a smaller textStart.`);
+        }
+
         const elements = await this.listElements(page);
 
         return {
             title: readStringField(value, 'title'),
             url: readStringField(value, 'url'),
-            text: fullText.slice(0, MAX_PAGE_TEXT_LENGTH),
-            isTruncated,
+            text: fullText.slice(textStart, textStart + MAX_PAGE_TEXT_LENGTH),
+            textStart,
+            textLength: fullText.length,
             elements,
         };
     }
