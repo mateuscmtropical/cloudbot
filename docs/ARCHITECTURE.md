@@ -2024,10 +2024,12 @@ load CLI skills, so `Skill` stays disallowed.
 The bot profile reaches the agent in two ways. `buildSystemPrompt` turns the
 name, title and description into a prompt that is appended to Claude Code's
 default prompt, so the bot keeps its tool and coding instructions. The prompt
-also says the bot runs
-on the owner's VPS through CloudBot, and that its memory is `MEMORY.md` in its
-workspace. `createProfileTools` builds the bot's own tools, starting with
-`update_profile`, which saves changes through `BotStore`. The tool is
+also says the bot runs on the owner's VPS through CloudBot. It names
+`MEMORY.md` in the workspace as the bot's memory, and tells the bot to save there
+on its own what will matter later, such as the owner's preferences, decisions,
+durable facts and open tasks. Secrets never go there. `createProfileTools`
+builds the bot's own tools, starting with `update_profile`, which saves changes
+through `BotStore`. The tool is
 bound to one bot id, and it is allowed up front so headless turns never ask.
 The tool trims its fields and caps them at 40, 80 and 500 characters. It writes
 only the fields the model passed, so a reply cannot overwrite the others. The

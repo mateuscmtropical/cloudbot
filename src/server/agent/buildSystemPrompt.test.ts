@@ -172,11 +172,33 @@ describe('buildSystemPrompt', () => {
             .toContain('then send it with share_file');
     });
 
-    it('tells the bot its memory lives in MEMORY.md in its workspace', () => {
+    it('tells the bot its memory lives in MEMORY.md and that it saves to it on its own', () => {
         const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' });
 
         expect(prompt)
             .toContain('MEMORY.md in your workspace');
+        expect(prompt)
+            .toContain('without waiting for the owner to ask');
+    });
+
+    it('tells the bot what to save to its memory and what to leave out', () => {
+        const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' });
+
+        expect(prompt)
+            .toContain('open tasks or promises to follow up');
+        expect(prompt)
+            .toContain('Do not save what you can find again');
+        expect(prompt)
+            .toContain('stay well under that');
+    });
+
+    it('keeps secrets out of the bot memory and sends them to request_secret', () => {
+        const prompt = buildSystemPrompt({ name: 'Ana', title: 'Assistant', description: '' });
+
+        expect(prompt)
+            .toContain('Never save secrets, passwords, tokens, keys');
+        expect(prompt)
+            .toContain('Ask for those with request_secret');
     });
 
     it('leaves out an empty description without a blank paragraph', () => {
