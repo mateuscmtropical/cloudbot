@@ -100,6 +100,40 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
         };
     }, [botName, stopListening]);
 
+    // A file dropped anywhere on the page goes to this chat, like the attach button. The page always takes the drop, so the
+    // browser never opens the file in place of the app. While attaching is off, the drop does nothing.
+    const canDrop = canAttach && !isRunning;
+
+    useEffect(() => {
+        const takeDrag = (event: DragEvent): void => {
+            if (event.dataTransfer?.types.includes('Files') === true) {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = canDrop ? 'copy' : 'none';
+            }
+        };
+        const takeDrop = (event: DragEvent): void => {
+            const droppedFiles = Array.from(event.dataTransfer?.files ?? []);
+
+            if (droppedFiles.length === 0) {
+                return;
+            }
+
+            event.preventDefault();
+
+            if (canDrop) {
+                onAttach(droppedFiles);
+            }
+        };
+
+        window.addEventListener('dragover', takeDrag);
+        window.addEventListener('drop', takeDrop);
+
+        return () => {
+            window.removeEventListener('dragover', takeDrag);
+            window.removeEventListener('drop', takeDrop);
+        };
+    }, [canDrop, onAttach]);
+
     const trimmedDraft = draft.trim();
     // Send waits for uploads in flight, so their files reach this message and not the next one.
     const canSend = trimmedDraft.length > 0 && !isUploading;
