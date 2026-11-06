@@ -1107,6 +1107,24 @@ class ChatService {
         return { name: exported.name };
     }
 
+    // The template text of a bot, for a copy in a shared group.
+    async exportTemplateText(botId: string): Promise<string> {
+        const exported = await this.buildExport(botId);
+
+        return exported.text;
+    }
+
+    // Makes a bot from template text the hub sent. The text is checked like any template file.
+    async importTemplateText(text: string): Promise<ImportedBot> {
+        const parsed = parseBotTemplate(text);
+
+        if (!parsed.ok) {
+            throw new Error(parsed.reason);
+        }
+
+        return this.createBotFromTemplate(parsed.template);
+    }
+
     // The bot's template as the file text, checked the way an import checks it. Nothing else of the bot is read.
     private async buildExport(botId: string): Promise<BuiltExport> {
         const bot = await this.botStore.getById(botId);

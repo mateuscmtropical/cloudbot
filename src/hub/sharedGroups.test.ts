@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { ACTING_PERSON_HEADER, ACTING_ROLE_HEADER, HUB_GROUPS_PATH, HUB_MY_GROUPS_PATH, HUB_PEOPLE_PATH, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER } from '../shared/hubProtocol.ts';
+import { ACTING_PERSON_HEADER, ACTING_ROLE_HEADER, HUB_BOT_TEMPLATE_PATH, HUB_GROUPS_PATH, HUB_MY_GROUPS_PATH, HUB_PEOPLE_PATH, HUB_TRUST_HEADER, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER } from '../shared/hubProtocol.ts';
 import type { InstanceStatus, MyGroup, Person, SharedGroup } from '../shared/peopleTypes.ts';
 import { createAdminRoutes } from './admin/createAdminRoutes.ts';
 import { createFrontDoorRoutes } from './auth/createFrontDoorRoutes.ts';
@@ -60,10 +60,20 @@ describe('shared groups in the hub', () => {
     let upstream: Server;
     let upstreamPort: number;
     let seen: SeenRequest[];
+    let templateSecrets: string[];
 
     beforeEach(async () => {
         seen = [];
+        templateSecrets = [];
         upstream = createServer((request, response) => {
+            if (request.url === HUB_BOT_TEMPLATE_PATH) {
+                templateSecrets.push(readHeader(request, HUB_TRUST_HEADER));
+                response.writeHead(201, { 'content-type': 'application/json' });
+                response.end(JSON.stringify({ name: 'Ana' }));
+
+                return;
+            }
+
             seen.push({ acting: readHeader(request, ACTING_PERSON_HEADER), role: readHeader(request, ACTING_ROLE_HEADER) });
             response.end('ok');
         });
@@ -97,7 +107,7 @@ describe('shared groups in the hub', () => {
         const sessions = new SqliteLoginSessions(database);
         const members = new SqliteGroupMembers(database);
         const instances = new RunningInstances();
-        const admin = createAdminRoutes({ people, instances, sessions, domain: DOMAIN, secure: false, members });
+        const admin = createAdminRoutes({ people, instances, sessions, domain: DOMAIN, secure: false, members, upstreamFor: () => ({ hostname: '127.0.0.1', port: upstreamPort }) });
         const frontDoor = createFrontDoorRoutes({
             people,
             instances,
@@ -234,6 +244,28 @@ describe('shared groups in the hub', () => {
             .toBe(401);
         expect(seen)
             .toEqual([]);
+    });
+
+    it('hands a bot template to the group with the group secret, for the server owner only', async () => {
+        const hub = createHub();
+        const created = await hub.request(HUB_GROUPS_PATH, asInstance('owner', 'POST', { name: 'team' }));
+
+        expect(created.status)
+            .toBe(201);
+
+        const byMember = await hub.request(`${HUB_GROUPS_PATH}/team/bots`, asInstance('maria', 'POST', { template: '{}' }));
+        const byOwner = await hub.request(`${HUB_GROUPS_PATH}/team/bots`, asInstance('owner', 'POST', { template: '{}' }));
+
+        expect(byMember.status)
+            .toBe(401);
+        expect(byOwner.status)
+            .toBe(201);
+        expect(await byOwner.json())
+            .toEqual({ name: 'Ana' });
+        expect(templateSecrets)
+            .toHaveLength(1);
+        expect(templateSecrets[0])
+            .not.toBe('');
     });
 
     it('lets an admin manage members but never the owner, and lets a member only look', async () => {

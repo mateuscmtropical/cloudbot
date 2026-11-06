@@ -21,12 +21,15 @@ import { createActionLogRoutes } from './logs/createActionLogRoutes.ts';
 import { createAppUpdateRoutes } from './people/createAppUpdateRoutes.ts';
 import type { AppUpdater } from './people/createAppUpdateRoutes.ts';
 import { createPeopleRoutes } from './people/createPeopleRoutes.ts';
+import { createGroupRoutes } from './people/createGroupRoutes.ts';
+import type { GroupsAdmin } from './people/createGroupRoutes.ts';
 import type { PersonRole } from '../shared/peopleTypes.ts';
 import type { HubConfig } from './people/hubConfig.ts';
 
 import { createChannelRoutes } from './channels/createChannelRoutes.ts';
-import { createChatRoutes } from './chat/createChatRoutes.ts';
+import { createChatRoutes, describeDeleteRefusal } from './chat/createChatRoutes.ts';
 import type { ChatService } from './chat/ChatService.ts';
+import { createBotTemplateRoute } from './hub/createBotTemplateRoute.ts';
 import { createHubActivityRoutes } from './hub/createHubActivityRoutes.ts';
 import { hasAgentProgramListening } from './hub/listeningPrograms.ts';
 import { readHubActivitySources } from './hub/readHubActivitySources.ts';
@@ -89,6 +92,8 @@ interface AppOptions {
     passkeys?: PasskeyService | undefined;
     // Only on the owner's instance inside the hub. It adds and removes people through the hub.
     peopleAdmin?: PeopleAdmin | undefined;
+    // Only on the owner's instance inside the hub. It makes shared groups and sends bots to them.
+    groupsAdmin?: GroupsAdmin | undefined;
     // Only on the owner's instance inside the hub. It starts an update of the whole install.
     appUpdater?: AppUpdater | undefined;
     webRoot?: string;
@@ -248,6 +253,14 @@ function createApp(options: AppOptions): Hono {
         app.route('/', callbackRoutes);
     }
 
+    // A shared group takes bot copies from the hub. The route checks the hub secret itself, before the browser checks below.
+    if (options.hubRole === 'group' && options.hubSecret !== undefined && options.chatService !== undefined) {
+        const groupChat = options.chatService;
+        const botTemplateRoute = createBotTemplateRoute({ hubSecret: options.hubSecret, importTemplate: text => groupChat.importTemplateText(text) });
+
+        app.route('/', botTemplateRoute);
+    }
+
     const sessionCheck = requireSession(options.access, options.hubSecret);
     const sameOriginCheck = requireSameOrigin({ publicHost });
 
@@ -272,6 +285,21 @@ function createApp(options: AppOptions): Hono {
         const peopleRoutes = createPeopleRoutes({ peopleAdmin: options.peopleAdmin });
 
         app.route('/', peopleRoutes);
+    }
+
+    if (options.groupsAdmin !== undefined && options.chatService !== undefined) {
+        const ownerChat = options.chatService;
+        const groupRoutes = createGroupRoutes({
+            groupsAdmin: options.groupsAdmin,
+            exportBot: botId => ownerChat.exportTemplateText(botId),
+            removeBot: async (botId) => {
+                const outcome = await ownerChat.deleteBot(botId);
+
+                return outcome === 'deleted' ? outcome : describeDeleteRefusal(outcome);
+            },
+        });
+
+        app.route('/', groupRoutes);
     }
 
     if (options.actionLog !== undefined) {

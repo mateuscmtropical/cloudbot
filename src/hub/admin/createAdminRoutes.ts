@@ -22,6 +22,8 @@ interface CreateAdminRoutesOptions {
     updates?: AppUpdateRequests | undefined;
     // Without it the group routes are not served.
     members?: GroupMembersStore | undefined;
+    // Where the hub reaches an instance. Tests point it at a local server.
+    upstreamFor?: ((name: string) => { hostname: string; port: number }) | undefined;
 }
 
 interface ErrorResponse {
@@ -320,7 +322,7 @@ function createAdminRoutes(options: CreateAdminRoutesOptions): Hono {
     app.post(`${HUB_PEOPLE_PATH}/:name/reset-password`, context => resetPersonPassword(context, options));
     app.delete(`${HUB_PEOPLE_PATH}/:name`, context => removePerson(context, options));
     if (options.members !== undefined) {
-        addGroupRoutes(app, { ...options, members: options.members });
+        addGroupRoutes(app, { ...options, members: options.members, upstreamFor: options.upstreamFor });
     }
 
     app.notFound(context => errorResponse(context, NOT_FOUND_MESSAGE, 404));

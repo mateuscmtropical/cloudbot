@@ -125,6 +125,16 @@ itself, so the instance never decides who is in the group. Everyone sees the
 members there. An admin or the owner adds people, removes them and sets them to
 admin or member. Nobody changes or removes the owner.
 
+Add person in the owner's People panel can also put the new person in a group,
+an existing one or a new one. Each of the owner's bots can stay only with the
+owner, be copied to the group, or move there. Only the bot template travels:
+name, look, rules and routines. Memory and chats stay with the owner. The
+owner's instance sends the template to `/internal/groups/:name/bots`, and the
+hub starts the group and hands it to `/api/hub/bot-template` there with the
+group's secret. That route refuses any request that names a person, so a
+browser cannot use it. A moved bot is deleted from the owner's CloudBot only
+after the group has its copy.
+
 ## Memory budget
 
 Every instance has a memory cap, 2560 MB by default. The hub keeps the sum of

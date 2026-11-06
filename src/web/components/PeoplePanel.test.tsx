@@ -2,18 +2,23 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { BotSummary } from '../../shared/chatTypes.ts';
 import type { Person, PersonWithPassword } from '../../shared/peopleTypes.ts';
 import { RequestFailedError } from '../apiClient.ts';
-import { addPerson, deletePerson, listPeople, resetPersonPassword } from '../peopleClient.ts';
+import { addGroup, addPerson, deletePerson, listPeople, resetPersonPassword, sendBotToGroup, setGroupMemberRole } from '../peopleClient.ts';
 import { PeoplePanel } from './PeoplePanel.tsx';
 
 vi.mock('../peopleClient.ts', () => ({
     addPerson: vi.fn(),
     deactivatePerson: vi.fn(),
     deletePerson: vi.fn(),
+    listGroups: vi.fn(() => Promise.resolve([])),
     listPeople: vi.fn(),
     reactivatePerson: vi.fn(),
     resetPersonPassword: vi.fn(),
+    addGroup: vi.fn(),
+    sendBotToGroup: vi.fn(),
+    setGroupMemberRole: vi.fn(),
 }));
 
 const OWNER: Person = {
@@ -104,6 +109,39 @@ describe('PeoplePanel', () => {
 
         expect(screen.queryByText('first-password'))
             .toBeNull();
+    });
+
+    it('invites the new person to a new group and copies the chosen bot there', async () => {
+        const bots = [{ id: 'bot-1', name: 'Ana' }] as BotSummary[];
+        const onBotsChanged = vi.fn();
+
+        vi.mocked(listPeople)
+            .mockResolvedValue([]);
+        vi.mocked(addPerson)
+            .mockResolvedValue(CREATED);
+        vi.mocked(addGroup)
+            .mockResolvedValue({ name: 'team', address: 'https://team.example.com', instance: 'running', members: [], createdAt: 0 });
+        vi.mocked(sendBotToGroup)
+            .mockResolvedValue({ name: 'Ana', isMoved: false });
+
+        render(<PeoplePanel bots={bots} onBotsChanged={onBotsChanged} onClose={() => {}} />);
+
+        fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'maria' } });
+        fireEvent.change(screen.getByLabelText('Invite to a group'), { target: { value: '__new__' } });
+        fireEvent.change(screen.getByLabelText('Group name'), { target: { value: 'team' } });
+        fireEvent.change(screen.getByLabelText('Ana'), { target: { value: 'copy' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
+
+        await waitFor(() => {
+            expect(onBotsChanged)
+                .toHaveBeenCalled();
+        });
+        expect(addGroup)
+            .toHaveBeenCalledWith('team');
+        expect(setGroupMemberRole)
+            .toHaveBeenCalledWith('team', 'maria', 'member');
+        expect(sendBotToGroup)
+            .toHaveBeenCalledWith('team', 'bot-1', 'copy');
     });
 
     it('shows a one time password card after resetting a password', async () => {
