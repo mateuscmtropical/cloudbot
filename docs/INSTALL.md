@@ -157,6 +157,16 @@ sudo docker rm -f cloudbot-i-maria
 The `cbi-*` volumes stay in place. The hub creates each container from the new
 image on the person's next request.
 
+### Updates from the chat
+
+The owner can ask the bot to update CloudBot. The bot clones the repository, checks the pinned versions against their newest releases and against the advisories in GitHub and OSV, and opens a pull request that bumps them. Each push, issue and pull request waits for the owner's approval in the chat. The bot never merges, and it never starts an update.
+
+The steps are in `docker/self-update.md`. The image keeps a copy at `/usr/local/share/cloudbot/self-update.md`, owned by root, so the bot can read the steps but cannot change them. A local run without the image does not offer the update.
+
+To finish, the owner merges the pull request on GitHub, then presses Update CloudBot under Account in the web app. The update restarts CloudBot, so press it when no turn is running.
+
+Programs inside the bot's container stay root-owned, so a new version reaches the server only through a new image. Dependabot still opens its monthly pull requests for npm packages and GitHub Actions, and the bot skips a bump that one of them already makes.
+
 ### Image size
 
 A new Docker 29 install keeps images in the containerd store, and then

@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import { buildSystemPrompt } from './buildSystemPrompt.ts';
@@ -136,6 +138,35 @@ describe('buildSystemPrompt', () => {
             .toContain('pass --repo owner/repo to every gh command');
         expect(buildSystemPrompt(profile))
             .not.toContain('GITHUB_TOKEN');
+    });
+
+    it('points to the update guide only on the owner instance with GitHub, inside the image, and never lets the bot merge or update', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+        const flags = { hasGithub: true, hasPeopleAdmin: true, hasUpdateGuide: true };
+        const prompt = buildSystemPrompt(profile, flags);
+
+        expect(prompt)
+            .toContain('read /usr/local/share/cloudbot/self-update.md and follow it');
+        expect(prompt)
+            .toContain('never merge or close a pull request, never start the update and never install or replace a program in your container');
+        expect(prompt)
+            .not.toContain('pnpm install --frozen-lockfile');
+        expect(buildSystemPrompt(profile, { ...flags, hasGithub: false }))
+            .not.toContain('self-update.md');
+        expect(buildSystemPrompt(profile, { ...flags, hasPeopleAdmin: false }))
+            .not.toContain('self-update.md');
+        expect(buildSystemPrompt(profile, { ...flags, hasUpdateGuide: false }))
+            .not.toContain('self-update.md');
+    });
+
+    // The prompt names a path that only exists if the Dockerfile copies the guide there, as root and readable by all.
+    it('ships the update guide to the path the prompt names, copied as root with mode 0644', () => {
+        const dockerfile = readFileSync(new URL('../../../docker/Dockerfile', import.meta.url), 'utf8');
+
+        expect(dockerfile)
+            .toContain('COPY --chmod=0644 docker/self-update.md /usr/local/share/cloudbot/self-update.md');
+        expect(existsSync(new URL('../../../docker/self-update.md', import.meta.url)))
+            .toBe(true);
     });
 
     it('says nothing about helpers when none is active', () => {

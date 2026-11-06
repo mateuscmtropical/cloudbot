@@ -30,6 +30,7 @@ All notable changes to this project are listed here. The format follows
 - A webhook can check the signatures of GitHub, GitLab, Stripe, Slack, Shopify and Linear. The owner saves the secret of a provider on the Webhooks page, and a call that claims that provider without a right signature is refused. The bot never sees the secret.
 - The bot can send webhooks to outside services with `webhook_send`, which waits for the owner unless the owner asked for it.
 - The owner can see the version and update the whole install from the web app, under Account, Update CloudBot. On a server that exists already, run `sudo cloudbot install-update` once.
+- The owner can ask the bot to update CloudBot. The bot opens a pull request that bumps the pinned versions and names the advisories each bump fixes. The owner merges it, then presses Update CloudBot in the web app. The bot never merges and never starts an update.
 - The provider menu shows the provider, model and effort of routines, review, browsing and documents, and lets the owner choose them for each one. The bot can read and change them too. Browsing and documents on another provider run as a helper of the main turn. Review runs on Claude, ChatGPT or Gemini.
 - The default model of Claude shows by its real name, once a turn has reported it.
 
