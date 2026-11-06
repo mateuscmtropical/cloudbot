@@ -26,6 +26,15 @@ function touchEvent(type: 'touchstart' | 'touchend', clientX: number): Event {
     return event;
 }
 
+function touchMoveEvent(clientX: number): Event {
+    const event = new Event('touchmove', { bubbles: true });
+    const point: FakeTouch = { clientX, clientY: 300 };
+
+    Object.defineProperty(event, 'touches', { value: [point] });
+
+    return event;
+}
+
 function swipeOn(element: Element, startX: number, endX: number): void {
     const start = touchEvent('touchstart', startX);
     const end = touchEvent('touchend', endX);
@@ -190,6 +199,28 @@ describe('useSwipeMenu', () => {
             .not.toHaveBeenCalled();
         expect(spies.setIsDetailsOpen)
             .not.toHaveBeenCalled();
+    });
+
+    it('moves the list with the finger and lets it go on release', () => {
+        renderPanels();
+        const list = document.createElement('aside');
+        const message = addParagraph();
+        const start = touchEvent('touchstart', 20);
+        const move = touchMoveEvent(120);
+        const end = touchEvent('touchend', 120);
+
+        list.className = 'bot-list';
+        document.body.append(list);
+        message.dispatchEvent(start);
+        message.dispatchEvent(move);
+
+        expect(list.style.transform)
+            .toBe('translateX(calc(-100% + 100px))');
+
+        message.dispatchEvent(end);
+
+        expect(list.style.transform)
+            .toBe('');
     });
 
     it('still swipes on a scroller with nothing to scroll', () => {

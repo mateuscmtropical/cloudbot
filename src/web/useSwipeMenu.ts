@@ -7,6 +7,8 @@ interface TouchPoint {
 
 type SwipeDirection = 'right' | 'left';
 
+type DragTarget = 'openList' | 'closeList' | 'page';
+
 interface SwipePanels {
     isListOpen: boolean;
     setIsListOpen: (isOpen: boolean) => void;
@@ -16,12 +18,22 @@ interface SwipePanels {
     canOpenDetails: boolean;
 }
 
+interface SwipeState {
+    start: TouchPoint | undefined;
+    // Chosen once the drag is clearly sideways, so turning back does not switch to another panel.
+    target: DragTarget | undefined;
+    element: HTMLElement | null;
+}
+
 const NARROW_SCREEN_QUERY = '(max-width: 720px)';
 const MIN_SWIPE_DISTANCE_PX = 60;
 // A drag on these belongs to them, whatever they hold: fields, code, dialogs and the bot's screen.
 const OWN_DRAG_SELECTOR = 'pre, code, table, input, textarea, select, dialog, [role="dialog"], .composer, .desktop-panel';
 // Browsers round these sizes, so one pixel of difference is not something to scroll.
 const SCROLL_TOLERANCE_PX = 1;
+// A drag shows only once it is clearly sideways, so a scroll does not shake the page.
+const DRAG_START_PX = 10;
+const PAGE_PULL_RATIO = 0.4;
 
 // A swipe is a mostly horizontal drag that is long enough. A slow diagonal scroll is not one.
 function readSwipe(start: TouchPoint, end: TouchPoint): SwipeDirection | undefined {
@@ -64,6 +76,54 @@ function ownsDrag(element: Element): boolean {
     return element.parentElement !== null && ownsDrag(element.parentElement);
 }
 
+// What a drag in this direction moves: the bot list, the page in the main column, or nothing. Mirrors applySwipe.
+function readDragTarget(direction: SwipeDirection, panels: SwipePanels): DragTarget | undefined {
+    if (direction === 'right') {
+        if (panels.isDetailsOpen) {
+            return 'page';
+        }
+
+        return panels.isListOpen ? undefined : 'openList';
+    }
+
+    if (panels.isListOpen) {
+        return 'closeList';
+    }
+
+    return !panels.isDetailsOpen && panels.canOpenDetails ? 'page' : undefined;
+}
+
+// The list follows the finger. The page only leans toward it, as if pulled.
+function dragTransform(target: DragTarget, distanceX: number): string {
+    if (target === 'openList') {
+        const shownPx = Math.max(distanceX, 0);
+
+        return `translateX(calc(-100% + ${String(shownPx)}px))`;
+    }
+
+    if (target === 'closeList') {
+        const hiddenPx = Math.min(distanceX, 0);
+
+        return `translateX(${String(hiddenPx)}px)`;
+    }
+
+    return `translateX(${String(distanceX * PAGE_PULL_RATIO)}px)`;
+}
+
+function findDragElement(target: DragTarget): HTMLElement | null {
+    const selector = target === 'page' ? '.main-column' : '.bot-list';
+
+    return document.querySelector<HTMLElement>(selector);
+}
+
+// Without the inline styles, the stylesheet transition carries the element from where the finger left it.
+function releaseDrag(swipe: SwipeState): void {
+    swipe.element?.style.removeProperty('transform');
+    swipe.element?.style.removeProperty('transition');
+    swipe.element = null;
+    swipe.target = undefined;
+}
+
 function applySwipe(direction: SwipeDirection, panels: SwipePanels): void {
     if (direction === 'right') {
         if (panels.isDetailsOpen) {
@@ -83,19 +143,48 @@ function applySwipe(direction: SwipeDirection, panels: SwipePanels): void {
 }
 
 // On a phone, the bot list sits to the left of the chat and the bot's details to the right. A swipe to the right
-// brings in what is on the left, and a swipe to the left brings in what is on the right.
+// brings in what is on the left, and a swipe to the left brings in what is on the right. While the finger moves,
+// the list follows it and the page leans toward it.
 function useSwipeMenu(panels: SwipePanels): void {
     const { isListOpen, setIsListOpen, isDetailsOpen, setIsDetailsOpen, canOpenDetails } = panels;
 
     useEffect(() => {
         const narrowScreen = window.matchMedia(NARROW_SCREEN_QUERY);
-        const swipe: { start: TouchPoint | undefined } = { start: undefined };
+        const current: SwipePanels = { isListOpen, setIsListOpen, isDetailsOpen, setIsDetailsOpen, canOpenDetails };
+        const swipe: SwipeState = { start: undefined, target: undefined, element: null };
 
         const handleTouchStart = (event: TouchEvent): void => {
             const target = event.target instanceof Element ? event.target : undefined;
             const isOwned = target !== undefined && ownsDrag(target);
 
+            releaseDrag(swipe);
             swipe.start = isOwned || event.touches.length !== 1 ? undefined : readTouchPoint(event.touches[0]);
+        };
+
+        const handleTouchMove = (event: TouchEvent): void => {
+            const start = swipe.start;
+            const point = readTouchPoint(event.touches[0]);
+
+            if (!narrowScreen.matches || start === undefined || point === undefined) {
+                return;
+            }
+
+            const distanceX = point.x - start.x;
+            const distanceY = point.y - start.y;
+            const direction: SwipeDirection = distanceX > 0 ? 'right' : 'left';
+            const isSideways = Math.abs(distanceX) >= DRAG_START_PX && Math.abs(distanceX) > Math.abs(distanceY) * 2;
+
+            if (swipe.target === undefined && isSideways) {
+                swipe.target = readDragTarget(direction, current);
+                swipe.element = swipe.target === undefined ? null : findDragElement(swipe.target);
+            }
+
+            if (swipe.element === null || swipe.target === undefined) {
+                return;
+            }
+
+            swipe.element.style.transition = 'none';
+            swipe.element.style.transform = dragTransform(swipe.target, distanceX);
         };
 
         const handleTouchEnd = (event: TouchEvent): void => {
@@ -103,6 +192,7 @@ function useSwipeMenu(panels: SwipePanels): void {
             const end = readTouchPoint(event.changedTouches[0]);
 
             swipe.start = undefined;
+            releaseDrag(swipe);
 
             if (!narrowScreen.matches || start === undefined || end === undefined) {
                 return;
@@ -111,16 +201,26 @@ function useSwipeMenu(panels: SwipePanels): void {
             const direction = readSwipe(start, end);
 
             if (direction !== undefined) {
-                applySwipe(direction, { isListOpen, setIsListOpen, isDetailsOpen, setIsDetailsOpen, canOpenDetails });
+                applySwipe(direction, current);
             }
         };
 
+        const handleTouchCancel = (): void => {
+            swipe.start = undefined;
+            releaseDrag(swipe);
+        };
+
         document.addEventListener('touchstart', handleTouchStart, { passive: true });
+        document.addEventListener('touchmove', handleTouchMove, { passive: true });
         document.addEventListener('touchend', handleTouchEnd, { passive: true });
+        document.addEventListener('touchcancel', handleTouchCancel, { passive: true });
 
         return () => {
+            releaseDrag(swipe);
             document.removeEventListener('touchstart', handleTouchStart);
+            document.removeEventListener('touchmove', handleTouchMove);
             document.removeEventListener('touchend', handleTouchEnd);
+            document.removeEventListener('touchcancel', handleTouchCancel);
         };
     }, [isListOpen, setIsListOpen, isDetailsOpen, setIsDetailsOpen, canOpenDetails]);
 }
