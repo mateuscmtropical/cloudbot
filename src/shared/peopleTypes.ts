@@ -1,5 +1,40 @@
 // The people the owner invites to one CloudBot server. Each person has their own instance.
-type PersonRole = 'owner' | 'member';
+// A shared group is kept with them, under the role group: it has its own instance and address, and nobody signs in as it.
+type PersonRole = 'owner' | 'member' | 'group';
+
+// The place of a person in a shared group. The owner made the group and cannot be removed. An admin manages the people
+// and approves what spends money. A member takes part.
+type GroupRole = 'owner' | 'admin' | 'member';
+
+interface GroupMember {
+    name: string;
+    role: GroupRole;
+}
+
+// A shared group, as the server owner sees it.
+interface SharedGroup {
+    name: string;
+    address: string;
+    instance: InstanceStatus;
+    members: GroupMember[];
+    createdAt: number;
+}
+
+// A shared group, as one of its members sees it in their own CloudBot.
+interface MyGroup {
+    name: string;
+    // Opens the group with the session of the person, through the hub.
+    openPath: string;
+    role: GroupRole;
+}
+
+interface AddGroupRequest {
+    name: string;
+}
+
+interface SetGroupMemberRequest {
+    role: 'admin' | 'member';
+}
 
 // An inactive person cannot sign in and their instance is stopped. Their data stays.
 type PersonState = 'active' | 'inactive';
@@ -65,4 +100,4 @@ function checkPersonName(name: string): string | undefined {
 }
 
 export { PERSON_NAME_PATTERN, RESERVED_PERSON_NAMES, checkPersonName };
-export type { AddPersonRequest, AppUpdateState, AppUpdateStatus, InstanceStatus, PeopleErrorResponse, Person, PersonRole, PersonState, PersonWithPassword, ResetPasswordResult };
+export type { AddGroupRequest, AddPersonRequest, AppUpdateState, AppUpdateStatus, GroupMember, GroupRole, InstanceStatus, MyGroup, PeopleErrorResponse, Person, PersonRole, PersonState, PersonWithPassword, ResetPasswordResult, SetGroupMemberRequest, SharedGroup };

@@ -1,14 +1,16 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 
-import { HUB_PEOPLE_PATH, HUB_UPDATE_PATH, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER } from '../../shared/hubProtocol.ts';
+import { HUB_PEOPLE_PATH, HUB_UPDATE_PATH } from '../../shared/hubProtocol.ts';
 import { checkPersonName } from '../../shared/peopleTypes.ts';
 import type { AppUpdateStatus, Person, PersonWithPassword, ResetPasswordResult } from '../../shared/peopleTypes.ts';
 import type { LoginSessions } from '../auth/LoginSessions.ts';
-import type { InstanceManager, PeopleStore, PersonRecord } from '../contract.ts';
+import type { GroupMembersStore, InstanceManager, PeopleStore, PersonRecord } from '../contract.ts';
 import { generatePassword, hashPassword } from '../passwords.ts';
 import type { AppUpdateRequests } from './AppUpdateRequests.ts';
+import { addGroupRoutes } from './createGroupRoutes.ts';
+import { addressOf, authorizeOwner } from './instanceAuth.ts';
 
 interface CreateAdminRoutesOptions {
     people: PeopleStore;
@@ -18,6 +20,8 @@ interface CreateAdminRoutesOptions {
     secure: boolean;
     // Without it the update routes answer that this install has no update service.
     updates?: AppUpdateRequests | undefined;
+    // Without it the group routes are not served.
+    members?: GroupMembersStore | undefined;
 }
 
 interface ErrorResponse {
@@ -33,32 +37,15 @@ const NOT_FOUND_MESSAGE = 'Person not found.';
 const NAME_TAKEN_MESSAGE = 'That name is taken.';
 const UPDATE_UNAVAILABLE: AppUpdateStatus = { state: 'unavailable' };
 
-function hasMatchingSecret(candidate: string, expected: string): boolean {
-    const candidateDigest = createHash('sha256')
-        .update(candidate)
-        .digest();
-    const expectedDigest = createHash('sha256')
-        .update(expected)
-        .digest();
-
-    return timingSafeEqual(candidateDigest, expectedDigest);
+function authorize(context: Context, people: PeopleStore): PersonRecord | undefined {
+    return authorizeOwner(context, people);
 }
 
-function authorize(context: Context, people: PeopleStore): PersonRecord | undefined {
-    const instanceName = context.req.header(INSTANCE_NAME_HEADER);
-    const instanceSecret = context.req.header(INSTANCE_SECRET_HEADER);
+// A shared group is kept in the people store, but it is not a person: the people routes do not see it.
+function findPerson(people: PeopleStore, name: string): PersonRecord | undefined {
+    const record = people.find(name);
 
-    if (instanceName === undefined || instanceSecret === undefined) {
-        return undefined;
-    }
-
-    const person = people.find(instanceName);
-
-    if (person === undefined || person.role !== 'owner' || !hasMatchingSecret(instanceSecret, person.instanceSecret)) {
-        return undefined;
-    }
-
-    return person;
+    return record?.role === 'group' ? undefined : record;
 }
 
 function errorResponse(context: Context, message: string, status: 400 | 401 | 404 | 409 | 500): Response {
@@ -68,13 +55,7 @@ function errorResponse(context: Context, message: string, status: 400 | 401 | 40
 }
 
 function personAddress(name: string, options: CreateAdminRoutesOptions): string {
-    if (options.domain === 'localhost') {
-        return `http://${name}.localhost`;
-    }
-
-    const scheme = options.secure ? 'https' : 'http';
-
-    return `${scheme}://${name}.${options.domain}`;
+    return addressOf(name, options.domain, options.secure);
 }
 
 async function toPerson(record: PersonRecord, options: CreateAdminRoutesOptions): Promise<Person> {
@@ -195,7 +176,7 @@ async function changePersonState(context: Context, options: CreateAdminRoutesOpt
         return errorResponse(context, NOT_FOUND_MESSAGE, 404);
     }
 
-    const person = options.people.find(name);
+    const person = findPerson(options.people, name);
 
     if (person === undefined) {
         return errorResponse(context, NOT_FOUND_MESSAGE, 404);
@@ -231,7 +212,7 @@ async function resetPersonPassword(context: Context, options: CreateAdminRoutesO
         return errorResponse(context, NOT_FOUND_MESSAGE, 404);
     }
 
-    const person = options.people.find(name);
+    const person = findPerson(options.people, name);
 
     if (person === undefined) {
         return errorResponse(context, NOT_FOUND_MESSAGE, 404);
@@ -270,7 +251,7 @@ async function removePerson(context: Context, options: CreateAdminRoutesOptions)
         return errorResponse(context, 'Confirmation must match the person name.', 400);
     }
 
-    const person = options.people.find(name);
+    const person = findPerson(options.people, name);
 
     if (person === undefined) {
         return errorResponse(context, NOT_FOUND_MESSAGE, 404);
@@ -278,6 +259,13 @@ async function removePerson(context: Context, options: CreateAdminRoutesOptions)
 
     if (person.role === 'owner') {
         return errorResponse(context, 'The owner cannot be removed.', 409);
+    }
+
+    const ownsGroup = options.members?.groupsOf(name)
+        .some(group => group.role === 'owner') === true;
+
+    if (ownsGroup) {
+        return errorResponse(context, 'This person owns a shared group. Delete the group first.', 409);
     }
 
     await options.instances.remove(name);
@@ -297,7 +285,8 @@ function createAdminRoutes(options: CreateAdminRoutesOptions): Hono {
             return errorResponse(context, UNAUTHORIZED_MESSAGE, 401);
         }
 
-        const records = options.people.list();
+        const records = options.people.list()
+            .filter(record => record.role !== 'group');
         const personRequests = records.map(record => toPerson(record, options));
         const people = await Promise.all(personRequests);
 
@@ -330,6 +319,10 @@ function createAdminRoutes(options: CreateAdminRoutesOptions): Hono {
     app.post(`${HUB_PEOPLE_PATH}/:name/reactivate`, context => changePersonState(context, options, 'active'));
     app.post(`${HUB_PEOPLE_PATH}/:name/reset-password`, context => resetPersonPassword(context, options));
     app.delete(`${HUB_PEOPLE_PATH}/:name`, context => removePerson(context, options));
+    if (options.members !== undefined) {
+        addGroupRoutes(app, { ...options, members: options.members });
+    }
+
     app.notFound(context => errorResponse(context, NOT_FOUND_MESSAGE, 404));
     app.onError((_error, context) => errorResponse(context, 'The hub could not complete the request.', 500));
 

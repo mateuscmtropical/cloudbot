@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import type { BlockList } from 'node:net';
 
-import type { ActivityTracker, InstanceManager, PeopleStore } from './contract.ts';
+import type { ActivityTracker, GroupMembersStore, InstanceManager, PeopleStore } from './contract.ts';
+import type { GroupEntryTickets } from './auth/groupAccess.ts';
 import { createAdminRoutes } from './admin/createAdminRoutes.ts';
 import type { AppUpdateRequests } from './admin/AppUpdateRequests.ts';
 import { createFrontDoorRoutes } from './auth/createFrontDoorRoutes.ts';
@@ -30,6 +31,9 @@ interface CreateHubAppOptions {
     updates?: AppUpdateRequests;
     now?: () => number;
     upstreamFor?: (name: string) => { hostname: string; port: number };
+    // Shared groups. Without them a group's address is not available.
+    members?: GroupMembersStore;
+    entryTickets?: GroupEntryTickets;
 }
 
 interface HealthResponse {
@@ -85,7 +89,8 @@ function createHubApp(options: CreateHubAppOptions): Hono {
 
             const person = requestName === undefined ? undefined : options.people.find(requestName);
 
-            if (person === undefined || person.state !== 'active') {
+            // A group has no passkeys: nobody signs in as the group.
+            if (person === undefined || person.state !== 'active' || person.role === 'group') {
                 return renderUnavailable(context);
             }
 
@@ -114,11 +119,15 @@ function createHubApp(options: CreateHubAppOptions): Hono {
 
             return readHubSession(context, options.sessions, currentTime, options.secure)?.name;
         },
-        isPersonActive: name => options.people.find(name)?.state === 'active',
+        isPersonActive: (name) => {
+            const person = options.people.find(name);
+
+            return person?.state === 'active' && person.role !== 'group';
+        },
         startSession: (name, context) => {
             const person = options.people.find(name);
 
-            if (person === undefined || person.state !== 'active') {
+            if (person === undefined || person.state !== 'active' || person.role === 'group') {
                 return false;
             }
 
@@ -147,6 +156,8 @@ function createHubApp(options: CreateHubAppOptions): Hono {
         }),
         ...(options.now === undefined ? {} : { now: options.now }),
         ...(options.upstreamFor === undefined ? {} : { upstreamFor: options.upstreamFor }),
+        ...(options.members === undefined ? {} : { members: options.members }),
+        ...(options.entryTickets === undefined ? {} : { entryTickets: options.entryTickets }),
     });
 
     // This runs before every internal endpoint so the public Host forwarded by Caddy cannot reach admin or health routes.

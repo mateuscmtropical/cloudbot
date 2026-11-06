@@ -1,4 +1,4 @@
-import type { InstanceStatus, PersonRole, PersonState } from '../shared/peopleTypes.ts';
+import type { GroupMember, GroupRole, InstanceStatus, PersonRole, PersonState } from '../shared/peopleTypes.ts';
 
 // What the hub keeps about one person. The password is a scrypt hash. The instance secret is random, made when the
 // person is added, and is the only thing that lets the hub talk to that instance.
@@ -25,6 +25,17 @@ interface PeopleStore {
     remove: (name: string) => void;
 }
 
+// Who is in which shared group, and in what role. A group is a record of the people store with the role group.
+interface GroupMembersStore {
+    list: (groupName: string) => GroupMember[];
+    // The groups of one person, each with the person's role in it.
+    groupsOf: (personName: string) => GroupMember[];
+    roleOf: (groupName: string, personName: string) => GroupRole | undefined;
+    // Adds the person, or changes their role.
+    set: (groupName: string, personName: string, role: GroupRole, now: number) => void;
+    remove: (groupName: string, personName: string) => void;
+}
+
 // busy: starting one more instance would pass the memory budget, so the person waits and tries again.
 type StartResult = 'running' | 'busy';
 
@@ -49,4 +60,4 @@ interface ActivityTracker {
     closed: (name: string) => void;
 }
 
-export type { ActivityTracker, InstanceManager, PeopleStore, PersonRecord, PersonUpdate, StartResult };
+export type { ActivityTracker, GroupMembersStore, InstanceManager, PeopleStore, PersonRecord, PersonUpdate, StartResult };

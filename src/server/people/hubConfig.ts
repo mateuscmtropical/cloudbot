@@ -25,8 +25,9 @@ function readHubConfig(env: NodeJS.ProcessEnv): HubConfig | undefined {
         throw new Error('CLOUDBOT_HUB_SECRET needs CLOUDBOT_HUB_URL and CLOUDBOT_PERSON_NAME.');
     }
 
-    if (role !== 'owner' && role !== 'member') {
-        throw new Error('CLOUDBOT_PERSON_ROLE must be owner or member.');
+    // A shared group runs as its own instance, with the role group.
+    if (role !== 'owner' && role !== 'member' && role !== 'group') {
+        throw new Error('CLOUDBOT_PERSON_ROLE must be owner, member or group.');
     }
 
     return { hubUrl, secret, personName, role };

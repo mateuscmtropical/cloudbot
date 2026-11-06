@@ -97,11 +97,19 @@ function renderNotAvailablePage(): RenderedPage {
     return renderPage({ title: 'Not available', body });
 }
 
+// A group has no password of its own. Its members open it from the list in their own CloudBot.
+function renderGroupEntryPage(): RenderedPage {
+    const mascot = renderMascot('sleepy');
+    const body = `<main>${mascot}<h1>Open this group from your CloudBot</h1><p>This is a shared group. Sign in to your own CloudBot and open the group from your list.</p></main>`;
+
+    return renderPage({ title: 'Shared group', body });
+}
+
 function renderUpstreamErrorPage(): RenderedPage {
     const mascot = renderMascot('error');
     const body = `<main>${mascot}<h1>CloudBot is unavailable</h1><p>Please try again in a moment.</p></main>`;
 
     return renderPage({ title: 'CloudBot is unavailable', body });
 }
-export { renderApexPage, renderBusyPage, renderChangePasswordPage, renderLoadingPage, renderLoginPage, renderNotAvailablePage, renderSetupPage, renderUpstreamErrorPage };
+export { renderApexPage, renderBusyPage, renderChangePasswordPage, renderGroupEntryPage, renderLoadingPage, renderLoginPage, renderNotAvailablePage, renderSetupPage, renderUpstreamErrorPage };
 export type { ApexPageOptions, ChangePasswordPageOptions, LoginPageExtras, LoginPageOptions, SetupPageOptions };
