@@ -18,6 +18,8 @@ interface PeoplePanelProps {
     bots?: BotSummary[];
     // Called after an invite, since a moved bot leaves this CloudBot.
     onBotsChanged?: () => void;
+    // Called after a group is made or deleted, so the bot list shows the groups as they are.
+    onGroupsChanged?: () => void;
 }
 
 interface OneTimeCredential {
@@ -48,7 +50,7 @@ function replacePerson(people: Person[], updatedPerson: Person): Person[] {
     return people.map(person => person.name === updatedPerson.name ? updatedPerson : person);
 }
 
-function PeoplePanel({ onClose, bots = [], onBotsChanged }: PeoplePanelProps): ReactElement {
+function PeoplePanel({ onClose, bots = [], onBotsChanged, onGroupsChanged }: PeoplePanelProps): ReactElement {
     const [people, setPeople] = useState<Person[]>([]);
     const [groups, setGroups] = useState<SharedGroup[]>([]);
     const [invite, setInvite] = useState<GroupInviteChoice>(EMPTY_GROUP_INVITE);
@@ -135,6 +137,7 @@ function PeoplePanel({ onClose, bots = [], onBotsChanged }: PeoplePanelProps): R
             .catch(() => groups);
 
         setGroups(refreshedGroups);
+        onGroupsChanged?.();
     }
 
     function handleAdd(event: SyntheticEvent<HTMLFormElement>): void {
@@ -366,6 +369,7 @@ function PeoplePanel({ onClose, bots = [], onBotsChanged }: PeoplePanelProps): R
                 groups={groups}
                 onDeleted={(deletedName) => {
                     setGroups(currentGroups => currentGroups.filter(group => group.name !== deletedName));
+                    onGroupsChanged?.();
                 }}
             />
         </section>

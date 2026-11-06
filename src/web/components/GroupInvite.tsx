@@ -5,6 +5,7 @@ import type { SharedGroup } from '../../shared/peopleTypes.ts';
 import { RequestFailedError } from '../apiClient.ts';
 import { addGroup, sendBotToGroup, setGroupMemberRole } from '../peopleClient.ts';
 import { Field } from './Field.tsx';
+import { Select } from './Select.tsx';
 
 type BotChoice = 'keep' | 'copy' | 'move';
 
@@ -35,13 +36,13 @@ function GroupInviteFields({ groups, bots, choice, onChange }: GroupInviteFields
     const hasGroup = choice.group !== '';
 
     return (
-        <>
-            <Field label="Invite to a group">
-                <select value={choice.group} onChange={(event) => { onChange({ ...choice, group: event.currentTarget.value }); }}>
+        <div className="group-invite">
+            <Field label="Invite to a group" isInline>
+                <Select label="Invite to a group" value={choice.group} onChange={(event) => { onChange({ ...choice, group: event.currentTarget.value }); }}>
                     <option value="">No group</option>
                     {groups.map(group => <option key={group.name} value={group.name}>{group.name}</option>)}
                     <option value={NEW_GROUP}>New group</option>
-                </select>
+                </Select>
             </Field>
             {choice.group === NEW_GROUP
                 ? (
@@ -52,11 +53,12 @@ function GroupInviteFields({ groups, bots, choice, onChange }: GroupInviteFields
                 : null}
             {hasGroup && bots.length > 0
                 ? (
-                        <fieldset className="group-invite-bots">
-                            <legend>Your bots in the group. A new group starts with only its own first bot.</legend>
+                        <>
+                            <p className="group-invite-hint">Your bots in the group. A new group starts with only its own first bot.</p>
                             {bots.map(bot => (
-                                <Field key={bot.id} label={bot.name}>
-                                    <select
+                                <Field key={bot.id} label={bot.name} isInline>
+                                    <Select
+                                        label={bot.name}
                                         value={choice.botChoices[bot.id] ?? 'keep'}
                                         onChange={(event) => {
                                             const picked = BOT_CHOICES.find(candidate => candidate === event.currentTarget.value) ?? 'keep';
@@ -65,13 +67,13 @@ function GroupInviteFields({ groups, bots, choice, onChange }: GroupInviteFields
                                         }}
                                     >
                                         {BOT_CHOICES.map(option => <option key={option} value={option}>{BOT_CHOICE_LABELS[option]}</option>)}
-                                    </select>
+                                    </Select>
                                 </Field>
                             ))}
-                        </fieldset>
+                        </>
                     )
                 : null}
-        </>
+        </div>
     );
 }
 
