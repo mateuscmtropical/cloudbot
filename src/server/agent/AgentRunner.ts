@@ -85,6 +85,9 @@ interface TurnInbox {
 
 interface AgentRunner {
     runTurn(request: TurnRequest): AsyncIterable<AgentEvent>;
+    // Shortens the session of the request, so the next turn starts from less context. The request needs a session id, and
+    // its prompt is not sent. The promise rejects when the compaction fails. Only the engines with a compact command have it.
+    compactSession?(request: TurnRequest): Promise<void>;
 }
 
 export type { AgentDefinition, AgentRunner, McpServerConfig, ToolCall, ToolCallDecision, TurnImage, TurnImageMediaType, TurnInbox, TurnRequest };

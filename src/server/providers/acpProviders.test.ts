@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { ACP_PROVIDERS, LOCAL_ACP_ARGS, PLACEHOLDER_KEY, offerAgyModels } from './acpProviders.ts';
+import type { AgentEvent } from '../agent/AgentEvent.ts';
+import type { AgentRunner, TurnRequest } from '../agent/AgentRunner.ts';
+import type { ProviderMethod } from '../setup/SetupConversation.ts';
+import { ACP_PROVIDERS, LOCAL_ACP_ARGS, PLACEHOLDER_KEY, methodRunner, offerAgyModels } from './acpProviders.ts';
 import { ProviderModelCatalogs } from './ProviderModelCatalogs.ts';
 
 describe('Grok ACP provider', () => {
@@ -59,3 +62,36 @@ describe('Gemini subscription models', () => {
             .toEqual(reported);
     });
 });
+
+describe('methodRunner', () => {
+    it('compacts on the runner of the way the owner connected last, and does nothing without one', async () => {
+        const compacted: string[] = [];
+        const recordingRunner = (name: string): AgentRunner => ({
+            async* runTurn(): AsyncGenerator<AgentEvent> {
+                await Promise.resolve();
+                yield { type: 'text', text: name };
+            },
+            compactSession(): Promise<void> {
+                compacted.push(name);
+
+                return Promise.resolve();
+            },
+        });
+        let method: ProviderMethod | undefined = 'apiKey';
+        const runner = methodRunner(recordingRunner('sign-in'), recordingRunner('key'), () => Promise.resolve(method));
+
+        await runner.compactSession?.(makeRequest());
+        method = 'signIn';
+        await runner.compactSession?.(makeRequest());
+        const idle = methodRunner(undefined, undefined, () => Promise.resolve('signIn'));
+
+        await idle.compactSession?.(makeRequest());
+
+        expect(compacted)
+            .toEqual(['key', 'sign-in']);
+    });
+});
+
+function makeRequest(): TurnRequest {
+    return { botId: 'bot-1', workspaceDir: '/tmp', prompt: 'Hello', abortSignal: new AbortController().signal };
+}

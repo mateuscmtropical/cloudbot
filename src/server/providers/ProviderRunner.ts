@@ -46,6 +46,13 @@ function untagSession(provider: ProviderId, sessionId: string | undefined): stri
     return provider === 'claude' && !/^[a-z]+:/.test(sessionId) ? sessionId : undefined;
 }
 
+// The engine and the request a turn runs with, or the notice that stops it.
+interface PreparedTurn {
+    provider: ProviderId;
+    runner: AgentRunner;
+    request: TurnRequest;
+}
+
 // Runs each turn on the engine of the provider the bot uses.
 class ProviderRunner implements AgentRunner {
     private readonly options: ProviderRunnerOptions;
@@ -55,21 +62,48 @@ class ProviderRunner implements AgentRunner {
     }
 
     async* runTurn(request: TurnRequest): AsyncGenerator<AgentEvent> {
+        const prepared = await this.prepareTurn(request);
+
+        if ('notice' in prepared) {
+            yield { type: 'turn_error', message: prepared.notice, isUsageLimit: false };
+
+            return;
+        }
+
+        const { provider, runner, request: providerRequest } = prepared;
+
+        for await (const event of runner.runTurn(providerRequest)) {
+            if (event.type === 'session' && event.model !== undefined && (providerRequest.model ?? null) === null) {
+                await this.options.noteDefaultModel?.(provider, event.model);
+            }
+
+            yield event.type === 'session' ? { ...event, sessionId: tagSession(provider, event.sessionId) } : event;
+        }
+    }
+
+    // Compacts the session on the engine of the request. The engine decides whether its provider can compact.
+    async compactSession(request: TurnRequest): Promise<void> {
+        const prepared = await this.prepareTurn(request);
+
+        if ('notice' in prepared) {
+            throw new Error(prepared.notice);
+        }
+
+        await prepared.runner.compactSession?.(prepared.request);
+    }
+
+    private async prepareTurn(request: TurnRequest): Promise<PreparedTurn | { notice: string }> {
         const provider = request.provider ?? await this.options.providerFor(request.botId);
         const engine = this.options.engines[provider];
         const label = PROVIDER_LABELS[provider];
         const owner = request.provider === undefined ? 'This bot' : 'This work';
 
         if (engine === undefined) {
-            yield { type: 'turn_error', message: `${owner} uses ${label}, which this server does not have. Ask me to switch this bot to another provider.`, isUsageLimit: false };
-
-            return;
+            return { notice: `${owner} uses ${label}, which this server does not have. Ask me to switch this bot to another provider.` };
         }
 
         if (!await engine.isConnected()) {
-            yield { type: 'turn_error', message: `${owner} uses ${label}, which is not connected. Ask me to connect ${label} or to switch this bot to another provider.`, isUsageLimit: false };
-
-            return;
+            return { notice: `${owner} uses ${label}, which is not connected. Ask me to connect ${label} or to switch this bot to another provider.` };
         }
 
         const sessionId = untagSession(provider, request.sessionId);
@@ -117,13 +151,7 @@ class ProviderRunner implements AgentRunner {
             }
         }
 
-        for await (const event of engine.runner.runTurn(providerRequest)) {
-            if (event.type === 'session' && event.model !== undefined && (providerRequest.model ?? null) === null) {
-                await this.options.noteDefaultModel?.(provider, event.model);
-            }
-
-            yield event.type === 'session' ? { ...event, sessionId: tagSession(provider, event.sessionId) } : event;
-        }
+        return { provider, runner: engine.runner, request: providerRequest };
     }
 
     async close(): Promise<void> {

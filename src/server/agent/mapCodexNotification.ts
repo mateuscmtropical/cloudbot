@@ -79,11 +79,26 @@ function mapCodexNotification(method: string, params: unknown): AgentEvent[] {
     return method === 'item/started' ? startedEvents(item) : completedEvents(item);
 }
 
+// The input tokens of the last model call, from the usage notification Codex sends after each call. The total of the turn
+// adds up every call, so it would overstate the context.
+function readContextTokens(method: string, params: unknown): number | undefined {
+    if (method !== 'thread/tokenUsage/updated') {
+        return undefined;
+    }
+
+    const inputTokens = readRecord(readRecord(readRecord(params).tokenUsage).last).inputTokens;
+
+    return typeof inputTokens === 'number' ? inputTokens : undefined;
+}
+
 // A stopped turn ends with nothing, as a stop of the Claude engine does. A failed one names a usage limit when Codex says so.
 // Codex puts the reset time only in the message text, so no reset time is read here.
-function mapCodexTurnEnd(turn: CodexTurn): AgentEvent[] {
+function mapCodexTurnEnd(turn: CodexTurn, contextTokens?: number): AgentEvent[] {
     if (turn.status === 'completed') {
-        return turn.durationMs === null ? [{ type: 'turn_finished' }] : [{ type: 'turn_finished', durationMs: turn.durationMs }];
+        const durationOption = turn.durationMs === null ? {} : { durationMs: turn.durationMs };
+        const contextOption = contextTokens === undefined ? {} : { contextTokens };
+
+        return [{ type: 'turn_finished', ...durationOption, ...contextOption }];
     }
 
     if (turn.status === 'interrupted') {
@@ -95,4 +110,4 @@ function mapCodexTurnEnd(turn: CodexTurn): AgentEvent[] {
     return [{ type: 'turn_error', message: turn.error?.message ?? TURN_FAILED_MESSAGE, isUsageLimit }];
 }
 
-export { mapCodexNotification, mapCodexTurnEnd, readItem };
+export { mapCodexNotification, mapCodexTurnEnd, readContextTokens, readItem };

@@ -39,7 +39,7 @@ import { BROWSER_ALLOW_TOOL_FULL_NAMES, createBrowserAllowTools } from '../deskt
 import type { BrowserAllowStore } from '../store/BrowserAllowStore.ts';
 import { BotSecretError, assertSecretName, parseSecretSite } from '../secrets/BotSecrets.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
-import { isQuietReply } from '../routines/checkin.ts';
+import { buildMemoryFlushMessage, isQuietReply } from '../routines/checkin.ts';
 import { EMAIL_PASSWORD_SECRET_NAME } from '../email/EmailPasswordStore.ts';
 import type { EmailAccountService } from '../email/EmailAccountService.ts';
 import type { SmtpEmailSender } from '../email/SmtpEmailSender.ts';
@@ -338,6 +338,8 @@ interface TurnState {
     endsQuiet: boolean;
     // The messages of the earlier parts of a check-in that waited for the usage limit. Empty for any other turn.
     carriedMessageIds: string[];
+    // The context size the engine reported at the end of the turn. Set only for a turn of the main session.
+    contextTokens?: number | undefined;
 }
 
 // Every message a check-in stored so far, the earlier parts and the prompt message included, without repeats.
@@ -353,7 +355,8 @@ interface UsageLimitState {
 
 // Who started a turn. A routine turn uses the routines work choice, a check-in the check-ins one and a webhook the webhooks one.
 // A bot hand-off uses the routines choice too. A check-in is a routine that stays out of the chat when it finds nothing.
-type TurnSource = 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot' | 'channel';
+// A compact turn is the memory flush before an idle compaction. It runs on the chat's model and leaves no message behind.
+type TurnSource = 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot' | 'channel' | 'compact';
 
 // A member of a channel, with the name the bot has now.
 interface NamedChannelMember {
@@ -448,6 +451,18 @@ const USAGE_LIMIT_FALLBACK_WAIT_MS = 5 * 60 * 1000;
 const USAGE_LIMIT_MIN_WAIT_MS = 60 * 1000;
 const USAGE_LIMIT_MAX_WAIT_MS = 8 * 24 * 60 * 60 * 1000;
 const CONTINUE_PROMPT = 'Continue.';
+// A main session still this big after its turn is compacted, once the bot has been idle for the delay below.
+const IDLE_COMPACT_MIN_CONTEXT_TOKENS = 40_000;
+// The hub hibernates a bot after 5 minutes of inactivity by default. This compacts first, while the 1 hour prompt cache of the CLI is still warm.
+const IDLE_COMPACT_DELAY_MS = 4 * 60 * 1000;
+// The providers whose CLI has a compact command. The ACP engines have none, so their sessions are not compacted.
+const COMPACTING_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['claude', 'chatgpt']);
+
+// The idle compaction waiting for a bot, with the context size of its last main turn.
+interface IdleCompaction {
+    contextTokens: number;
+    timer: ReturnType<typeof setTimeout>;
+}
 
 // Only the text the bot writes is masked. Other parts of a message, such as a choice or a link, are not free text.
 function maskMessageBody(body: MessageBody): MessageBody {
@@ -653,6 +668,11 @@ function readTextOf(content: unknown): string[] {
 
 // A channel turn uses the bot choice for its model, limit and effort. It is never stored as a queued turn.
 function settingsSource(source: TurnSource): 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot' {
+    // The memory flush runs on the chat's model, so the session keeps the model it was built with.
+    if (source === 'compact') {
+        return 'chat';
+    }
+
     return source === 'channel' ? 'bot' : source;
 }
 
@@ -679,7 +699,8 @@ function toQueuedTurnRecord(queuedTurn: QueuedTurn): QueuedTurnRecord {
         messageId: queuedTurn.messageId ?? null,
         text: queuedTurn.text,
         uploads: storedUploads,
-        source: queuedTurn.source === 'channel' ? 'bot' : queuedTurn.source,
+        // A compact turn is never queued. The mapping only keeps the stored kinds of the type.
+        source: queuedTurn.source === 'channel' ? 'bot' : queuedTurn.source === 'compact' ? 'chat' : queuedTurn.source,
         routineId: queuedTurn.routineId ?? null,
     };
 }
@@ -849,6 +870,8 @@ class ChatService {
     private readonly usageWaitTimers = new Map<string, ReturnType<typeof setTimeout>>();
     // The message ids of a check-in that waits for the usage limit, per bot, for its continuation to remove if it ends quiet.
     private readonly checkinCarry = new Map<string, string[]>();
+    // The idle compaction of each bot that ended a main turn with a big context. A new turn or message cancels it.
+    private readonly idleCompactions = new Map<string, IdleCompaction>();
 
     constructor(options: ChatServiceOptions) {
         this.botStore = options.botStore;
@@ -1729,6 +1752,10 @@ class ChatService {
             clearTimeout(timer);
         });
         this.usageWaitTimers.clear();
+        this.idleCompactions.forEach((idleCompaction) => {
+            clearTimeout(idleCompaction.timer);
+        });
+        this.idleCompactions.clear();
         this.pendingPeopleCredentialsByBot.clear();
     }
 
@@ -1978,6 +2005,7 @@ class ChatService {
         }
 
         this.usageWaitTimers.delete(botId);
+        this.cancelIdleCompaction(botId);
         this.checkinCarry.delete(botId);
         this.pendingUploads.delete(botId);
         this.queuedTurns.delete(botId);
@@ -2721,6 +2749,9 @@ class ChatService {
         if (this.deletingBots.has(botId)) {
             throw new BotDeletingError();
         }
+
+        // A new message, queued or not, means the session is not idle, so the idle compaction waits for its turn to end.
+        this.cancelIdleCompaction(botId);
 
         const bot = await this.botStore.getById(botId);
 
@@ -3882,6 +3913,11 @@ class ChatService {
             return;
         }
 
+        // A memory flush does not wait. The session stays as it was, and the next idle compaction tries again.
+        if (turn.source === 'compact') {
+            return;
+        }
+
         const resumeTurn: TurnInput = turnState.agentStarted
             ? { botId: turn.botId, text: CONTINUE_PROMPT, uploads: [], messageId: undefined, source: turn.source, handoff: carryHandoff(turn) }
             : turn;
@@ -3974,6 +4010,8 @@ class ChatService {
 
     private async runTurn(turn: TurnInput, abortController: AbortController): Promise<void> {
         const { botId, text, uploads } = turn;
+
+        this.cancelIdleCompaction(botId);
 
         if (turn.messageId !== undefined) {
             this.activeTurnMessageIds.set(botId, turn.messageId);
@@ -4305,14 +4343,21 @@ class ChatService {
 
             // A resumed session that fails before it starts is usually gone, for example
             // after a container rebuild. Start a fresh session once instead of failing every turn.
+            // A memory flush never starts a fresh session, since that would drop the conversation for a summary.
             let lastAttempt = firstAttempt;
 
-            if (firstAttempt.failureText !== undefined && turnState.limit === undefined) {
+            if (firstAttempt.failureText !== undefined && turnState.limit === undefined && turn.source !== 'compact') {
                 await this.botStore.setSessionId(botId, null);
                 lastAttempt = await this.runAttempt(turnContext, null, turnState);
             }
 
             hasFailed = lastAttempt.failureText !== undefined;
+
+            // The flush is done, so the session can be compacted. A flush that failed or hit a limit leaves the session as it is.
+            // A stopped flush needs no check here, since the engine returns at once for a request that is already aborted.
+            if (turn.source === 'compact' && !hasFailed && !turnState.hasError && turnState.limit === undefined) {
+                await this.compactFlushedSession(turnContext);
+            }
         } catch (error: unknown) {
             hasFailed = true;
             const errorBody: TextBody = { kind: 'text', text: describeError(error) };
@@ -4334,8 +4379,10 @@ class ChatService {
                     await this.messageStore.markEmailTaskHandled(turn.messageId);
                 }
 
-                // A turn that hit a limit reports from its continuation, so the reply is posted once.
-                if (turnState.limit === undefined) {
+                // A turn that hit a limit reports from its continuation, so the reply is posted once. A compaction has no continuation.
+                const hasContinuation = turnState.limit !== undefined && turn.source !== 'compact';
+
+                if (!hasContinuation) {
                     const wasDroppedQuiet = await this.dropQuietCheckin(turn, turnState, abortController.signal.aborted || hasFailed);
 
                     const handoffOutcome = readHandoffOutcome(abortController.signal.aborted, hasFailed || turnState.hasError);
@@ -4348,6 +4395,11 @@ class ChatService {
                         this.sendTurnDoneNotice(botId, turnState.savedMessageIds);
                     }
                 }
+
+                // The context of a main turn decides whether the session is compacted once the bot is idle. A compaction turn does not arm it again.
+                if (turnState.contextTokens !== undefined && turn.source !== 'compact') {
+                    await this.armIdleCompaction(botId, turnState.contextTokens);
+                }
             } finally {
                 this.finishTurn(botId);
             }
@@ -4358,7 +4410,8 @@ class ChatService {
     // A stopped or failed run stays, so the owner sees what happened.
     // Returns true when the run was quiet and its messages were removed.
     private async dropQuietCheckin(turn: TurnInput, turnState: TurnState, hasStoppedOrFailed: boolean): Promise<boolean> {
-        const isQuietRun = turn.source === 'checkin' && turnState.endsQuiet && !turnState.hasError && !hasStoppedOrFailed;
+        // The memory flush is for the bot alone, so its messages always go, even when it fails.
+        const isQuietRun = turn.source === 'compact' || (turn.source === 'checkin' && turnState.endsQuiet && !turnState.hasError && !hasStoppedOrFailed);
 
         if (!isQuietRun) {
             return false;
@@ -4381,6 +4434,77 @@ class ChatService {
         }
 
         return carriedIds;
+    }
+
+    // Arms the idle compaction of a bot after a main turn. The next turn or message cancels it, and a provider without a compact command never arms it.
+    private async armIdleCompaction(botId: string, contextTokens: number): Promise<void> {
+        const provider: ProviderId = (await this.providerTools?.providerFor(botId)) ?? 'claude';
+
+        this.cancelIdleCompaction(botId);
+
+        if (!COMPACTING_PROVIDERS.has(provider)) {
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            this.idleCompactions.delete(botId);
+            this.compactIdleSession(botId, contextTokens)
+                .catch(reportBackgroundError);
+        }, IDLE_COMPACT_DELAY_MS);
+
+        // A waiting compaction never keeps the server process alive on shutdown.
+        timer.unref();
+        this.idleCompactions.set(botId, { contextTokens, timer });
+    }
+
+    private cancelIdleCompaction(botId: string): void {
+        const idleCompaction = this.idleCompactions.get(botId);
+
+        if (idleCompaction !== undefined) {
+            clearTimeout(idleCompaction.timer);
+        }
+
+        this.idleCompactions.delete(botId);
+    }
+
+    // Runs the memory flush and then the compaction, as one turn of the bot. The bot counts as busy meanwhile, so the hub keeps it awake.
+    private async compactIdleSession(botId: string, contextTokens: number): Promise<void> {
+        if (contextTokens < IDLE_COMPACT_MIN_CONTEXT_TOKENS) {
+            return;
+        }
+
+        // Work that came in meanwhile has its own turn, and that turn arms the compaction again when it ends.
+        if (this.isBusy(botId) || this.deletingBots.has(botId)) {
+            return;
+        }
+
+        // The running flag is set before the first await, as for a sent message.
+        const abortController = new AbortController();
+
+        this.runningTurns.set(botId, abortController);
+        this.publishTurnState(botId);
+
+        const flushTurn: TurnInput = { botId, text: buildMemoryFlushMessage(), uploads: [], messageId: undefined, source: 'compact' };
+
+        await this.runTurn(flushTurn, abortController);
+    }
+
+    // Compacts the session the memory flush just wrote to. A failure is logged and never shown, since the owner did not ask for it.
+    private async compactFlushedSession(turnContext: TurnContext): Promise<void> {
+        const bot = await this.botStore.getById(turnContext.botId);
+        const sessionId = bot?.sessionId ?? null;
+
+        if (sessionId === null) {
+            return;
+        }
+
+        try {
+            const compactRequest = await this.buildTurnRequest(turnContext, sessionId);
+
+            await this.runner.compactSession?.(compactRequest);
+        } catch (error: unknown) {
+            console.error('Could not compact the session of a bot.', error);
+        }
     }
 
     // A usage limit schedules the resume. Otherwise files a turn never handed to the agent go back.
@@ -4676,16 +4800,17 @@ class ChatService {
 
     // With a session to resume, a failure before the session starts is held back
     // and returned as failureText, so the caller can retry without it.
-    private async runAttempt(turnContext: TurnContext, sessionId: string | null, turnState: TurnState): Promise<AttemptOutcome> {
+    // The request an engine gets for one attempt. The session is the bot's own, or none when the attempt starts a new one.
+    private async buildTurnRequest(turnContext: TurnContext, sessionId: string | null): Promise<TurnRequest> {
         const { botId } = turnContext;
-        const toolNamesById = new Map<string, string>();
         const sessionOption = buildSessionOption(sessionId);
         const hasHelpers = Object.keys(turnContext.agents).length > 0;
         // Every remote server of the owner gets a pattern, such as mcp__linear__*.
         const remoteServerNames = Object.keys(turnContext.mcpServers);
         const remoteToolPatterns = remoteServerNames.map(name => `mcp__${name}__*`);
         const githubEnvironment = this.githubEnvironment === undefined ? undefined : await this.githubEnvironment(botId);
-        const turnRequest: TurnRequest = {
+
+        return {
             botId,
             ...(turnContext.provider === undefined ? {} : { provider: turnContext.provider }),
             workspaceDir: turnContext.workspaceDir,
@@ -4711,6 +4836,12 @@ class ChatService {
             ...(turnContext.inbox === undefined ? {} : { inbox: turnContext.inbox }),
             ...sessionOption,
         };
+    }
+
+    private async runAttempt(turnContext: TurnContext, sessionId: string | null, turnState: TurnState): Promise<AttemptOutcome> {
+        const { botId } = turnContext;
+        const toolNamesById = new Map<string, string>();
+        const turnRequest = await this.buildTurnRequest(turnContext, sessionId);
         const isResumeAttempt = sessionId !== null;
         let hasSession = false;
         let failureText: string | undefined;
@@ -4728,6 +4859,11 @@ class ChatService {
                     if (turnContext.isSideSession) {
                         continue;
                     }
+                }
+
+                // Only the main session's context counts for the idle compaction. A side session has its own.
+                if (agentEvent.type === 'turn_finished' && !turnContext.isSideSession) {
+                    turnState.contextTokens = agentEvent.contextTokens;
                 }
 
                 // Only a rejected limit means wait. A warning or an allowed status does not stop the turn.

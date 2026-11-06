@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mapCodexNotification, mapCodexTurnEnd } from './mapCodexNotification.ts';
+import { mapCodexNotification, mapCodexTurnEnd, readContextTokens } from './mapCodexNotification.ts';
 
 describe('mapCodexNotification', () => {
     it('streams the reply and repeats it in full when the message is done', () => {
@@ -71,5 +71,25 @@ describe('mapCodexTurnEnd', () => {
             .toEqual([{ type: 'turn_error', message: 'You hit your limit.', isUsageLimit: true }]);
         expect(mapCodexTurnEnd({ id: 't', status: 'failed', error: null, durationMs: null }))
             .toEqual([{ type: 'turn_error', message: 'The Codex turn failed.', isUsageLimit: false }]);
+    });
+
+    it('puts the context size on a completed turn', () => {
+        expect(mapCodexTurnEnd({ id: 't', status: 'completed', error: null, durationMs: 120 }, 4200))
+            .toEqual([{ type: 'turn_finished', durationMs: 120, contextTokens: 4200 }]);
+        expect(mapCodexTurnEnd({ id: 't', status: 'completed', error: null, durationMs: null }, 4200))
+            .toEqual([{ type: 'turn_finished', contextTokens: 4200 }]);
+    });
+});
+
+describe('readContextTokens', () => {
+    it('reads the input tokens of the last model call from the usage notification', () => {
+        const params = { threadId: 'th', turnId: 't', tokenUsage: { total: { inputTokens: 900 }, last: { inputTokens: 300, cachedInputTokens: 200 } } };
+
+        expect(readContextTokens('thread/tokenUsage/updated', params))
+            .toBe(300);
+        expect(readContextTokens('thread/tokenUsage/updated', { tokenUsage: {} }))
+            .toBeUndefined();
+        expect(readContextTokens('item/started', params))
+            .toBeUndefined();
     });
 });

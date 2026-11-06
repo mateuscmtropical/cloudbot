@@ -338,18 +338,29 @@ function methodRunner(
     method: () => Promise<ProviderMethod | undefined>,
     keyRunners: Partial<Record<ProviderMethod, AgentRunner>> = {},
 ): AgentRunner {
+    const chosenRunner = async (): Promise<AgentRunner | undefined> => {
+        const chosen = await method();
+
+        return chosen === 'apiKey'
+            ? keyRunner ?? signInRunner
+            : chosen === 'apiKeyZen' || chosen === 'apiKeyGo'
+                ? keyRunners[chosen] ?? keyRunner ?? signInRunner
+                : signInRunner ?? keyRunner;
+    };
+
     return {
         async* runTurn(request: TurnRequest): AsyncGenerator<AgentEvent> {
-            const chosen = await method();
-            const runner = chosen === 'apiKey'
-                ? keyRunner ?? signInRunner
-                : chosen === 'apiKeyZen' || chosen === 'apiKeyGo'
-                    ? keyRunners[chosen] ?? keyRunner ?? signInRunner
-                    : signInRunner ?? keyRunner;
+            const runner = await chosenRunner();
 
             if (runner !== undefined) {
                 yield* runner.runTurn(request);
             }
+        },
+        // Only the Codex engines compact. A runner without compaction makes this a no-op.
+        async compactSession(request: TurnRequest): Promise<void> {
+            const runner = await chosenRunner();
+
+            await runner?.compactSession?.(request);
         },
     };
 }

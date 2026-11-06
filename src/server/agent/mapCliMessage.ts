@@ -55,10 +55,18 @@ interface CliStreamEventMessage {
     event: { type: 'content_block_delta'; delta: { type: 'text_delta'; text: string } | { type: 'other' } } | { type: 'other' };
 }
 
+interface CliUsage {
+    input_tokens?: number | undefined;
+    cache_creation_input_tokens?: number | undefined;
+    cache_read_input_tokens?: number | undefined;
+}
+
 interface CliAssistantMessage {
     type: 'assistant';
     error?: string | undefined;
-    message: { content: CliAssistantBlock[] };
+    // Set on the messages of a helper agent. Only the main turn's messages size the main context.
+    parent_tool_use_id?: string | null | undefined;
+    message: { content: CliAssistantBlock[]; usage?: CliUsage | undefined };
 }
 
 interface CliUserMessage {
@@ -253,6 +261,31 @@ function mapRateLimitInfo(rateLimitInfo: CliRateLimitMessage['rate_limit_info'])
     return [{ type: 'rate_limit', status: rateLimitInfo.status, ...resetsAtOption }];
 }
 
+// The tokens the model read in one call of the main turn, which is the size of the context at that call. Cached tokens count too.
+// A helper agent's call is left out, since its context is its own.
+function contextTokensOf(message: CliMessage): number | undefined {
+    if (message.type !== 'assistant' || (message.parent_tool_use_id ?? null) !== null) {
+        return undefined;
+    }
+
+    const usage = message.message.usage;
+
+    if (usage === undefined) {
+        return undefined;
+    }
+
+    return (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+}
+
+// A turn ends with a result, so the context size of its last call goes on that event.
+function withContextTokens(agentEvent: AgentEvent, contextTokens: number | undefined): AgentEvent {
+    if (agentEvent.type !== 'turn_finished' || contextTokens === undefined) {
+        return agentEvent;
+    }
+
+    return { ...agentEvent, contextTokens };
+}
+
 function rememberResetsAt(agentEvent: AgentEvent, previousResetsAt: number | undefined): number | undefined {
     if (agentEvent.type === 'rate_limit' && agentEvent.resetsAt !== undefined) {
         return agentEvent.resetsAt;
@@ -269,5 +302,5 @@ function withResetsAt(agentEvent: AgentEvent, latestResetsAt: number | undefined
     return { ...agentEvent, resetsAt: latestResetsAt };
 }
 
-export { USAGE_LIMIT_ERROR_PREFIXES, mapCliMessage, rememberResetsAt, withResetsAt };
+export { USAGE_LIMIT_ERROR_PREFIXES, contextTokensOf, mapCliMessage, rememberResetsAt, withContextTokens, withResetsAt };
 export type { CliMessage };

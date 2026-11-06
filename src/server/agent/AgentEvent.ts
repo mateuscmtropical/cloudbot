@@ -33,6 +33,8 @@ interface TurnFinishedEvent {
     type: 'turn_finished';
     costUsd?: number;
     durationMs?: number;
+    // The input tokens of the last model call of the turn, which is the size of the context at that call.
+    contextTokens?: number;
 }
 
 interface TurnErrorEvent {
