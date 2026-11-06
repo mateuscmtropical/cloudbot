@@ -1,4 +1,6 @@
-<h1><img src="docs/mascot.svg" alt="" width="40"> CloudBot</h1>
+<p align="center"><img src="docs/mascot.svg" alt="The CloudBot mascot, a blue cloud hopping happily" width="160"></p>
+
+<h1 align="center">CloudBot</h1>
 
 Your own always-on AI coworker, running on your VPS on the AI subscription or API key you choose.
 
@@ -116,6 +118,7 @@ keeps the volumes and the install folder. Docker stays installed. Back up the
 - **Import a bot.** Paste instructions from another platform or attach a `.txt`, `.md` or JSON export. CloudBot prepares a name, description and instruction draft for you to approve in the chat. The instructions become memory text only. Platform actions, tools, skills, files, credentials, approval settings and routines are not imported. Recognizable credential values in the draft are redacted.
 - **Share templates.** The template gallery lists public bot templates from a GitHub repository. Ask a bot to list them, to install one by its file name, or to share your bot there once GitHub is connected. The share opens a pull request from your fork of the gallery. You approve each card first. Set `CLOUDBOT_GALLERY_REPO` to read another repository.
 - **Work as a team.** Several bots that pass work to each other, and groups with a manager bot. Press the plus next to Groups to make one, or tap a group's name to change it. An isolated group limits which bots can message each other: its members message only each other, and other bots cannot message them. It is not a security boundary, since all the bots of a person share one system user.
+- **Share a group with people.** On a server with several people, the owner adds a person and invites them to a shared group, new or existing. The group runs in its own container, with its own bots and chats. The owner copies or moves bots into it, or makes new ones there. Each person keeps their own CloudBot and sees the group under Shared with people. The owner sees and manages everything and is never removed. Admins add and remove members. Any member can approve the bot's usual actions, but an action that spends money needs an admin or the owner. A copied or moved bot takes its name, look, rules and routines, never its memory or chats, and its routines start turned off. See the [multi-user design](docs/MULTI_USER.md).
 
 The full plan, version by version, is in the [roadmap](docs/ROADMAP.md).
 
@@ -123,8 +126,8 @@ The full plan, version by version, is in the [roadmap](docs/ROADMAP.md).
 
 CloudBot never talks to a model on its own. Each turn runs in the provider's
 official CLI, installed from the provider's own package or installer and never
-modified. Every tool call the CLI asks for goes through the same review as
-with Claude.
+modified. Every tool call the CLI asks for goes through the same review,
+whichever provider runs the bot.
 
 | Provider | CLI | Subscription | API key |
 | --- | --- | --- | --- |
@@ -147,8 +150,10 @@ with Claude.
   them.
 - An API key stays in CloudBot's vault. The CLI gets a local key proxy address
   and a dummy key, so the bot cannot read the real key.
-- The review of each call runs on Claude. Without Claude connected, every
-  reviewed call asks you instead.
+- The review of each call runs on the review provider you choose. Without a
+  choice it tries Claude, ChatGPT and Gemini in that order, among the ones you
+  connected. With none of them connected, every reviewed call asks you
+  instead.
 - "none" means the CLI has no sign-in or key that CloudBot can run safely. A
   Copilot or Cursor token cannot go through the key proxy, so it is not offered.
   Qwen Code no longer has a free account sign-in.

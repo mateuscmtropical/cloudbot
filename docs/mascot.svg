@@ -1,26 +1,69 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 122 96" width="122" height="96" role="img" aria-label="CloudBot mascot">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -16 154 144" width="154" height="144" role="img" aria-label="CloudBot mascot, hopping happily">
   <style>
-    .eyes {
-      animation: blink 4s ease-in-out infinite;
+    .hop {
+      animation: hop 1.6s ease-in-out infinite;
+      transform-box: fill-box;
+      transform-origin: 50% 100%;
+    }
+    .shadow {
+      animation: shadow 1.6s ease-in-out infinite;
       transform-box: fill-box;
       transform-origin: center;
     }
+    .eyes {
+      animation: blink 4.8s ease-in-out infinite;
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+    .spark {
+      opacity: 0;
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: spark 1.6s ease-out infinite;
+    }
+    .spark.late {
+      animation-delay: 0.8s;
+    }
+    @keyframes hop {
+      0%, 100% { transform: translateY(0) scale(1.06, 0.92); }
+      15% { transform: translateY(0) scale(1, 1); }
+      50% { transform: translateY(-14px) scale(0.97, 1.04); }
+      85% { transform: translateY(0) scale(1, 1); }
+    }
+    @keyframes shadow {
+      0%, 100% { transform: scale(1); opacity: 0.35; }
+      50% { transform: scale(0.7); opacity: 0.15; }
+    }
     @keyframes blink {
-      0%, 94%, 100% { transform: scaleY(1); }
-      96% { transform: scaleY(0.1); }
+      0%, 92%, 100% { transform: scaleY(1); }
+      95% { transform: scaleY(0.1); }
+    }
+    @keyframes spark {
+      0% { opacity: 0; transform: scale(0.2) rotate(0deg); }
+      30% { opacity: 1; transform: scale(1) rotate(20deg); }
+      60%, 100% { opacity: 0; transform: scale(0.4) rotate(45deg); }
     }
     @media (prefers-reduced-motion: reduce) {
-      .eyes { animation: none; }
+      .hop, .shadow, .eyes, .spark { animation: none; }
+      .spark { opacity: 1; }
     }
   </style>
-  <g fill="#1a7cff" stroke="none">
-    <circle cx="40" cy="68" r="30"/>
-    <circle cx="72" cy="46" r="36"/>
-    <circle cx="104" cy="66" r="28"/>
-    <rect x="12" y="66" width="118" height="40" rx="20"/>
+  <ellipse class="shadow" cx="71" cy="120" rx="50" ry="6" fill="#1a7cff"/>
+  <g fill="#ffd23f">
+    <g transform="translate(-2 14) scale(1.4)"><path class="spark" d="M8 0 Q8 8 16 8 Q8 8 8 16 Q8 8 0 8 Q8 8 8 0 Z"/></g>
+    <g transform="translate(124 -12) scale(1.5)"><path class="spark late" d="M8 0 Q8 8 16 8 Q8 8 8 16 Q8 8 0 8 Q8 8 8 0 Z"/></g>
+    <g transform="translate(130 48) scale(1)"><path class="spark" d="M8 0 Q8 8 16 8 Q8 8 8 16 Q8 8 0 8 Q8 8 8 0 Z"/></g>
   </g>
-  <g class="eyes" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round">
-    <path d="M43 70 Q52 60 61 70"/>
-    <path d="M79 70 Q88 60 97 70"/>
+  <g class="hop">
+    <g fill="#1a7cff" stroke="none">
+      <circle cx="40" cy="68" r="30"/>
+      <circle cx="72" cy="46" r="36"/>
+      <circle cx="104" cy="66" r="28"/>
+      <rect x="12" y="66" width="118" height="40" rx="20"/>
+    </g>
+    <g class="eyes" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round">
+      <path d="M43 70 Q52 60 61 70"/>
+      <path d="M79 70 Q88 60 97 70"/>
+    </g>
   </g>
 </svg>
