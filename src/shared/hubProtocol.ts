@@ -18,6 +18,23 @@ const INSTANCE_SECRET_HEADER = 'x-cloudbot-secret';
 // Only the owner's instance may call it. Every error is { error: string } with a 4xx status.
 const HUB_PEOPLE_PATH = '/internal/people';
 
+// The shared groups. Only the owner's instance may call these.
+//   GET    /internal/groups                                the groups, as SharedGroup[]
+//   POST   /internal/groups                                body AddGroupRequest, answers 201 with SharedGroup. The caller owns it.
+//   PUT    /internal/groups/:name/members/:person          body SetGroupMemberRequest, answers SharedGroup
+//   DELETE /internal/groups/:name/members/:person          answers SharedGroup. The group's owner cannot be removed.
+//   DELETE /internal/groups/:name?confirm=:name            answers 204
+const HUB_GROUPS_PATH = '/internal/groups';
+
+// The groups of the calling person, as MyGroup[]. Any person's instance may call it.
+//   GET /internal/my-groups
+const HUB_MY_GROUPS_PATH = '/internal/my-groups';
+
+// The hub adds these to every request it forwards to a group's instance: who is acting, and their place in the group.
+// Like the trust header, the hub removes them from browsers, and the instance believes them only with the right secret.
+const ACTING_PERSON_HEADER = 'x-cloudbot-person';
+const ACTING_ROLE_HEADER = 'x-cloudbot-group-role';
+
 // The owner's update of the whole install. Only the owner's instance may call it.
 //   GET  /internal/update   answers AppUpdateStatus
 //   POST /internal/update   answers AppUpdateStatus, 409 while an update runs
@@ -36,5 +53,5 @@ interface InstanceActivity {
     reasons: string[];
 }
 
-export { HUB_ACTIVITY_PATH, HUB_PEOPLE_PATH, HUB_UPDATE_PATH, HUB_TRUST_HEADER, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER, WHATSAPP_CALLBACK_PATH };
+export { ACTING_PERSON_HEADER, ACTING_ROLE_HEADER, HUB_ACTIVITY_PATH, HUB_GROUPS_PATH, HUB_MY_GROUPS_PATH, HUB_PEOPLE_PATH, HUB_UPDATE_PATH, HUB_TRUST_HEADER, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER, WHATSAPP_CALLBACK_PATH };
 export type { InstanceActivity };

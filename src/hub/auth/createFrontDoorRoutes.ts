@@ -7,12 +7,14 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 
 import { APP_OAUTH_CALLBACK_PATH } from '../../shared/connectedApps.ts';
-import { HUB_TRUST_HEADER, WHATSAPP_CALLBACK_PATH } from '../../shared/hubProtocol.ts';
+import { ACTING_PERSON_HEADER, ACTING_ROLE_HEADER, HUB_TRUST_HEADER, WHATSAPP_CALLBACK_PATH } from '../../shared/hubProtocol.ts';
 import { checkPersonName } from '../../shared/peopleTypes.ts';
-import type { ActivityTracker, InstanceManager, PeopleStore, PersonRecord, StartResult } from '../contract.ts';
+import type { ActivityTracker, GroupMembersStore, InstanceManager, PeopleStore, PersonRecord, StartResult } from '../contract.ts';
 import { hashPassword, verifyPassword } from '../passwords.ts';
-import { renderApexPage, renderBusyPage, renderChangePasswordPage, renderLoadingPage, renderLoginPage, renderSetupPage, renderUpstreamErrorPage } from '../pages/renderPages.ts';
+import { renderApexPage, renderBusyPage, renderChangePasswordPage, renderGroupEntryPage, renderLoadingPage, renderLoginPage, renderSetupPage, renderUpstreamErrorPage } from '../pages/renderPages.ts';
 import type { LoginPageExtras } from '../pages/renderPages.ts';
+import { readActingPerson } from './groupAccess.ts';
+import type { ActingPerson, GroupEntryTickets } from './groupAccess.ts';
 import type { LoginSessions } from './LoginSessions.ts';
 import { readHostRoute } from './hostRouting.ts';
 import { clearHubSessionCookie, isClientAddressAllowed, readClientAddress, readHubSession, readRequestHost, renderResponse, renderUnavailable, requestHasSameOrigin, SIGN_IN_DENIED_MESSAGE, startHubSession } from './routeHelpers.ts';
@@ -50,6 +52,15 @@ interface FrontDoorRoutesOptions {
     ownerSetup?: OwnerSetupOptions;
     now?: () => number;
     upstreamFor?: (name: string) => UpstreamTarget;
+    // Without these two a group's address is not available.
+    members?: GroupMembersStore;
+    entryTickets?: GroupEntryTickets;
+}
+
+// The pieces a request to a running instance needs once the session is checked.
+interface InstanceServing {
+    pendingStarts: Map<string, Promise<void>>;
+    busyPeople: Set<string>;
 }
 
 interface AttemptKey {
@@ -91,6 +102,8 @@ const LOGIN_FAILURE_MESSAGE = 'Sign-in failed. Check your password and try again
 const TOO_MANY_TRIES_MESSAGE = 'Too many wrong tries. Try again in a few minutes.';
 const MAX_FORM_BODY_BYTES = 16 * 1024;
 const FORM_PATHS = ['/__hub/login', '/__hub/setup', '/__hub/password'];
+const GROUP_OPEN_PATH_PATTERN = /^\/__hub\/groups\/([a-z0-9-]{2,30})\/open$/;
+const GROUP_ENTER_PATH = '/__hub/enter';
 // The token of createWebhookToken is base64url text. No dot, slash or percent sign fits, so no other path can pass.
 const WEBHOOK_PATH_PATTERN = /^\/hooks\/[A-Za-z0-9_-]+$/;
 
@@ -205,16 +218,24 @@ function readConnectionTokens(headers: Headers): Set<string> {
     return new Set(tokens);
 }
 
-function buildProxyHeaders(context: Context, person: PersonRecord, options: FrontDoorRoutesOptions): OutgoingHttpHeaders {
+// Only the hub says who acts, so a browser cannot claim to be someone else in a group.
+const HUB_ONLY_HEADERS = new Set([HUB_TRUST_HEADER, ACTING_PERSON_HEADER, ACTING_ROLE_HEADER, 'cookie']);
+
+function buildProxyHeaders(context: Context, person: PersonRecord, options: FrontDoorRoutesOptions, acting: ActingPerson | undefined): OutgoingHttpHeaders {
     const incomingHeaders = context.req.raw.headers;
     const connectionTokens = readConnectionTokens(incomingHeaders);
     const forwardedHeaders: OutgoingHttpHeaders = {};
 
     incomingHeaders.forEach((value, name) => {
-        if (!HOP_BY_HOP_HEADERS.has(name) && !connectionTokens.has(name) && name !== HUB_TRUST_HEADER && name !== 'cookie') {
+        if (!HOP_BY_HOP_HEADERS.has(name) && !connectionTokens.has(name) && !HUB_ONLY_HEADERS.has(name)) {
             forwardedHeaders[name] = value;
         }
     });
+
+    if (acting?.groupRole !== undefined) {
+        forwardedHeaders[ACTING_PERSON_HEADER] = acting.name;
+        forwardedHeaders[ACTING_ROLE_HEADER] = acting.groupRole;
+    }
 
     const cookieHeader = removeHubSessionCookies(incomingHeaders.get('cookie') ?? undefined);
 
@@ -294,7 +315,7 @@ function renderStartupResponse(context: Context, isBusy: boolean): Response {
     return renderResponse(context, page);
 }
 
-function proxyRequest(context: Context, person: PersonRecord, options: FrontDoorRoutesOptions): Promise<Response> {
+function proxyRequest(context: Context, person: PersonRecord, options: FrontDoorRoutesOptions, acting?: ActingPerson): Promise<Response> {
     return new Promise((resolve, reject) => {
         const requestUrl = new URL(context.req.url);
         const upstream = selectUpstream(person.name, options);
@@ -303,7 +324,7 @@ function proxyRequest(context: Context, person: PersonRecord, options: FrontDoor
             port: upstream.port,
             path: `${requestUrl.pathname}${requestUrl.search}`,
             method: context.req.method,
-            headers: buildProxyHeaders(context, person, options),
+            headers: buildProxyHeaders(context, person, options, acting),
         };
         const outgoingRequest = httpRequest(requestOptions, (incomingResponse) => {
             const responseHeaders = makeResponseHeaders(incomingResponse.headers);
@@ -453,6 +474,168 @@ async function handleOwnerSetup(context: Context, options: FrontDoorRoutesOption
     return renderResponse(context, setupPage);
 }
 
+// Status, start and proxy of an instance, for a request whose session is already checked.
+async function serveInstance(context: Context, person: PersonRecord, options: FrontDoorRoutesOptions, serving: InstanceServing, acting: ActingPerson): Promise<Response> {
+    const name = person.name;
+    const { pendingStarts, busyPeople } = serving;
+
+    if (context.req.path === '/__hub/status' && context.req.method === 'GET') {
+        const instanceStatus = await options.instances.status(name)
+            .catch(() => undefined);
+
+        if (instanceStatus === undefined) {
+            const error: HubStatusResponse = { status: 'stopped' };
+
+            return context.json(error, 502);
+        }
+
+        const status: HubStatusResponse = busyPeople.has(name) ? { status: 'busy' } : { status: instanceStatus };
+
+        return context.json(status);
+    }
+
+    const instanceStatus = await options.instances.status(name)
+        .catch(() => undefined);
+
+    if (instanceStatus === undefined) {
+        const errorPage = renderUpstreamErrorPage();
+
+        return renderResponse(context, errorPage, 502);
+    }
+
+    if (instanceStatus !== 'running') {
+        beginStart(name, options, pendingStarts, busyPeople);
+        const isBusy = busyPeople.has(name);
+
+        return renderStartupResponse(context, isBusy);
+    }
+
+    busyPeople.delete(name);
+    options.activity.touch(name);
+    options.people.update(name, { lastSeenAt: nowFor(options) });
+    let proxyError: unknown;
+    const proxiedResponse = await proxyRequest(context, person, options, acting)
+        .catch((error: unknown) => {
+            proxyError = error;
+
+            return undefined;
+        });
+
+    if (proxiedResponse === undefined) {
+        const latestStatus = await options.instances.status(name)
+            .catch(() => undefined);
+
+        if (latestStatus !== 'running') {
+            beginStart(name, options, pendingStarts, busyPeople);
+        }
+
+        if (isUpstreamConnectionFailure(proxyError) || latestStatus !== 'running') {
+            const isBusy = busyPeople.has(name);
+
+            return renderStartupResponse(context, isBusy);
+        }
+
+        const errorPage = renderUpstreamErrorPage();
+
+        return renderResponse(context, errorPage, 502);
+    }
+
+    return proxiedResponse;
+}
+
+// On the person's own address, with the person's session: sends the browser to the group with a one-time ticket.
+function openGroup(context: Context, options: FrontDoorRoutesOptions, personName: string, groupName: string, hostHeader: string | undefined): Response {
+    const group = options.people.find(groupName);
+    const isMember = options.members?.roleOf(groupName, personName) !== undefined;
+
+    if (group === undefined || group.role !== 'group' || group.state !== 'active' || !isMember || options.entryTickets === undefined || hostHeader === undefined) {
+        return renderUnavailable(context);
+    }
+
+    const now = nowFor(options);
+    const token = options.entryTickets.issue(groupName, personName, now);
+    const groupOrigin = personOrigin(groupName, hostHeader, options.domain, options.secure);
+    const encodedToken = encodeURIComponent(token);
+
+    return context.redirect(`${groupOrigin}${GROUP_ENTER_PATH}?token=${encodedToken}`, 303);
+}
+
+// A group's address. Nobody signs in as the group: its members come from their own address with a ticket, and each
+// request reaches the instance with who acts and their role. The hub's password and passkey pages are not here.
+async function serveGroup(context: Context, group: PersonRecord, options: FrontDoorRoutesOptions, serving: InstanceServing): Promise<Response> {
+    const members = options.members;
+
+    if (members === undefined) {
+        return renderUnavailable(context);
+    }
+
+    if (context.req.path === GROUP_ENTER_PATH && context.req.method === 'GET') {
+        const token = context.req.query('token') ?? '';
+        const currentTime = nowFor(options);
+        const personName = options.entryTickets?.redeem(token, group.name, currentTime);
+        const enteringPerson = personName === undefined ? undefined : options.people.find(personName);
+        const canEnter = enteringPerson !== undefined && enteringPerson.state === 'active' && enteringPerson.role !== 'group'
+            && members.roleOf(group.name, enteringPerson.name) !== undefined;
+
+        if (!canEnter) {
+            const entryPage = renderGroupEntryPage();
+
+            return renderResponse(context, entryPage, 401);
+        }
+
+        startHubSession(context, options.sessions, enteringPerson.name, options.secure, currentTime);
+
+        return context.redirect('/', 303);
+    }
+
+    if (isPublicInstanceCall(context)) {
+        const publicCallStatus = await options.instances.status(group.name)
+            .catch(() => undefined);
+        const publicCallResponse = publicCallStatus === 'running'
+            ? await proxyRequest(context, group, options)
+                    .catch(() => undefined)
+            : undefined;
+        const startingError: InstanceStartingResponse = { error: INSTANCE_STARTING_MESSAGE };
+
+        return publicCallResponse ?? context.json(startingError, 503);
+    }
+
+    if (context.req.method === 'GET' && context.req.path === APP_OAUTH_CALLBACK_PATH) {
+        const callbackStatus = await options.instances.status(group.name)
+            .catch(() => undefined);
+        const callbackResponse = callbackStatus === 'running'
+            ? await proxyRequest(context, group, options)
+                    .catch(() => undefined)
+            : undefined;
+
+        return callbackResponse ?? context.redirect('/', 303);
+    }
+
+    const currentTime = nowFor(options);
+    const session = readHubSession(context, options.sessions, currentTime, options.secure);
+    const sessionPerson = session === undefined ? undefined : options.people.find(session.name);
+    const acting = sessionPerson?.state === 'active' ? readActingPerson(group, sessionPerson.name, members) : undefined;
+
+    if (session === undefined || acting === undefined) {
+        const entryPage = renderGroupEntryPage();
+
+        return renderResponse(context, entryPage, 401);
+    }
+
+    if (context.req.path === '/__hub/logout' && context.req.method === 'POST') {
+        options.sessions.delete(session.token);
+        clearHubSessionCookie(context, options.secure);
+
+        return context.redirect('/', 303);
+    }
+
+    if (context.req.path.startsWith('/__hub/') && context.req.path !== '/__hub/status') {
+        return context.redirect('/', 303);
+    }
+
+    return serveInstance(context, group, options, serving, acting);
+}
+
 function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
     const app = new Hono();
     const loginAllowedIps = options.loginAllowedIps;
@@ -460,6 +643,7 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
     const pendingStarts = new Map<string, Promise<void>>();
     const busyPeople = new Set<string>();
     const setupState: OwnerSetupState = { isClaiming: false };
+    const serving: InstanceServing = { pendingStarts, busyPeople };
     const limitFormBody = bodyLimit({
         maxSize: MAX_FORM_BODY_BYTES,
         onError: context => context.text('The request is too large.', 413),
@@ -558,6 +742,10 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
 
         if (person === undefined || person.state !== 'active') {
             return renderUnavailable(context);
+        }
+
+        if (person.role === 'group') {
+            return serveGroup(context, person, options, serving);
         }
 
         if (context.req.path === '/__hub/login' && context.req.method === 'GET') {
@@ -714,68 +902,14 @@ function createFrontDoorRoutes(options: FrontDoorRoutesOptions): Hono {
             return context.redirect('/', 303);
         }
 
-        if (context.req.path === '/__hub/status' && context.req.method === 'GET') {
-            const instanceStatus = await options.instances.status(name)
-                .catch(() => undefined);
+        // Opens one of the person's shared groups. The group's address trades the ticket for a session of this person.
+        const groupOpenMatch = GROUP_OPEN_PATH_PATTERN.exec(context.req.path);
 
-            if (instanceStatus === undefined) {
-                const error: HubStatusResponse = { status: 'stopped' };
-
-                return context.json(error, 502);
-            }
-
-            const status: HubStatusResponse = busyPeople.has(name) ? { status: 'busy' } : { status: instanceStatus };
-
-            return context.json(status);
+        if (groupOpenMatch !== null && context.req.method === 'GET') {
+            return openGroup(context, options, name, groupOpenMatch[1] ?? '', hostHeader);
         }
 
-        const instanceStatus = await options.instances.status(name)
-            .catch(() => undefined);
-
-        if (instanceStatus === undefined) {
-            const errorPage = renderUpstreamErrorPage();
-
-            return renderResponse(context, errorPage, 502);
-        }
-
-        if (instanceStatus !== 'running') {
-            beginStart(name, options, pendingStarts, busyPeople);
-            const isBusy = busyPeople.has(name);
-
-            return renderStartupResponse(context, isBusy);
-        }
-
-        busyPeople.delete(name);
-        options.activity.touch(name);
-        options.people.update(name, { lastSeenAt: nowFor(options) });
-        let proxyError: unknown;
-        const proxiedResponse = await proxyRequest(context, person, options)
-            .catch((error: unknown) => {
-                proxyError = error;
-
-                return undefined;
-            });
-
-        if (proxiedResponse === undefined) {
-            const latestStatus = await options.instances.status(name)
-                .catch(() => undefined);
-
-            if (latestStatus !== 'running') {
-                beginStart(name, options, pendingStarts, busyPeople);
-            }
-
-            if (isUpstreamConnectionFailure(proxyError) || latestStatus !== 'running') {
-                const isBusy = busyPeople.has(name);
-
-                return renderStartupResponse(context, isBusy);
-            }
-
-            const errorPage = renderUpstreamErrorPage();
-
-            return renderResponse(context, errorPage, 502);
-        }
-
-        return proxiedResponse;
+        return serveInstance(context, person, options, serving, { name });
     });
 
     return app;

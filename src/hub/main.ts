@@ -20,7 +20,9 @@ import { HubPasskeyService } from './passkeys/HubPasskeyService.ts';
 import { generatePassword, hashPassword } from './passwords.ts';
 import { openHubDatabase } from './store/openHubDatabase.ts';
 import { SqlitePeopleStore } from './store/SqlitePeopleStore.ts';
-import type { InstanceManager, PeopleStore, PersonRecord } from './contract.ts';
+import { createGroupMemberTables, SqliteGroupMembers } from './store/SqliteGroupMembers.ts';
+import { GroupEntryTickets } from './auth/groupAccess.ts';
+import type { GroupMembersStore, InstanceManager, PeopleStore, PersonRecord } from './contract.ts';
 
 interface CreateOwnerOptions {
     people: PeopleStore;
@@ -60,7 +62,7 @@ async function createOwner(options: CreateOwnerOptions): Promise<void> {
 async function resetPassword(people: PeopleStore, sessions: Pick<LoginSessions, 'deletePerson'>, name: string): Promise<string> {
     const person = people.find(name);
 
-    if (person === undefined) {
+    if (person === undefined || person.role === 'group') {
         throw new Error(`Person ${name} does not exist.`);
     }
 
@@ -91,6 +93,7 @@ function serveHub(app: ReturnType<typeof createHubApp>, settings: HubSettings, o
     people: PeopleStore;
     instances: InstanceManager;
     sessions: SqliteLoginSessions;
+    members: GroupMembersStore;
     activity: ReturnType<typeof createIdleWatcher>;
     closeDatabase: () => void;
 }): void {
@@ -106,6 +109,7 @@ function serveHub(app: ReturnType<typeof createHubApp>, settings: HubSettings, o
         instances: options.instances,
         activity: options.activity,
         domain: settings.domain,
+        members: options.members,
     });
     const shutdown = (): void => {
         options.activity.stop();
@@ -124,6 +128,9 @@ async function main(): Promise<void> {
 
     createLoginSessionTables(database);
     const sessions = new SqliteLoginSessions(database);
+
+    createGroupMemberTables(database);
+    const members = new SqliteGroupMembers(database);
 
     createHubPasskeyTables(database);
     const passkeyStore = new SqliteHubPasskeyStore(database);
@@ -173,6 +180,8 @@ async function main(): Promise<void> {
         activity,
         hubPort: settings.port,
         updates: new AppUpdateRequests(settings.dataDir),
+        members,
+        entryTickets: new GroupEntryTickets(),
     };
     const app = createHubApp(appOptions);
     const unreachablePeople = await instances.reconnectHub();
@@ -185,7 +194,7 @@ async function main(): Promise<void> {
         database.close();
     };
 
-    serveHub(app, settings, { people, instances, sessions, activity, closeDatabase });
+    serveHub(app, settings, { people, instances, sessions, members, activity, closeDatabase });
 }
 
 function isMainModule(): boolean {

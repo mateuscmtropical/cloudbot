@@ -97,6 +97,25 @@ never talk to the hub admin API. A new person gets a generated password. It is
 returned once, shown once, and never goes to the model, the messages, the logs
 or the database of any instance.
 
+## Shared groups
+
+A shared group is a record in the people table with the role `group` and no
+password. It gets its own container and address, so the idle watcher, the proxy
+and the TLS ask treat it like a person. The table `group_members` holds who is
+in it, with the role `owner`, `admin` or `member`. The person who made the group
+is its owner, keeps that role and cannot be removed.
+
+Nobody signs in on a group address. A member opens
+`/__hub/groups/<group>/open` on their own address. The hub gives a ticket that
+works once for 60 seconds and sends the browser to `/__hub/enter` on the group
+address, which starts a session for that person there. Every request the hub
+passes to the group instance carries `x-cloudbot-person` and
+`x-cloudbot-group-role`. The hub removes both headers when a browser sends them.
+
+The owner's instance manages groups through `/internal/groups`. Any instance
+asks `/internal/my-groups` for the groups its person is in. Groups are left out
+of the people list, and passkeys and password resets refuse them.
+
 ## Memory budget
 
 Every instance has a memory cap, 2560 MB by default. The hub keeps the sum of

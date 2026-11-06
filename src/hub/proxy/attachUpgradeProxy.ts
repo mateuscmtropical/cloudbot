@@ -2,8 +2,10 @@ import { connect } from 'node:net';
 import type { IncomingMessage, Server, OutgoingHttpHeaders } from 'node:http';
 import type { Duplex } from 'node:stream';
 
-import { HUB_TRUST_HEADER } from '../../shared/hubProtocol.ts';
-import type { ActivityTracker, InstanceManager, PeopleStore, PersonRecord } from '../contract.ts';
+import { ACTING_PERSON_HEADER, ACTING_ROLE_HEADER, HUB_TRUST_HEADER } from '../../shared/hubProtocol.ts';
+import type { ActivityTracker, GroupMembersStore, InstanceManager, PeopleStore, PersonRecord } from '../contract.ts';
+import { readActingPerson } from '../auth/groupAccess.ts';
+import type { ActingPerson } from '../auth/groupAccess.ts';
 import type { LoginSessions } from '../auth/LoginSessions.ts';
 import { readHostRoute } from '../auth/hostRouting.ts';
 import { readHubSessionCookie, removeHubSessionCookies } from '../auth/sessionCookie.ts';
@@ -17,12 +19,16 @@ interface UpgradeProxyOptions {
     activity: ActivityTracker;
     domain: string;
     upstreamFor?: (name: string) => UpstreamTarget;
+    // Without it a group's address takes no connection.
+    members?: GroupMembersStore;
 }
 
 const DEFAULT_UPSTREAM_PORT = 3000;
 const FORWARDED_PROTO = 'https';
 const LOCAL_FORWARDED_PROTO = 'http';
 const HOP_BY_HOP_HEADERS = new Set(['keep-alive', 'proxy-authenticate', 'proxy-authorization', 'proxy-connection', 'te', 'trailer', 'transfer-encoding']);
+// Only the hub says who acts, so a browser cannot claim to be someone else in a group.
+const HUB_ONLY_HEADERS = new Set([HUB_TRUST_HEADER, ACTING_PERSON_HEADER, ACTING_ROLE_HEADER, 'cookie', 'connection', 'upgrade']);
 
 function refuse(socket: Duplex, statusLine: string): void {
     socket.end(`HTTP/1.1 ${statusLine}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
@@ -49,18 +55,23 @@ function readConnectionTokens(request: IncomingMessage): Set<string> {
     return new Set(tokens);
 }
 
-function buildUpgradeHeaders(request: IncomingMessage, person: PersonRecord, secure: boolean): OutgoingHttpHeaders {
+function buildUpgradeHeaders(request: IncomingMessage, person: PersonRecord, secure: boolean, acting?: ActingPerson): OutgoingHttpHeaders {
     const forwardedHeaders: OutgoingHttpHeaders = {};
     const connectionTokens = readConnectionTokens(request);
 
     Object.entries(request.headers)
         .forEach(([name, value]) => {
-            if (value === undefined || HOP_BY_HOP_HEADERS.has(name) || connectionTokens.has(name) || name === HUB_TRUST_HEADER || name === 'cookie' || name === 'connection' || name === 'upgrade') {
+            if (value === undefined || HOP_BY_HOP_HEADERS.has(name) || connectionTokens.has(name) || HUB_ONLY_HEADERS.has(name)) {
                 return;
             }
 
             forwardedHeaders[name] = value;
         });
+
+    if (acting?.groupRole !== undefined) {
+        forwardedHeaders[ACTING_PERSON_HEADER] = acting.name;
+        forwardedHeaders[ACTING_ROLE_HEADER] = acting.groupRole;
+    }
 
     const cookieHeader = removeHubSessionCookies(request.headers.cookie);
 
@@ -131,7 +142,7 @@ function closeActivityOnce(name: string, activity: ActivityTracker): () => void 
     };
 }
 
-function connectToInstance(request: IncomingMessage, clientSocket: Duplex, head: Buffer, person: PersonRecord, options: UpgradeProxyOptions, secure: boolean): void {
+function connectToInstance(request: IncomingMessage, clientSocket: Duplex, head: Buffer, person: PersonRecord, options: UpgradeProxyOptions, secure: boolean, acting: ActingPerson): void {
     const target = options.upstreamFor?.(person.name);
     const hostname = target?.hostname ?? `cloudbot-i-${person.name}`;
     const port = target?.port ?? DEFAULT_UPSTREAM_PORT;
@@ -166,7 +177,7 @@ function connectToInstance(request: IncomingMessage, clientSocket: Duplex, head:
         const path = request.url ?? '/';
         const method = request.method ?? 'GET';
         const version = request.httpVersion;
-        const headers = buildUpgradeHeaders(request, person, secure);
+        const headers = buildUpgradeHeaders(request, person, secure, acting);
         const headerLines = formatHeaderLines(headers);
         const requestHead = `${method} ${path} HTTP/${version}\r\n${headerLines}\r\n`;
 
@@ -229,8 +240,10 @@ function attachUpgradeProxy(options: UpgradeProxyOptions): void {
         const sessionToken = readHubSessionCookie(request, secure);
         const currentTime = Date.now();
         const sessionName = sessionToken === undefined ? undefined : options.sessions.find(sessionToken, currentTime);
+        const sessionPerson = sessionName === undefined ? undefined : options.people.find(sessionName);
+        const acting = sessionPerson?.state === 'active' ? readActingPerson(person, sessionPerson.name, options.members) : undefined;
 
-        if (sessionName === undefined || sessionName !== person.name) {
+        if (acting === undefined) {
             refuse(socket, '401 Unauthorized');
 
             return;
@@ -254,7 +267,7 @@ function attachUpgradeProxy(options: UpgradeProxyOptions): void {
                 }
 
                 options.activity.touch(person.name);
-                connectToInstance(request, socket, head, person, options, secure);
+                connectToInstance(request, socket, head, person, options, secure, acting);
             })
             .catch(() => {
                 refuse(socket, '502 Bad Gateway');
