@@ -3,6 +3,8 @@
 <h1 align="center">CloudBot</h1>
 
 Your own always-on AI coworker, running on your VPS on the AI subscription or API key you choose.
+It works with Claude, ChatGPT, Gemini, GitHub Copilot, Cursor, Grok, Mistral,
+Qwen, Kimi and OpenCode, and each bot can use a different one.
 
 You chat with it. It works on its own computer while you are away, and it
 comes back when the job is done or when it needs you.
@@ -150,10 +152,11 @@ whichever provider runs the bot.
   them.
 - An API key stays in CloudBot's vault. The CLI gets a local key proxy address
   and a dummy key, so the bot cannot read the real key.
-- The review of each call runs on the review provider you choose. Without a
-  choice it tries Claude, ChatGPT and Gemini in that order, among the ones you
-  connected. With none of them connected, every reviewed call asks you
-  instead.
+- The review of each call runs on the review provider you pick in the chat
+  header's provider menu. Without a pick it tries Claude, ChatGPT and Gemini in
+  that order, among the ones you connected. With none of them connected, a call
+  runs without that review. Dangerous commands are still blocked, and the
+  actions that always need you still ask.
 - "none" means the CLI has no sign-in or key that CloudBot can run safely. A
   Copilot or Cursor token cannot go through the key proxy, so it is not offered.
   Qwen Code no longer has a free account sign-in.

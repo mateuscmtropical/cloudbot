@@ -84,14 +84,15 @@ Changes need tests. Every module with logic ships with tests next to it, in a
 file named `name.test.ts`. Test names describe the behavior, for example
 `it('waits for the reset when the usage limit is reached')`.
 
-Tests never call Claude. Use the fake agent from the test helpers instead, so
+Tests never call Claude or any other provider. Use the fake agent from the test helpers instead, so
 the suite runs offline and costs nothing.
 
 ## Testing for real
 
 For changes that touch the agent, the setup or the install, also try them for
 real before you ask for a review: install CloudBot on a Linux machine or a VM,
-connect Claude and run the flow you changed. Write what you tried in the pull
+connect a provider and run the flow you changed. A change for one provider is
+tried on that provider. Write what you tried in the pull
 request.
 
 ## Pull request checklist

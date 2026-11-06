@@ -2,7 +2,7 @@
   "name": "cloudbot",
   "version": "0.0.0",
   "private": true,
-  "description": "Your own always-on AI coworker on your VPS, powered by Claude.",
+  "description": "Your own always-on AI coworker on your VPS, on Claude, ChatGPT, Gemini or another AI you choose.",
   "license": "MIT",
   "author": "Mateus Silva",
   "repository": {
