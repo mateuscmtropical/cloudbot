@@ -51,6 +51,17 @@ describe('readHubSettings', () => {
             .not.toHaveProperty('idleMs');
     });
 
+    it('keeps the memory switch on unless CLOUDBOT_AI_MEMORY says off', () => {
+        const base = { CLOUDBOT_DOMAIN: 'example.com', HUB_CONTAINER_ID: 'hub-id' };
+
+        expect(readHubSettings(base).aiMemory)
+            .toBe(true);
+        expect(readHubSettings({ ...base, CLOUDBOT_AI_MEMORY: 'off' }).aiMemory)
+            .toBe(false);
+        expect(() => readHubSettings({ ...base, CLOUDBOT_AI_MEMORY: 'maybe' }))
+            .toThrow('CLOUDBOT_AI_MEMORY must be on or off.');
+    });
+
     it('reads defaults when the required domain and container id are present', () => {
         const settings = readHubSettings({ CLOUDBOT_DOMAIN: 'example.com', HOSTNAME: 'hub-container' });
 
@@ -67,6 +78,7 @@ describe('readHubSettings', () => {
                 instanceCpus: 1.5,
                 ownerName: 'owner',
                 containerId: 'hub-container',
+                aiMemory: true,
             });
     });
 

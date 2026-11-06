@@ -80,6 +80,13 @@ const SKIP_TOOL_NAMES = new Set([
     // Reading the meeting text and stopping the recording send nothing out. Starting it is reviewed like any call.
     'mcp__cloudbot__meeting_record_status',
     'mcp__cloudbot__meeting_record_stop',
+    // The memory server runs inside the container and keeps its data there, so these need no review. Other tools of that
+    // server are reviewed like any connector. A saved app cannot take the name, see ConnectedApps.
+    'mcp__memory__memory_query',
+    'mcp__memory__memory_read_page',
+    'mcp__memory__memory_write_page',
+    'mcp__memory__memory_handoff_begin',
+    'mcp__memory__memory_handoff_accept',
 ]);
 
 // Letting the browser reach a private host always needs the owner's approval, whatever the rules say.

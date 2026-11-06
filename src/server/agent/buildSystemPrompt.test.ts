@@ -377,4 +377,19 @@ describe('buildSystemPrompt', () => {
         expect(buildSystemPrompt(profile))
             .not.toContain('skill_read');
     });
+
+    it('adds the memory paragraph with the bot id as its project only while the memory server answers', () => {
+        const profile = { name: 'Ana', title: 'Assistant', description: '' };
+        const withMemory = buildSystemPrompt(profile, { aiMemoryProject: 'bot-42' });
+        const withoutMemory = buildSystemPrompt(profile);
+
+        expect(withMemory)
+            .toContain('project "bot-42"');
+        expect(withMemory)
+            .toContain('memory_handoff_accept');
+        expect(withMemory)
+            .toContain('MEMORY.md stays for the short notes');
+        expect(withoutMemory)
+            .not.toContain('memory_query');
+    });
 });

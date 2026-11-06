@@ -2,6 +2,7 @@ import { BlockList, isIP } from 'node:net';
 
 import { readGoogleClientEnv } from '../shared/googleClientEnv.ts';
 import type { GoogleClientEnv } from '../shared/googleClientEnv.ts';
+import { readAiMemoryEnabled } from '../shared/aiMemory.ts';
 import { checkPersonName } from '../shared/peopleTypes.ts';
 
 interface HubSettings {
@@ -21,6 +22,8 @@ interface HubSettings {
     googleClient?: GoogleClientEnv;
     // How long an instance may be idle before it stops, in ms. Unset means the IdleWatcher default.
     idleMs?: number;
+    // The long-term memory switch of the instances. The hub passes it to each instance it starts.
+    aiMemory: boolean;
 }
 
 interface DockerGuardSettings {
@@ -138,6 +141,7 @@ function readHubSettings(env: NodeJS.ProcessEnv): HubSettings {
         instanceCpus: readPositiveNumber(env, 'CLOUDBOT_INSTANCE_CPUS', 1.5),
         ownerName,
         containerId,
+        aiMemory: readAiMemoryEnabled(env),
         ...(loginAllowedIps === undefined ? {} : { loginAllowedIps }),
         ...(googleClient === undefined ? {} : { googleClient }),
         ...(idleMs === undefined ? {} : { idleMs }),

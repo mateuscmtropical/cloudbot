@@ -135,6 +135,26 @@ RUN npm install --global @bitwarden/cli@2026.9.1 \
     && npm cache clean --force \
     && /usr/local/bin/bw --version
 
+# ai-memory keeps the long-term memory of the bots. The server runs it on loopback, see src/server/memory. The release is
+# pinned by version and by a checksum for each architecture, so a new release needs a new pin here. The release checksum
+# file is checked as well. Only the binary is installed, owned by root, so the bot user cannot replace it. The build fails
+# if the binary does not report the pinned version.
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) memory_archive=ai-memory-linux-x86_64.tar.gz; memory_sha256=15a4f4a346a27e6fd63a36d1b3de23c5cbe142b80b3bce561e21b1f225a1e645 ;; \
+        arm64) memory_archive=ai-memory-linux-aarch64.tar.gz; memory_sha256=164f7c38bb9bafca218dd958c3c60febcd5d2f5200ad138c6f128576cedebfb6 ;; \
+        *) echo "No ai-memory build for this architecture." >&2; exit 1 ;; \
+    esac \
+    && install -d -m 0700 /tmp/ai-memory-install \
+    && release_url=https://github.com/akitaonrails/ai-memory/releases/download/v3.4.2 \
+    && curl -fsSL -o "/tmp/ai-memory-install/$memory_archive" "$release_url/$memory_archive" \
+    && curl -fsSL -o "/tmp/ai-memory-install/$memory_archive.sha256" "$release_url/$memory_archive.sha256" \
+    && (cd /tmp/ai-memory-install && sha256sum -c "$memory_archive.sha256") \
+    && echo "$memory_sha256  /tmp/ai-memory-install/$memory_archive" | sha256sum -c - \
+    && tar -xzf "/tmp/ai-memory-install/$memory_archive" -C /tmp/ai-memory-install ./ai-memory \
+    && install -o root -g root -m 0755 /tmp/ai-memory-install/ai-memory /usr/local/bin/ai-memory \
+    && rm -rf /tmp/ai-memory-install \
+    && test "$(/usr/local/bin/ai-memory --version)" = "ai-memory 3.4.2"
+
 # The agent CLIs of the other providers, which CloudBot runs over the Agent Client Protocol, see
 # src/server/providers/acpProviders.ts. They are root-owned, so the bot user cannot replace them. The ones without an
 # npm package come from each vendor's own install script, installed under /opt and linked into /usr/local/bin.
@@ -182,6 +202,7 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/package.json ./package.json
 
+# The bots' long-term memory is on in the image. CLOUDBOT_AI_MEMORY=off turns it off, and the hub passes the setting on.
 ENV NODE_ENV=production \
     PORT=3000 \
     HOST=0.0.0.0 \
@@ -190,7 +211,8 @@ ENV NODE_ENV=production \
     CLOUDBOT_INTEGRATION_USER=cloudbot-integrations \
     CLAUDE_PATH=/usr/local/bin/claude \
     CODEX_PATH=/usr/local/bin/codex \
-    CLOUDBOT_DESKTOP_COMMAND=/usr/local/bin/cloudbot-desktop
+    CLOUDBOT_DESKTOP_COMMAND=/usr/local/bin/cloudbot-desktop \
+    CLOUDBOT_AI_MEMORY=on
 
 EXPOSE 3000
 

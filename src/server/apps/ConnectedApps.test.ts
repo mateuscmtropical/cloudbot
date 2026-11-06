@@ -162,6 +162,23 @@ describe('ConnectedApps', () => {
             .toBe('refused');
     });
 
+    it('refuses the name of the memory server, so an app can never take its tools', async () => {
+        const apps = appsWith(memorySecrets({}), fakeServer().fetch);
+
+        expect((await apps.connect(BOT_ID, connectInput({ name: 'memory' }))).outcome)
+            .toBe('refused');
+    });
+
+    it('leaves out a memory app saved before the name was refused', async () => {
+        await store.save({ name: 'memory', url: 'https://mcp.example.com/mcp', status: 'connected', toolCount: 1, problem: undefined, secretName: undefined, secretBotId: undefined });
+        const apps = appsWith(memorySecrets({}), fakeServer().fetch);
+
+        await apps.start();
+
+        expect(await apps.serverConfigs())
+            .toEqual({});
+    });
+
     it('lists the servers with their status and tool count, and removes one with its token', async () => {
         const secrets = memorySecrets({ [`${BOT_ID}:LINEAR_TOKEN`]: { site: 'https://mcp.example.com', value: 'tok-123' } });
         const apps = appsWith(secrets, fakeServer().fetch);

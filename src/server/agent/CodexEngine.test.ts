@@ -715,6 +715,20 @@ describe('CodexEngine', () => {
             .toEqual([{ toolName: 'mcp__linear__lookup', input: { query: 'a' } }, expect.any(AbortSignal)]);
     });
 
+    it('gives Codex the memory server at its own address, approved, and never through the app proxy', async () => {
+        const { engine, spawnArgs, gates } = makeEngine(completeTurn);
+
+        await collect(engine.runTurn(makeRequest({ mcpServers: { memory: { type: 'http', url: 'http://127.0.0.1:9226/mcp' } }, permissionMode: 'ask' })));
+
+        expect(spawnArgs[0])
+            .toEqual(expect.arrayContaining([
+                'mcp_servers.memory.url="http://127.0.0.1:9226/mcp"',
+                'mcp_servers.memory.default_tools_approval_mode="approve"',
+            ]));
+        expect(gates.closed)
+            .toEqual([]);
+    });
+
     it('gives Codex the connected http servers at a gated address of the turn, and leaves the rest out', async () => {
         const { engine, spawnArgs, gates } = makeEngine(completeTurn);
         const mcpServers = {

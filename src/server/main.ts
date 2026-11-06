@@ -52,6 +52,7 @@ import { BrowserGate } from './desktop/BrowserGate.ts';
 import { DesktopSupervisor, buildDesktopCommand } from './desktop/DesktopSupervisor.ts';
 import { OnDemandDesktop, isDesktopReady } from './desktop/OnDemandDesktop.ts';
 import type { DesktopHold } from './desktop/OnDemandDesktop.ts';
+import { createAiMemoryService } from './memory/AiMemoryService.ts';
 import { BotStore } from './store/BotStore.ts';
 import { ChannelStore } from './store/ChannelStore.ts';
 import { BrowserAllowStore } from './store/BrowserAllowStore.ts';
@@ -213,6 +214,8 @@ const desktop = desktopCommand === undefined
             isTurnRunning: () => chatService.hasRunningTurn(),
         });
 const holdDesktop: DesktopHold | undefined = desktop === undefined ? undefined : () => desktop.hold();
+// The bots' long-term memory runs beside the server. Without the switch or the binary there is no service, and turns stay as they were.
+const aiMemory = createAiMemoryService({ isEnabled: config.aiMemoryEnabled, dataDir });
 // The bot sees and drives the whole desktop through a fixed helper that runs as the agent user, like the desktop itself.
 const desktopInputCommand = desktop === undefined ? undefined : buildDesktopCommand(DESKTOP_INPUT_PATH, agentUser);
 const desktopInput = desktopInputCommand === undefined ? undefined : new DesktopInput(desktopInputCommand, undefined, holdDesktop);
@@ -569,6 +572,7 @@ const chatService: ChatService = new ChatService({
     workSettings,
     watchStore,
     connectedApps,
+    aiMemory,
     integrationService,
     browserAllowStore,
     whatsapp: whatsappSetup,
@@ -655,6 +659,7 @@ if (browserGate !== undefined && desktop === undefined) {
     saveLocalGatePort(localProfileDir, browserGate.listeningPort);
 }
 
+aiMemory?.start();
 localBrowser?.start();
 
 // A private address must fail at the gate. The browser tools stay off until it does, also for a reused browser.
@@ -760,6 +765,7 @@ function shutdown(): void {
     watchScheduler.stop();
     emailPoller.stop();
     desktop?.stop();
+    aiMemory?.stop();
     localBrowser?.stop();
     gateController.abort();
     void browserGate?.close();

@@ -10,6 +10,7 @@ import { readVoicePrograms } from './voice/transcribeAudio.ts';
 import type { VoicePrograms } from './voice/transcribeAudio.ts';
 import { readGoogleClientEnv } from '../shared/googleClientEnv.ts';
 import type { GoogleClientEnv } from '../shared/googleClientEnv.ts';
+import { readAiMemoryEnabled } from '../shared/aiMemory.ts';
 
 // Everything the server takes from its environment. main.ts reads it once at start and passes the parts down.
 // A wrong value stops the server at start, with the name of the variable, since each reader throws.
@@ -25,6 +26,8 @@ interface ServerConfig {
     // Only an absolute path, so a relative one never runs from the working folder.
     codexPath: string | undefined;
     desktopCommand: string | undefined;
+    // The long-term memory of the bots. CLOUDBOT_AI_MEMORY=off turns it off. It still stays off without the binary.
+    aiMemoryEnabled: boolean;
     galleryRepo: string | undefined;
     publicUrl: string | undefined;
     publicBaseUrl: string;
@@ -54,6 +57,7 @@ function readServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
         claudePath: env.CLAUDE_PATH,
         codexPath,
         desktopCommand: env.CLOUDBOT_DESKTOP_COMMAND,
+        aiMemoryEnabled: readAiMemoryEnabled(env),
         galleryRepo: env.CLOUDBOT_GALLERY_REPO,
         publicUrl: env.CLOUDBOT_PUBLIC_URL,
         publicBaseUrl: readPublicBaseUrl(env),

@@ -122,6 +122,14 @@ To limit hub sign-in, set this variable in `/opt/cloudbot/.env` and run
 |---|---|---|
 | `CLOUDBOT_LOGIN_ALLOWED_IPS` | Empty | Comma-separated IPv4 or IPv6 addresses and CIDR ranges. Keep the hub behind Caddy so the client address can be trusted. This limits sign-in only. It does not limit access to the rest of the site. |
 
+The bots keep long-term memory by default. To turn it off, set this variable in
+`/opt/cloudbot/.env` and run `sudo cloudbot update --all`, so that the running
+instances get the new setting. See [MEMORY.md](MEMORY.md).
+
+| Variable | Default | Description |
+|---|---|---|
+| `CLOUDBOT_AI_MEMORY` | `on` | `on` or `off`. Turns the bots' long-term memory on or off for every person on the server. |
+
 The hub hibernates an idle instance after five minutes by default. An active
 turn, a program a person started that listens on a port, or another activity that needs the instance keeps it awake. A later visit
 starts a hibernated instance again.

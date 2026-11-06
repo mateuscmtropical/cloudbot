@@ -12,6 +12,8 @@ type DesktopSpawnFunction = (command: string, args: string[]) => ChildProcess;
 
 interface DesktopSupervisorOptions {
     desktopCommand: DesktopCommand;
+    // The name of the process in the server log. Other processes that restart the same way, such as ai-memory, set their own.
+    label?: string;
     // Tests inject fakes here. Production uses node:child_process and real timers.
     spawnFunction?: DesktopSpawnFunction;
     setTimer?: (callback: () => void, delayMs: number) => NodeJS.Timeout;
@@ -69,6 +71,7 @@ class DesktopSupervisor {
     private readonly clearTimer: (timer: NodeJS.Timeout) => void;
     private readonly now: () => number;
     private readonly log: (message: string) => void;
+    private readonly label: string;
     private child: ChildProcess | undefined;
     private restartTimer: NodeJS.Timeout | undefined;
     private restartDelayMs = FIRST_RESTART_DELAY_MS;
@@ -82,6 +85,7 @@ class DesktopSupervisor {
         this.clearTimer = options.clearTimer ?? clearTimeout;
         this.now = options.now ?? Date.now;
         this.log = options.log ?? console.error;
+        this.label = options.label ?? 'desktop';
     }
 
     isRunning(): boolean {
@@ -119,7 +123,7 @@ class DesktopSupervisor {
         try {
             child = this.spawnFunction(command, args);
         } catch {
-            this.log('Could not start the desktop.');
+            this.log(`Could not start the ${this.label}.`);
             this.planRestart();
 
             return;
@@ -134,7 +138,7 @@ class DesktopSupervisor {
         });
         // Node does not always emit close after error, so both end the run. The second one is ignored.
         child.once('error', () => {
-            this.log('Could not start the desktop.');
+            this.log(`Could not start the ${this.label}.`);
             this.handleEnd(child);
         });
         child.once('close', (code: number | null) => {
@@ -143,7 +147,7 @@ class DesktopSupervisor {
             const detailText = detail === '' ? '' : ` ${JSON.stringify(detail)}`;
 
             if (this.child === child && !this.isStopped) {
-                this.log(`The desktop exited with code ${String(code)}.${detailText}`);
+                this.log(`The ${this.label} exited with code ${String(code)}.${detailText}`);
             }
 
             this.handleEnd(child);
@@ -175,7 +179,7 @@ class DesktopSupervisor {
         const delayMs = this.restartDelayMs;
 
         this.restartDelayMs = Math.min(this.restartDelayMs * 2, MAX_RESTART_DELAY_MS);
-        this.log(`Starting the desktop again in ${String(delayMs / 1000)} s.`);
+        this.log(`Starting the ${this.label} again in ${String(delayMs / 1000)} s.`);
         this.restartTimer = this.setTimer(() => {
             this.restartTimer = undefined;
             this.launch();

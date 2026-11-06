@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline';
 
 import type { ProxyCallGate, ProxyCallReview } from '../apps/AppProxy.ts';
 import type { AgentEvent } from './AgentEvent.ts';
-import type { AgentRunner, TurnRequest } from './AgentRunner.ts';
+import type { AgentRunner, McpServerConfig, TurnRequest } from './AgentRunner.ts';
 import { answerCodexRequest } from './answerCodexRequest.ts';
 import type { CodexAnswer } from './answerCodexRequest.ts';
 import { signalProcessTree } from './ClaudeCliEngine.ts';
@@ -14,6 +14,7 @@ import { CODEX_LOCKED_CONFIG, CODEX_THREAD_MODES, CODEX_TOOL_TOKEN_VARIABLE, isF
 import type { CodexFileChange, CodexMessage, CodexRequestId, CodexThreadItem, CodexTurn } from './codexProtocol.ts';
 import type { LoopbackToolServer, LoopbackTurn } from './createLoopbackToolServer.ts';
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
+import { AI_MEMORY_SERVER_NAME } from '../../shared/aiMemory.ts';
 import { mapCodexNotification, mapCodexTurnEnd, readContextTokens, readItem } from './mapCodexNotification.ts';
 import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
 import { codexAgentLaunch } from './codexAgentLaunch.ts';
@@ -221,7 +222,7 @@ function openRemoteServers(request: TurnRequest, callGates: CodexEngineOptions['
 
     Object.entries(request.mcpServers ?? {})
         .filter((entry): entry is [string, { type: 'http'; url: string }] => entry[1].type === 'http')
-        .filter(([name]) => REMOTE_SERVER_NAME_PATTERN.test(name) && name !== PROFILE_SERVER_NAME)
+        .filter(([name]) => REMOTE_SERVER_NAME_PATTERN.test(name) && name !== PROFILE_SERVER_NAME && name !== AI_MEMORY_SERVER_NAME)
         .forEach(([name, config]) => {
             const reviewCall = reviewsCallsAtServer(request)
                 ? (toolName: string, input: unknown) => reviewRemoteCall(request, name, toolName, input)
@@ -232,6 +233,20 @@ function openRemoteServers(request: TurnRequest, callGates: CodexEngineOptions['
                 opened.push({ name, gate });
             }
         });
+}
+
+// The memory server runs in this container, so it is not behind the app proxy, which hands out only the addresses of
+// connected apps. Its calls are not reviewed (see classifyToolCall), so Codex approves them itself in every mode.
+function memoryServerConfig(request: TurnRequest): string[] {
+    const memory: McpServerConfig | undefined = request.mcpServers?.[AI_MEMORY_SERVER_NAME];
+
+    if (memory?.type !== 'http') {
+        return [];
+    }
+
+    const prefix = `mcp_servers.${AI_MEMORY_SERVER_NAME}`;
+
+    return [`${prefix}.url=${JSON.stringify(memory.url)}`, `${prefix}.default_tools_approval_mode="approve"`];
 }
 
 function remoteServerConfig(servers: RemoteServer[], request: TurnRequest): string[] {
@@ -374,7 +389,7 @@ class CodexEngine implements AgentRunner {
         const tokenVariable = toolTurn === undefined ? {} : { [TOOL_TOKEN_VARIABLE]: toolTurn.token };
         const environment = { PATH: childPath(), ...this.options.environment, ...request.extraEnvironment, ...tokenVariable, HOME: userHome, CODEX_HOME: codexHome };
         const toolConfig = toolTurn === undefined ? [] : toolServerConfig(toolTurn, request);
-        const remoteConfig = remoteServerConfig(remoteServers, request);
+        const remoteConfig = [...remoteServerConfig(remoteServers, request), ...memoryServerConfig(request)];
         const args = buildCodexArguments([...toolConfig, ...remoteConfig, ...(this.options.extraConfig ?? [])]);
         const child = this.spawnFunction(this.options.codexPath, args, {
             cwd: request.workspaceDir,

@@ -13,3 +13,12 @@ describe('readServerConfig data dir', () => {
             .toBe('/var/lib/cloudbot');
     });
 });
+
+describe('readServerConfig ai-memory switch', () => {
+    it('keeps ai-memory on by default and turns it off only for off', () => {
+        expect(readServerConfig({}).aiMemoryEnabled)
+            .toBe(true);
+        expect(readServerConfig({ CLOUDBOT_AI_MEMORY: 'off' }).aiMemoryEnabled)
+            .toBe(false);
+    });
+});

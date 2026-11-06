@@ -133,6 +133,7 @@ const SETTINGS: HubSettings = {
     instanceCpus: 1.5,
     ownerName: 'owner',
     containerId: 'hub-id',
+    aiMemory: true,
 };
 
 function makeRecord(name: string, role: PersonRecord['role'] = 'member'): PersonRecord {
@@ -177,6 +178,7 @@ describe('DockerInstanceManager', () => {
                     'CLOUDBOT_PERSON_NAME=maria',
                     'CLOUDBOT_PERSON_ROLE=member',
                     'CLOUDBOT_PUBLIC_URL=https://maria.example.com',
+                    'CLOUDBOT_AI_MEMORY=on',
                 ],
                 memoryBytes: 2684354560,
                 nanoCpus: 1500000000,
@@ -189,6 +191,15 @@ describe('DockerInstanceManager', () => {
                     { source: 'cbi-maria-uploads', target: '/var/lib/cloudbot-uploads' },
                 ],
             });
+    });
+
+    it('passes the memory switch of the hub to each instance it makes', async () => {
+        const off = makeManager([], { ...SETTINGS, aiMemory: false });
+
+        await off.manager.create(makeRecord('maria'));
+
+        expect(off.docker.createdContainers.get('cloudbot-i-maria')?.environment)
+            .toContain('CLOUDBOT_AI_MEMORY=off');
     });
 
     it('gives the Google client to the instance only when the admin set one', async () => {

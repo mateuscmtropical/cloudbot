@@ -26,6 +26,22 @@ describe('channel changes', () => {
     });
 });
 
+describe('ai-memory tools', () => {
+    it('skips the review of the everyday memory tools, since their data stays in the container', () => {
+        expect(classify('mcp__memory__memory_query'))
+            .toBe('skip');
+        expect(classify('mcp__memory__memory_write_page'))
+            .toBe('skip');
+        expect(classify('mcp__memory__memory_handoff_accept'))
+            .toBe('skip');
+    });
+
+    it('reviews the other tools of the memory server like any connector', () => {
+        expect(classify('mcp__memory__memory_delete_page'))
+            .not.toBe('skip');
+    });
+});
+
 describe('models_set', () => {
     it('skips the review, since the owner asks for a model in the chat', () => {
         expect(classify('mcp__cloudbot__models_set'))

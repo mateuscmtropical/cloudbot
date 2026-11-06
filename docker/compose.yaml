@@ -28,6 +28,7 @@ services:
       CLOUDBOT_IDLE_MINUTES: ${CLOUDBOT_IDLE_MINUTES:-5}
       CLOUDBOT_GOOGLE_CLIENT_ID: ${CLOUDBOT_GOOGLE_CLIENT_ID:-}
       CLOUDBOT_GOOGLE_CLIENT_SECRET: ${CLOUDBOT_GOOGLE_CLIENT_SECRET:-}
+      CLOUDBOT_AI_MEMORY: ${CLOUDBOT_AI_MEMORY:-on}
     restart: unless-stopped
     # The hub runs as the cloudbot user, owns its data and listens on a high port, so it needs no capability.
     cap_drop:
