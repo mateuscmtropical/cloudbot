@@ -203,4 +203,32 @@ describe('ProviderRunner', () => {
         expect(chatgpt.requests)
             .toHaveLength(0);
     });
+
+    it('compacts the session on the engine of the provider, with the session untagged', async () => {
+        const compacted: TurnRequest[] = [];
+        const chatgpt: AgentRunner = {
+            ...recordingRunner('thread-1'),
+            compactSession(request: TurnRequest): Promise<void> {
+                compacted.push(request);
+
+                return Promise.resolve();
+            },
+        };
+        const runner = new ProviderRunner({
+            engines: { chatgpt: { runner: chatgpt, isConnected: () => Promise.resolve(true) } },
+            providerFor: () => Promise.resolve('chatgpt'),
+        });
+
+        await runner.compactSession(makeRequest('chatgpt:thread-1'));
+
+        expect(compacted.map(request => request.sessionId))
+            .toEqual(['thread-1']);
+    });
+
+    it('rejects a compaction on a provider that is signed out', async () => {
+        const { runner } = makeRunner('chatgpt', false);
+
+        await expect(runner.compactSession(makeRequest('chatgpt:thread-1')))
+            .rejects.toThrow('This bot uses ChatGPT, which is not connected.');
+    });
 });

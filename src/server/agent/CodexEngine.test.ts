@@ -107,6 +107,12 @@ class FakeAppServer extends EventEmitter {
             this.say({ id: message.id, result: { turnId: 'turn-1' } });
         }
 
+        // The compaction answers at once, and the test decides how it ends.
+        if (message.method === 'thread/compact/start') {
+            this.say({ id: message.id, result: {} });
+            this.onTurn(this);
+        }
+
         if (message.method === 'turn/interrupt') {
             this.say({ id: message.id, result: {} });
             this.say({ method: 'turn/completed', params: { threadId: 'thread-1', turn: { id: 'turn-1', status: 'interrupted', error: null, durationMs: null } } });
@@ -846,5 +852,57 @@ describe('CodexEngine', () => {
         }
         expect(seen.every(image => !existsSync(image.path)))
             .toBe(true);
+    });
+
+    it('reports the input tokens of the last model call on the turn end, not the total of the turn', async () => {
+        const { engine } = makeEngine((server) => {
+            server.say({ method: 'thread/tokenUsage/updated', params: { threadId: 'thread-1', turnId: 'turn-1', tokenUsage: { total: { inputTokens: 300 }, last: { inputTokens: 100 } } } });
+            server.say({ method: 'thread/tokenUsage/updated', params: { threadId: 'thread-1', turnId: 'turn-1', tokenUsage: { total: { inputTokens: 600 }, last: { inputTokens: 300 } } } });
+            completeTurn(server);
+        });
+
+        const events = await collect(engine.runTurn(makeRequest()));
+        const significantEvents = significant(events);
+        const finished = significantEvents.at(-1);
+
+        expect(finished)
+            .toEqual({ type: 'turn_finished', durationMs: 50, contextTokens: 300 });
+    });
+});
+
+describe('CodexEngine compactSession', () => {
+    it('compacts the thread of the session with the same settings, and sends no prompt', async () => {
+        const { engine, servers } = makeEngine((server) => {
+            server.say({ method: 'turn/completed', params: { threadId: 'thread-7', turn: { id: 'turn-9', status: 'completed', error: null, durationMs: 10 } } });
+        });
+
+        await engine.compactSession(makeRequest({ sessionId: 'thread-7', systemPrompt: 'You are Ana.' }));
+        const methods = servers[0]?.sent.map(message => message.method);
+        const compact = servers[0]?.sent.find(message => message.method === 'thread/compact/start');
+
+        expect(methods)
+            .toContain('thread/resume');
+        expect(compact?.params)
+            .toEqual({ threadId: 'thread-7' });
+        expect(methods)
+            .not.toContain('turn/start');
+    });
+
+    it('ends when Codex reports the thread compacted', async () => {
+        const { engine } = makeEngine((server) => {
+            server.say({ method: 'thread/compacted', params: { threadId: 'thread-7', turnId: 'turn-9' } });
+        });
+
+        await expect(engine.compactSession(makeRequest({ sessionId: 'thread-7' })))
+            .resolves.toBeUndefined();
+    });
+
+    it('rejects when the compaction fails', async () => {
+        const { engine } = makeEngine((server) => {
+            server.say({ method: 'turn/completed', params: { threadId: 'thread-7', turn: { id: 'turn-9', status: 'failed', error: { message: 'Compaction failed.', codexErrorInfo: null }, durationMs: null } } });
+        });
+
+        await expect(engine.compactSession(makeRequest({ sessionId: 'thread-7' })))
+            .rejects.toThrow('Compaction failed.');
     });
 });

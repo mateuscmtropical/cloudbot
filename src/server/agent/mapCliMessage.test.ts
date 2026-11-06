@@ -1,10 +1,25 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
-import { mapCliMessage, rememberResetsAt, withResetsAt } from './mapCliMessage.ts';
+import { contextTokensOf, mapCliMessage, rememberResetsAt, withContextTokens, withResetsAt } from './mapCliMessage.ts';
 import type { CliMessage } from './mapCliMessage.ts';
+
+const FIXTURE_FOLDER = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'cli-stream');
 
 function resultOf(subtype: string): CliMessage {
     return { type: 'result', subtype, is_error: true, errors: [], duration_ms: 1, total_cost_usd: 0 } as unknown as CliMessage;
+}
+
+// The lines of a recorded stream, parsed the way the engine parses them.
+function fixtureMessages(name: string): CliMessage[] {
+    const lines = readFileSync(join(FIXTURE_FOLDER, `${name}.jsonl`), 'utf8')
+        .split('\n')
+        .filter(line => line !== '');
+
+    return lines.map(line => JSON.parse(line) as CliMessage);
 }
 
 describe('mapCliMessage turn limits', () => {
@@ -83,5 +98,37 @@ describe('mapCliMessage results and limits', () => {
 
         expect(withResetsAt(limitEvent, remembered))
             .toEqual({ type: 'turn_error', message: 'You\'ve hit your limit', isUsageLimit: true, resetsAt: 5000 });
+    });
+});
+
+describe('contextTokensOf', () => {
+    it('counts the fresh, written and read input tokens of a main call', () => {
+        const [, mainCall] = fixtureMessages('context');
+
+        expect(contextTokensOf(mainCall as CliMessage))
+            .toBe(32003);
+    });
+
+    it('leaves out a helper agent call and any message without usage', () => {
+        const [, , helperCall] = fixtureMessages('context');
+        const textOnly = { type: 'assistant', message: { content: [] }, parent_tool_use_id: null } as unknown as CliMessage;
+
+        expect(contextTokensOf(helperCall as CliMessage))
+            .toBeUndefined();
+        expect(contextTokensOf(textOnly))
+            .toBeUndefined();
+        expect(contextTokensOf({ type: 'user', message: { content: '' } } as unknown as CliMessage))
+            .toBeUndefined();
+    });
+});
+
+describe('withContextTokens', () => {
+    it('puts the context size on a finished turn only', () => {
+        expect(withContextTokens({ type: 'turn_finished', durationMs: 1000 }, 32003))
+            .toEqual({ type: 'turn_finished', durationMs: 1000, contextTokens: 32003 });
+        expect(withContextTokens({ type: 'text', text: 'hi' }, 32003))
+            .toEqual({ type: 'text', text: 'hi' });
+        expect(withContextTokens({ type: 'turn_finished' }, undefined))
+            .toEqual({ type: 'turn_finished' });
     });
 });

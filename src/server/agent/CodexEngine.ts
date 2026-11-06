@@ -14,7 +14,7 @@ import { CODEX_LOCKED_CONFIG, CODEX_THREAD_MODES, CODEX_TOOL_TOKEN_VARIABLE, isF
 import type { CodexFileChange, CodexMessage, CodexRequestId, CodexThreadItem, CodexTurn } from './codexProtocol.ts';
 import type { LoopbackToolServer, LoopbackTurn } from './createLoopbackToolServer.ts';
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
-import { mapCodexNotification, mapCodexTurnEnd, readItem } from './mapCodexNotification.ts';
+import { mapCodexNotification, mapCodexTurnEnd, readContextTokens, readItem } from './mapCodexNotification.ts';
 import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
 import { codexAgentLaunch } from './codexAgentLaunch.ts';
 import { writeCodexTurnImages } from './writeCodexTurnImages.ts';
@@ -56,6 +56,9 @@ interface PendingCall {
     resolve: (message: CodexMessage) => void;
 }
 
+// A turn sends the prompt. A compaction only asks Codex to compact the thread the turn left.
+type SessionAction = 'turn' | 'compact';
+
 interface TurnProgress {
     threadId: string | undefined;
     turnId: string | undefined;
@@ -65,6 +68,9 @@ interface TurnProgress {
     // Commands and file changes asked for. A command asks before its item starts, so the step limit counts the asks.
     approvalCount: number;
     setupError: string | undefined;
+    // The input tokens of the last model call so far.
+    contextTokens: number | undefined;
+    isCompaction: boolean;
 }
 
 const DEFAULT_REVIEW_TIMEOUT_MS = 65 * 60 * 1000;
@@ -295,6 +301,19 @@ class CodexEngine implements AgentRunner {
     }
 
     async* runTurn(request: TurnRequest): AsyncGenerator<AgentEvent> {
+        yield* this.runSession(request, 'turn');
+    }
+
+    // Asks Codex to compact the thread of the request. The app server reports the end of the compaction, or its failure.
+    async compactSession(request: TurnRequest): Promise<void> {
+        for await (const event of this.runSession(request, 'compact')) {
+            if (event.type === 'turn_error') {
+                throw new Error(event.message);
+            }
+        }
+    }
+
+    private async* runSession(request: TurnRequest, action: SessionAction): AsyncGenerator<AgentEvent> {
         if (request.abortSignal.aborted) {
             return;
         }
@@ -341,7 +360,7 @@ class CodexEngine implements AgentRunner {
         try {
             openRemoteServers(request, this.options.callGates, remoteServers);
             images = writeCodexTurnImages(isAgent ? this.options.imageRoot ?? request.workspaceDir : codexHome, request.images ?? [], isAgent);
-            yield* this.runProcess(request, codexHome, userHome, toolTurn, remoteServers, images.paths);
+            yield* this.runProcess(request, codexHome, userHome, toolTurn, remoteServers, images.paths, action);
         } finally {
             toolTurn?.release();
             remoteServers.forEach((server) => {
@@ -351,7 +370,7 @@ class CodexEngine implements AgentRunner {
         }
     }
 
-    private async* runProcess(request: TurnRequest, codexHome: string, userHome: string, toolTurn: LoopbackTurn | undefined, remoteServers: RemoteServer[], imagePaths: string[]): AsyncGenerator<AgentEvent> {
+    private async* runProcess(request: TurnRequest, codexHome: string, userHome: string, toolTurn: LoopbackTurn | undefined, remoteServers: RemoteServer[], imagePaths: string[], action: SessionAction): AsyncGenerator<AgentEvent> {
         const tokenVariable = toolTurn === undefined ? {} : { [TOOL_TOKEN_VARIABLE]: toolTurn.token };
         const environment = { PATH: childPath(), ...this.options.environment, ...request.extraEnvironment, ...tokenVariable, HOME: userHome, CODEX_HOME: codexHome };
         const toolConfig = toolTurn === undefined ? [] : toolServerConfig(toolTurn, request);
@@ -391,7 +410,7 @@ class CodexEngine implements AgentRunner {
         const pending = new Map<CodexRequestId, PendingCall>();
         const items = new Map<string, CodexThreadItem>();
         const decidedItemIds = new Set<string>();
-        const progress: TurnProgress = { threadId: undefined, turnId: undefined, isSessionReported: false, isTurnOver: false, toolCount: 0, approvalCount: 0, setupError: undefined };
+        const progress: TurnProgress = { threadId: undefined, turnId: undefined, isSessionReported: false, isTurnOver: false, toolCount: 0, approvalCount: 0, setupError: undefined, contextTokens: undefined, isCompaction: action === 'compact' };
         const reviewController = new AbortController();
         let nextId = 0;
 
@@ -621,6 +640,17 @@ class CodexEngine implements AgentRunner {
                 this.sentPrompts.set(threadId, systemPrompt);
             }
 
+            // A compaction has no prompt. Its end comes in the notifications of the loop below.
+            if (action === 'compact') {
+                const compaction = await call('thread/compact/start', { threadId });
+
+                if (compaction.error !== undefined) {
+                    throw new Error(compaction.error.message);
+                }
+
+                return;
+            }
+
             const imageInputs = imagePaths.map(path => ({ type: 'localImage', path }));
             const input = [{ type: 'text', text: request.prompt, text_elements: [] }, ...imageInputs];
             const turnAnswer = await call('turn/start', {
@@ -757,14 +787,28 @@ class CodexEngine implements AgentRunner {
 
         if (method === 'turn/completed') {
             const turn = readRecord(message.params).turn as CodexTurn | undefined;
+            // A compaction runs alone in its app server, so the turn that completes there is its own.
+            const isOwnTurn = progress.isCompaction || turn?.id === progress.turnId;
 
-            if (turn?.id !== progress.turnId || turn === undefined) {
+            if (turn === undefined || !isOwnTurn) {
                 return [{ type: 'activity' }];
             }
 
             progress.isTurnOver = true;
 
-            return mapCodexTurnEnd(turn);
+            return mapCodexTurnEnd(turn, progress.contextTokens);
+        }
+
+        if (method === 'thread/compacted' && progress.isCompaction) {
+            progress.isTurnOver = true;
+
+            return [{ type: 'activity' }];
+        }
+
+        const usedTokens = readContextTokens(method, message.params);
+
+        if (usedTokens !== undefined) {
+            progress.contextTokens = usedTokens;
         }
 
         // The latest state of each item is kept, so a finished tool call is no longer matched to a new question.

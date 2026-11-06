@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { isQuietReply } from './checkin.ts';
+import { buildMemoryFlushMessage, isQuietReply } from './checkin.ts';
+
+describe('buildMemoryFlushMessage', () => {
+    it('asks the bot to save to MEMORY.md and to end with the quiet reply', () => {
+        expect(buildMemoryFlushMessage())
+            .toContain('save to MEMORY.md in your workspace');
+        expect(buildMemoryFlushMessage())
+            .toMatch(/reply with exactly NOTHING_TO_REPORT and nothing else\.$/);
+    });
+});
 
 describe('isQuietReply', () => {
     it('accepts the quiet reply with small formatting changes', () => {

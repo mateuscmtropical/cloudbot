@@ -860,3 +860,70 @@ describe('ClaudeCliEngine process handling', () => {
         await expect(grant?.reviewToolCall({ toolName: 'mcp__cloudbot__echo', input: {} }, new AbortController().signal)).resolves.toMatchObject({ isAllowed: false });
     });
 });
+
+describe('ClaudeCliEngine context size', () => {
+    it('puts the input tokens of the main call on the turn result, and no helper call', async () => {
+        const { loopback } = makeLoopback();
+        const { spawn } = scriptedSpawn({ stdout: fixture('context'), exitCode: 0 });
+        const engine = new ClaudeCliEngine({ loopback, spawnFunction: spawn, environment: {} });
+
+        const events = await collect(engine.runTurn(makeRequest()));
+        const significantEvents = significant(events);
+        const finished = significantEvents.at(-1);
+
+        expect(finished)
+            .toEqual({ type: 'turn_finished', costUsd: 0.02, durationMs: 1000, contextTokens: 32003 });
+    });
+});
+
+describe('ClaudeCliEngine compactSession', () => {
+    it('runs /compact in the session of the request, with the arguments of a turn', async () => {
+        const { loopback } = makeLoopback();
+        const { spawn, children } = scriptedSpawn({ stdout: fixture('text'), exitCode: 0 });
+        const spawnedArgs: string[][] = [];
+        const recordingSpawn: SpawnFunction = (command, args, options) => {
+            spawnedArgs.push(args);
+
+            return spawn(command, args, options);
+        };
+        const engine = new ClaudeCliEngine({ loopback, spawnFunction: recordingSpawn, environment: {}, signalProcess: () => undefined, endLeftovers: () => undefined });
+        const inputLines: string[] = [];
+
+        const compacting = engine.compactSession(makeRequest({ sessionId: 'sess-1', model: 'haiku', prompt: 'the flush prompt' }));
+
+        await vi.waitFor(() => {
+            expect(children)
+                .toHaveLength(1);
+        });
+        (children[0] as FakeChild).stdin.on('data', (chunk: Buffer) => {
+            const lines = chunk.toString('utf8')
+                .split('\n')
+                .filter(line => line !== '');
+
+            inputLines.push(...lines);
+        });
+        await compacting;
+
+        const args = spawnedArgs[0] ?? [];
+
+        expect(args.slice(args.indexOf('--resume'), args.indexOf('--resume') + 2))
+            .toEqual(['--resume', 'sess-1']);
+        expect(args.slice(args.indexOf('--model'), args.indexOf('--model') + 2))
+            .toEqual(['--model', 'haiku']);
+        expect(args)
+            .toContain('--include-partial-messages');
+        expect(inputLines)
+            .toHaveLength(1);
+        expect(JSON.parse(inputLines[0] ?? '{}'))
+            .toMatchObject({ type: 'user', message: { content: '/compact' } });
+    });
+
+    it('rejects when the CLI ends the compaction with an error', async () => {
+        const { loopback } = makeLoopback();
+        const { spawn } = scriptedSpawn({ stdout: '', exitCode: 1 });
+        const engine = new ClaudeCliEngine({ loopback, spawnFunction: spawn, environment: {} });
+
+        await expect(engine.compactSession(makeRequest({ sessionId: 'sess-1' })))
+            .rejects.toThrow('The Claude CLI stopped before the turn ended.');
+    });
+});

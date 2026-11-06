@@ -14,7 +14,7 @@ import type { LoopbackToolServer, LoopbackTurn, LoopbackTurnGrant } from './crea
 import { PROFILE_SERVER_NAME } from './createProfileToolServer.ts';
 import { prepareAgentWorkspace } from './prepareAgentWorkspace.ts';
 import { TURN_MARKER_VARIABLE, createTurnMarker, endTurnLeftovers } from './endTurnLeftovers.ts';
-import { mapCliMessage, rememberResetsAt, withResetsAt } from './mapCliMessage.ts';
+import { contextTokensOf, mapCliMessage, rememberResetsAt, withContextTokens, withResetsAt } from './mapCliMessage.ts';
 import type { CliMessage } from './mapCliMessage.ts';
 import { inheritedEnvironment } from '../childEnvironment.ts';
 import { isClaudeModel } from '../models/modelChoices.ts';
@@ -60,6 +60,8 @@ const TERM_GRACE_MS = 5000;
 const KILL_WAIT_MS = 5000;
 const NO_PROXY_VALUE = '127.0.0.1,localhost';
 const APPROVE_TOOL_FULL_NAME = `mcp__${PROFILE_SERVER_NAME}__${APPROVE_TOOL_NAME}`;
+// The CLI's own command. Sent as a user message, the CLI runs it as a command and answers with a result, as for a turn.
+const COMPACT_COMMAND = '/compact';
 
 // The CLI reads one user message from stdin. Images go in as base64 blocks of the same message.
 function buildUserMessage(request: TurnRequest): string {
@@ -333,6 +335,15 @@ class ClaudeCliEngine implements AgentRunner {
         }
     }
 
+    // Runs /compact in the session of the request, with the same arguments as a turn.
+    async compactSession(request: TurnRequest): Promise<void> {
+        for await (const event of this.runTurn({ ...request, prompt: COMPACT_COMMAND })) {
+            if (event.type === 'turn_error') {
+                throw new Error(event.message);
+            }
+        }
+    }
+
     // Stops the CLI processes that run now, for the server shutdown. Each stop is bounded, so this never hangs.
     async close(): Promise<void> {
         const stops = [...this.stops];
@@ -506,6 +517,7 @@ class ClaudeCliEngine implements AgentRunner {
         };
 
         let latestResetsAt: number | undefined;
+        let latestContextTokens: number | undefined;
         let sawResult = false;
 
         lines.on('line', (line: string) => {
@@ -536,6 +548,12 @@ class ClaudeCliEngine implements AgentRunner {
                     continue;
                 }
 
+                const usedTokens = contextTokensOf(message);
+
+                if (usedTokens !== undefined) {
+                    latestContextTokens = usedTokens;
+                }
+
                 const mappedEvents = mapCliMessage(message);
                 // A message that maps to no event still shows the turn is alive, such as tool progress or a retry.
                 const agentEvents: AgentEvent[] = mappedEvents.length === 0 ? [{ type: 'activity' }] : mappedEvents;
@@ -544,7 +562,11 @@ class ClaudeCliEngine implements AgentRunner {
                     latestResetsAt = rememberResetsAt(agentEvent, latestResetsAt);
                 });
 
-                const turnEvents = agentEvents.map(agentEvent => withResetsAt(agentEvent, latestResetsAt));
+                const turnEvents = agentEvents.map((agentEvent) => {
+                    const resetEvent = withResetsAt(agentEvent, latestResetsAt);
+
+                    return withContextTokens(resetEvent, latestContextTokens);
+                });
 
                 yield* turnEvents;
             }

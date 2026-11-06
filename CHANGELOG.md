@@ -33,6 +33,7 @@ All notable changes to this project are listed here. The format follows
 - The owner can ask the bot to update CloudBot. The bot opens a pull request that bumps the pinned versions and names the advisories each bump fixes. The owner merges it, then presses Update CloudBot in the web app. The bot never merges and never starts an update.
 - The provider menu shows the provider, model and effort of routines, review, browsing and documents, and lets the owner choose them for each one. The bot can read and change them too. Browsing and documents on another provider run as a helper of the main turn. Review runs on Claude, ChatGPT or Gemini.
 - The default model of Claude shows by its real name, once a turn has reported it.
+- A bot compacts its session when it goes idle after a turn with more than 40,000 tokens of context. Four minutes after the turn, it saves notes to MEMORY.md and then compacts, and it stays awake meanwhile. The owner sees nothing.
 
 ### Changed
 

@@ -523,6 +523,20 @@ the wait and the queue. The queue and the wait are stored in SQLite, so they
 survive a restart, and the timers are rebuilt on start. The Claude session id from the runner is saved on the bot, so the
 next turn resumes it.
 
+After a main turn whose last model call read more than 40,000 tokens of context,
+the bot gets a timer of 4 minutes (`IDLE_COMPACT_MIN_CONTEXT_TOKENS` and
+`IDLE_COMPACT_DELAY_MS` in `ChatService.ts`). The hub hibernates a bot after 5
+minutes without activity by default, set by `CLOUDBOT_IDLE_MINUTES`. Keep that
+above 4 minutes, or the hub sleeps the bot before the compaction runs. When the
+timer fires and the bot is idle, a memory flush runs as one turn on the chat
+model. It asks the bot to save what the summary could lose to MEMORY.md, and
+the reply is quiet, so the chat shows nothing. Then the engine compacts the
+session: `/compact` on the Claude CLI, and `thread/compact/start` on Codex. The
+bot counts as busy for the whole run, so the hub keeps it awake. A new message,
+a turn or a delete cancels the timer. A flush that fails or hits a usage limit
+skips the compaction. A failure of either is logged and never shown. Only
+Claude and ChatGPT compact, so the other providers never arm the timer.
+
 Routes are under `/api/bots`: list bots, list and send messages, stop a turn,
 and `GET /events`. The event stream sends a `turn` event on connect, then the
 `message` and `turn` events in the order they happen. While a text block is
