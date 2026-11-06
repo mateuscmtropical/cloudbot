@@ -8,7 +8,7 @@ as planned.
 | Process | Runs as | Job |
 |---|---|---|
 | Server | `cloudbot` user | HTTP API, chat, setup, vault, task queue, storage |
-| Agent | `bot` user | The `claude` CLI for one conversation, started by the server |
+| Agent | `bot` user | The bot's provider CLI (`claude`, `codex` and the others) for one conversation, started by the server |
 | Key proxy | `cloudbot` user | Adds the API key to requests from the agent, so the agent never holds it |
 | Desktop | `bot` user | Virtual screen, Chromium, a terminal and a VNC server, started by the server |
 
@@ -106,7 +106,7 @@ server-created workspace.
 src/
   server/          HTTP server and the code that wires the parts together
     access/        Setup link, session cookie and the check that guards /api
-    agent/         Runs one conversation turn through the claude CLI
+    agent/         Runs one conversation turn through the bot's provider CLI
     chat/          Chat routes, the turn run and the event stream to the web app
     createApp.ts   Hono app and routes
     desktop/       Starts the bot's desktop and starts it again when it exits
@@ -1722,7 +1722,7 @@ Limits of this version. A card is kept in memory, so a restart cancels it. A den
 
 ## Bots
 
-The "+" button calls `POST /api/bots`. The server makes a bot named "New bot" and posts a question in its chat, which asks for the name and the job. The owner answers there, and the bot sets them with `update_profile`. The bot's `bot_create` tool makes a bot from a name, a title and first instructions. The instructions are written to the new bot's MEMORY.md as its first memory, under a header that names the bot that made it. They are not a rule, since a bot wrote them and a rule would be an owner permission. The tool is in the always-ask list, so the owner approves a card with the name, the title and the whole instructions before anything is made. The card refuses hidden characters, and a name or title that is not one short line. Every bot uses the same Claude sign-in and the same key proxy. Nothing of the key is copied into a bot.
+The "+" button calls `POST /api/bots`. The server makes a bot named "New bot" and posts a question in its chat, which asks for the name and the job. The owner answers there, and the bot sets them with `update_profile`. The bot's `bot_create` tool makes a bot from a name, a title and first instructions. The instructions are written to the new bot's MEMORY.md as its first memory, under a header that names the bot that made it. They are not a rule, since a bot wrote them and a rule would be an owner permission. The tool is in the always-ask list, so the owner approves a card with the name, the title and the whole instructions before anything is made. The card refuses hidden characters, and a name or title that is not one short line. Bots on the same provider share its one sign-in, and every bot uses the same key proxy. Nothing of the key is copied into a bot.
 
 The owner can delete a bot from its row in the bot list. The row's More menu offers Rename and Delete. On a phone, a long press opens it. On a wide screen, use the More button or right click. The confirmation dialog says the bot's chats, rules, routines, webhooks, secrets and files will be removed for good. A server refusal, such as deleting the last bot, stays in the dialog. Deleting a bot is `DELETE /api/bots/:id`. The server refuses the last bot, counting only bots that are not being deleted, and a bot whose Claude setup is not finished yet. A second delete of a bot already being deleted gets 409 at once and changes nothing. Otherwise the server first marks the bot as deleting in memory. From then on, a message, an upload, a queued turn or a webhook call to that bot gets 409 with "This bot is being deleted." Routine and watch turns skip it and log the refusal. Next the server stops the running turn and drops the queue. It waits up to 30 seconds for the turn to end, and then it answers 409 and nothing is removed. Then it removes the bot's app servers whose token it saved, its vault secrets, its GitHub listener, and its folders. The folders are the workspace, the uploads and the shared files. A folder is removed only when its real path is inside the root. A link at that path is removed and never followed. The bot row goes last, and every table with rows of the bot cascades from it, so its chats, rules, routines, watches, webhooks, integrations and turn state go with it. If a folder cannot be removed, the request fails and the bot stays, so the owner can try again. Shared connected apps that have no token stay, because they belong to no bot.
 
