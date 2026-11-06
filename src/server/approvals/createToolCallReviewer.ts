@@ -288,7 +288,11 @@ function toVerdict(answer: ModelAnswer, call: ToolCall): ToolCallVerdict {
     const needsOwner = !isHandoff && MONEY_CATEGORIES.has(answer.category);
     const mayAsk = isHandoff || OUTWARD_CATEGORIES.has(answer.category);
 
-    if (needsOwner || (answer.decision === 'ask' && mayAsk)) {
+    if (needsOwner) {
+        return { decision: 'ask', summary, isElevated: true };
+    }
+
+    if (answer.decision === 'ask' && mayAsk) {
         return { decision: 'ask', summary };
     }
 
@@ -451,7 +455,9 @@ function createToolCallReviewer(options: ToolCallReviewerOptions): ToolCallRevie
         }
 
         if (callClass === 'owner-only') {
-            return readFixedVerdict(options, botId, call);
+            const ownerVerdict = await readFixedVerdict(options, botId, call);
+
+            return ownerVerdict.decision === 'ask' ? { ...ownerVerdict, isElevated: true } : ownerVerdict;
         }
 
         const fixedVerdict = callClass === 'always-ask' ? await readFixedVerdict(options, botId, call) : undefined;

@@ -1,4 +1,4 @@
-import type { AppUpdateStatus, Person, PersonWithPassword, ResetPasswordResult } from '../shared/peopleTypes.ts';
+import type { AppUpdateStatus, GroupMember, GroupRole, Person, PersonWithPassword, ResetPasswordResult } from '../shared/peopleTypes.ts';
 import { RequestFailedError } from './apiClient.ts';
 
 interface ErrorResponseBody {
@@ -55,13 +55,33 @@ function jsonRequest(method: string, payload: unknown): RequestInit {
     return init;
 }
 
-// How this CloudBot relates to a hub. A CloudBot that runs on its own is standalone.
-type HubRole = 'standalone' | 'member' | 'owner';
+// How this CloudBot relates to a hub. A CloudBot that runs on its own is standalone. A shared group is group.
+type HubRole = 'standalone' | 'member' | 'owner' | 'group';
 
 interface HubContext {
     role: HubRole;
     personName?: string;
+    // In a shared group: who is using it and their role there.
+    actingName?: string;
+    groupRole?: GroupRole;
 }
+
+// What the hub shows about the members of a shared group.
+interface GroupMembersView {
+    you: GroupMember;
+    members: GroupMember[];
+    canManage: boolean;
+    addable: string[];
+}
+
+interface ChangeGroupMemberPayload {
+    action: 'set' | 'remove';
+    person: string;
+    role?: 'admin' | 'member';
+}
+
+// Served by the hub on the group's address, not by this CloudBot.
+const GROUP_MEMBERS_PATH = '/__hub/members';
 
 async function getHubContext(): Promise<HubContext> {
     return requestPeopleJson<HubContext>('/api/hub-role', { method: 'GET' }, 200);
@@ -123,5 +143,15 @@ function startAppUpdate(): Promise<AppUpdateStatus> {
     return requestPeopleJson<AppUpdateStatus>('/api/update', init, 200);
 }
 
-export { getAppUpdate, startAppUpdate, addPerson, deactivatePerson, deletePerson, getHubContext, getHubRole, listPeople, reactivatePerson, resetPersonPassword };
-export type { HubContext, HubRole };
+function getGroupMembers(): Promise<GroupMembersView> {
+    return requestPeopleJson<GroupMembersView>(GROUP_MEMBERS_PATH, { method: 'GET' }, 200);
+}
+
+function changeGroupMember(payload: ChangeGroupMemberPayload): Promise<GroupMembersView> {
+    const init = jsonRequest('POST', payload);
+
+    return requestPeopleJson<GroupMembersView>(GROUP_MEMBERS_PATH, init, 200);
+}
+
+export { getAppUpdate, startAppUpdate, addPerson, changeGroupMember, deactivatePerson, deletePerson, getGroupMembers, getHubContext, getHubRole, listPeople, reactivatePerson, resetPersonPassword };
+export type { ChangeGroupMemberPayload, GroupMembersView, HubContext, HubRole };

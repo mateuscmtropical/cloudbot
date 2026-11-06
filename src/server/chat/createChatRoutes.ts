@@ -9,6 +9,7 @@ import { MASCOT_BOLTS, MASCOT_COLOR_NAMES, MASCOT_EYES, MASCOT_SHAPES, MASCOT_WE
 import { MAX_FILES_PER_UPLOAD, readMaxUploadBytes } from '../attachments/saveUpload.ts';
 import { DEFAULT_MESSAGE_PAGE_LIMIT, MAX_MESSAGE_PAGE_LIMIT, PendingUploadLimitError, UploadDuringTurnError } from './ChatService.ts';
 import type { ChatService, DeleteBotOutcome, MessagePageOptions, SaveMemoryOutcome } from './ChatService.ts';
+import type { ActingPerson } from '../access/hubSession.ts';
 import { BotDeletingError } from '../bots/BotDeletingError.ts';
 import { respondWithStoredFile, setStoredFileHeaders } from '../files/storedFileResponse.ts';
 import { SetupAnswerError } from '../setup/SetupConversation.ts';
@@ -46,6 +47,7 @@ const MEMORY_REFUSED: Record<'changed' | 'tooLong', ChatErrorResponse> = {
     changed: { error: 'The bot changed its memory just now, so this was not saved. Check the memory and try again.' },
     tooLong: { error: 'The memory is larger than 64 KB, so it cannot be saved here.' },
 };
+const GROUP_ADMIN_ONLY: ChatErrorResponse = { error: 'Only an admin or the owner of this group can add or delete bots.' };
 const MAX_SEARCH_LENGTH = 200;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 25_000;
 // An SSE comment line. Clients ignore it, and it keeps idle proxies from closing the stream.
@@ -54,6 +56,8 @@ const HEARTBEAT_FRAME = ': heartbeat\n\n';
 interface ChatRoutesOptions {
     heartbeatIntervalMs?: number;
     maxUploadBytes?: number | undefined;
+    // The person who acts in a shared group. Elsewhere it gives nothing.
+    readActing?: (context: Context) => ActingPerson | undefined;
 }
 
 // Only plain digits count. Anything else, including 0, a sign or a decimal, is rejected.
@@ -156,7 +160,8 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
             }
 
             try {
-                const message = await chatService.answerSetup(botId, messageId, action, value);
+                const acting = options.readActing?.(context);
+                const message = await chatService.answerSetup(botId, messageId, action, value, acting?.role);
 
                 return context.json(message);
             } catch (error: unknown) {
@@ -178,12 +183,20 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
 
     // The "+" button. The new bot's chat opens with its question about its name and job.
     routes.post('/api/bots', async (context) => {
+        if (options.readActing?.(context)?.role === 'member') {
+            return context.json(GROUP_ADMIN_ONLY, 403);
+        }
+
         const bot = await chatService.createOwnerBot();
 
         return context.json(bot, 201);
     });
 
     routes.delete('/api/bots/:id', async (context) => {
+        if (options.readActing?.(context)?.role === 'member') {
+            return context.json(GROUP_ADMIN_ONLY, 403);
+        }
+
         const botId = context.req.param('id');
         let outcome: DeleteBotOutcome;
 
@@ -352,8 +365,10 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
         // A message sent while the bot is busy is queued, so it is accepted with 201 as well.
         let savedMessage: ChatMessage | undefined;
 
+        const acting = options.readActing?.(context);
+
         try {
-            savedMessage = await chatService.sendOwnerMessage(botId, text);
+            savedMessage = await chatService.sendOwnerMessage(botId, text, acting?.name);
         } catch (error: unknown) {
             if (error instanceof BotDeletingError) {
                 return context.json(BOT_DELETING, 409);
