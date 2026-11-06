@@ -18,6 +18,7 @@ import { RoutinesPanel } from './RoutinesPanel.tsx';
 import { WebhooksPanel } from './WebhooksPanel.tsx';
 import { PanelHeader } from './PanelHeader.tsx';
 import { PopoverMenu, PopoverMenuItem } from './PopoverMenu.tsx';
+import { useBackButton } from '../useBackButton.ts';
 
 // Each handler answers the reason the change was refused, or nothing when it was saved.
 type BotChangeHandler<Change> = (botId: string, change: Change) => Promise<string | undefined>;
@@ -244,6 +245,20 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
     const shownEyes = draft?.eyes ?? bot.mascotEyes;
     const shownWeather = draft?.weather ?? bot.mascotWeather;
     const shownBolt = draft?.bolt ?? bot.mascotBolt;
+
+    // Each page opened from the details is a step of its own, so the back button goes back to the details.
+    useBackButton(draft !== undefined, () => {
+        setDraft(undefined);
+    });
+    useBackButton(isMemoryOpen, () => {
+        setIsMemoryOpen(false);
+    });
+    useBackButton(isRoutinesOpen, () => {
+        setIsRoutinesOpen(false);
+    });
+    useBackButton(isWebhooksOpen, () => {
+        setIsWebhooksOpen(false);
+    });
 
     if (isMemoryOpen) {
         return (

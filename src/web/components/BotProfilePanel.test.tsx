@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotSummary } from '../../shared/chatTypes.ts';
@@ -59,6 +59,35 @@ describe('BotProfilePanel', () => {
             .toHaveBeenCalledOnce();
         expect(onOpenScreen)
             .toHaveBeenCalledOnce();
+    });
+
+    it('goes back to the details when the back button is pressed while editing', () => {
+        render(
+            <BotProfilePanel
+                bot={BOT}
+                onClose={vi.fn()}
+                onRenameBot={vi.fn(() => Promise.resolve(undefined))}
+                onChangeMascot={vi.fn(() => Promise.resolve(undefined))}
+                onDeleteBot={vi.fn(() => Promise.resolve(undefined))}
+                onOpenConnectApps={vi.fn()}
+                onOpenScreen={vi.fn()}
+                pushControls={createPushControls()}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+        expect(screen.queryByRole('button', { name: 'Edit' }))
+            .toBeNull();
+
+        const backPress = new PopStateEvent('popstate', { state: null });
+
+        act(() => {
+            window.dispatchEvent(backPress);
+        });
+
+        expect(screen.getByRole('button', { name: 'Edit' }))
+            .toBeTruthy();
     });
 
     it('saves a chosen weather, and asks where lightning goes only when the weather is lightning', async () => {
