@@ -90,6 +90,8 @@ import type { PushNoticeKind } from '../../shared/pushTypes.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
 import type { ConnectedApps } from '../apps/ConnectedApps.ts';
 import { APP_TOOL_FULL_NAMES, createAppTools } from '../apps/createAppTools.ts';
+import type { AiMemoryService } from '../memory/AiMemoryService.ts';
+import { AI_MEMORY_SERVER_NAME } from '../../shared/aiMemory.ts';
 import {
     REQUEST_SCREEN_TOOL_FULL_NAME,
     SCREEN_RECORDING_TOOL_FULL_NAME,
@@ -277,6 +279,8 @@ interface ChatServiceOptions {
     watchStore?: WatchStore | undefined;
     // Remote MCP servers the owner connected by URL. Without it the bot has no app tools and no outside servers.
     connectedApps?: ConnectedApps | undefined;
+    // The long-term memory server of the bots. Without it, or while it does not answer, turns have no memory tools.
+    aiMemory?: Pick<AiMemoryService, 'serverConfig'> | undefined;
     // The private hosts the owner let the browser reach. Without it the bot has no browser allow tools.
     browserAllowStore?: BrowserAllowStore | undefined;
     // Webhooks the bot can list, create and remove. Without it the bot has no webhook tools.
@@ -809,6 +813,7 @@ class ChatService {
     private readonly limitStore: LimitStore | undefined;
     private readonly watchStore: WatchStore | undefined;
     private readonly connectedApps: ConnectedApps | undefined;
+    private readonly aiMemory: Pick<AiMemoryService, 'serverConfig'> | undefined;
     private readonly browserAllowStore: BrowserAllowStore | undefined;
     private readonly webhookStore: WebhookStore | undefined;
     private readonly webhookRefusals: WebhookRefusalLog | undefined;
@@ -906,6 +911,7 @@ class ChatService {
         this.limitStore = options.limitStore;
         this.watchStore = options.watchStore;
         this.connectedApps = options.connectedApps;
+        this.aiMemory = options.aiMemory;
         this.browserAllowStore = options.browserAllowStore;
         this.webhookStore = options.webhookStore;
         this.webhookBaseUrl = options.webhookBaseUrl;
@@ -4178,7 +4184,11 @@ class ChatService {
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
-            const remoteServers = this.connectedApps === undefined ? {} : await this.connectedApps.serverConfigs();
+            const connectedServers = this.connectedApps === undefined ? {} : await this.connectedApps.serverConfigs();
+            // The memory server is offered only while it answers, so a turn never waits for it. Its calls are not reviewed,
+            // since its data stays in the container. The bot's id is its project in that memory.
+            const memoryServer = this.aiMemory?.serverConfig();
+            const remoteServers = memoryServer === undefined ? connectedServers : { ...connectedServers, [AI_MEMORY_SERVER_NAME]: memoryServer };
             const prompt = uploads.length === 0 ? text : `${text}\n\n${describeAttachments(uploads)}`;
             const images = readTurnImages(uploads);
             // The upload folder is passed on every turn, so earlier uploads stay readable by path.
@@ -4270,6 +4280,7 @@ class ChatService {
                 hasUpdateGuide: this.agentUser !== undefined,
                 hasEmail: this.emailAccountService !== undefined && this.emailSender !== undefined,
                 hasWhatsApp: this.whatsapp !== undefined,
+                aiMemoryProject: memoryServer === undefined ? undefined : botId,
                 ownerRules,
                 skills,
                 canChangeSkills: this.approvals !== undefined,

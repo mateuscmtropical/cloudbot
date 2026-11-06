@@ -1,3 +1,4 @@
+import { AI_MEMORY_ENV } from '../../shared/aiMemory.ts';
 import { GOOGLE_CLIENT_ID_ENV, GOOGLE_CLIENT_SECRET_ENV } from '../../shared/googleClientEnv.ts';
 import { checkPersonName } from '../../shared/peopleTypes.ts';
 import type { InstanceStatus } from '../../shared/peopleTypes.ts';
@@ -74,6 +75,8 @@ function toContainerOptions(record: PersonRecord, settings: HubSettings): Docker
         `CLOUDBOT_PERSON_NAME=${record.name}`,
         `CLOUDBOT_PERSON_ROLE=${record.role}`,
         `CLOUDBOT_PUBLIC_URL=${publicUrl(record.name, settings)}`,
+        // The memory switch is set when the container is made, so a change reaches an instance on `cloudbot update --all`.
+        `${AI_MEMORY_ENV}=${settings.aiMemory ? 'on' : 'off'}`,
         ...googleEnvironment,
     ];
 

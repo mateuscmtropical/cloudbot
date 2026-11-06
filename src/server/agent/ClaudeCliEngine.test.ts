@@ -284,6 +284,19 @@ describe('buildUserMessage', () => {
     });
 });
 
+describe('ClaudeCliEngine ai-memory server', () => {
+    it('passes the memory server of the turn as a remote server, so the MCP config of the CLI names it', async () => {
+        const { loopback, grants } = makeLoopback();
+        const { spawn } = scriptedSpawn({ stdout: fixture('text'), exitCode: 0 });
+        const engine = new ClaudeCliEngine({ loopback, spawnFunction: spawn, environment: {} });
+
+        await collect(engine.runTurn(makeRequest({ mcpServers: { memory: { type: 'http', url: 'http://127.0.0.1:9226/mcp' } } })));
+
+        expect(grants[0]?.remoteServers)
+            .toEqual({ memory: { type: 'http', url: 'http://127.0.0.1:9226/mcp' } });
+    });
+});
+
 describe('ClaudeCliEngine event mapping on recorded stream-json', () => {
     it('streams the text of a plain turn and reports the session', async () => {
         const { loopback } = makeLoopback();

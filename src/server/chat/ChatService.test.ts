@@ -1245,6 +1245,34 @@ describe('ChatService', () => {
             .toContain('BEGIN MEMORY NOTES\nFavorite color: teal\nEND MEMORY NOTES');
     });
 
+    it('gives a turn the memory server and its paragraph only while the server answers', async () => {
+        const answering = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const answeringService = new ChatService({ botStore, messageStore, runner: answering, dataDir, aiMemory: { serverConfig: () => ({ type: 'http', url: 'http://127.0.0.1:9226/mcp' }) } });
+        const silent = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const silentService = new ChatService({ botStore, messageStore, runner: silent, dataDir, aiMemory: { serverConfig: () => undefined } });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(answeringService, bot.id);
+
+        await answeringService.sendMessage(bot.id, 'Hi');
+        await finished;
+
+        const finishedSilent = waitForTurnFinish(silentService, bot.id);
+
+        await silentService.sendMessage(bot.id, 'Hi');
+        await finishedSilent;
+
+        expect(answering.receivedRequests[0]?.mcpServers)
+            .toEqual({ memory: { type: 'http', url: 'http://127.0.0.1:9226/mcp' } });
+        expect(answering.receivedRequests[0]?.allowedTools)
+            .toContain('mcp__memory__*');
+        expect(answering.receivedRequests[0]?.systemPrompt)
+            .toContain(`project "${bot.id}"`);
+        expect(silent.receivedRequests[0]?.mcpServers)
+            .toEqual({});
+        expect(silent.receivedRequests[0]?.systemPrompt)
+            .not.toContain('memory_query');
+    });
+
     it('offers the WhatsApp tools and paragraph only when the connector is set', async () => {
         const connector: WhatsAppConnector = {
             connect: () => Promise.resolve({ status: 'invalid-phone-number-id' }),

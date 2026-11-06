@@ -3,6 +3,7 @@ import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import type { ConnectedAppRecord, ConnectedAppStore } from '../store/ConnectedAppStore.ts';
 import type { McpServerConfig } from '../agent/AgentRunner.ts';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
+import { AI_MEMORY_SERVER_NAME } from '../../shared/aiMemory.ts';
 import type { AppProxy } from './AppProxy.ts';
 import { isBitwardenSecretName } from '../secrets/serverOnlySecretNames.ts';
 import { isOAuthSecretName } from './AppOAuthTokens.ts';
@@ -92,7 +93,7 @@ class ConnectedApps {
     }
 
     async connect(botId: string, input: ConnectInput): Promise<ConnectOutcome> {
-        if (!NAME_PATTERN.test(input.name) || input.name === PROFILE_SERVER_NAME) {
+        if (!NAME_PATTERN.test(input.name) || input.name === PROFILE_SERVER_NAME || input.name === AI_MEMORY_SERVER_NAME) {
             return { outcome: 'refused', problem: `That server name is not valid. ${NAME_RULE}` };
         }
 
@@ -163,8 +164,9 @@ class ConnectedApps {
         const records = await this.deps.store.list();
         const configs: Record<string, McpServerConfig> = {};
 
+        // A saved app named like the memory server is left out, so its tools can never pass as the memory tools.
         records
-            .filter(record => record.status === 'connected')
+            .filter(record => record.status === 'connected' && record.name !== AI_MEMORY_SERVER_NAME)
             .forEach((record) => {
                 const address = this.deps.proxy.addressOf(record.id);
 
