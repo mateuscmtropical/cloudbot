@@ -8,6 +8,7 @@ import type { ChangeGroupMemberPayload, GroupMembersView } from '../peopleClient
 import { Button } from './Button.tsx';
 import { Field } from './Field.tsx';
 import { PanelHeader } from './PanelHeader.tsx';
+import { Select } from './Select.tsx';
 
 interface GroupMembersPanelProps {
     onClose: () => void;
@@ -97,10 +98,10 @@ function GroupMembersPanel({ onClose }: GroupMembersPanelProps): ReactElement {
                             <h2>Add person</h2>
                             <div className="setup-form">
                                 <Field label="Person">
-                                    <select value={newPerson} onChange={(event) => { setNewPerson(event.currentTarget.value); }}>
+                                    <Select label="Person" value={newPerson} onChange={(event) => { setNewPerson(event.currentTarget.value); }}>
                                         <option value="">Choose a person</option>
                                         {addable.map(name => <option key={name} value={name}>{name}</option>)}
-                                    </select>
+                                    </Select>
                                 </Field>
                                 <Button type="submit" disabled={isWorking || newPerson === ''}>Add person</Button>
                             </div>

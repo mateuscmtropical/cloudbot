@@ -1573,6 +1573,11 @@ function App(): ReactElement {
                                 onBotsChanged={() => {
                                     void refreshBotsAfterDeletion();
                                 }}
+                                onGroupsChanged={() => {
+                                    listMyGroups()
+                                        .then(setSharedGroups)
+                                        .catch(() => undefined);
+                                }}
                                 onClose={() => {
                                     setIsPeopleOpen(false);
                                 }}

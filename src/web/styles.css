@@ -164,7 +164,7 @@ svg {
     margin: 0;
     padding: var(--space-2);
     border: 0;
-    border-radius: 0;
+    border-radius: var(--radius-bubble);
     background: transparent;
     text-align: left;
     touch-action: manipulation;
@@ -2983,6 +2983,41 @@ a.file-chip:hover {
     width: 100%;
 }
 
+.setup-form .select {
+    flex: 1;
+}
+
+/* The group choices sit on their own rows between the name and the button. */
+.group-invite {
+    display: flex;
+    flex-basis: 100%;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.setup-form .group-invite .field {
+    display: flex;
+}
+
+.group-invite .field.is-inline {
+    padding: 0;
+}
+
+.group-invite .field.is-inline .field-label {
+    flex-basis: auto;
+}
+
+.group-invite .field.is-inline .select {
+    flex: none;
+    width: 180px;
+}
+
+.group-invite-hint {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+}
+
 .people-add-form input,
 .people-delete-confirmation input {
     min-width: 0;
@@ -3384,6 +3419,17 @@ a.file-chip:hover {
 }
 
 /* A few mascots overlapping, so a group reads as several bots. */
+/* Same size as a bot's mascot, so a shared group lines up with the bots above it. */
+.shared-group-avatar {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+}
+
 .mascot-stack {
     display: inline-flex;
     align-items: center;

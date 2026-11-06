@@ -256,7 +256,7 @@ function BotList({ bots, selectedBotId, selectedMascotState, channels, selectedC
                             key={group.name}
                             title={group.name}
                             description={SHARED_ROLE_LABELS[group.role]}
-                            leadingIcon={<PeopleIcon />}
+                            leadingIcon={<span className="shared-group-avatar"><PeopleIcon /></span>}
                             className="bot-item channel-list-row"
                             onClick={() => {
                                 window.location.assign(group.openPath);
