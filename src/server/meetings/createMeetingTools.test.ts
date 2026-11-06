@@ -10,7 +10,8 @@ const CALL_PAGE: PageText = {
     title: 'Meet',
     url: 'https://meet.google.com/abc-defg-hij',
     text: '',
-    isTruncated: false,
+    textStart: 0,
+    textLength: 0,
     elements: [{ ref: 9, role: 'button', name: 'Leave call' }],
 };
 

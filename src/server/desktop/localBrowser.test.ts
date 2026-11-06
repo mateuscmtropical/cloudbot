@@ -30,7 +30,7 @@ import type { LocalBrowserPlan, ReuseDependencies, VersionProbe } from './localB
 const PROFILE = '/data/browser-profile';
 const SOCKET_PATH = '/devtools/browser/abc';
 const GATE_PORT = 52000;
-const LOADED_PAGE: PageText = { title: '', url: 'http://127.0.0.1:1/', text: '', isTruncated: false, elements: [] };
+const LOADED_PAGE: PageText = { title: '', url: 'http://127.0.0.1:1/', text: '', textStart: 0, textLength: 0, elements: [] };
 
 interface GateSpy extends Pick<BrowserControl, 'enable' | 'disable'> {
     enableCount: number;

@@ -268,7 +268,7 @@ is left.
 | Tool | What it does |
 |---|---|
 | `browser_open` | Opens an http or https address, waits up to 15 seconds for it to load and returns its title, address, visible text and numbered elements |
-| `browser_read` | Returns the title, address, visible text and numbered elements of the open page. The elements are the buttons, links, fields and focusable rows on the screen, up to 300 |
+| `browser_read` | Returns the title, address, visible text and numbered elements of the open page. The text comes in parts of 20,000 characters, and `textStart` picks the part to read next. The elements are the buttons, links, fields and focusable rows on the screen, up to 300 |
 | `browser_screenshot` | Returns a PNG of the page to the model. With `showOwner`, it is also posted to the chat |
 | `browser_click` | Clicks an element by its number, or a point in screenshot pixels |
 | `browser_type` | Types text into the focused field |
