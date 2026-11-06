@@ -37,6 +37,8 @@ interface TextBody {
     isQueued?: boolean;
     // Set on the message that says a provider is ready, since the bot of the chat now runs on it.
     providerSwitched?: boolean;
+    // The person who wrote it, in a shared group.
+    author?: string;
 }
 
 interface ChoiceBody {
@@ -46,6 +48,8 @@ interface ChoiceBody {
     chosenId?: string;
     // Set on a question that holds a tool call until the owner answers.
     isApproval?: boolean;
+    // Set on an approval about money or a bot delete. In a shared group only an admin or the owner approves it.
+    isElevated?: boolean;
     // Set on the card that turns on push notifications. Its first button asks the browser for permission.
     isNotificationOptIn?: boolean;
     // Set on the card that turns them off. Its first button removes the subscription of this browser.

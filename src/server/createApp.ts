@@ -2,9 +2,11 @@ import { existsSync } from 'node:fs';
 
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { setCookie } from 'hono/cookie';
 
+import { readActingPerson } from './access/hubSession.ts';
+import type { ActingPerson } from './access/hubSession.ts';
 import { readPublicHost, requireSameOrigin } from './access/requireSameOrigin.ts';
 import { requireSession, SESSION_COOKIE_NAME } from './access/requireSession.ts';
 import { createSecurityHeaders } from './access/securityHeaders.ts';
@@ -253,10 +255,18 @@ function createApp(options: AppOptions): Hono {
     app.use('/api/*', sameOriginCheck);
     app.use('/api/*', sessionCheck);
 
-    app.get('/api/hub-role', context => context.json({
-        role: options.hubRole ?? 'standalone',
-        ...(options.personName === undefined ? {} : { personName: options.personName }),
-    }));
+    // In a shared group the hub names the person who acts. Elsewhere nobody does.
+    const readActing = (context: Context): ActingPerson | undefined => (options.hubRole === 'group' ? readActingPerson(context, options.hubSecret) : undefined);
+
+    app.get('/api/hub-role', (context) => {
+        const acting = readActing(context);
+
+        return context.json({
+            role: options.hubRole ?? 'standalone',
+            ...(options.personName === undefined ? {} : { personName: options.personName }),
+            ...(acting === undefined ? {} : { actingName: acting.name, groupRole: acting.role }),
+        });
+    });
 
     if (options.peopleAdmin !== undefined) {
         const peopleRoutes = createPeopleRoutes({ peopleAdmin: options.peopleAdmin });
@@ -296,7 +306,7 @@ function createApp(options: AppOptions): Hono {
 
     // Chat routes sit behind the session check. The web fallback would otherwise answer them.
     if (options.chatService !== undefined) {
-        const chatRoutes = createChatRoutes(options.chatService, { maxUploadBytes: options.maxUploadBytes });
+        const chatRoutes = createChatRoutes(options.chatService, { maxUploadBytes: options.maxUploadBytes, readActing });
 
         app.route('/', chatRoutes);
     }
@@ -308,7 +318,7 @@ function createApp(options: AppOptions): Hono {
     }
 
     if (options.channelStore !== undefined && options.botStore !== undefined) {
-        const channelRoutes = createChannelRoutes({ channels: options.channelStore, bots: options.botStore, rounds: options.chatService });
+        const channelRoutes = createChannelRoutes({ channels: options.channelStore, bots: options.botStore, rounds: options.chatService, readActing });
 
         app.route('/', channelRoutes);
     }

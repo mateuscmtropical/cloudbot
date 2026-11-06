@@ -177,6 +177,7 @@ import type {
     SecureFormBody,
     TextBody,
 } from '../../shared/chatTypes.ts';
+import type { GroupRole } from '../../shared/peopleTypes.ts';
 import type { TaskCard } from '../../shared/taskTypes.ts';
 
 // The profile of a bot made with the "+" button. The owner gives its real name and job in the chat.
@@ -2115,9 +2116,10 @@ class ChatService {
         this.setup = setup;
     }
 
-    async answerSetup(botId: string, messageId: string, action: SetupAction, value: string): Promise<ChatMessage> {
+    // The group role is set in a shared group. A member there cannot approve an action that spends money.
+    async answerSetup(botId: string, messageId: string, action: SetupAction, value: string, groupRole?: GroupRole): Promise<ChatMessage> {
         if (action === 'choice') {
-            const approvalAnswer = await this.answerApproval(botId, messageId, value);
+            const approvalAnswer = await this.answerApproval(botId, messageId, value, groupRole);
 
             if (approvalAnswer !== undefined) {
                 return approvalAnswer;
@@ -2167,7 +2169,7 @@ class ChatService {
     }
 
     // Returns undefined when the message is not an approval question, so the setup handles it.
-    private async answerApproval(botId: string, messageId: string, choiceId: string): Promise<ChatMessage | undefined> {
+    private async answerApproval(botId: string, messageId: string, choiceId: string, groupRole: GroupRole | undefined): Promise<ChatMessage | undefined> {
         const stored = await this.messageStore.getById(messageId);
         const body = stored?.content as MessageBody | undefined;
 
@@ -2177,6 +2179,11 @@ class ChatService {
 
         if (body.chosenId !== undefined) {
             throw new SetupAnswerError('This question was already answered.');
+        }
+
+        // Anyone in the group may deny. Only an admin or the owner approves money or a bot delete.
+        if (body.isElevated === true && groupRole === 'member' && choiceId === 'approve') {
+            throw new SetupAnswerError('Only an admin or the owner of this group can approve this.');
         }
 
         const answered = await this.approvals?.answer(botId, messageId, choiceId);
@@ -2669,12 +2676,12 @@ class ChatService {
     }
 
     // A message sent while CloudBot starts gets a note at once and runs by itself when the start ends.
-    private async sendWhenStarted(setup: SetupConversation, botId: string, text: string, source: TurnSource, handoff: BotHandoffSource | undefined, emailDeliveryId: string | undefined, routineId: string | undefined): Promise<ChatMessage | undefined> {
+    private async sendWhenStarted(setup: SetupConversation, botId: string, text: string, source: TurnSource, handoff: BotHandoffSource | undefined, emailDeliveryId: string | undefined, routineId: string | undefined, author: string | undefined): Promise<ChatMessage | undefined> {
         this.publishTurnState(botId);
         const notice = await this.saveAndPublish(botId, 'assistant', { kind: 'text', text: STARTING_NOTICE });
 
         void setup.whenStarted()
-            .then(() => this.sendMessage(botId, text, source, handoff, emailDeliveryId, routineId))
+            .then(() => this.sendMessage(botId, text, source, handoff, emailDeliveryId, routineId, author))
             .catch(() => undefined);
 
         return notice;
@@ -2691,7 +2698,8 @@ class ChatService {
 
     // A message sent while the bot is busy is saved as queued and runs after the work ahead of it.
     // The source only picks the model of the turn. Routine messages pass 'routine', and the routine's id when they pass one.
-    async sendMessage(botId: string, text: string, source: TurnSource = 'chat', handoff?: BotHandoffSource, emailDeliveryId?: string, routineId?: string): Promise<ChatMessage | undefined> {
+    // The author is the person who wrote it in a shared group. The bot reads the message with that name in front.
+    async sendMessage(botId: string, text: string, source: TurnSource = 'chat', handoff?: BotHandoffSource, emailDeliveryId?: string, routineId?: string, author?: string): Promise<ChatMessage | undefined> {
         if (this.deletingBots.has(botId)) {
             throw new BotDeletingError();
         }
@@ -2703,7 +2711,7 @@ class ChatService {
         }
 
         if (this.setup !== undefined && this.setup.isStarting()) {
-            return this.sendWhenStarted(this.setup, botId, text, source, handoff, emailDeliveryId, routineId);
+            return this.sendWhenStarted(this.setup, botId, text, source, handoff, emailDeliveryId, routineId, author);
         }
 
         if (this.setup !== undefined && !this.setup.isDone()) {
@@ -2744,6 +2752,7 @@ class ChatService {
             this.pendingUploads.delete(botId);
         }
 
+        const turnText = author === undefined ? text : `${author}: ${text}`;
         let userMessage: ChatMessage;
 
         try {
@@ -2753,9 +2762,10 @@ class ChatService {
             }
 
             const attachmentSummaries = turnUploads.length === 0 ? [] : await this.keepSentImages(botId, turnUploads);
+            const authorField = author === undefined ? {} : { author };
             const userBody: TextBody = attachmentSummaries.length === 0
-                ? { kind: 'text', text }
-                : { kind: 'text', text, attachments: attachmentSummaries };
+                ? { kind: 'text', text, ...authorField }
+                : { kind: 'text', text, attachments: attachmentSummaries, ...authorField };
             const storedBody: TextBody = isQueued && !isForRunningTurn ? { ...userBody, isQueued: true } : userBody;
 
             userMessage = await this.saveAndPublish(botId, 'user', storedBody, emailDeliveryId);
@@ -2773,7 +2783,7 @@ class ChatService {
             // The inbox is read again, since the turn may have closed its input while the message was saved.
             const deliver = this.turnInboxes.get(botId)?.deliver;
 
-            if (await deliver?.(text) === true) {
+            if (await deliver?.(turnText) === true) {
                 return userMessage;
             }
 
@@ -2781,7 +2791,7 @@ class ChatService {
         }
 
         if (isQueued) {
-            await this.enqueueTurn(botId, { botId, text, uploads: turnUploads, messageId: userMessage.id, source, handoff, routineId }, false);
+            await this.enqueueTurn(botId, { botId, text: turnText, uploads: turnUploads, messageId: userMessage.id, source, handoff, routineId }, false);
 
             // The turn that was running may have ended while the message was saved, so the queue is checked again.
             this.startNextQueuedTurn(botId)
@@ -2791,7 +2801,7 @@ class ChatService {
         }
 
         // The turn runs in the background. Its failures are reported to the chat.
-        this.runTurn({ botId, text, uploads: turnUploads, messageId: userMessage.id, source, handoff, routineId }, abortController)
+        this.runTurn({ botId, text: turnText, uploads: turnUploads, messageId: userMessage.id, source, handoff, routineId }, abortController)
             .catch((error: unknown) => {
                 console.error('The chat turn failed outside the conversation', error);
             });
@@ -2907,20 +2917,21 @@ class ChatService {
 
     // The owner's message in a bot's chat. One that starts with @name goes to that bot, or to the manager of that group, as the
     // owner's own message. It is shown in this chat, and the reply comes back here as a note.
-    async sendOwnerMessage(botId: string, text: string): Promise<ChatMessage | undefined> {
+    async sendOwnerMessage(botId: string, text: string, author?: string): Promise<ChatMessage | undefined> {
         const bots = await this.botStore.list();
         const channels = (await this.channelStore?.list()) ?? [];
         const address = findOwnerAddress(text, bots, channels, botId);
 
         if (address === undefined || !bots.some(bot => bot.id === botId)) {
-            return this.sendMessage(botId, text);
+            return this.sendMessage(botId, text, 'chat', undefined, undefined, undefined, author);
         }
 
         if (this.deletingBots.has(botId)) {
             throw new BotDeletingError();
         }
 
-        const ownerMessage = await this.saveAndPublish(botId, 'user', { kind: 'text', text });
+        const authorField = author === undefined ? {} : { author };
+        const ownerMessage = await this.saveAndPublish(botId, 'user', { kind: 'text', text, ...authorField });
         const note = await this.forwardOwnerMessage(botId, address, bots, channels);
 
         await this.saveSenderNote(botId, note);

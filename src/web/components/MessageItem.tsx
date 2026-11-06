@@ -78,6 +78,7 @@ function renderBody(message: ChatMessage, actions: MessageActions, ownFileUrl: s
         case 'text':
             return (
                 <div className="text-message">
+                    {body.author === undefined ? null : <span className="message-author">{body.author}</span>}
                     {body.attachments === undefined || body.attachments.length === 0 ? null : renderAttachments(message, body.attachments)}
                     <div className="bubble markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(body.text) }} />
                     {body.isQueued === true ? <span className="queued-label">Queued</span> : null}

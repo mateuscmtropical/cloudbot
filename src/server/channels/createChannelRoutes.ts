@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { z } from 'zod/v4';
 
+import type { ActingPerson } from '../access/hubSession.ts';
 import type { ChannelDetail, ChannelMemberView, ChannelPostView, ChannelSummary } from '../../shared/channelTypes.ts';
 import type { ChatService } from '../chat/ChatService.ts';
 import { respondWithStoredFile } from '../files/storedFileResponse.ts';
@@ -15,6 +17,8 @@ interface ChannelRoutesOptions {
     bots: BotStore;
     // Starts the bot turns of a channel round, and stops them. Without it posts are stored but nothing answers.
     rounds?: Pick<ChatService, 'startChannelRound' | 'stopChannelRound' | 'hasActiveChannelRound' | 'findChannelFile' | 'dropChannelMember' | 'endChannelRounds'> | undefined;
+    // The person who acts in a shared group. Their name goes on what they post.
+    readActing?: (context: Context) => ActingPerson | undefined;
 }
 
 interface ChannelErrorResponse {
@@ -242,9 +246,10 @@ function createChannelRoutes(options: ChannelRoutesOptions): Hono {
             return context.json(TOO_LONG, 400);
         }
 
+        const acting = options.readActing?.(context);
         const saved = await options.channels.appendMessage(channelId, {
             authorBotId: undefined,
-            authorName: OWNER_NAME,
+            authorName: acting?.name ?? OWNER_NAME,
             authorColor: OWNER_COLOR,
             authorShape: OWNER_SHAPE,
             authorEyes: OWNER_EYES,

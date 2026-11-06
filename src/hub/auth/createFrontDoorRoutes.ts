@@ -16,6 +16,7 @@ import type { LoginPageExtras } from '../pages/renderPages.ts';
 import { readActingPerson } from './groupAccess.ts';
 import type { ActingPerson, GroupEntryTickets } from './groupAccess.ts';
 import type { LoginSessions } from './LoginSessions.ts';
+import { GROUP_MEMBERS_PATH, serveGroupMembers } from './groupMembersApi.ts';
 import { readHostRoute } from './hostRouting.ts';
 import { clearHubSessionCookie, isClientAddressAllowed, readClientAddress, readHubSession, readRequestHost, renderResponse, renderUnavailable, requestHasSameOrigin, SIGN_IN_DENIED_MESSAGE, startHubSession } from './routeHelpers.ts';
 import { removeHubSessionCookies } from './sessionCookie.ts';
@@ -627,6 +628,11 @@ async function serveGroup(context: Context, group: PersonRecord, options: FrontD
         clearHubSessionCookie(context, options.secure);
 
         return context.redirect('/', 303);
+    }
+
+    // Served by the hub, which knows who acts. The group instance never decides who is in the group.
+    if (context.req.path === GROUP_MEMBERS_PATH && acting.groupRole !== undefined) {
+        return serveGroupMembers(context, { people: options.people, members, groupName: group.name, actingName: acting.name, actingRole: acting.groupRole });
     }
 
     if (context.req.path.startsWith('/__hub/') && context.req.path !== '/__hub/status') {

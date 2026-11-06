@@ -36,6 +36,8 @@ import { ADD_PASSKEY_CHOICE_ID, REMOVE_PASSKEY_CHOICE_ID } from '../shared/passk
 import { addPasskey, describePasskeyResult, removePasskey } from './passkeyClient.ts';
 import { SignInScreen } from './components/SignInScreen.tsx';
 import { PeopleHubHint } from './components/PeopleHubHint.tsx';
+import { GroupMembersPanel } from './components/GroupMembersPanel.tsx';
+import type { GroupRole } from '../shared/peopleTypes.ts';
 import { createDraftStore, EMPTY_DRAFT } from './draftStore.ts';
 import { AccountPanel, ActionLogPanel, AppUpdatePanel, BotProfilePanel, ConnectAppsPanel, PeoplePanel } from './components/lazyPanels.tsx';
 import { getHubContext } from './peopleClient.ts';
@@ -93,6 +95,7 @@ interface MascotHopRequest {
 
 const emptyChatState: ChatState = { messages: [], olderPaging: {} };
 const OLDER_ERROR_TEXT = 'Could not load older messages.';
+const GROUP_ROLE_LABELS: Record<GroupRole, string> = { owner: 'Group owner', admin: 'Group admin', member: 'Group member' };
 const UPLOADS_LOAD_ERROR_TEXT = 'Could not load the attached files.';
 // How long the done face shows after a turn ends, before the bot shows its normal face again.
 const DONE_FACE_DURATION_MS = 2000;
@@ -181,6 +184,7 @@ function App(): ReactElement {
     const [isBotListOpen, setIsBotListOpen] = useState(false);
     const [hubRole, setHubRole] = useState<HubRole>('standalone');
     const [personName, setPersonName] = useState<string | undefined>(undefined);
+    const [groupRole, setGroupRole] = useState<GroupRole | undefined>(undefined);
     const [isPeopleOpen, setIsPeopleOpen] = useState(false);
     const [isAccountOpen, setIsAccountOpen] = useState(false);
     const [isActionLogOpen, setIsActionLogOpen] = useState(false);
@@ -795,7 +799,9 @@ function App(): ReactElement {
             .then((context) => {
                 if (isCurrent) {
                     setHubRole(context.role);
-                    setPersonName(context.personName);
+                    // In a shared group the bot list shows the person who uses it, not the group.
+                    setPersonName(context.actingName ?? context.personName);
+                    setGroupRole(context.groupRole);
                 }
             })
             .catch(() => {
@@ -1507,7 +1513,8 @@ function App(): ReactElement {
                             <AccountPanel
                                 isHub={hubRole !== 'standalone'}
                                 personName={personName}
-                                personRole={hubRole === 'member' ? 'Member' : 'Owner'}
+                                peopleTitle={hubRole === 'group' ? 'Members' : 'People'}
+                                personRole={groupRole === undefined ? (hubRole === 'member' ? 'Member' : 'Owner') : GROUP_ROLE_LABELS[groupRole]}
                                 onPeople={() => {
                                     setIsBotListOpen(false);
                                     setIsPeopleOpen(true);
@@ -1555,7 +1562,16 @@ function App(): ReactElement {
                             />
                         )
                     : null}
-                {isPeopleOpen && hubRole !== 'owner' && !isConnectAppsOpen
+                {isPeopleOpen && hubRole === 'group' && !isConnectAppsOpen
+                    ? (
+                            <GroupMembersPanel
+                                onClose={() => {
+                                    setIsPeopleOpen(false);
+                                }}
+                            />
+                        )
+                    : null}
+                {isPeopleOpen && hubRole !== 'owner' && hubRole !== 'group' && !isConnectAppsOpen
                     ? (
                             <PeopleHubHint
                                 role={hubRole}

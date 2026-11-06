@@ -235,4 +235,43 @@ describe('shared groups in the hub', () => {
         expect(seen)
             .toEqual([]);
     });
+
+    it('lets an admin manage members but never the owner, and lets a member only look', async () => {
+        const hub = createHub();
+
+        await hub.request(HUB_GROUPS_PATH, asInstance('owner', 'POST', { name: 'team' }));
+        await hub.request(`${HUB_GROUPS_PATH}/team/members/maria`, asInstance('owner', 'PUT', { role: 'admin' }));
+
+        const mariaSession = hub.sessions.create('maria', Date.now());
+        const asMaria = (body: unknown): RequestInit => ({
+            method: 'POST',
+            headers: { 'host': `team.${DOMAIN}`, 'cookie': `${SESSION_COOKIE}=${mariaSession}`, 'origin': `http://team.${DOMAIN}`, 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const added = await hub.request('/__hub/members', asMaria({ action: 'set', person: 'joao', role: 'member' }));
+        const removeOwner = await hub.request('/__hub/members', asMaria({ action: 'remove', person: 'owner' }));
+        const addedView = await added.json() as { members: { name: string }[] };
+
+        expect(added.status)
+            .toBe(200);
+        expect(addedView.members.map(member => member.name))
+            .toContain('joao');
+        expect(removeOwner.status)
+            .toBe(409);
+
+        const joaoSession = hub.sessions.create('joao', Date.now());
+        const joaoView = await hub.request('/__hub/members', onHost('team', joaoSession));
+        const joaoChange = await hub.request('/__hub/members', {
+            method: 'POST',
+            headers: { 'host': `team.${DOMAIN}`, 'cookie': `${SESSION_COOKIE}=${joaoSession}`, 'origin': `http://team.${DOMAIN}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'remove', person: 'maria' }),
+        });
+
+        expect(await joaoView.json())
+            .toMatchObject({ you: { name: 'joao', role: 'member' }, canManage: false, addable: [] });
+        expect(joaoChange.status)
+            .toBe(403);
+        expect(seen)
+            .toEqual([]);
+    });
 });

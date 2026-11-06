@@ -240,7 +240,7 @@ describe('createToolCallReviewer', () => {
         const verdict = await reviewer('bot-1', BASH_CALL);
 
         expect(verdict)
-            .toEqual({ decision: 'ask', summary: 'Buy a ticket' });
+            .toEqual({ decision: 'ask', summary: 'Buy a ticket', isElevated: true });
     });
 
     it.each(OWNER_ASKED_CASES)('runs $name when the model allows it, since the owner asked', async ({ category, toolName, input }) => {
@@ -256,9 +256,10 @@ describe('createToolCallReviewer', () => {
         const { reviewer } = createReviewer(answer({ category, decision: 'ask', summary: 'Confirm this action.' }));
 
         const verdict = await reviewer('bot-1', { toolName, input });
+        const isMoney = category === 'purchase' || category === 'booking';
 
         expect(verdict)
-            .toEqual({ decision: 'ask', summary: 'Confirm this action.' });
+            .toEqual(isMoney ? { decision: 'ask', summary: 'Confirm this action.', isElevated: true } : { decision: 'ask', summary: 'Confirm this action.' });
     });
 
     it.each(DENIED_CATEGORY_CASES)('keeps a deny for $name', async ({ category, toolName, input }) => {
@@ -384,8 +385,8 @@ describe('createToolCallReviewer', () => {
 
         const verdict = await reviewer('bot-1', { toolName: 'mcp__shop__purchase_item', input: {} });
 
-        expect(verdict.decision)
-            .toBe('ask');
+        expect(verdict)
+            .toMatchObject({ decision: 'ask', isElevated: true });
         expect(askModel)
             .not.toHaveBeenCalled();
     });

@@ -1884,6 +1884,40 @@ describe('ChatService', () => {
             .toContain('notes.txt');
     });
 
+    it('keeps the author of a group message and puts the name in front for the bot', async () => {
+        const runner = new FakeAgentRunner([{ event: { type: 'text', text: 'Hello' } }]);
+        const service = new ChatService({ botStore, messageStore, runner, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const finished = waitForTurnFinish(service, bot.id);
+        const userMessage = await service.sendOwnerMessage(bot.id, 'Plan the trip', 'maria');
+
+        await finished;
+
+        expect(userMessage?.body)
+            .toEqual({ kind: 'text', text: 'Plan the trip', author: 'maria' });
+        expect(runner.receivedRequests[0]?.prompt)
+            .toContain('maria: Plan the trip');
+    });
+
+    it('lets only an admin or the owner of a group approve money', async () => {
+        const service = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([]), dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const card = await messageStore.add({
+            botId: bot.id,
+            role: 'assistant',
+            kind: 'choice',
+            content: { kind: 'choice', prompt: 'Buy a ticket', options: [{ id: 'approve', label: 'Approve' }, { id: 'deny', label: 'Deny' }], isApproval: true, isElevated: true },
+        });
+
+        await expect(service.answerSetup(bot.id, card.id, 'choice', 'approve', 'member'))
+            .rejects.toThrow('Only an admin or the owner');
+        // Past the role check, nothing waits for this card any more.
+        await expect(service.answerSetup(bot.id, card.id, 'choice', 'approve', 'admin'))
+            .rejects.toThrow('no longer waiting');
+        await expect(service.answerSetup(bot.id, card.id, 'choice', 'deny', 'member'))
+            .rejects.toThrow('no longer waiting');
+    });
+
     it('sends an uploaded image to the agent as image input', async () => {
         const { service, runner } = buildSetup([{ event: { type: 'text', text: 'A cat' } }]);
         const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });

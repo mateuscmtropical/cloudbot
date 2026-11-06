@@ -116,6 +116,15 @@ The owner's instance manages groups through `/internal/groups`. Any instance
 asks `/internal/my-groups` for the groups its person is in. Groups are left out
 of the people list, and passkeys and password resets refuse them.
 
+The group instance trusts the two headers only next to the hub secret. It puts
+the name of the person on each message they send, and the bot reads it as
+`name: text`. Anyone in the group may approve or deny a bot action, but an
+action that spends money or deletes a bot waits for an admin or the owner. Only
+they add or delete bots. The hub serves `/__hub/members` on the group address
+itself, so the instance never decides who is in the group. Everyone sees the
+members there. An admin or the owner adds people, removes them and sets them to
+admin or member. Nobody changes or removes the owner.
+
 ## Memory budget
 
 Every instance has a memory cap, 2560 MB by default. The hub keeps the sum of
