@@ -48,6 +48,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- The back button goes back one step everywhere. From Routines, Memory, Webhooks or the bot edit form it returns to the bot's details, and on an open dialog or image it closes just that. Before, it always went back to the chat.
 - On a phone, a reply with a long line in a code block no longer makes the whole chat wider than the screen. The line wraps inside its bubble.
 - The list of kinds of work and the routines page open at once. Before, each opening waited about a minute while every provider was asked again whether it is signed in. A routine on another provider no longer waits for that check either.
 - A Gemini subscription offers Gemini 3.8 Flash with low, medium or high effort, so the chat, a kind of work or a routine can run on it. Before, no Gemini model could be chosen, because agy reports no model list. When the bot picks a model that is not offered, it is told which ones are.

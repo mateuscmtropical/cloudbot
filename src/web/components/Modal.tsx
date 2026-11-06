@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { ReactElement, ReactNode } from 'react';
+import { useBackButton } from '../useBackButton.ts';
 
 interface ModalProps {
     children: ReactNode;
@@ -16,6 +17,9 @@ interface ModalProps {
 function Modal({ children, onClose, role = 'dialog', label, labelledBy, describedBy, className }: ModalProps): ReactElement {
     const dialogRef = useRef<HTMLDialogElement>(null);
     const dialogClass = className === undefined ? 'modal' : `modal ${className}`;
+
+    // The back button closes the dialog, not the page behind it.
+    useBackButton(true, onClose);
 
     useEffect(() => {
         const dialog = dialogRef.current;
