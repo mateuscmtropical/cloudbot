@@ -40,7 +40,7 @@ import { describeRuleChange } from './rules/describeRuleChange.ts';
 import { describeLimitChange } from './limits/createLimitTools.ts';
 import { createApp } from './createApp.ts';
 import { ScreenHolder } from './desktop/ScreenHolder.ts';
-import { attachVncProxy } from './desktop/attachVncProxy.ts';
+import { DEFAULT_VNC_PORT, attachVncProxy } from './desktop/attachVncProxy.ts';
 import { DESKTOP_DEVTOOLS_URL } from './desktop/BrowserControl.ts';
 import { describeBrowserTarget } from './desktop/createBrowserTools.ts';
 import { describeDesktopTarget } from './desktop/createDesktopTools.ts';
@@ -50,6 +50,8 @@ import { attachScreencast } from './desktop/attachScreencast.ts';
 import { buildLocalBrowserCommand, buildLocalBrowserTools, createLocalBrowserSpawn, defaultLocalBrowserEnvironment, localBrowserProfileDir, localGatePortFor, planLocalBrowser, saveLocalGatePort, startPlannedGate, verifyLocalBrowserGate } from './desktop/localBrowser.ts';
 import { BrowserGate } from './desktop/BrowserGate.ts';
 import { DesktopSupervisor, buildDesktopCommand } from './desktop/DesktopSupervisor.ts';
+import { OnDemandDesktop, isDesktopReady } from './desktop/OnDemandDesktop.ts';
+import type { DesktopHold } from './desktop/OnDemandDesktop.ts';
 import { BotStore } from './store/BotStore.ts';
 import { ChannelStore } from './store/ChannelStore.ts';
 import { BrowserAllowStore } from './store/BrowserAllowStore.ts';
@@ -201,11 +203,19 @@ const chatgptSignIn = codexAuthOptions === undefined ? undefined : createChatgpt
 const providerChoices = new ProviderChoices(settings);
 // The image sets CLOUDBOT_DESKTOP_COMMAND, and its desktop starts Chromium. Without it, local runs start an installed
 // Chrome, Chromium or Edge with its own profile, and the browser tools stay off when none is found.
+// The desktop starts only when a tool or a screen view holds it, and stops after an idle period. See OnDemandDesktop.
 const desktopCommand = buildDesktopCommand(config.desktopCommand, agentUser);
-const desktop = desktopCommand === undefined ? undefined : new DesktopSupervisor({ desktopCommand });
+const desktop = desktopCommand === undefined
+    ? undefined
+    : new OnDemandDesktop({
+            supervisor: new DesktopSupervisor({ desktopCommand }),
+            isReady: () => isDesktopReady({ devtoolsUrl: DESKTOP_DEVTOOLS_URL, vncPort: DEFAULT_VNC_PORT }),
+            isTurnRunning: () => chatService.hasRunningTurn(),
+        });
+const holdDesktop: DesktopHold | undefined = desktop === undefined ? undefined : () => desktop.hold();
 // The bot sees and drives the whole desktop through a fixed helper that runs as the agent user, like the desktop itself.
 const desktopInputCommand = desktop === undefined ? undefined : buildDesktopCommand(DESKTOP_INPUT_PATH, agentUser);
-const desktopInput = desktopInputCommand === undefined ? undefined : new DesktopInput(desktopInputCommand);
+const desktopInput = desktopInputCommand === undefined ? undefined : new DesktopInput(desktopInputCommand, undefined, holdDesktop);
 const localBrowserEnvironment = defaultLocalBrowserEnvironment();
 const localProfileDir = localBrowserProfileDir(dataDir);
 // The plan decides the desktop, no browser, a new local browser or a reused one. It logs why a browser stays off.
@@ -215,7 +225,7 @@ const localPlan = await planLocalBrowser({
     environment: localBrowserEnvironment,
     profileDir: localProfileDir,
 });
-const localTools = buildLocalBrowserTools(localPlan, localProfileDir);
+const localTools = buildLocalBrowserTools(localPlan, localProfileDir, holdDesktop);
 const browser = localTools.browser;
 // Why the setup chat says the bot has no browser. With an agent user nothing is said, since the log says why.
 const noBrowserReason = localTools.noBrowserReason;
@@ -645,7 +655,6 @@ if (browserGate !== undefined && desktop === undefined) {
     saveLocalGatePort(localProfileDir, browserGate.listeningPort);
 }
 
-desktop?.start();
 localBrowser?.start();
 
 // A private address must fail at the gate. The browser tools stay off until it does, also for a reused browser.
@@ -740,7 +749,7 @@ const publicUrl = config.publicUrl;
 if (desktop !== undefined) {
     const mobileSites = new MobileSites({ devtoolsUrl: DESKTOP_DEVTOOLS_URL });
 
-    attachVncProxy({ server: server as Server, access, hubSecret: hubConfig?.secret, screen, publicUrl, mobileSites });
+    attachVncProxy({ server: server as Server, access, hubSecret: hubConfig?.secret, screen, publicUrl, mobileSites, holdDesktop });
 } else if (browser !== undefined) {
     attachScreencast({ server: server as Server, access, hubSecret: hubConfig?.secret, browser, screen, publicUrl });
 }

@@ -158,7 +158,10 @@ fi
 docker exec --user cloudbot "$CONTAINER_NAME" rm -rf "$UPLOAD_PROBE"
 echo "ok: bot can read uploads and cannot create, rename or replace files in them"
 
-# The server starts the desktop as bot. Chromium answers on its DevTools port, on localhost only.
+# The server starts the desktop only when a tool or the Screen panel needs it, so the check starts it the same way.
+docker exec --user cloudbot "$CONTAINER_NAME" sh -c 'setsid sudo -n -u bot -- /usr/local/bin/cloudbot-desktop >/dev/null 2>&1 </dev/null &'
+
+# Chromium answers on its DevTools port, on localhost only.
 DESKTOP_READY=""
 for _attempt in $(seq "$ATTEMPTS"); do
     if docker exec --user cloudbot "$CONTAINER_NAME" curl -fsS http://127.0.0.1:9222/json/version 2>/dev/null | grep -q '"Browser"'; then

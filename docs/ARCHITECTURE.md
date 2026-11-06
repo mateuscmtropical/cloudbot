@@ -162,6 +162,11 @@ because compose exposes only the server port. A real Xvfb and x11vnc probe did
 not resize the screen after a SetDesktopSize request, even with x11vnc's
 `-xrandr` option, so TigerVNC replaces both programs.
 
+The server starts the desktop only when it is needed: a browser or desktop tool,
+a page connection for a recording or a meeting, or the live view. The first use
+waits for the desktop to answer, which takes a few seconds. The desktop stops
+after ten minutes with no such use, no open view and no running turn.
+
 The live view of the screen is a WebSocket at `/api/desktop/vnc`.
 `attachVncProxy` in `src/server/desktop/` answers the HTTP upgrade, checks the
 session cookie, and pipes the frames to TigerVNC on `127.0.0.1:5900` as raw

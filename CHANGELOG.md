@@ -49,6 +49,7 @@ All notable changes to this project are listed here. The format follows
 - In the message box, the up and down arrows move through the lines first, wrapped lines too. On the first or last line they go to the edge of the text, and only from there to the older or newer message.
 - The review asks the owner before the bot gives personal details, such as an address, phone or document, to a site the owner did not name. It also asks before the bot changes or deletes something in an outside account, accepts terms or signs something, unless the owner asked for it. Other browser use never asks.
 - The bot saves what will matter in later conversations to its `MEMORY.md` on its own, such as the owner's preferences and corrections, decisions and their reason, facts about the owner's projects and accounts, and open tasks. Before, it was only asked to save preferences. Secrets stay out of the file.
+- The bot's desktop starts when a browser or desktop tool, a recording, a meeting or the Screen panel needs it, and stops after ten minutes with no use. Before, it ran from the start of the container, even when nobody used the browser. The first action waits a few seconds for it to start. The desktop's browser starts on a blank page.
 
 ### Fixed
 

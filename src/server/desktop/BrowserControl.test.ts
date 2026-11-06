@@ -10,6 +10,7 @@ import { pageElementAtPoint } from './page/pageElementAtPoint.ts';
 import { pageOrigin, pageUrl } from './page/pageLocation.ts';
 import { pageReadyState } from './page/pageReadyState.ts';
 import { pageSnapshot } from './page/pageSnapshot.ts';
+import type { DesktopHold } from './OnDemandDesktop.ts';
 
 interface FetchCall {
     url: string;
@@ -755,5 +756,69 @@ describe('BrowserControl elements', () => {
         const { browser } = createBrowser(elementsAnswer(new Map([['DOM.resolveNode', () => ({ error: { message: 'No node with given id found' } })]])));
 
         await expect(browser.describeTarget({ element: 99 })).resolves.toBe('Page: https://chat.example/\nElement: unknown');
+    });
+});
+
+describe('BrowserControl on the desktop', () => {
+    function createDesktopBrowser(holdDesktop: DesktopHold): { browser: BrowserControl; fetchCalls: ReturnType<typeof createFetch> } {
+        const sockets = createFakeSocketFactory(pageAnswer(undefined));
+        const fetchCalls = createFetch([{ type: 'page', webSocketDebuggerUrl: PAGE_SOCKET_URL }]);
+        const browser = new BrowserControl({
+            devtoolsUrl: 'http://127.0.0.1:9222',
+            fetchFunction: fetchCalls.fetchFunction,
+            socketFactory: sockets.factory,
+            sleep: async () => {},
+            holdDesktop,
+        });
+
+        return { browser, fetchCalls };
+    }
+
+    it('holds the desktop for each action, and ends the hold after the action', async () => {
+        const events: string[] = [];
+        const { browser, fetchCalls } = createDesktopBrowser(() => {
+            events.push('hold');
+
+            return Promise.resolve(() => {
+                events.push('release');
+            });
+        });
+
+        await browser.screenshot();
+
+        expect(fetchCalls.calls)
+            .toHaveLength(1);
+        expect(events)
+            .toEqual(['hold', 'release']);
+    });
+
+    it('reports the browser as not running, and does not reach it, when the desktop does not get ready', async () => {
+        const { browser, fetchCalls } = createDesktopBrowser(() => Promise.reject(new Error('The desktop did not get ready in time.')));
+
+        await expect(browser.screenshot()).rejects.toThrow(BrowserError);
+        await expect(browser.screenshot()).rejects.toThrow('The browser is not running. Try again in a few seconds.');
+        expect(fetchCalls.calls)
+            .toEqual([]);
+    });
+
+    it('holds the desktop while a page connection stays open, and ends the hold when it closes', async () => {
+        const events: string[] = [];
+        const { browser } = createDesktopBrowser(() => {
+            events.push('hold');
+
+            return Promise.resolve(() => {
+                events.push('release');
+            });
+        });
+
+        const page = await browser.connectPage();
+
+        expect(events)
+            .toEqual(['hold']);
+
+        page.close();
+
+        expect(events)
+            .toEqual(['hold', 'release']);
     });
 });
