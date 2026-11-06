@@ -1,4 +1,4 @@
-import type { AppUpdateStatus, GroupMember, GroupRole, Person, PersonWithPassword, ResetPasswordResult } from '../shared/peopleTypes.ts';
+import type { AppUpdateStatus, GroupMember, GroupRole, Person, PersonWithPassword, ResetPasswordResult, SentBotResult, SharedGroup } from '../shared/peopleTypes.ts';
 import { RequestFailedError } from './apiClient.ts';
 
 interface ErrorResponseBody {
@@ -153,5 +153,37 @@ function changeGroupMember(payload: ChangeGroupMemberPayload): Promise<GroupMemb
     return requestPeopleJson<GroupMembersView>(GROUP_MEMBERS_PATH, init, 200);
 }
 
-export { getAppUpdate, startAppUpdate, addPerson, changeGroupMember, deactivatePerson, deletePerson, getGroupMembers, getHubContext, getHubRole, listPeople, reactivatePerson, resetPersonPassword };
+function groupPath(group: string, rest: string): string {
+    const encodedGroup = encodeURIComponent(group);
+
+    return `/api/groups/${encodedGroup}${rest}`;
+}
+
+function listGroups(): Promise<SharedGroup[]> {
+    return requestPeopleJson<SharedGroup[]>('/api/groups', { method: 'GET' }, 200);
+}
+
+function addGroup(name: string): Promise<SharedGroup> {
+    const init = jsonRequest('POST', { name });
+
+    return requestPeopleJson<SharedGroup>('/api/groups', init, 201);
+}
+
+function setGroupMemberRole(group: string, person: string, role: 'admin' | 'member'): Promise<SharedGroup> {
+    const encodedPerson = encodeURIComponent(person);
+    const path = groupPath(group, `/members/${encodedPerson}`);
+    const init = jsonRequest('PUT', { role });
+
+    return requestPeopleJson<SharedGroup>(path, init, 200);
+}
+
+// Copy keeps the bot here too. Move removes it here once the group has it.
+function sendBotToGroup(group: string, botId: string, mode: 'copy' | 'move'): Promise<SentBotResult> {
+    const path = groupPath(group, '/bots');
+    const init = jsonRequest('POST', { botId, mode });
+
+    return requestPeopleJson<SentBotResult>(path, init, 201);
+}
+
+export { getAppUpdate, startAppUpdate, addGroup, addPerson, changeGroupMember, deactivatePerson, deletePerson, getGroupMembers, getHubContext, getHubRole, listGroups, listPeople, reactivatePerson, resetPersonPassword, sendBotToGroup, setGroupMemberRole };
 export type { ChangeGroupMemberPayload, GroupMembersView, HubContext, HubRole };

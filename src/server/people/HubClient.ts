@@ -1,5 +1,5 @@
-import { HUB_PEOPLE_PATH, HUB_UPDATE_PATH, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER } from '../../shared/hubProtocol.ts';
-import type { AppUpdateStatus, InstanceStatus, Person, PersonRole, PersonState, PersonWithPassword, ResetPasswordResult } from '../../shared/peopleTypes.ts';
+import { HUB_GROUPS_PATH, HUB_PEOPLE_PATH, HUB_UPDATE_PATH, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER } from '../../shared/hubProtocol.ts';
+import type { AppUpdateStatus, InstanceStatus, Person, PersonRole, PersonState, PersonWithPassword, ResetPasswordResult, SharedGroup } from '../../shared/peopleTypes.ts';
 import type { HubConfig } from './hubConfig.ts';
 import { PeopleAdminError } from './PeopleAdmin.ts';
 import type { PeopleAdmin } from './PeopleAdmin.ts';
@@ -101,6 +101,41 @@ class HubClient implements PeopleAdmin {
         const encodedName = encodeURIComponent(name);
 
         await this.request('DELETE', `${HUB_PEOPLE_PATH}/${encodedName}?confirm=${encodedName}`);
+    }
+
+    async listGroups(): Promise<SharedGroup[]> {
+        const answer = await this.request('GET', HUB_GROUPS_PATH);
+
+        if (!Array.isArray(answer)) {
+            throw unexpectedAnswer();
+        }
+
+        return answer as SharedGroup[];
+    }
+
+    async addGroup(name: string): Promise<SharedGroup> {
+        const answer = await this.request('POST', HUB_GROUPS_PATH, { name });
+
+        return answer as SharedGroup;
+    }
+
+    async setGroupMember(group: string, person: string, role: 'admin' | 'member'): Promise<SharedGroup> {
+        const path = `${HUB_GROUPS_PATH}/${encodeURIComponent(group)}/members/${encodeURIComponent(person)}`;
+        const answer = await this.request('PUT', path, { role });
+
+        return answer as SharedGroup;
+    }
+
+    // Hands a bot template to the group. Resolves with the name the group gave the new bot.
+    async sendBotToGroup(group: string, template: string): Promise<string> {
+        const path = `${HUB_GROUPS_PATH}/${encodeURIComponent(group)}/bots`;
+        const answer = await this.request('POST', path, { template });
+
+        if (!isRecord(answer) || typeof answer.name !== 'string') {
+            throw unexpectedAnswer();
+        }
+
+        return answer.name;
     }
 
     async updateStatus(): Promise<AppUpdateStatus> {

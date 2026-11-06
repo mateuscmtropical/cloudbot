@@ -24,7 +24,12 @@ const HUB_PEOPLE_PATH = '/internal/people';
 //   PUT    /internal/groups/:name/members/:person          body SetGroupMemberRequest, answers SharedGroup
 //   DELETE /internal/groups/:name/members/:person          answers SharedGroup. The group's owner cannot be removed.
 //   DELETE /internal/groups/:name?confirm=:name            answers 204
+//   POST   /internal/groups/:name/bots                     body { template }, answers 201 with { name } once the group made the bot
 const HUB_GROUPS_PATH = '/internal/groups';
+
+// The hub hands a bot template to a group's instance here, with the group's secret. It answers 201 with { name }.
+//   POST /api/hub/bot-template   body { template }
+const HUB_BOT_TEMPLATE_PATH = '/api/hub/bot-template';
 
 // The groups of the calling person, as MyGroup[]. Any person's instance may call it.
 //   GET /internal/my-groups
@@ -53,5 +58,5 @@ interface InstanceActivity {
     reasons: string[];
 }
 
-export { ACTING_PERSON_HEADER, ACTING_ROLE_HEADER, HUB_ACTIVITY_PATH, HUB_GROUPS_PATH, HUB_MY_GROUPS_PATH, HUB_PEOPLE_PATH, HUB_UPDATE_PATH, HUB_TRUST_HEADER, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER, WHATSAPP_CALLBACK_PATH };
+export { ACTING_PERSON_HEADER, ACTING_ROLE_HEADER, HUB_ACTIVITY_PATH, HUB_BOT_TEMPLATE_PATH, HUB_GROUPS_PATH, HUB_MY_GROUPS_PATH, HUB_PEOPLE_PATH, HUB_UPDATE_PATH, HUB_TRUST_HEADER, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER, WHATSAPP_CALLBACK_PATH };
 export type { InstanceActivity };

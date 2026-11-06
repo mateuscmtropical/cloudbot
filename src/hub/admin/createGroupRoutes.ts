@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { Context, Hono } from 'hono';
 
-import { HUB_GROUPS_PATH, HUB_MY_GROUPS_PATH } from '../../shared/hubProtocol.ts';
+import { HUB_BOT_TEMPLATE_PATH, HUB_GROUPS_PATH, HUB_MY_GROUPS_PATH, HUB_TRUST_HEADER } from '../../shared/hubProtocol.ts';
 import { checkPersonName } from '../../shared/peopleTypes.ts';
 import type { GroupRole, MyGroup, SharedGroup } from '../../shared/peopleTypes.ts';
 import type { GroupMembersStore, InstanceManager, PeopleStore, PersonRecord } from '../contract.ts';
@@ -13,6 +13,7 @@ interface GroupRoutesOptions {
     members: GroupMembersStore;
     domain: string;
     secure: boolean;
+    upstreamFor?: ((name: string) => { hostname: string; port: number }) | undefined;
 }
 
 interface GroupErrorResponse {
@@ -28,6 +29,9 @@ const GROUP_NOT_FOUND_MESSAGE = 'Group not found.';
 const PERSON_NOT_FOUND_MESSAGE = 'Person not found.';
 const NAME_TAKEN_MESSAGE = 'That name is taken.';
 const CHANGEABLE_ROLES: readonly GroupRole[] = ['admin', 'member'];
+const INSTANCE_PORT = 3000;
+// A template file is at most 64 KB, and its JSON text stays under this.
+const MAX_TEMPLATE_LENGTH = 128 * 1024;
 
 function groupError(context: Context, message: string, status: 400 | 401 | 404 | 409): Response {
     const body: GroupErrorResponse = { error: message };
@@ -204,6 +208,50 @@ async function removeGroup(context: Context, options: GroupRoutesOptions): Promi
     return context.body(null, 204);
 }
 
+// The owner's instance sends a bot template here. The hub starts the group and hands the template to it, so a copy of
+// the bot lands in the group. Only the template travels: name, look, rules and routines.
+async function sendBotToGroup(context: Context, options: GroupRoutesOptions): Promise<Response> {
+    if (authorizeOwner(context, options.people) === undefined) {
+        return groupError(context, UNAUTHORIZED_MESSAGE, 401);
+    }
+
+    const group = findGroup(options.people, context.req.param('name') ?? '');
+
+    if (group === undefined || group.state !== 'active') {
+        return groupError(context, GROUP_NOT_FOUND_MESSAGE, 404);
+    }
+
+    const template = await readBodyField(context, 'template');
+
+    if (template === undefined || template.length > MAX_TEMPLATE_LENGTH) {
+        return groupError(context, 'Send the bot template as text.', 400);
+    }
+
+    const started = await options.instances.start(group.name);
+
+    if (started === 'busy') {
+        return groupError(context, 'The server is busy. Try again soon.', 409);
+    }
+
+    const target = options.upstreamFor?.(group.name) ?? { hostname: `cloudbot-i-${group.name}`, port: INSTANCE_PORT };
+    const answer = await fetch(`http://${target.hostname}:${String(target.port)}${HUB_BOT_TEMPLATE_PATH}`, {
+        method: 'POST',
+        headers: { [HUB_TRUST_HEADER]: group.instanceSecret, 'content-type': 'application/json' },
+        body: JSON.stringify({ template }),
+    })
+        .catch(() => undefined);
+    const body: unknown = await answer?.json()
+        .catch(() => undefined);
+
+    if (answer?.ok !== true) {
+        const message = typeof body === 'object' && body !== null && typeof (body as UnknownRecord).error === 'string' ? (body as UnknownRecord).error as string : 'The group could not take the bot.';
+
+        return groupError(context, message, 409);
+    }
+
+    return context.json(body, 201);
+}
+
 // The groups the calling person is in. Only active groups, since a stopped one cannot be opened.
 function listMyGroups(context: Context, options: GroupRoutesOptions): Response {
     const person = authorizeInstance(context, options.people);
@@ -236,6 +284,7 @@ function addGroupRoutes(app: Hono, options: GroupRoutesOptions): void {
     app.put(`${HUB_GROUPS_PATH}/:name/members/:person`, context => setMember(context, options));
     app.delete(`${HUB_GROUPS_PATH}/:name/members/:person`, context => removeMember(context, options));
     app.delete(`${HUB_GROUPS_PATH}/:name`, context => removeGroup(context, options));
+    app.post(`${HUB_GROUPS_PATH}/:name/bots`, context => sendBotToGroup(context, options));
     app.get(HUB_MY_GROUPS_PATH, context => listMyGroups(context, options));
 }
 

@@ -36,6 +36,13 @@ interface SetGroupMemberRequest {
     role: 'admin' | 'member';
 }
 
+// What the owner's CloudBot answers after it sent a bot to a group. The problem says why a moved bot stayed here too.
+interface SentBotResult {
+    name: string;
+    isMoved: boolean;
+    problem?: string;
+}
+
 // An inactive person cannot sign in and their instance is stopped. Their data stays.
 type PersonState = 'active' | 'inactive';
 
@@ -100,4 +107,4 @@ function checkPersonName(name: string): string | undefined {
 }
 
 export { PERSON_NAME_PATTERN, RESERVED_PERSON_NAMES, checkPersonName };
-export type { AddGroupRequest, AddPersonRequest, AppUpdateState, AppUpdateStatus, GroupMember, GroupRole, InstanceStatus, MyGroup, PeopleErrorResponse, Person, PersonRole, PersonState, PersonWithPassword, ResetPasswordResult, SetGroupMemberRequest, SharedGroup };
+export type { AddGroupRequest, AddPersonRequest, AppUpdateState, AppUpdateStatus, GroupMember, GroupRole, InstanceStatus, MyGroup, PeopleErrorResponse, Person, PersonRole, PersonState, PersonWithPassword, ResetPasswordResult, SentBotResult, SetGroupMemberRequest, SharedGroup };

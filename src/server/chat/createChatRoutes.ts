@@ -610,5 +610,10 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
     return routes;
 }
 
-export { createChatRoutes, readUploadedFiles };
+// Why a delete did not happen, in the words the web app shows.
+function describeDeleteRefusal(outcome: Exclude<DeleteBotOutcome, 'deleted'>): string {
+    return outcome === 'missing' ? BOT_NOT_FOUND.error : DELETE_REFUSED[outcome].error;
+}
+
+export { createChatRoutes, describeDeleteRefusal, readUploadedFiles };
 export type { ChatRoutesOptions };

@@ -1,15 +1,22 @@
 import { useEffect, useState } from 'react';
 import type { ReactElement, SyntheticEvent } from 'react';
 
-import type { Person, PersonWithPassword } from '../../shared/peopleTypes.ts';
+import type { BotSummary } from '../../shared/chatTypes.ts';
+import type { Person, PersonWithPassword, SharedGroup } from '../../shared/peopleTypes.ts';
 import { RequestFailedError } from '../apiClient.ts';
-import { addPerson, deactivatePerson, deletePerson, listPeople, reactivatePerson, resetPersonPassword } from '../peopleClient.ts';
+import { addPerson, deactivatePerson, deletePerson, listGroups, listPeople, reactivatePerson, resetPersonPassword } from '../peopleClient.ts';
 import { Button } from './Button.tsx';
 import { Field } from './Field.tsx';
+import { EMPTY_GROUP_INVITE, GroupInviteFields, NEW_GROUP, runGroupInvite } from './GroupInvite.tsx';
+import type { GroupInviteChoice } from './GroupInvite.tsx';
 import { PanelHeader } from './PanelHeader.tsx';
 
 interface PeoplePanelProps {
     onClose: () => void;
+    // The owner's bots, which a group invite can copy or move.
+    bots?: BotSummary[];
+    // Called after an invite, since a moved bot leaves this CloudBot.
+    onBotsChanged?: () => void;
 }
 
 interface OneTimeCredential {
@@ -40,8 +47,10 @@ function replacePerson(people: Person[], updatedPerson: Person): Person[] {
     return people.map(person => person.name === updatedPerson.name ? updatedPerson : person);
 }
 
-function PeoplePanel({ onClose }: PeoplePanelProps): ReactElement {
+function PeoplePanel({ onClose, bots = [], onBotsChanged }: PeoplePanelProps): ReactElement {
     const [people, setPeople] = useState<Person[]>([]);
+    const [groups, setGroups] = useState<SharedGroup[]>([]);
+    const [invite, setInvite] = useState<GroupInviteChoice>(EMPTY_GROUP_INVITE);
     const [name, setName] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [isWorking, setIsWorking] = useState(false);
@@ -79,23 +88,60 @@ function PeoplePanel({ onClose }: PeoplePanelProps): ReactElement {
         };
     }, []);
 
+    useEffect(() => {
+        let isCurrent = true;
+
+        // A hub without groups, or an older one, leaves the group choice with only a new group.
+        listGroups()
+            .then((listedGroups) => {
+                if (isCurrent) {
+                    setGroups(listedGroups);
+                }
+            })
+            .catch(() => undefined);
+
+        return () => {
+            isCurrent = false;
+        };
+    }, []);
+
+    async function addWithInvite(): Promise<void> {
+        const createdPerson = await addPerson(name);
+
+        setPeople((currentPeople) => {
+            const remainingPeople = currentPeople.filter(person => person.name !== createdPerson.person.name);
+
+            return [createdPerson.person, ...remainingPeople];
+        });
+        const oneTimeCredential = toCredential(createdPerson);
+
+        setCredential(oneTimeCredential);
+        setName('');
+
+        try {
+            const inviteProblems = await runGroupInvite(createdPerson.person.name, invite, bots);
+
+            setProblem(inviteProblems.length === 0 ? undefined : inviteProblems.join(' '));
+        } catch (error: unknown) {
+            const errorText = getErrorText(error, 'The person was added, but not to the group.');
+
+            setProblem(errorText);
+        }
+
+        setInvite(EMPTY_GROUP_INVITE);
+        onBotsChanged?.();
+        const refreshedGroups = await listGroups()
+            .catch(() => groups);
+
+        setGroups(refreshedGroups);
+    }
+
     function handleAdd(event: SyntheticEvent<HTMLFormElement>): void {
         event.preventDefault();
         setIsWorking(true);
         setProblem(undefined);
 
-        addPerson(name)
-            .then((createdPerson) => {
-                setPeople((currentPeople) => {
-                    const remainingPeople = currentPeople.filter(person => person.name !== createdPerson.person.name);
-
-                    return [createdPerson.person, ...remainingPeople];
-                });
-                const oneTimeCredential = toCredential(createdPerson);
-
-                setCredential(oneTimeCredential);
-                setName('');
-            })
+        addWithInvite()
             .catch((error: unknown) => {
                 const errorText = getErrorText(error, 'Could not add person.');
 
@@ -105,6 +151,8 @@ function PeoplePanel({ onClose }: PeoplePanelProps): ReactElement {
                 setIsWorking(false);
             });
     }
+
+    const isNewGroupMissing = invite.group === NEW_GROUP && invite.newGroupName.length === 0;
 
     function handlePersonState(person: Person): void {
         setIsWorking(true);
@@ -233,7 +281,8 @@ function PeoplePanel({ onClose }: PeoplePanelProps): ReactElement {
                     <Field label="Name">
                         <input autoComplete="off" value={name} onChange={(event) => { setName(event.currentTarget.value); }} />
                     </Field>
-                    <Button type="submit" disabled={isWorking || name.length === 0}>Add person</Button>
+                    <GroupInviteFields groups={groups} bots={bots} choice={invite} onChange={setInvite} />
+                    <Button type="submit" disabled={isWorking || name.length === 0 || isNewGroupMissing}>Add person</Button>
                 </div>
             </form>
 

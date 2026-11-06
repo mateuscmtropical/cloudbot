@@ -1556,6 +1556,10 @@ function App(): ReactElement {
                 {isPeopleOpen && hubRole === 'owner' && !isConnectAppsOpen
                     ? (
                             <PeoplePanel
+                                bots={bots}
+                                onBotsChanged={() => {
+                                    void refreshBotsAfterDeletion();
+                                }}
                                 onClose={() => {
                                     setIsPeopleOpen(false);
                                 }}
