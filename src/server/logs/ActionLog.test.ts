@@ -139,6 +139,39 @@ describe('logReviews', () => {
         expect(text).not.toContain('private');
     });
 
+    it('keeps who decided, the card line and the reason, cut short and without card numbers', async () => {
+        const filePath = makeLogPath();
+        const review = logReviews((_call, _signal, note) => {
+            Object.assign(note ?? {}, { decision: 'blocked', decidedBy: 'block list', summary: `Pay 4111 1111 1111 1111 ${'x'.repeat(300)}`, reason: 'No.' });
+
+            return Promise.resolve({ isAllowed: false as const, reason: 'No.' });
+        }, new ActionLog(filePath), 'bot-1', 'channel-1');
+
+        await review({ toolName: 'Bash', input: SECRET_INPUT }, SIGNAL);
+
+        const [entry] = readEntries(filePath);
+
+        expect(entry)
+            .toMatchObject({ decision: 'blocked', decidedBy: 'block list', reason: 'No.', channelId: 'channel-1' });
+        expect(String(entry?.summary))
+            .not.toContain('4111 1111');
+        expect(String(entry?.summary).length)
+            .toBeLessThanOrEqual(203);
+    });
+
+    it('filters by decision and start time when it reads', () => {
+        const filePath = makeLogPath();
+        const log = new ActionLog(filePath);
+
+        log.write({ botId: 'bot-1', event: 'review', decision: 'blocked' });
+        log.write({ botId: 'bot-1', event: 'review', decision: 'allowed' });
+
+        expect(log.read(10, undefined, 'blocked'))
+            .toMatchObject([{ decision: 'blocked' }]);
+        expect(log.read(10, undefined, undefined, Date.now() + 60_000))
+            .toEqual([]);
+    });
+
     it('notes a review that throws, and throws it on', async () => {
         const filePath = makeLogPath();
         const review = logReviews(() => Promise.reject(new Error('down')), new ActionLog(filePath), 'bot-1');

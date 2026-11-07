@@ -709,9 +709,19 @@ async function removePushSubscription(endpoint: string): Promise<void> {
         throw new RequestFailedError(path, response.status, serverMessage);
     }
 }
-// What the bots did, newest first. A bot id leaves only that bot's actions.
-function listActionLog(botId?: string): Promise<ActionLogRecord[]> {
-    const query = botId === undefined ? '' : `?botId=${encodeURIComponent(botId)}`;
+// What the bots did, newest first. A bot id leaves only that bot's actions, and a decision only the calls with that outcome.
+function listActionLog(botId?: string, decision?: string): Promise<ActionLogRecord[]> {
+    const params = new URLSearchParams();
+
+    if (botId !== undefined) {
+        params.set('botId', botId);
+    }
+
+    if (decision !== undefined) {
+        params.set('decision', decision);
+    }
+
+    const query = params.size === 0 ? '' : `?${params.toString()}`;
 
     return requestJson<ActionLogRecord[]>(`${API_ROOT}/action-log${query}`, {});
 }

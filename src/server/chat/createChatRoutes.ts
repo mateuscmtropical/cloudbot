@@ -161,7 +161,7 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
 
             try {
                 const acting = options.readActing?.(context);
-                const message = await chatService.answerSetup(botId, messageId, action, value, acting?.role);
+                const message = await chatService.answerSetup(botId, messageId, action, value, acting?.role, acting === undefined ? undefined : `${acting.name} (${acting.role})`);
 
                 return context.json(message);
             } catch (error: unknown) {

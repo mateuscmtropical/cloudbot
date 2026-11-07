@@ -384,4 +384,71 @@ describe('ApprovalGate', () => {
         await expect(pending)
             .resolves.toBe(false);
     });
+
+    describe('audit note', () => {
+        const signal = new AbortController().signal;
+
+        it('notes a block by the card number guard and by the command floor', async () => {
+            const { gate } = createGate(() => Promise.resolve({ decision: 'deny', reason: 'Blocked.' }));
+            const guarded: Record<string, unknown> = {};
+            const floored: Record<string, unknown> = {};
+
+            await gate.review('bot-1', { toolName: 'mcp__cloudbot__browser_type', input: { text: '4111 1111 1111 1111' } }, signal, undefined, guarded);
+            await gate.review('bot-1', { toolName: 'Bash', input: { command: 'rm -rf /' } }, signal, undefined, floored);
+
+            expect(guarded)
+                .toMatchObject({ decision: 'blocked', decidedBy: 'block list' });
+            expect(floored)
+                .toMatchObject({ decision: 'blocked', decidedBy: 'block list' });
+        });
+
+        it('notes a refusal of the review agent', async () => {
+            const { gate } = createGate(() => Promise.resolve({ decision: 'deny', reason: 'Not on the list.' }));
+            const audit: Record<string, unknown> = {};
+
+            await gate.review('bot-1', SEND_CALL, signal, undefined, audit);
+
+            expect(audit)
+                .toEqual({ decision: 'refused', decidedBy: 'review agent', reason: 'Not on the list.' });
+        });
+
+        it('notes the card line and who approved or denied it', async () => {
+            const { gate, posted } = createGate(() => Promise.resolve({ decision: 'ask', summary: 'Send an email to Ana' }));
+            const approved: Record<string, unknown> = {};
+            const pending = gate.review('bot-1', SEND_CALL, signal, undefined, approved);
+
+            await vi.waitFor(() => {
+                expect(posted)
+                    .toHaveLength(1);
+            });
+            await gate.answer('bot-1', 'message-1', 'approve', 'Ana (admin)');
+            await pending;
+
+            expect(approved)
+                .toEqual({ summary: 'Send an email to Ana', decision: 'owner_approved', decidedBy: 'Ana (admin)' });
+
+            const denied: Record<string, unknown> = {};
+            const second = gate.review('bot-1', SEND_CALL, signal, undefined, denied);
+
+            await vi.waitFor(() => {
+                expect(posted)
+                    .toHaveLength(2);
+            });
+            await gate.answer('bot-1', 'message-2', 'deny');
+            await second;
+
+            expect(denied)
+                .toMatchObject({ decision: 'owner_denied', decidedBy: 'owner' });
+        });
+
+        it('notes a card nobody answered', async () => {
+            const { gate } = createGate(() => Promise.resolve({ decision: 'ask', summary: 'Send an email to Ana' }), 10);
+            const audit: Record<string, unknown> = {};
+
+            await gate.review('bot-1', SEND_CALL, signal, undefined, audit);
+
+            expect(audit)
+                .toMatchObject({ decision: 'not_answered' });
+        });
+    });
 });
