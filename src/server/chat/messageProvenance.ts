@@ -1,5 +1,6 @@
 import { isBotHandoffMessage } from '../bots/botHandoff.ts';
 import { isEmailMessage } from '../email/emailMessage.ts';
+import { isTriggerMessage } from '../triggers/triggerMessage.ts';
 import { isWatchMessage } from '../watches/watchMessage.ts';
 import { isWebhookMessage } from '../webhooks/webhookMessage.ts';
 
@@ -44,6 +45,10 @@ function describeProvenance(source: MessageSource, text: string, author?: string
 
     if (isWatchMessage(text)) {
         return { from: 'page watch', isInstruction: false };
+    }
+
+    if (isTriggerMessage(text)) {
+        return { from: 'app event', isInstruction: false };
     }
 
     if (source === 'bot' || isBotHandoffMessage(text)) {

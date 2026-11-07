@@ -288,4 +288,24 @@ describe('ConnectedApps', () => {
         expect(secrets.has('SHARED_TOKEN'))
             .toBe(false);
     });
+
+    it('gives the token of a real Google app only, never of a custom app with the same name', async () => {
+        const secrets = memorySecrets({});
+        const apps = appsWith(secrets, fakeServer().fetch);
+        const gmailUrl = 'https://gmailmcp.googleapis.com/mcp/v1';
+
+        secrets.put('OAUTH_GMAIL', { site: new URL(gmailUrl).origin, value: 'google-token' });
+        secrets.put('OAUTH_FAKE', { site: new URL(SERVER_URL).origin, value: 'other-token' });
+        await store.save({ name: 'google-gmail', url: gmailUrl, status: 'connected', toolCount: 3, problem: undefined, secretName: 'OAUTH_GMAIL', secretBotId: BOT_ID });
+
+        expect(await apps.googleAccessToken('google-gmail'))
+            .toBe('google-token');
+
+        await store.save({ name: 'google-gmail', url: SERVER_URL, status: 'connected', toolCount: 3, problem: undefined, secretName: 'OAUTH_FAKE', secretBotId: BOT_ID });
+
+        expect(await apps.googleAccessToken('google-gmail'))
+            .toBeUndefined();
+        expect(await apps.googleAccessToken('google-calendar'))
+            .toBeUndefined();
+    });
 });

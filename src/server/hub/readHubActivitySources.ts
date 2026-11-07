@@ -12,6 +12,10 @@ interface ActivityWatch {
     id: string;
 }
 
+interface ActivityTrigger {
+    id: string;
+}
+
 interface ActivityWebhook {
     id: string;
 }
@@ -30,6 +34,10 @@ interface ActivityRoutineStore {
 
 interface ActivityWatchStore {
     list: (botId: string) => Promise<ActivityWatch[]>;
+}
+
+interface ActivityTriggerStore {
+    list: (botId: string) => Promise<ActivityTrigger[]>;
 }
 
 interface ActivityWebhookStore {
@@ -52,6 +60,7 @@ interface HubActivitySourceOptions {
     chatService?: ActivityChatService;
     routineStore?: ActivityRoutineStore;
     watchStore?: ActivityWatchStore;
+    triggerStore?: ActivityTriggerStore;
     webhookStore?: ActivityWebhookStore;
     whatsappStore?: ActivityWhatsAppStore;
     hasAgentProgram?: () => Promise<boolean>;
@@ -64,6 +73,7 @@ async function readHubActivitySources(options: HubActivitySourceOptions): Promis
     const botIds = bots.map(bot => bot.id);
     const routineStore = options.routineStore;
     const watchStore = options.watchStore;
+    const triggerStore = options.triggerStore;
     const webhookStore = options.webhookStore;
     const whatsappStore = options.whatsappStore;
     const chatService = options.chatService;
@@ -71,6 +81,8 @@ async function readHubActivitySources(options: HubActivitySourceOptions): Promis
     const routineLists = routineStore === undefined ? [] : await Promise.all(routineReads);
     const watchReads = watchStore === undefined ? [] : botIds.map(botId => watchStore.list(botId));
     const watchLists = watchStore === undefined ? [] : await Promise.all(watchReads);
+    const triggerReads = triggerStore === undefined ? [] : botIds.map(botId => triggerStore.list(botId));
+    const triggerLists = triggerStore === undefined ? [] : await Promise.all(triggerReads);
     const webhookReads = webhookStore === undefined ? [] : botIds.map(botId => webhookStore.list(botId));
     const webhookLists = webhookStore === undefined ? [] : await Promise.all(webhookReads);
     const whatsappConnections = whatsappStore === undefined ? [] : await whatsappStore.list();
@@ -88,6 +100,7 @@ async function readHubActivitySources(options: HubActivitySourceOptions): Promis
         hasActiveTurn: bots.some(bot => chatService?.isBusy(bot.id) ?? false),
         hasEnabledRoutine: routineLists.some(routines => routines.some(routine => routine.isEnabled)),
         hasEnabledWatch: watchLists.some(watches => watches.length > 0),
+        hasAppTrigger: triggerLists.some(triggers => triggers.length > 0),
         hasWebhook: webhookLists.some(webhooks => webhooks.length > 0),
         hasWhatsAppConnection: whatsappConnections.length > 0,
         hasTelegramConnection: telegramConnections.some(isConnected => isConnected),

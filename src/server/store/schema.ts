@@ -353,6 +353,37 @@ const watches = sqliteTable('watches', {
         .on(table.botId),
 ]);
 
+// An app event the bot reacts to. The app is polled on a schedule, and the bot is woken only for new items.
+// `seen` holds the ids already handled as JSON, capped in size. It is null until the first check sets the baseline.
+const appTriggers = sqliteTable('app_triggers', {
+    id: text('id')
+        .primaryKey(),
+    botId: text('bot_id')
+        .notNull()
+        .references(() => bots.id, { onDelete: 'cascade' }),
+    name: text('name')
+        .notNull(),
+    source: text('source')
+        .notNull(),
+    target: text('target')
+        .notNull(),
+    // The owner's instruction for each event. It is the bot's own text, never event content.
+    prompt: text('prompt')
+        .notNull(),
+    intervalMinutes: integer('interval_minutes')
+        .notNull(),
+    seen: text('seen', { mode: 'json' })
+        .$type<string[]>(),
+    nextCheckAt: integer('next_check_at')
+        .notNull(),
+    lastCheckedAt: integer('last_checked_at'),
+    createdAt: integer('created_at')
+        .notNull(),
+}, table => [
+    index('app_triggers_bot_id')
+        .on(table.botId),
+]);
+
 // The mailbox of a bot. The password is never stored here: it is a vault secret with the bot prefix.
 // `uidValidity` and `lastUid` are the position in the INBOX, so each mail is handled once.
 const emailAccounts = sqliteTable('email_accounts', {
@@ -622,5 +653,5 @@ const pushSubscriptions = sqliteTable('push_subscriptions', {
         .on(table.endpoint),
 ]);
 
-export { botLimits, botModels, botProviderModels, botRules, botSkills, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, emailAccounts, emailDeliveries, integrationRuns, integrations, messages, passkeys, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhookCalls, webhooks, whatsappConnections, whatsappMessages };
+export { appTriggers, botLimits, botModels, botProviderModels, botRules, botSkills, bots, browserAllowedHosts, channelMembers, channelMessages, channels, connectedApps, emailAccounts, emailDeliveries, integrationRuns, integrations, messages, passkeys, pushSubscriptions, routines, settings, tasks, turnQueue, turnWaits, watches, webhookCalls, webhooks, whatsappConnections, whatsappMessages };
 export type { StoredUploadRecord };

@@ -22,13 +22,11 @@ All notable changes to this project are listed here. The format follows
 ### Added
 
 - The action log is now an audit log. Each decision on a tool call records who decided (owner, group member, review agent or block list), the card line and the reason. Account, Action log filters by bot and outcome. A bot can read its own entries with the new `audit_log` tool.
-<<<<<<< HEAD
 - After a long chat task that went well, a bot may propose a skill from it on the usual approval card. Nothing is saved until the owner approves. Ask the bot in chat to turn the suggestions off or on.
 - Talk to a bot from Discord. The owner saves a Discord bot token through the secure form and sends `pair` with a one-time code to the Discord bot in a direct message. Only that Discord account can then talk to the bot, and the replies come back there. Text only for now, and approvals stay in the web app. Setup is in `docs/DISCORD.md`.
 - Telegram and Discord now share one bridge base, so another messenger needs only its own way to receive and send messages.
-=======
 - A bot can search the past messages of its own chat with `chat_search` and read the messages around a hit with `chat_context`, so it can find what you said weeks ago. It uses the same index as the Search field and never sees another bot's chat.
->>>>>>> e8a17154 (feat(chat): let a bot search its own past chat messages)
+- App triggers: say "when a new issue opens on repo X, do Y" or "when a mail from Ana arrives, do Y" and the bot sets it up itself with `trigger_create`, with no webhook. CloudBot checks the app every 15 minutes by default (10 minutes at least) and wakes the bot only when something new appears, so a check with nothing new costs no model call. Sources are GitHub issues, GitHub pull requests and Gmail. Gmail uses the Gmail app from Connect apps, and a private repository uses the `GITHUB_TOKEN` secret. The first check only records what is there. The new items reach the bot as text from outside, never as instructions. Trigger turns use the routines model, effort and limits. A bot has at most 10 triggers.
 - A file dragged from the computer and dropped anywhere on the chat is attached to the message, like with the attach button.
 - The bots keep long-term memory in ai-memory, a local MCP server that runs beside each server. Claude and Codex bots get it. Set `CLOUDBOT_AI_MEMORY=off` to turn it off, see docs/MEMORY.md.
 - Shared groups let people on one server work together. Add person can invite the new person to a new or existing group, and each of your bots can stay with you, be copied to the group or move there. Everyone in a group sees it under Shared with people in their own CloudBot. Inside it, each message shows who wrote it, and Members lists the people. An admin or the owner adds and removes people and bots. Anyone approves bot actions, but money or a bot delete needs an admin or the owner. Nobody can remove the owner of a group.

@@ -44,6 +44,7 @@ describe('readHubActivitySources', () => {
                 hasAgentProgram: false,
                 isLoginOrSetupInProgress: false,
                 hasAppSignIn: false,
+                hasAppTrigger: false,
             });
     });
 
@@ -73,6 +74,7 @@ describe('readHubActivitySources', () => {
                 hasAgentProgram: false,
                 isLoginOrSetupInProgress: true,
                 hasAppSignIn: false,
+                hasAppTrigger: false,
             });
     });
 });

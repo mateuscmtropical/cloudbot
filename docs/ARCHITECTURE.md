@@ -1323,6 +1323,41 @@ read only when it is a 200 with a `text/html` or `text/plain` type, and
 reading stops past 1 MB. The request has a 15 second limit. Tests inject the
 resolver and the request, so no test reaches the network.
 
+## App triggers
+
+The bot creates a trigger with `trigger_create` (`{ name, source, target,
+prompt, intervalMinutes? }`) and manages it with `trigger_list` and
+`trigger_delete`. It reacts to new items in an app the owner already
+connected, with no webhook. `trigger_create` is reviewed and counts as
+outbound for the sensitive number check, `trigger_list` is on the skip list.
+The default interval is 15 minutes, the minimum 10, and a bot holds at most 10
+triggers.
+
+`triggerSources.ts` is the list of sources. A source has a target check, a
+ready check, and `poll(target, seen, botId, deps)`, which returns the ids of
+the newest items and the events that are not in `seen`. The sources are
+`github_issues` and `github_pulls` (target `owner/repo`, the public REST API,
+with the `GITHUB_TOKEN` secret when the bot has one) and `gmail` (target is a
+Gmail search, the Gmail REST API with the access token of the connected
+`google-gmail` app, read through `ConnectedApps.googleAccessToken`). The
+addresses are fixed in the source, so a token only goes to `api.github.com` or
+Google. To add an app, add one entry there.
+
+`AppTriggerScheduler` runs every 30 seconds. A due trigger first moves its next
+check, then polls. The `app_triggers` table keeps the last 100 seen ids, and
+`null` until the first check, which only records the baseline. New items are
+sent as one chat message with source `routine`, so the routines model, effort
+and limits apply, and the ids are saved after the message is queued. A check
+with nothing new makes one or two API requests and no model call. The message
+starts with `App event "<name>"` and the owner's instruction, then the outside
+data line, then the items on one line each. The review context labels it
+`App event (outside data)`. A trigger keeps the instance awake in the hub idle
+check.
+
+Limits of this version. Checks are polling, so the delay is up to the
+interval. There is no owner panel for triggers yet, only the bot tools. A
+failing check is logged and tried again at the next interval, and the owner is
+not told.
 ## Once routines
 
 A routine with the schedule `{kind: "once", at}` runs one time. The tool takes

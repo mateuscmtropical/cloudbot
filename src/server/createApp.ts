@@ -64,6 +64,7 @@ import type { RoutineStore } from './store/RoutineStore.ts';
 import type { RuleStore } from './store/RuleStore.ts';
 import type { WebhookStore } from './store/WebhookStore.ts';
 import type { WatchStore } from './store/WatchStore.ts';
+import type { AppTriggerStore } from './store/AppTriggerStore.ts';
 import { createWatchRoutes } from './watches/createWatchRoutes.ts';
 import { createWebhookHookRoutes } from './webhooks/createWebhookHookRoutes.ts';
 import { createWebhookRoutes } from './webhooks/createWebhookRoutes.ts';
@@ -122,6 +123,7 @@ interface AppOptions {
     // The delivery ids of each webhook, shared by the call route and the owner routes. Without it a new memory is used.
     webhookDeliveries?: DeliveryMemory;
     watchStore?: WatchStore;
+    triggerStore?: AppTriggerStore;
     // The remote MCP servers the owner connected. Without it the owner's app routes are not served.
     connectedApps?: ConnectedApps;
     // The sign-in through the server's own page. The redirect address is the one the server sends the owner back to.
@@ -331,6 +333,7 @@ function createApp(options: AppOptions): Hono {
                 ...(options.chatService === undefined ? {} : { chatService: options.chatService }),
                 ...(options.routineStore === undefined ? {} : { routineStore: options.routineStore }),
                 ...(options.watchStore === undefined ? {} : { watchStore: options.watchStore }),
+                ...(options.triggerStore === undefined ? {} : { triggerStore: options.triggerStore }),
                 ...(options.webhookStore === undefined ? {} : { webhookStore: options.webhookStore }),
                 ...(options.whatsappStore === undefined ? {} : { whatsappStore: options.whatsappStore }),
                 hasAgentProgram: () => hasAgentProgramListening({ agentUser: options.agentUser }),

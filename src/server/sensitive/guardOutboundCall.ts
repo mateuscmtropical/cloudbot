@@ -10,6 +10,7 @@ const OUTBOUND_BOT_TOOL_NAMES = new Set([
     `${OWN_TOOL_PREFIX}bot_send`,
     `${OWN_TOOL_PREFIX}integration_run`,
     `${OWN_TOOL_PREFIX}watch_create`,
+    `${OWN_TOOL_PREFIX}trigger_create`,
     `${OWN_TOOL_PREFIX}bot_create`,
     `${OWN_TOOL_PREFIX}routine_create`,
 ]);

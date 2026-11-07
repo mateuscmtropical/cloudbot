@@ -1,4 +1,5 @@
 import type { ConnectedAppSummary } from '../../shared/connectedApps.ts';
+import { findGoogleApp } from '../../shared/googleApps.ts';
 import type { BotSecrets } from '../secrets/BotSecrets.ts';
 import type { ConnectedAppRecord, ConnectedAppStore } from '../store/ConnectedAppStore.ts';
 import type { McpServerConfig } from '../agent/AgentRunner.ts';
@@ -116,6 +117,25 @@ class ConnectedApps {
         const probe = await this.probe(checked, token.value);
 
         return this.saveProbe(input, checked.url, probe, botId, input.tokenSecret);
+    }
+
+    // The access token of a Google app the owner connected, for the server's own checks of Google's API.
+    // Both the name and the address must be Google's, so a custom app that borrows the name never gets a Google token.
+    // Undefined when the app is not connected or its sign-in ended.
+    async googleAccessToken(serverName: string): Promise<string | undefined> {
+        const record = await this.deps.store.findByName(serverName);
+
+        if (record?.status !== 'connected' || record.secretName === null || record.secretBotId === null || findGoogleApp(record.name, record.url) === undefined) {
+            return undefined;
+        }
+
+        try {
+            const token = await this.readTokenFor(record.secretBotId, record.secretName, new URL(record.url));
+
+            return token.value;
+        } catch {
+            return undefined;
+        }
     }
 
     async list(): Promise<ConnectedAppSummary[]> {
