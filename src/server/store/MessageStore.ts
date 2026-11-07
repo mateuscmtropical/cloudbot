@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 
 import { SNIPPET_MARK_END, SNIPPET_MARK_START } from '../../shared/searchTypes.ts';
 import type { MessageSearchHit } from '../../shared/searchTypes.ts';
@@ -8,6 +8,8 @@ import { messages } from './schema.ts';
 import type { AppDatabase, ListMessagesOptions, Message, NewMessage, StoreOptions } from './types.ts';
 
 const SNIPPET_WORDS = 16;
+// The kinds in the search index, see the message_search migration.
+const SEARCHED_KINDS = ['text', 'choice', 'link', 'file'];
 
 // Each word becomes a quoted prefix, so nothing the owner types can be read as search syntax.
 function toMatchQuery(text: string): string {
@@ -137,12 +139,17 @@ class MessageStore {
     }
 
     // Newest match first. Every word must match, and the last letters of a word may be missing, so results show while typing.
-    async search(text: string, limit: number): Promise<MessageSearchHit[]> {
+    // With a bot id, only the chat of that bot is searched.
+    async search(text: string, limit: number, botId?: string): Promise<MessageSearchHit[]> {
         const matchQuery = toMatchQuery(text);
 
         if (matchQuery === '') {
             return [];
         }
+
+        const matchCondition = sql`messages_fts MATCH ${matchQuery}`;
+        const botCondition = botId === undefined ? undefined : eq(messages.botId, botId);
+        const searchCondition = and(matchCondition, botCondition);
 
         const snippet = sql<string>`snippet(messages_fts, 0, ${SNIPPET_MARK_START}, ${SNIPPET_MARK_END}, '…', ${SNIPPET_WORDS})`;
         const newestFirst = desc(messages.sequence);
@@ -156,9 +163,41 @@ class MessageStore {
         })
             .from(messages)
             .innerJoin(sql`messages_fts`, sql`messages_fts.rowid = ${messages.sequence}`)
-            .where(sql`messages_fts MATCH ${matchQuery}`)
+            .where(searchCondition)
             .orderBy(newestFirst)
             .limit(limit);
+    }
+
+    // The searchable messages next to one message of the bot, oldest first, with that message in the middle.
+    // A message of another bot gives undefined.
+    async around(botId: string, messageId: string, before: number, after: number): Promise<Message[] | undefined> {
+        const center = await this.getById(messageId);
+
+        if (center?.botId !== botId) {
+            return undefined;
+        }
+
+        const botCondition = eq(messages.botId, botId);
+        const kindCondition = inArray(messages.kind, SEARCHED_KINDS);
+        const sameBot = and(botCondition, kindCondition);
+        const isOlder = lt(messages.sequence, center.sequence);
+        const isNewer = gt(messages.sequence, center.sequence);
+        const olderCondition = and(sameBot, isOlder);
+        const newerCondition = and(sameBot, isNewer);
+        const newestFirst = desc(messages.sequence);
+        const oldestFirst = asc(messages.sequence);
+        const earlier = await this.database.select()
+            .from(messages)
+            .where(olderCondition)
+            .orderBy(newestFirst)
+            .limit(before);
+        const later = await this.database.select()
+            .from(messages)
+            .where(newerCondition)
+            .orderBy(oldestFirst)
+            .limit(after);
+
+        return [...earlier.reverse(), center, ...later];
     }
 }
 
