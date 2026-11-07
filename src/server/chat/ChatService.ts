@@ -90,6 +90,7 @@ import { ADD_PASSKEY_CHOICE_ID, KEEP_PASSKEY_CHOICE_ID, LATER_PASSKEY_CHOICE_ID,
 import { PASSKEY_TOOL_FULL_NAMES, createPasskeyTools } from '../access/createPasskeyTools.ts';
 import type { PasskeyService, PasskeySummary } from '../access/PasskeyService.ts';
 import { PEOPLE_TOOL_FULL_NAMES, createPeopleTools } from '../people/createPeopleTools.ts';
+import { CHAT_HISTORY_TOOL_FULL_NAMES, createChatHistoryTools } from './createChatHistoryTools.ts';
 import type { PeopleAdmin } from '../people/PeopleAdmin.ts';
 import type { PushNoticeKind } from '../../shared/pushTypes.ts';
 import { REQUEST_SECRET_TOOL_FULL_NAME, createRequestSecretTool } from '../secrets/createSecretTools.ts';
@@ -4201,11 +4202,12 @@ class ChatService {
             const discordTools = this.discord === undefined ? [] : createDiscordTools(this.discord, botId);
             const meetingTools = this.meetingRecorder === undefined || this.browser === undefined ? [] : createMeetingTools(this.meetingRecorder, botId, this.browser);
             const whatsappTools = this.whatsapp === undefined ? [] : createWhatsAppTools(this.whatsapp, botId);
+            const chatHistoryTools = createChatHistoryTools(this.messageStore, botId);
             const profileTools = createProfileTools(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath, turn.channel),
-                [...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...workTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...auditTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...discordTools, ...whatsappTools, ...meetingTools],
+                [...chatHistoryTools, ...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...workTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...auditTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...discordTools, ...whatsappTools, ...meetingTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -4762,7 +4764,7 @@ class ChatService {
             const emailToolNames = this.emailAccountService === undefined || this.emailSender === undefined ? [] : EMAIL_STATUS_TOOL_ONLY_FULL_NAMES;
             const whatsappToolNames = this.whatsapp === undefined ? [] : WHATSAPP_TOOL_FULL_NAMES;
 
-            return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...emailToolNames, ...this.ruleToolNamesAllowed(), ...this.skillToolNamesAllowed(), ...this.notificationToolNames(), ...whatsappToolNames, ...this.peopleToolNames()];
+            return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...CHAT_HISTORY_TOOL_FULL_NAMES, ...emailToolNames, ...this.ruleToolNamesAllowed(), ...this.skillToolNamesAllowed(), ...this.notificationToolNames(), ...whatsappToolNames, ...this.peopleToolNames()];
         }
 
         const browserToolNames = this.browser === undefined ? [] : BROWSER_TOOL_FULL_NAMES;
@@ -4805,7 +4807,7 @@ class ChatService {
         const whatsappToolNames = this.whatsapp === undefined ? [] : WHATSAPP_TOOL_FULL_NAMES;
         const meetingToolNames = this.meetingRecorder === undefined || this.browser === undefined ? [] : MEETING_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...meetingToolNames, ...browserToolNames, ...desktopToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...auditToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...discordToolNames, ...whatsappToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...CHAT_HISTORY_TOOL_FULL_NAMES, ...meetingToolNames, ...browserToolNames, ...desktopToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...auditToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...discordToolNames, ...whatsappToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.

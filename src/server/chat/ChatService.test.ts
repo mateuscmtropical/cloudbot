@@ -33,6 +33,7 @@ import { FILL_LOGIN_TOOL_FULL_NAME } from '../bitwarden/createFillLoginTool.ts';
 import type { BitwardenVault } from '../bitwarden/BitwardenVault.ts';
 import { WHATSAPP_TOOL_FULL_NAMES } from '../whatsapp/createWhatsAppTools.ts';
 import type { WhatsAppConnector } from '../whatsapp/createWhatsAppTools.ts';
+import { CHAT_HISTORY_TOOL_FULL_NAMES } from './createChatHistoryTools.ts';
 import { PEOPLE_TOOL_FULL_NAMES } from '../people/createPeopleTools.ts';
 import type { PeopleAdmin } from '../people/PeopleAdmin.ts';
 import { Vault } from '../vault/Vault.ts';
@@ -1226,7 +1227,7 @@ describe('ChatService', () => {
         expect(turnRequest?.tools?.map(item => `mcp__${PROFILE_SERVER_NAME}__${item.name}`))
             .toEqual(expect.arrayContaining([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME]));
         expect(turnRequest?.allowedTools)
-            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME]);
+            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...CHAT_HISTORY_TOOL_FULL_NAMES]);
         expect(turnRequest?.systemPrompt)
             .toBe(buildSystemPrompt(bot, { hasBrowser: false }));
     });
@@ -1439,7 +1440,7 @@ describe('ChatService', () => {
         await finished;
 
         expect(runner.receivedRequests[0]?.allowedTools)
-            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME]);
+            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, ...CHAT_HISTORY_TOOL_FULL_NAMES]);
     });
 
     it('adds the browser tools and the browser paragraph when the bot has a browser', async () => {
@@ -1455,7 +1456,7 @@ describe('ChatService', () => {
         const turnRequest = runner.receivedRequests[0];
 
         expect(turnRequest?.allowedTools)
-            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...BROWSER_TOOL_FULL_NAMES, BOT_CREATE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME, BOT_IMPORT_TEXT_TOOL_FULL_NAME, BOT_DELETE_TOOL_FULL_NAME, BOT_SEND_TOOL_FULL_NAME]);
+            .toEqual([UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...CHAT_HISTORY_TOOL_FULL_NAMES, ...BROWSER_TOOL_FULL_NAMES, BOT_CREATE_TOOL_FULL_NAME, BOT_EXPORT_TOOL_FULL_NAME, BOT_IMPORT_TOOL_FULL_NAME, BOT_IMPORT_TEXT_TOOL_FULL_NAME, BOT_DELETE_TOOL_FULL_NAME, BOT_SEND_TOOL_FULL_NAME]);
         expect(turnRequest?.systemPrompt)
             .toBe(buildSystemPrompt(bot, { hasBrowser: true, hasHandoffs: true }));
     });

@@ -39,6 +39,27 @@ describe('MessageStore', () => {
             .toBe('\u0002Reunião\u0003 com a Ana');
     });
 
+    it('searches one bot only when given its id, and reads the messages around one', async () => {
+        const otherBot = await new BotStore(opened.db)
+            .create({ name: 'Bia', title: '', description: '' });
+        const first = await messageStore.add({ botId: bot.id, role: 'user', kind: 'text', content: { kind: 'text', text: 'one' } });
+        const hit = await messageStore.add({ botId: bot.id, role: 'assistant', kind: 'text', content: { kind: 'text', text: 'two secret' } });
+
+        await messageStore.add({ botId: bot.id, role: 'assistant', kind: 'toolActivity', content: { kind: 'toolActivity' } });
+        await messageStore.add({ botId: otherBot.id, role: 'user', kind: 'text', content: { kind: 'text', text: 'other secret' } });
+
+        const last = await messageStore.add({ botId: bot.id, role: 'user', kind: 'text', content: { kind: 'text', text: 'three' } });
+
+        expect(await messageStore.search('secret', 10))
+            .toHaveLength(2);
+        expect((await messageStore.search('secret', 10, bot.id)).map(found => found.messageId))
+            .toEqual([hit.id]);
+        expect((await messageStore.around(bot.id, hit.id, 5, 5))?.map(message => message.id))
+            .toEqual([first.id, hit.id, last.id]);
+        expect(await messageStore.around(otherBot.id, hit.id, 1, 1))
+            .toBeUndefined();
+    });
+
     it('reads search syntax and quotes as plain words', async () => {
         await messageStore.add({ botId: bot.id, role: 'user', kind: 'text', content: { kind: 'text', text: 'say "NOT" here' } });
 
