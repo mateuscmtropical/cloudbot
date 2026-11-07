@@ -1,4 +1,5 @@
 import type { Server } from 'node:http';
+import type { ChatEvent } from '../shared/chatTypes.ts';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { serve } from '@hono/node-server';
@@ -117,6 +118,9 @@ import { PushNotifier } from './push/PushNotifier.ts';
 import { TELEGRAM_API_ORIGIN, createTelegramApi } from './telegram/TelegramApi.ts';
 import { TelegramBridge } from './telegram/TelegramBridge.ts';
 import { TELEGRAM_TOKEN_SECRET_NAME } from './telegram/createTelegramTools.ts';
+import { DISCORD_API_ORIGIN, createDiscordApi } from './discord/DiscordApi.ts';
+import { DiscordBridge } from './discord/DiscordBridge.ts';
+import { DISCORD_TOKEN_SECRET_NAME } from './discord/createDiscordTools.ts';
 import { EmailAccountStore } from './store/EmailAccountStore.ts';
 import { EmailAccountService } from './email/EmailAccountService.ts';
 import { EmailPasswordStore } from './email/EmailPasswordStore.ts';
@@ -485,17 +489,34 @@ function readTelegramToken(botId: string): string | undefined {
     return secret?.site === TELEGRAM_API_ORIGIN ? secret.value : undefined;
 }
 
-const telegramBridge = new TelegramBridge({
-    chat: {
-        sendMessage: (botId, text) => chatService.sendMessage(botId, text),
-        subscribe: (botId, listener) => chatService.subscribe(botId, listener),
-        postNotice: async (botId, text) => {
-            await chatService.postSetupMessage(botId, { kind: 'text', text });
-        },
+// The bot chat both messenger bridges talk to. chatService is set below, before a turn can run.
+const messengerChat = {
+    sendMessage: (botId: string, text: string) => chatService.sendMessage(botId, text),
+    subscribe: (botId: string, listener: (event: ChatEvent) => void) => chatService.subscribe(botId, listener),
+    postNotice: async (botId: string, text: string): Promise<void> => {
+        await chatService.postSetupMessage(botId, { kind: 'text', text });
     },
+};
+
+const telegramBridge = new TelegramBridge({
+    chat: messengerChat,
     settings,
     readToken: readTelegramToken,
     createApi: token => createTelegramApi(token),
+});
+
+// The token is used only for the Discord site the owner saved it for.
+function readDiscordToken(botId: string): string | undefined {
+    const secret = botSecrets.read(botId, DISCORD_TOKEN_SECRET_NAME);
+
+    return secret?.site === DISCORD_API_ORIGIN ? secret.value : undefined;
+}
+
+const discordBridge = new DiscordBridge({
+    chat: messengerChat,
+    settings,
+    readToken: readDiscordToken,
+    createApi: token => createDiscordApi(token),
 });
 // The number each bot receives from. The app secret, the verify token and the owner's number stay in the vault.
 const whatsappStore = new WhatsAppStore(opened.db);
@@ -564,6 +585,7 @@ const chatService: ChatService = new ChatService({
     passkeys,
     peopleAdmin,
     telegram: telegramBridge,
+    discord: discordBridge,
     botStore, channelStore, messageStore, runner: providerRunner, dataDir, agentUser, claudeConfigDir, browser, desktopInput, botSecrets, bitwarden: bitwardenVault, emailPasswordStore: emailAccountService, emailAccountService, emailSender, ruleStore, skillStore, routineStore, taskStore, modelStore, limitStore, screen,
     webhookStore,
     templateGallery,
@@ -643,6 +665,7 @@ const setup = new SetupConversation({
 
 chatService.setSetup(setup);
 await telegramBridge.resume(botIds);
+await discordBridge.resume(botIds);
 await appProxy.start();
 await connectedApps.start();
 
@@ -771,6 +794,7 @@ function shutdown(): void {
     void browserGate?.close();
     void appProxy.close();
     void telegramBridge.close();
+    void discordBridge.close();
     void githubProxy?.close();
     // The certificate's public folder is removed on exit. Its key was only on disk in a private folder while openssl ran.
     if (githubCertificate !== undefined) {

@@ -13,6 +13,7 @@ describe('readHubActivitySources', () => {
                 hasConfiguredEmailAccount: (botId: string) => Promise.resolve(botId === 'two'),
                 isBusy: botId => botId === 'one',
                 isTelegramConnected: botId => botId === 'two',
+                isDiscordConnected: botId => botId === 'one',
             },
             routineStore: {
                 list: (botId: string) => Promise.resolve(botId === 'two' ? [{ isEnabled: true }] : [{ isEnabled: false }]),
@@ -38,6 +39,7 @@ describe('readHubActivitySources', () => {
                 hasWebhook: true,
                 hasWhatsAppConnection: true,
                 hasTelegramConnection: true,
+                hasDiscordConnection: true,
                 hasEmailAccount: true,
                 hasAgentProgram: false,
                 isLoginOrSetupInProgress: false,
@@ -66,6 +68,7 @@ describe('readHubActivitySources', () => {
                 hasWebhook: false,
                 hasWhatsAppConnection: false,
                 hasTelegramConnection: false,
+                hasDiscordConnection: false,
                 hasEmailAccount: false,
                 hasAgentProgram: false,
                 isLoginOrSetupInProgress: true,

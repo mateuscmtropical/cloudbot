@@ -44,6 +44,7 @@ interface ActivityChatService {
     hasConfiguredEmailAccount: (botId: string) => Promise<boolean>;
     isBusy: (botId: string) => boolean;
     isTelegramConnected: (botId: string) => boolean;
+    isDiscordConnected?: (botId: string) => boolean;
 }
 
 interface HubActivitySourceOptions {
@@ -76,6 +77,9 @@ async function readHubActivitySources(options: HubActivitySourceOptions): Promis
     const telegramConnections = chatService === undefined
         ? []
         : botIds.map(botId => chatService.isTelegramConnected(botId));
+    const discordConnections = chatService === undefined
+        ? []
+        : botIds.map(botId => chatService.isDiscordConnected?.(botId) ?? false);
     const emailReads = chatService === undefined ? [] : botIds.map(botId => chatService.hasConfiguredEmailAccount(botId));
     const emailAccounts = chatService === undefined ? [] : await Promise.all(emailReads);
     const hasAgentProgram = options.hasAgentProgram === undefined ? false : await options.hasAgentProgram();
@@ -87,6 +91,7 @@ async function readHubActivitySources(options: HubActivitySourceOptions): Promis
         hasWebhook: webhookLists.some(webhooks => webhooks.length > 0),
         hasWhatsAppConnection: whatsappConnections.length > 0,
         hasTelegramConnection: telegramConnections.some(isConnected => isConnected),
+        hasDiscordConnection: discordConnections.some(isConnected => isConnected),
         hasEmailAccount: emailAccounts.some(hasAccount => hasAccount),
         hasAgentProgram,
         isLoginOrSetupInProgress: !options.isReady(),

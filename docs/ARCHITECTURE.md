@@ -1679,6 +1679,18 @@ Limits. There is no notification for a usage limit, a stall or an owner Stop. A 
 
 Limits. Text only. Approval cards, files and screenshots stay in the web app. Turns run one after the other, so when the owner writes on Telegram while a web turn runs, the replies of that web turn go to Telegram too, and the ones of the Telegram turn may not. Replies go back until the bot is idle with an empty queue. One Telegram bot token serves one CloudBot bot, since Telegram lets only one poll read its updates.
 
+## Discord
+
+`DiscordBridge` lets the owner talk to a bot from Discord direct messages. Telegram and Discord share `MessengerBridge` (`src/server/messenger`): the pairing code, the single linked account, the reply queue and the approval line. A subclass only adds how messages arrive and how replies leave. A future messenger plugs in the same way.
+
+- Messages arrive over the official Gateway (https://discord.com/developers/docs/events/gateway), a WebSocket the bot opens itself, so the server needs no public address. It uses the WebSocket built into Node, as `CdpConnection` does, so there is no Discord library. The connection asks for the `DIRECT_MESSAGES` intent only. That intent is not privileged, and direct messages carry their text without the message content intent. Server messages never arrive. Replies go over REST, cut into parts of 2000 characters.
+- The token is saved with `request_secret`, name `DISCORD_BOT_TOKEN`, site `https://discord.com`. It only travels in the Identify payload and the Authorization header, and no log line or error names it.
+- `discord_connect` posts the code in the web chat. The owner sends `pair <code>` to the Discord bot in a direct message. The linked user id and channel id are kept under `discord.link.<botId>`, as text, since Discord ids are too big for a JSON number.
+- The connection runs while a link exists or a pairing is open. Heartbeats are checked, and a dead or closed connection is opened again after a short wait. A closed code that means a rejected token or intent stops it. There is no Resume, so messages sent while it was down are lost.
+- `discord_disconnect` forgets the link. Deleting the bot does too. A restart connects again for every saved link.
+
+Limits are the same as Telegram, and setup is in [DISCORD.md](DISCORD.md).
+
 ## Meeting notes
 
 `MeetingRecorder` records a Google Meet call that the bot joined on its screen and turns it into text with the same local whisper.cpp as voice input. Nothing goes to an outside speech service.
