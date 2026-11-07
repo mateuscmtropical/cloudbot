@@ -1,6 +1,8 @@
 import type { ToolCall, ToolCallDecision } from '../agent/AgentRunner.ts';
 import type { ChatMessage, ChoiceBody } from '../../shared/chatTypes.ts';
 import { findSensitiveOutboundRefusal } from '../sensitive/guardOutboundCall.ts';
+import type { AuditNote } from '../logs/ActionLog.ts';
+import { checkCommandFloor } from './commandFloor.ts';
 
 type ToolCallVerdict
     = | { decision: 'allow' }
@@ -33,6 +35,7 @@ interface PendingApproval {
     botId: string;
     body: ChoiceBody;
     settle: (outcome: ApprovalOutcome) => void;
+    approver?: string | undefined;
 }
 
 type ApprovalChoiceId = 'approve' | 'deny';
@@ -96,11 +99,14 @@ class ApprovalGate {
         this.onOwnerWait = options.onOwnerWait;
     }
 
-    async review(botId: string, call: ToolCall, signal: AbortSignal, channelId?: string): Promise<ToolCallDecision> {
+    // Every decision about a tool call passes here. The audit note, when given, gets who decided and why for the action log.
+    async review(botId: string, call: ToolCall, signal: AbortSignal, channelId?: string, audit: AuditNote = {}): Promise<ToolCallDecision> {
         // Checked before the reviewer and the classifier, so no engine can send a card, CPF or SSN number out unseen.
         const sensitiveRefusal = findSensitiveOutboundRefusal(call.toolName, call.input);
 
         if (sensitiveRefusal !== undefined) {
+            Object.assign(audit, { decision: 'blocked', decidedBy: 'block list', reason: sensitiveRefusal });
+
             return { isAllowed: false, reason: sensitiveRefusal };
         }
 
@@ -111,10 +117,17 @@ class ApprovalGate {
         }
 
         if (verdict.decision === 'deny') {
+            // The command floor is the block list. Any other refusal comes from the review agent or a card builder.
+            const isBlocked = checkCommandFloor(call) !== undefined;
+
+            Object.assign(audit, { decision: isBlocked ? 'blocked' : 'refused', decidedBy: isBlocked ? 'block list' : 'review agent', reason: verdict.reason });
+
             return { isAllowed: false, reason: verdict.reason };
         }
 
-        return this.askOwner(botId, verdict.summary, signal, verdict.detail, verdict.isElevated === true);
+        audit.summary = verdict.summary;
+
+        return this.askOwner(botId, verdict.summary, signal, verdict.detail, verdict.isElevated === true, audit);
     }
 
     // Asks the owner about an action that is not a tool call, such as a git push. Resolves true only when the owner approves.
@@ -129,13 +142,15 @@ class ApprovalGate {
     }
 
     // Applies the owner's answer. Returns undefined when no question is open for the message.
-    async answer(botId: string, messageId: string, choiceId: string): Promise<ChatMessage | undefined> {
+    // The approver is who answered, such as a member of a shared group with the role. It goes to the audit log.
+    async answer(botId: string, messageId: string, choiceId: string, approver?: string): Promise<ChatMessage | undefined> {
         const pending = this.pendingByMessage.get(messageId);
 
         if (pending?.botId !== botId || !isApprovalChoiceId(choiceId)) {
             return undefined;
         }
 
+        pending.approver = approver;
         // Removed first, so a second answer to the same question finds nothing.
         this.pendingByMessage.delete(messageId);
 
@@ -160,8 +175,10 @@ class ApprovalGate {
         }
     }
 
-    private async askOwner(botId: string, summary: string, signal: AbortSignal, detail: string | undefined, isElevated = false): Promise<ToolCallDecision> {
+    private async askOwner(botId: string, summary: string, signal: AbortSignal, detail: string | undefined, isElevated = false, audit: AuditNote = {}): Promise<ToolCallDecision> {
         if (signal.aborted) {
+            Object.assign(audit, { decision: 'not_answered', reason: 'The turn was stopped.' });
+
             return { isAllowed: false, reason: 'The turn was stopped.' };
         }
 
@@ -171,12 +188,14 @@ class ApprovalGate {
         // A stop during the post fired its event before the listener existed.
         if (isStopped(signal)) {
             await this.closeQuietly(posted.id, { ...body, chosenId: 'deny' });
+            Object.assign(audit, { decision: 'not_answered', reason: 'The turn was stopped.' });
 
             return { isAllowed: false, reason: 'The turn was stopped.' };
         }
 
         let timer: ReturnType<typeof setTimeout> | undefined;
         let expire = (): void => undefined;
+        const pending: PendingApproval = { botId, body, settle: () => undefined };
         const outcomePromise = new Promise<ApprovalOutcome>((resolve) => {
             // Whoever deletes the entry first wins, so an answer and an expiry never both apply.
             expire = (): void => {
@@ -184,7 +203,8 @@ class ApprovalGate {
                     resolve('expired');
                 }
             };
-            this.pendingByMessage.set(posted.id, { botId, body, settle: resolve });
+            pending.settle = resolve;
+            this.pendingByMessage.set(posted.id, pending);
             timer = setTimeout(expire, this.timeoutMs);
             signal.addEventListener('abort', expire, { once: true });
         });
@@ -202,15 +222,23 @@ class ApprovalGate {
             await this.closeQuietly(posted.id, { ...body, chosenId: 'deny' });
         }
 
+        const answeredBy = pending.approver ?? 'owner';
+
         // An Approve that lands while the turn stops must not let the call run.
         if (outcome === 'approve' && !isStopped(signal)) {
+            Object.assign(audit, { decision: 'owner_approved', decidedBy: answeredBy });
+
             return { isAllowed: true };
         }
 
         // The model reads this reason. A plain "not approved" led it to ask again with the same call.
         if (outcome === 'deny') {
+            Object.assign(audit, { decision: 'owner_denied', decidedBy: answeredBy });
+
             return { isAllowed: false, reason: OWNER_DENIED_REASON, isOwnerDenial: true };
         }
+
+        Object.assign(audit, { decision: 'not_answered', reason: 'Nobody answered in time, or the turn stopped.' });
 
         return { isAllowed: false, reason: 'The owner did not approve this action.' };
     }

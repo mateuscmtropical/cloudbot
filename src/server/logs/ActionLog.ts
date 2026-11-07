@@ -1,9 +1,32 @@
 import { appendFileSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 
-import type { ActionLogEntry, ActionLogRecord } from '../../shared/actionLogTypes.ts';
+import type { ActionDecision, ActionLogEntry, ActionLogRecord } from '../../shared/actionLogTypes.ts';
 import type { ToolCall, ToolCallDecision } from '../agent/AgentRunner.ts';
+import { maskSensitiveNumbers } from '../sensitive/sensitiveNumbers.ts';
 
-type ToolCallReview = (call: ToolCall, signal: AbortSignal) => Promise<ToolCallDecision>;
+// What the approval gate tells the log about one decision. The gate fills it while the review runs.
+interface AuditNote {
+    decision?: ActionDecision;
+    decidedBy?: string;
+    summary?: string;
+    reason?: string;
+}
+
+type ToolCallReview = (call: ToolCall, signal: AbortSignal, note?: AuditNote) => Promise<ToolCallDecision>;
+
+const MAX_TEXT_LENGTH = 200;
+
+// The log keeps one short line. Card and ID numbers are masked, since a card line is written by a model.
+function toLogText(text: string | undefined): string | undefined {
+    if (text === undefined || text === '') {
+        return undefined;
+    }
+
+    const oneLine = text.replace(/\s+/g, ' ');
+    const masked = maskSensitiveNumbers(oneLine);
+
+    return masked.length > MAX_TEXT_LENGTH ? `${masked.slice(0, MAX_TEXT_LENGTH)}...` : masked;
+}
 
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
 const PRIVATE_FILE_MODE = 0o600;
@@ -37,7 +60,7 @@ function fileSize(filePath: string): number {
     }
 }
 
-function decisionName(decision: ToolCallDecision): NonNullable<ActionLogEntry['decision']> {
+function decisionName(decision: ToolCallDecision): ActionDecision {
     if (decision.isAllowed) {
         return 'allowed';
     }
@@ -69,12 +92,16 @@ class ActionLog {
     }
 
     // The newest entries first, from both files, without any that passed the retention.
-    read(limit: number, botId?: string): ActionLogRecord[] {
+    // A bot, a decision and a start time narrow the list before the limit counts.
+    read(limit: number, botId?: string, decision?: string, sinceMs?: number): ActionLogRecord[] {
         const oldLines = readLines(`${this.filePath}.1`);
         const currentLines = readLines(this.filePath);
         const lines = [...oldLines, ...currentLines];
         const parsed = lines.map(parseLine);
-        const entries = parsed.filter(entry => entry !== undefined && this.isFresh(entry) && (botId === undefined || entry.botId === botId)) as ActionLogRecord[];
+        const entries = parsed.filter(entry => entry !== undefined && this.isFresh(entry)
+            && (botId === undefined || entry.botId === botId)
+            && (decision === undefined || entry.decision === decision)
+            && (sinceMs === undefined || Date.parse(entry.at) >= sinceMs)) as ActionLogRecord[];
         const newest = entries.slice(-limit);
 
         return newest.reverse();
@@ -121,24 +148,34 @@ class ActionLog {
 }
 
 // Notes what the review decided and how long it took, which includes the wait for the owner's card.
-function logReviews(review: ToolCallReview, actionLog: ActionLog | undefined, botId: string): ToolCallReview {
+function logReviews(review: ToolCallReview, actionLog: ActionLog | undefined, botId: string, channelId?: string): ToolCallReview {
     if (actionLog === undefined) {
         return review;
     }
 
     return async (call, signal) => {
         const startedAt = Date.now();
-        const note = (decision: NonNullable<ActionLogEntry['decision']>): void => {
+        const auditNote: AuditNote = {};
+        const note = (decision: ActionDecision): void => {
             const durationMs = Date.now() - startedAt;
 
-            actionLog.write({ botId, event: 'review', tool: call.toolName, decision, durationMs });
+            actionLog.write({
+                botId,
+                event: 'review',
+                tool: call.toolName,
+                decision,
+                decidedBy: toLogText(auditNote.decidedBy),
+                summary: toLogText(auditNote.summary),
+                reason: toLogText(auditNote.reason),
+                channelId,
+                durationMs,
+            });
         };
 
         try {
-            const decision = await review(call, signal);
-            const name = decisionName(decision);
+            const decision = await review(call, signal, auditNote);
 
-            note(name);
+            note(auditNote.decision ?? decisionName(decision));
 
             return decision;
         } catch (error: unknown) {
@@ -150,3 +187,4 @@ function logReviews(review: ToolCallReview, actionLog: ActionLog | undefined, bo
 }
 
 export { ActionLog, RETENTION_DAYS, logReviews };
+export type { AuditNote, ToolCallReview };

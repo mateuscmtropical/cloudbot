@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 
-import type { ActionLogRecord } from '../../shared/actionLogTypes.ts';
+import type { ActionDecision, ActionLogRecord } from '../../shared/actionLogTypes.ts';
 import { listActionLog } from '../apiClient.ts';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
@@ -20,10 +20,14 @@ interface ActionLogPanelProps {
 
 const ALL_BOTS = '';
 const OWN_TOOL_PREFIX = 'mcp__cloudbot__';
-const DECISION_LABELS: Record<NonNullable<ActionLogRecord['decision']>, string> = {
+const ALL_DECISIONS = '';
+const DECISION_LABELS: Record<ActionDecision, string> = {
     allowed: 'Allowed',
+    owner_approved: 'Approved',
+    owner_denied: 'Denied',
+    blocked: 'Blocked',
     refused: 'Refused by the review',
-    owner_denied: 'Refused by you',
+    not_answered: 'Not answered',
     review_failed: 'The review failed',
 };
 
@@ -44,7 +48,9 @@ function describeTool(tool: string | undefined): string {
 
 function describeOutcome(entry: ActionLogRecord): string {
     if (entry.decision !== undefined) {
-        return DECISION_LABELS[entry.decision];
+        const by = entry.decidedBy === undefined ? '' : ` by ${entry.decidedBy}`;
+
+        return `${DECISION_LABELS[entry.decision]}${by}`;
     }
 
     if (entry.event === 'turn_error') {
@@ -60,7 +66,11 @@ function describeEntry(entry: ActionLogRecord, botName: string): string {
     const outcome = describeOutcome(entry);
     const duration = entry.durationMs === undefined ? '' : `, ${(entry.durationMs / 1000).toFixed(1)} s`;
 
-    return `${outcome}${duration}. ${botName}, ${timeText}`;
+    const note = entry.summary ?? entry.reason;
+    const noteText = note === undefined ? '' : `. ${note}`;
+    const channelText = entry.channelId === undefined ? '' : ', in a channel';
+
+    return `${outcome}${duration}. ${botName}, ${timeText}${channelText}${noteText}`;
 }
 
 // What the bots did, newest first. The server deletes entries after 30 days.
@@ -68,13 +78,15 @@ function ActionLogPanel({ bots, onClose }: ActionLogPanelProps): ReactElement {
     const [entries, setEntries] = useState<ActionLogRecord[] | undefined>(undefined);
     const [hasFailed, setHasFailed] = useState(false);
     const [botFilter, setBotFilter] = useState(ALL_BOTS);
+    const [decisionFilter, setDecisionFilter] = useState(ALL_DECISIONS);
 
     useEffect(() => {
         let isCurrent = true;
 
         const chosenBot = botFilter === ALL_BOTS ? undefined : botFilter;
+        const chosenDecision = decisionFilter === ALL_DECISIONS ? undefined : decisionFilter;
 
-        listActionLog(chosenBot)
+        listActionLog(chosenBot, chosenDecision)
             .then((listed) => {
                 if (isCurrent) {
                     setHasFailed(false);
@@ -90,8 +102,10 @@ function ActionLogPanel({ bots, onClose }: ActionLogPanelProps): ReactElement {
         return () => {
             isCurrent = false;
         };
-    }, [botFilter]);
+    }, [botFilter, decisionFilter]);
 
+    const decisionOptions = Object.entries(DECISION_LABELS)
+        .map(([decision, label]) => <option key={decision} value={decision}>{label}</option>);
     const botPairs = bots.map((bot): [string, string] => [bot.id, bot.name]);
     const botNames = new Map(botPairs);
     const rows = (entries ?? []).map((entry, index) => {
@@ -109,7 +123,7 @@ function ActionLogPanel({ bots, onClose }: ActionLogPanelProps): ReactElement {
                 onClose={onClose}
                 title="Action log"
                 titleId="action-log-title"
-                description="What your bots did, without what they read or wrote. Entries are deleted after 30 days."
+                description="What your bots did and who allowed, denied or blocked it, without what they read or wrote. Entries are deleted after 30 days."
             />
 
             <div className="account-panel-content">
@@ -122,6 +136,16 @@ function ActionLogPanel({ bots, onClose }: ActionLogPanelProps): ReactElement {
                 >
                     <option value={ALL_BOTS}>All bots</option>
                     {bots.map(bot => <option key={bot.id} value={bot.id}>{bot.name}</option>)}
+                </Select>
+                <Select
+                    label="Show the outcome"
+                    value={decisionFilter}
+                    onChange={(event) => {
+                        setDecisionFilter(event.target.value);
+                    }}
+                >
+                    <option value={ALL_DECISIONS}>All outcomes</option>
+                    {decisionOptions}
                 </Select>
                 {hasFailed ? <p className="settings-error" role="alert">Could not load the action log.</p> : null}
                 {entries === undefined && !hasFailed ? <p className="panel-loading" role="status">Loading...</p> : null}

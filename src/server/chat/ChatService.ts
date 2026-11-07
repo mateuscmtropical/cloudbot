@@ -30,7 +30,8 @@ import { PREVIEW_IMAGE_TYPES } from '../../shared/previewImageTypes.ts';
 import { readMaxUploadBytes, removeFiles, saveFiles } from '../attachments/saveUpload.ts';
 import { readMaxShareBytes, shareWorkspaceFile } from '../files/shareFile.ts';
 import { logReviews } from '../logs/ActionLog.ts';
-import type { ActionLog } from '../logs/ActionLog.ts';
+import { AUDIT_LOG_TOOL_FULL_NAME, createAuditLogTool } from '../logs/createAuditLogTool.ts';
+import type { ActionLog, ToolCallReview } from '../logs/ActionLog.ts';
 import type { BrowserControl } from '../desktop/BrowserControl.ts';
 import { BROWSER_TOOL_FULL_NAMES, createBrowserTools } from '../desktop/createBrowserTools.ts';
 import { DESKTOP_TOOL_FULL_NAMES, createDesktopTools } from '../desktop/createDesktopTools.ts';
@@ -2169,9 +2170,9 @@ class ChatService {
     }
 
     // The group role is set in a shared group. A member there cannot approve an action that spends money.
-    async answerSetup(botId: string, messageId: string, action: SetupAction, value: string, groupRole?: GroupRole): Promise<ChatMessage> {
+    async answerSetup(botId: string, messageId: string, action: SetupAction, value: string, groupRole?: GroupRole, approver?: string): Promise<ChatMessage> {
         if (action === 'choice') {
-            const approvalAnswer = await this.answerApproval(botId, messageId, value, groupRole);
+            const approvalAnswer = await this.answerApproval(botId, messageId, value, groupRole, approver);
 
             if (approvalAnswer !== undefined) {
                 return approvalAnswer;
@@ -2221,7 +2222,7 @@ class ChatService {
     }
 
     // Returns undefined when the message is not an approval question, so the setup handles it.
-    private async answerApproval(botId: string, messageId: string, choiceId: string, groupRole: GroupRole | undefined): Promise<ChatMessage | undefined> {
+    private async answerApproval(botId: string, messageId: string, choiceId: string, groupRole: GroupRole | undefined, approver?: string): Promise<ChatMessage | undefined> {
         const stored = await this.messageStore.getById(messageId);
         const body = stored?.content as MessageBody | undefined;
 
@@ -2238,7 +2239,7 @@ class ChatService {
             throw new SetupAnswerError('Only an admin or the owner of this group can approve this.');
         }
 
-        const answered = await this.approvals?.answer(botId, messageId, choiceId);
+        const answered = await this.approvals?.answer(botId, messageId, choiceId, approver);
 
         if (answered !== undefined) {
             return answered;
@@ -4128,6 +4129,7 @@ class ChatService {
             const limitTools = this.limitStore === undefined ? [] : createLimitTools(this.limitStore, botId);
             const webhookTools = this.webhookTools(botId);
             const watchTools = this.watchStore === undefined ? [] : createWatchTools(this.watchStore, botId);
+            const auditTools = this.actionLog === undefined ? [] : [createAuditLogTool(this.actionLog, botId)];
             const browserAllowTools = this.browserAllowStore === undefined || this.browser === undefined ? [] : createBrowserAllowTools(this.browserAllowStore);
             const appTools = this.connectedApps === undefined ? [] : createAppTools(this.connectedApps, botId);
             // The tool asks the owner through the approval gate, so it is offered only when that gate exists.
@@ -4180,7 +4182,7 @@ class ChatService {
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath, turn.channel),
-                [...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...workTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...whatsappTools, ...meetingTools],
+                [...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...workTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...auditTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...whatsappTools, ...meetingTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -4537,10 +4539,10 @@ class ChatService {
     private createToolCallReview(botId: string, permissionMode: PermissionMode, channelId?: string): NonNullable<TurnRequest['reviewToolCall']> {
         const review = this.buildToolCallReview(botId, permissionMode, channelId);
 
-        return logReviews(review, this.actionLog, botId);
+        return logReviews(review, this.actionLog, botId, channelId);
     }
 
-    private buildToolCallReview(botId: string, permissionMode: PermissionMode, channelId?: string): NonNullable<TurnRequest['reviewToolCall']> {
+    private buildToolCallReview(botId: string, permissionMode: PermissionMode, channelId?: string): ToolCallReview {
         const approvals = this.approvals;
 
         // The owner chose to run with no checks. A call that still reaches the review, such as a bot tool, runs at once.
@@ -4558,13 +4560,13 @@ class ChatService {
             };
         }
 
-        return (call, signal) => {
+        return (call, signal, audit) => {
             // The people mutation handlers show a named card themselves, so the general review must not ask twice.
             if (PEOPLE_TOOL_FULL_NAMES.includes(call.toolName)) {
                 return Promise.resolve({ isAllowed: true });
             }
 
-            return approvals.review(botId, call, signal, channelId);
+            return approvals.review(botId, call, signal, channelId, audit);
         };
     }
 
@@ -4712,6 +4714,7 @@ class ChatService {
         const limitToolNames = this.limitStore === undefined ? [] : [LIMITS_SET_TOOL_FULL_NAME];
         const webhookToolNames = this.webhookStore === undefined ? [] : WEBHOOK_TOOL_FULL_NAMES;
         const watchToolNames = this.watchStore === undefined ? [] : WATCH_TOOL_FULL_NAMES;
+        const auditToolNames = this.actionLog === undefined ? [] : [AUDIT_LOG_TOOL_FULL_NAME];
         const appToolNames = this.connectedApps === undefined ? [] : APP_TOOL_FULL_NAMES;
         // bot_create is offered only with the approval gate, the same condition as the tool itself.
         const botCreateToolNames = [BOT_CREATE_TOOL_FULL_NAME];
@@ -4732,7 +4735,7 @@ class ChatService {
         const whatsappToolNames = this.whatsapp === undefined ? [] : WHATSAPP_TOOL_FULL_NAMES;
         const meetingToolNames = this.meetingRecorder === undefined || this.browser === undefined ? [] : MEETING_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...meetingToolNames, ...browserToolNames, ...desktopToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...whatsappToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...meetingToolNames, ...browserToolNames, ...desktopToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...auditToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...whatsappToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.

@@ -29,7 +29,7 @@ describe('ActionLogPanel', () => {
 
         expect(await screen.findByText('browser open'))
             .toBeTruthy();
-        expect(screen.getByText(/Refused by you, 2\.5 s\. Nimbus/))
+        expect(screen.getByText(/Denied, 2\.5 s\. Nimbus/))
             .toBeTruthy();
         expect(screen.getByText('The turn failed'))
             .toBeTruthy();
@@ -48,6 +48,23 @@ describe('ActionLogPanel', () => {
         await waitFor(() => {
             expect(fetchStub)
                 .toHaveBeenCalledWith('/api/action-log?botId=bot-1', {});
+        });
+    });
+
+    it('shows who decided and the card line, and filters by outcome', async () => {
+        const fetchStub = stubLog([
+            { at: '2026-11-05T10:00:00.000Z', botId: 'bot-1', event: 'review', tool: 'mcp__cloudbot__email_send', decision: 'owner_approved', decidedBy: 'Ana (admin)', summary: 'Send an email to Ana' },
+        ]);
+
+        render(<ActionLogPanel bots={BOTS} onClose={vi.fn()} />);
+
+        expect(await screen.findByText(/Approved by Ana \(admin\)\. Nimbus.*Send an email to Ana/))
+            .toBeTruthy();
+        fireEvent.change(screen.getByLabelText('Show the outcome'), { target: { value: 'blocked' } });
+
+        await waitFor(() => {
+            expect(fetchStub)
+                .toHaveBeenCalledWith('/api/action-log?decision=blocked', {});
         });
     });
 

@@ -14,7 +14,8 @@ function createActionLogRoutes(options: ActionLogRoutesOptions): Hono {
 
     routes.get('/api/action-log', (context) => {
         const botId = context.req.query('botId');
-        const entries = options.actionLog.read(MAX_ENTRIES, botId);
+        const decision = context.req.query('decision');
+        const entries = options.actionLog.read(MAX_ENTRIES, botId, decision);
 
         return context.json(entries);
     });

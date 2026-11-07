@@ -15,6 +15,6 @@ describe('createActionLogRoutes', () => {
         expect(await response.json())
             .toEqual(entries);
         expect(read)
-            .toHaveBeenCalledWith(MAX_ENTRIES, 'bot-1');
+            .toHaveBeenCalledWith(MAX_ENTRIES, 'bot-1', undefined);
     });
 });
