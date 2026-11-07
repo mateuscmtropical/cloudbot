@@ -88,6 +88,7 @@ describe('BotStore', () => {
             .toEqual({
                 id: expect.any(String) as string,
                 name: 'Ana',
+                parentBotId: null,
                 title: 'Assistant',
                 description: 'Helps with mail',
                 sessionId: null,

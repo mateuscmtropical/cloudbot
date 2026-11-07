@@ -146,6 +146,14 @@ interface BotSummary {
     lastMessageSequence: number;
 }
 
+// One chat of a bot. The default thread is the bot's own chat and carries the bot's name. The others are side chats.
+interface ThreadSummary {
+    id: string;
+    name: string;
+    isDefault: boolean;
+    isRunning: boolean;
+}
+
 // A bot's memory file as the owner sees it. A cut one is longer than 64 KB and cannot be edited in the web app.
 interface BotMemory {
     text: string;
@@ -248,6 +256,7 @@ export type {
     BotRule,
     PendingUpload,
     BotSummary,
+    ThreadSummary,
     ChatEvent,
     ChatMessage,
     ChatRole,

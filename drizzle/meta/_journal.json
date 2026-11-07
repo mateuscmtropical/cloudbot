@@ -253,6 +253,13 @@
       "when": 1794093007136,
       "tag": "0035_app_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1794098759573,
+      "tag": "0036_parallel_threads",
+      "breakpoints": true
     }
   ]
 }

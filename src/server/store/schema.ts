@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 import type { MessageBody } from '../../shared/chatTypes.ts';
@@ -33,6 +34,10 @@ const bots = sqliteTable('bots', {
     description: text('description')
         .notNull(),
     sessionId: text('session_id'),
+    // Set on a side chat of a bot. The row is then a thread: its name is the thread title, and it has its own messages
+    // and session. Everything else of the bot (memory, rules, skills, secrets) belongs to the parent. Null for a real bot.
+    parentBotId: text('parent_bot_id')
+        .references((): AnySQLiteColumn => bots.id, { onDelete: 'cascade' }),
     createdAt: integer('created_at')
         .notNull(),
     // The mascot look. Existing bots get the defaults, new bots get a random look in BotStore.create.

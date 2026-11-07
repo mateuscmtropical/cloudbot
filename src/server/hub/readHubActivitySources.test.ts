@@ -11,7 +11,7 @@ describe('readHubActivitySources', () => {
             },
             chatService: {
                 hasConfiguredEmailAccount: (botId: string) => Promise.resolve(botId === 'two'),
-                isBusy: botId => botId === 'one',
+                isBotBusy: botId => botId === 'one',
                 isTelegramConnected: botId => botId === 'two',
                 isDiscordConnected: botId => botId === 'one',
             },

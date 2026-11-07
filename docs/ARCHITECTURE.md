@@ -501,6 +501,14 @@ routes above, so the bot cannot add or remove one itself. The removal card shows
 
 ## Chat
 
+A bot can have side chats, called threads. A thread is a row of `bots` with `parent_bot_id` set, so it has its own
+messages, session id, queue and running turn, and the chat code that works by bot id works on it. The bot lists leave
+threads out. A thread turn takes everything else from its bot: workspace, memory, rules, skills, secrets, models,
+routines and the provider sign-in. `ChatService.sharedIdOf` maps a thread id to its bot. Because each CLI process uses
+memory, a bot runs at most 3 turns at once over its own chat and its threads, and a turn past that waits in its queue
+until one ends. A bot has at most 8 threads. Routines, webhooks, Telegram and hand-offs use the bot id, so they reach
+the bot's own chat. Threads share one desktop and one browser, so two threads should not drive them together.
+
 `ChatService` in `src/server/chat/` holds the chat rules. It stores the user
 message, runs one turn at a time per bot through an `AgentRunner`, and stores
 each reply. A message the owner types during a turn of the bot's own chat

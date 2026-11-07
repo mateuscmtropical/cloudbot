@@ -50,7 +50,7 @@ interface ActivityWhatsAppStore {
 
 interface ActivityChatService {
     hasConfiguredEmailAccount: (botId: string) => Promise<boolean>;
-    isBusy: (botId: string) => boolean;
+    isBotBusy: (botId: string) => boolean;
     isTelegramConnected: (botId: string) => boolean;
     isDiscordConnected?: (botId: string) => boolean;
 }
@@ -97,7 +97,7 @@ async function readHubActivitySources(options: HubActivitySourceOptions): Promis
     const hasAgentProgram = options.hasAgentProgram === undefined ? false : await options.hasAgentProgram();
 
     return {
-        hasActiveTurn: bots.some(bot => chatService?.isBusy(bot.id) ?? false),
+        hasActiveTurn: bots.some(bot => chatService?.isBotBusy(bot.id) ?? false),
         hasEnabledRoutine: routineLists.some(routines => routines.some(routine => routine.isEnabled)),
         hasEnabledWatch: watchLists.some(watches => watches.length > 0),
         hasAppTrigger: triggerLists.some(triggers => triggers.length > 0),

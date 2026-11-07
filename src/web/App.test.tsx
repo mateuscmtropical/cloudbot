@@ -26,6 +26,9 @@ vi.mock('./apiClient.ts', () => ({
     // A stand-in class, so `instanceof` checks in the app have something to test against.
     RequestFailedError: class RequestFailedError extends Error {},
     listBots: vi.fn(),
+    listThreads: vi.fn(() => Promise.resolve([])),
+    createThread: vi.fn(),
+    deleteThread: vi.fn(),
     listChannels: vi.fn(() => Promise.resolve([])),
     getChannel: vi.fn(),
     postChannelMessage: vi.fn(),

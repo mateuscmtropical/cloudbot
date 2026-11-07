@@ -1,5 +1,5 @@
 import type { ActionLogRecord } from '../shared/actionLogTypes.ts';
-import type { BotMemory, BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName, ScreenViewName } from '../shared/chatTypes.ts';
+import type { BotMemory, BotRule, BotSummary, ChatEvent, ChatMessage, PendingUpload, ScreenHolderName, ScreenViewName, ThreadSummary } from '../shared/chatTypes.ts';
 import type { MessageSearchHit } from '../shared/searchTypes.ts';
 import type { BitwardenStatus, BitwardenTestResult } from '../shared/bitwarden.ts';
 import type { AppSignInStart, ConnectedAppSummary } from '../shared/connectedApps.ts';
@@ -144,6 +144,25 @@ function createBot(): Promise<BotSummary> {
 // Deletes the bot and everything of it. A refusal carries the server's reason, such as the last bot.
 async function deleteBot(botId: string): Promise<void> {
     const path = botPath(botId, '');
+
+    await requestJson<unknown>(path, { method: 'DELETE' });
+}
+
+// The chats of a bot: its own chat first, then its side chats.
+function listThreads(botId: string): Promise<ThreadSummary[]> {
+    const path = botPath(botId, '/threads');
+
+    return requestJson<ThreadSummary[]>(path, {});
+}
+
+function createThread(botId: string): Promise<ThreadSummary> {
+    const path = botPath(botId, '/threads');
+
+    return postJson<ThreadSummary>(path, {});
+}
+
+async function deleteThread(botId: string, threadId: string): Promise<void> {
+    const path = botPath(botId, `/threads/${encodeURIComponent(threadId)}`);
 
     await requestJson<unknown>(path, { method: 'DELETE' });
 }
@@ -739,7 +758,10 @@ export {
     startAppSignIn,
     removeConnectedApp,
     createBot,
+    createThread,
     deleteBot,
+    deleteThread,
+    listThreads,
     listBots,
     getBotMemory,
     saveBotMemory,

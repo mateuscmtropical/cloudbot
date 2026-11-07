@@ -82,6 +82,9 @@ keeps the volumes and the install folder. Docker stays installed. Back up the
 
 - **Chat like a messenger.** A list of bots on the left, the conversation in
   the middle.
+- **Work on several things at once.** Start a new chat of a bot while it works
+  on a long task. Each chat has its own history, and all of them share the
+  memory and the settings of the bot.
 - **Set itself up in the chat.** The first conversation asks which AI provider
   you want, signs you in and tells you when it is ready.
 - **Work on its own computer.** A whole Linux desktop of its own, with a
