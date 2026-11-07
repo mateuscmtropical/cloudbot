@@ -1,0 +1,1 @@
+ALTER TABLE `bots` ADD `is_skill_review_on` integer DEFAULT true NOT NULL;

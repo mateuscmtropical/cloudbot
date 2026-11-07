@@ -152,6 +152,7 @@ import { BOT_DELETE_TOOL_FULL_NAME, createBotDeleteTool } from '../bots/createBo
 import { RULE_LIST_TOOL_FULL_NAME, RULE_TOOL_FULL_NAMES, createRuleTools } from '../rules/createRuleTools.ts';
 import { SKILL_LIST_TOOL_FULL_NAME, SKILL_READ_TOOL_FULL_NAME, SKILL_TOOL_FULL_NAMES, createSkillTools } from '../skills/createSkillTools.ts';
 import type { SkillStore } from '../store/SkillStore.ts';
+import { SKILL_REVIEW_TOOL_FULL_NAME, buildSkillReviewMessage, createSkillReviewTool, isSkillReviewDue } from '../skills/skillReview.ts';
 import { BOT_SEND_TOOL_FULL_NAME, createBotSendTool } from '../bots/createBotSendTool.ts';
 import { parseBotHandoffText } from '../../shared/botHandoffText.ts';
 import type { BotSendInput, BotSendOutcome } from '../bots/createBotSendTool.ts';
@@ -347,6 +348,9 @@ interface TurnState {
     carriedMessageIds: string[];
     // The context size the engine reported at the end of the turn. Set only for a turn of the main session.
     contextTokens?: number | undefined;
+    // The tool calls that worked, and whether one of them read or changed a skill. They decide whether the turn gets a skill review.
+    toolSteps: number;
+    usedSkillTool: boolean;
 }
 
 // Every message a check-in stored so far, the earlier parts and the prompt message included, without repeats.
@@ -363,7 +367,13 @@ interface UsageLimitState {
 // Who started a turn. A routine turn uses the routines work choice, a check-in the check-ins one and a webhook the webhooks one.
 // A bot hand-off uses the routines choice too. A check-in is a routine that stays out of the chat when it finds nothing.
 // A compact turn is the memory flush before an idle compaction. It runs on the chat's model and leaves no message behind.
+// A skillReview turn looks back at a finished turn for a skill to propose. It runs on the chat's model and leaves no message behind, like a compact turn.
 type TurnSource = MessageSource;
+
+// The turns that are for the bot alone. They leave no message, never wait for a usage limit and never start a fresh session.
+function isSilentSource(source: TurnSource): boolean {
+    return source === 'compact' || source === 'skillReview';
+}
 
 // A member of a channel, with the name the bot has now.
 interface NamedChannelMember {
@@ -676,7 +686,7 @@ function readTextOf(content: unknown): string[] {
 // A channel turn uses the bot choice for its model, limit and effort. It is never stored as a queued turn.
 function settingsSource(source: TurnSource): 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot' {
     // The memory flush runs on the chat's model, so the session keeps the model it was built with.
-    if (source === 'compact') {
+    if (source === 'compact' || source === 'skillReview') {
         return 'chat';
     }
 
@@ -707,7 +717,7 @@ function toQueuedTurnRecord(queuedTurn: QueuedTurn): QueuedTurnRecord {
         text: queuedTurn.text,
         uploads: storedUploads,
         // A compact turn is never queued. The mapping only keeps the stored kinds of the type.
-        source: queuedTurn.source === 'channel' ? 'bot' : queuedTurn.source === 'compact' ? 'chat' : queuedTurn.source,
+        source: queuedTurn.source === 'channel' ? 'bot' : queuedTurn.source === 'compact' || queuedTurn.source === 'skillReview' ? 'chat' : queuedTurn.source,
         routineId: queuedTurn.routineId ?? null,
     };
 }
@@ -3923,7 +3933,7 @@ class ChatService {
         }
 
         // A memory flush does not wait. The session stays as it was, and the next idle compaction tries again.
-        if (turn.source === 'compact') {
+        if (isSilentSource(turn.source)) {
             return;
         }
 
@@ -4029,7 +4039,7 @@ class ChatService {
         if (turn.channel !== undefined) {
             this.channelRunning.set(botId, turn.channel.roundId);
         }
-        const turnState: TurnState = { agentStarted: false, isRejectedByLimit: false, rejectedResetsAt: undefined, limit: undefined, hasError: false, savedMessageIds: [], endsQuiet: false, carriedMessageIds: this.takeCheckinCarry(turn) };
+        const turnState: TurnState = { agentStarted: false, isRejectedByLimit: false, rejectedResetsAt: undefined, limit: undefined, hasError: false, savedMessageIds: [], endsQuiet: false, carriedMessageIds: this.takeCheckinCarry(turn), toolSteps: 0, usedSkillTool: false };
         const inbox: TurnInbox | undefined = turn.channel === undefined && INBOX_TURN_SOURCES.has(turn.source) ? {} : undefined;
 
         if (inbox !== undefined) {
@@ -4149,7 +4159,7 @@ class ChatService {
             // The rule list is always offered. A rule change and a bot delete are offered only with the approval gate, since each waits for the owner.
             const ruleTools = this.ruleStore === undefined ? [] : createRuleTools(this.ruleStore, botId, this.approvals !== undefined);
             // Reading skills is always offered. A change waits for the owner, so it is offered only with the approval gate.
-            const skillTools = this.skillStore === undefined ? [] : createSkillTools(this.skillStore, botId, this.approvals !== undefined);
+            const skillTools = this.skillStore === undefined ? [] : [...createSkillTools(this.skillStore, botId, this.approvals !== undefined), createSkillReviewTool(this.botStore, botId)];
             const botDeleteTools = this.approvals === undefined ? [] : [createBotDeleteTool(() => this.deleteBotFromTool(botId))];
             const notificationTools = this.notifyOwner === undefined
                 ? []
@@ -4361,7 +4371,7 @@ class ChatService {
             // A memory flush never starts a fresh session, since that would drop the conversation for a summary.
             let lastAttempt = firstAttempt;
 
-            if (firstAttempt.failureText !== undefined && turnState.limit === undefined && turn.source !== 'compact') {
+            if (firstAttempt.failureText !== undefined && turnState.limit === undefined && !isSilentSource(turn.source)) {
                 await this.botStore.setSessionId(botId, null);
                 lastAttempt = await this.runAttempt(turnContext, null, turnState);
             }
@@ -4387,6 +4397,8 @@ class ChatService {
                 this.turnInboxes.delete(botId);
             }
 
+            let isReviewDue: boolean | undefined;
+
             try {
                 await this.settleTurnEnd(turn, turnState);
 
@@ -4395,7 +4407,7 @@ class ChatService {
                 }
 
                 // A turn that hit a limit reports from its continuation, so the reply is posted once. A compaction has no continuation.
-                const hasContinuation = turnState.limit !== undefined && turn.source !== 'compact';
+                const hasContinuation = turnState.limit !== undefined && !isSilentSource(turn.source);
 
                 if (!hasContinuation) {
                     const wasDroppedQuiet = await this.dropQuietCheckin(turn, turnState, abortController.signal.aborted || hasFailed);
@@ -4415,10 +4427,54 @@ class ChatService {
                 if (turnState.contextTokens !== undefined && turn.source !== 'compact') {
                     await this.armIdleCompaction(botId, turnState.contextTokens);
                 }
+
+                isReviewDue = !abortController.signal.aborted && await this.isSkillReviewDue(turn, turnState, hasFailed);
             } finally {
                 this.finishTurn(botId);
             }
+
+            if (isReviewDue) {
+                this.startSkillReview(botId)
+                    .catch(reportBackgroundError);
+            }
         }
+    }
+
+    // A skill is proposed only after a substantial turn that went well. The owner switches it off per bot in chat.
+    private async isSkillReviewDue(turn: TurnInput, turnState: TurnState, hasFailed: boolean): Promise<boolean> {
+        if (this.skillStore === undefined || this.approvals === undefined || turn.channel !== undefined || turnState.limit !== undefined) {
+            return false;
+        }
+
+        const bot = await this.botStore.getById(turn.botId);
+        const skills = await this.skillStore.list(turn.botId);
+
+        return bot !== undefined && isSkillReviewDue({
+            isSkillReviewOn: bot.isSkillReviewOn,
+            source: turn.source,
+            isMainSession: turnState.contextTokens !== undefined,
+            isFailed: hasFailed || turnState.hasError,
+            toolSteps: turnState.toolSteps,
+            usedSkillTool: turnState.usedSkillTool,
+            skillCount: skills.length,
+        });
+    }
+
+    // Runs in the session the turn used, so the bot still has the work in view. The skill goes through the approval card like any other.
+    private async startSkillReview(botId: string): Promise<void> {
+        // Work that came in meanwhile has its own turn, and the review is skipped.
+        if (this.isBusy(botId) || this.deletingBots.has(botId)) {
+            return;
+        }
+
+        const abortController = new AbortController();
+
+        this.runningTurns.set(botId, abortController);
+        this.publishTurnState(botId);
+
+        const reviewTurn: TurnInput = { botId, text: buildSkillReviewMessage(), uploads: [], messageId: undefined, source: 'skillReview' };
+
+        await this.runTurn(reviewTurn, abortController);
     }
 
     // A check-in that ends with the quiet reply found nothing for the owner. Its messages are deleted, so the chat shows nothing.
@@ -4426,7 +4482,7 @@ class ChatService {
     // Returns true when the run was quiet and its messages were removed.
     private async dropQuietCheckin(turn: TurnInput, turnState: TurnState, hasStoppedOrFailed: boolean): Promise<boolean> {
         // The memory flush is for the bot alone, so its messages always go, even when it fails.
-        const isQuietRun = turn.source === 'compact' || (turn.source === 'checkin' && turnState.endsQuiet && !turnState.hasError && !hasStoppedOrFailed);
+        const isQuietRun = isSilentSource(turn.source) || (turn.source === 'checkin' && turnState.endsQuiet && !turnState.hasError && !hasStoppedOrFailed);
 
         if (!isQuietRun) {
             return false;
@@ -4671,7 +4727,7 @@ class ChatService {
             return [];
         }
 
-        return this.approvals === undefined ? [SKILL_LIST_TOOL_FULL_NAME, SKILL_READ_TOOL_FULL_NAME] : SKILL_TOOL_FULL_NAMES;
+        return this.approvals === undefined ? [SKILL_LIST_TOOL_FULL_NAME, SKILL_READ_TOOL_FULL_NAME, SKILL_REVIEW_TOOL_FULL_NAME] : [...SKILL_TOOL_FULL_NAMES, SKILL_REVIEW_TOOL_FULL_NAME];
     }
 
     // Headless turns cannot answer a permission prompt, so the cloudbot tools the bot has are allowed up front.
@@ -4952,6 +5008,14 @@ class ChatService {
 
                 await this.saveTurnMessage(botId, 'assistant', toolBody, channel, turnState);
                 turnState.endsQuiet = false;
+
+                if (!agentEvent.isError) {
+                    turnState.toolSteps += 1;
+                }
+
+                if (toolName.endsWith('__skill_read') || toolName.endsWith('__skill_add')) {
+                    turnState.usedSkillTool = true;
+                }
 
                 return;
             }

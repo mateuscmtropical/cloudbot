@@ -915,6 +915,10 @@ Each turn reads the skills, and the system prompt names each one with its descri
 with `skill_read` before a task it covers. A skill from a link works by the bot fetching the page with its usual tools
 and passing the text to `skill_add`, so the card still shows every word. A bot export does not carry its skills yet.
 
+### Skill suggestions
+
+After a turn of the owner's chat that ended well and had at least 8 tool calls that worked (SKILL_REVIEW_MIN_TOOL_STEPS), the bot gets one quiet review turn in the same session. It is a skillReview turn, which behaves like the memory flush: it runs on the chat's model, leaves no message, never waits for a usage limit and never starts a fresh session. The prompt asks the bot to call skill_add once if the work is a procedure worth repeating, so the owner sees the whole text on the usual card. No review runs for check-ins, routines, webhooks, channel turns, failed or stopped turns, a turn that read or added a skill, a bot with 50 skills, or when new work is already queued. The owner turns the suggestions off or on per bot by asking in chat (skill_review_set, column ots.is_skill_review_on, on by default). A suggestion costs one extra turn.
+
 ### Teaching a skill by recording the screen
 
 `screen_record` hands the screen to the owner, as `request_screen` does, and starts a `ScreenRecorder`

@@ -9,7 +9,7 @@ const LABEL_OPEN = '⟦';
 const LABEL_CLOSE = '⟧';
 const MARKER_PATTERN = /[⟦⟧]/g;
 
-type MessageSource = 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot' | 'channel' | 'compact';
+type MessageSource = 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot' | 'channel' | 'compact' | 'skillReview';
 
 interface Provenance {
     from: string;
