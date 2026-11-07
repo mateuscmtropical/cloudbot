@@ -53,7 +53,7 @@ RUN apt-get update \
         x11-utils x11-xserver-utils xdotool xterm \
         poppler-utils python3 python3-docx python3-lxml python3-openpyxl \
         python3-pil python3-pip python3-pypdf python3-reportlab python3-typing-extensions \
-        python3-xlsxwriter git openssl ffmpeg libgomp1 \
+        python3-xlsxwriter git openssl ffmpeg libgomp1 tini \
     && rm -rf /var/lib/apt/lists/*
 
 # The GitHub CLI comes from GitHub's own apt repository, as its install page describes.
@@ -219,4 +219,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/health').then((response) => process.exit(response.ok ? 0 : 1), () => process.exit(1))"]
 
+# Processes whose parent exits, like the children of an agent CLI, pass to PID 1. Node does not reap them, tini does.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "dist/server/main.js"]
