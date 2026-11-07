@@ -8,6 +8,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Security
 
+- Every message the bot reads now starts with a label line that says where it came from and whether it is an instruction or data. The owner, group members and the owner's routines are instructions. Webhooks, email, page watches and other bots are data. The label brackets are removed from all message text, so nothing can forge a label.
 - Containers can no longer reach the cloud metadata address (169.254.169.254) over HTTP, where some clouds hand out facts and credentials of the server. `cloudbot update` and the installer add a firewall rule for it. DNS on that address keeps working.
 - Over HTTPS the session cookies of the hub and of CloudBot carry the `__Host-` prefix, so a page on another subdomain cannot plant a session. Everyone signs in once more after this update.
 - The hub reaches Docker through a new Docker guard, which lets through only the requests the hub makes. A new container must use the CloudBot image, stay unprivileged and mount only its own volumes. Run `sudo cloudbot update` to start the guard.

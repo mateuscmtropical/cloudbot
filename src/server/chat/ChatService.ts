@@ -11,6 +11,8 @@ import type { BotDeleteCheck } from '../approvals/createToolCallReviewer.ts';
 import type { AgentEvent } from '../agent/AgentEvent.ts';
 import type { AgentRunner, TurnImage, TurnInbox, TurnRequest } from '../agent/AgentRunner.ts';
 import { buildSystemPrompt } from '../agent/buildSystemPrompt.ts';
+import { labelTurnText } from './messageProvenance.ts';
+import type { MessageSource } from './messageProvenance.ts';
 import { MEMORY_FILE_MODE, MEMORY_FILE_NAME, MEMORY_MAX_BYTES, MEMORY_TRUNCATED_NOTE, readWorkspaceMemoryBlock, readWorkspaceMemoryText, writeWorkspaceMemory } from '../agent/readWorkspaceMemory.ts';
 import { AGENT_TOOL_NAME, SEARCH_TOOL_NAMES, buildHelperAgents, helperTurnParts } from '../agent/buildHelperAgents.ts';
 import type { HelperKind } from '../agent/buildHelperAgents.ts';
@@ -361,7 +363,7 @@ interface UsageLimitState {
 // Who started a turn. A routine turn uses the routines work choice, a check-in the check-ins one and a webhook the webhooks one.
 // A bot hand-off uses the routines choice too. A check-in is a routine that stays out of the chat when it finds nothing.
 // A compact turn is the memory flush before an idle compaction. It runs on the chat's model and leaves no message behind.
-type TurnSource = 'chat' | 'routine' | 'checkin' | 'webhook' | 'bot' | 'channel' | 'compact';
+type TurnSource = MessageSource;
 
 // A member of a channel, with the name the bot has now.
 interface NamedChannelMember {
@@ -2808,7 +2810,7 @@ class ChatService {
             this.pendingUploads.delete(botId);
         }
 
-        const turnText = author === undefined ? text : `${author}: ${text}`;
+        const turnText = labelTurnText(source, text, author);
         let userMessage: ChatMessage;
 
         try {
@@ -2885,7 +2887,7 @@ class ChatService {
 
             const turn: TurnInput = {
                 botId,
-                text: body.text,
+                text: labelTurnText('routine', body.text),
                 uploads: [],
                 messageId: existing.id,
                 source: 'routine',

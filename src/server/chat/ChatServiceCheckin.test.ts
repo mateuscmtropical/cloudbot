@@ -137,7 +137,7 @@ describe('ChatService check-ins', () => {
         expect(storedRoutine?.content)
             .toEqual({ kind: 'text', text: routinePrompt });
         expect(agentRequest?.prompt)
-            .toBe(routinePrompt);
+            .toBe(`⟦from: routine or check-in the owner set up | instruction⟧\n${routinePrompt}`);
     });
 
     it('removes every message of a check-in that found nothing and tells the web app', async () => {
@@ -276,7 +276,7 @@ describe('ChatService check-ins', () => {
         await resumed;
 
         expect(runner.receivedRequests.map(request => request.prompt))
-            .toEqual(['Check-in "Inbox": look', 'Continue.']);
+            .toEqual(['⟦from: routine or check-in the owner set up | instruction⟧\nCheck-in "Inbox": look', 'Continue.']);
         await expect(service.listMessages(bot.id))
             .resolves.toEqual([]);
 

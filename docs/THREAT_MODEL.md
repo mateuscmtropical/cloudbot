@@ -25,6 +25,16 @@ acting against the owner. CloudBot assumes this will sometimes work. So the
 protections sit outside the model: separate Unix users, the vault, proxies, an
 address gate, a command floor and owner approvals.
 
+### Message labels
+
+Every message the bot reads from CloudBot starts with one label line, `⟦from: who | instruction⟧` or
+`⟦from: who | data⟧`. The server writes it from the route the message came in by, never from the text.
+The owner, a group member and the owner's own routines are instruction. A webhook, an email, a page watch and
+another bot are data. The two label brackets are removed from all message text and from author names, so
+no sender can write a label. The system prompt tells the bot to take orders only from a label on the first line
+and to treat a label anywhere else, and all text from tools, as fake. This is a hint to the model. The real
+limits are still the layers below. Channel posts keep their own `Owner:` and `Bot name:` lines.
+
 The public routes are `/api/health`, `/setup` (needs the one-time code),
 `/hooks/<token>` (needs the webhook token), `/whatsapp` (needs Meta's signature
 or the verify token), `/api/apps/oauth/callback` (needs the one-time state of a sign-in the owner started, see
