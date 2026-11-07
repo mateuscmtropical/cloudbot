@@ -82,6 +82,8 @@ import { MEETING_TOOL_FULL_NAMES, createMeetingTools } from '../meetings/createM
 import type { MeetingRecorder } from '../meetings/MeetingRecorder.ts';
 import { TELEGRAM_TOOL_FULL_NAMES, createTelegramTools } from '../telegram/createTelegramTools.ts';
 import type { TelegramConnector } from '../telegram/createTelegramTools.ts';
+import { DISCORD_TOOL_FULL_NAMES, createDiscordTools } from '../discord/createDiscordTools.ts';
+import type { MessengerConnector } from '../messenger/createMessengerTools.ts';
 import type { OwnerNotice } from '../push/PushNotifier.ts';
 import { DISABLE_NOTIFICATIONS_CHOICE_ID, ENABLE_NOTIFICATIONS_CHOICE_ID, KEEP_NOTIFICATIONS_CHOICE_ID, LATER_NOTIFICATIONS_CHOICE_ID } from '../../shared/pushTypes.ts';
 import { ADD_PASSKEY_CHOICE_ID, KEEP_PASSKEY_CHOICE_ID, LATER_PASSKEY_CHOICE_ID, REMOVE_PASSKEY_CHOICE_ID } from '../../shared/passkeyTypes.ts';
@@ -309,6 +311,8 @@ interface ChatServiceOptions {
     peopleAdmin?: PeopleAdmin | undefined;
     // Connects a bot to the owner's Telegram account. Unset means the Telegram tools are not offered.
     telegram?: TelegramConnector | undefined;
+    // Connects a bot to the owner's Discord account. Unset means the Discord tools are not offered.
+    discord?: MessengerConnector | undefined;
     // Records and transcribes a Google Meet call on the bot's screen. Unset means the meeting tools are not offered.
     meetingRecorder?: MeetingRecorder | undefined;
     // Receives messages from the owner's WhatsApp number. Unset means the WhatsApp tools are not offered.
@@ -841,6 +845,7 @@ class ChatService {
     private readonly passkeys: PasskeyService | undefined;
     private readonly peopleAdmin: PeopleAdmin | undefined;
     private readonly telegram: TelegramConnector | undefined;
+    private readonly discord: MessengerConnector | undefined;
     private readonly meetingRecorder: MeetingRecorder | undefined;
     private readonly whatsapp: WhatsAppConnector | undefined;
     // Bots whose delete is running. New messages and uploads for them are refused.
@@ -936,6 +941,7 @@ class ChatService {
         this.passkeys = options.passkeys;
         this.peopleAdmin = options.peopleAdmin;
         this.telegram = options.telegram;
+        this.discord = options.discord;
         this.meetingRecorder = options.meetingRecorder;
         this.whatsapp = options.whatsapp;
         this.approvals = options.toolCallReviewer === undefined
@@ -1580,6 +1586,10 @@ class ChatService {
     // What the owner sees as the bot working. While CloudBot starts every bot looks busy, but it takes no turn yet.
     isWorking(botId: string): boolean {
         return this.isBusy(botId) || this.setup?.isStarting() === true;
+    }
+
+    isDiscordConnected(botId: string): boolean {
+        return this.discord?.isConnected?.(botId) ?? false;
     }
 
     isTelegramConnected(botId: string): boolean {
@@ -4188,13 +4198,14 @@ class ChatService {
                         announce: (event) => { this.announcePeopleCredentials(event); },
                     });
             const telegramTools = this.telegram === undefined ? [] : createTelegramTools(this.telegram, botId);
+            const discordTools = this.discord === undefined ? [] : createDiscordTools(this.discord, botId);
             const meetingTools = this.meetingRecorder === undefined || this.browser === undefined ? [] : createMeetingTools(this.meetingRecorder, botId, this.browser);
             const whatsappTools = this.whatsapp === undefined ? [] : createWhatsAppTools(this.whatsapp, botId);
             const profileTools = createProfileTools(
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath, turn.channel),
-                [...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...workTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...auditTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...whatsappTools, ...meetingTools],
+                [...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...workTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...auditTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...discordTools, ...whatsappTools, ...meetingTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -4790,10 +4801,11 @@ class ChatService {
         const passkeyToolNames = this.passkeys === undefined ? [] : PASSKEY_TOOL_FULL_NAMES;
         const peopleToolNames = this.peopleToolNames();
         const telegramToolNames = this.telegram === undefined ? [] : TELEGRAM_TOOL_FULL_NAMES;
+        const discordToolNames = this.discord === undefined ? [] : DISCORD_TOOL_FULL_NAMES;
         const whatsappToolNames = this.whatsapp === undefined ? [] : WHATSAPP_TOOL_FULL_NAMES;
         const meetingToolNames = this.meetingRecorder === undefined || this.browser === undefined ? [] : MEETING_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...meetingToolNames, ...browserToolNames, ...desktopToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...auditToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...whatsappToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...meetingToolNames, ...browserToolNames, ...desktopToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...auditToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...discordToolNames, ...whatsappToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.

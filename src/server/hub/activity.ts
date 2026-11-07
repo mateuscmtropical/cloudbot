@@ -7,6 +7,7 @@ interface ActivitySources {
     hasWebhook: boolean;
     hasWhatsAppConnection: boolean;
     hasTelegramConnection: boolean;
+    hasDiscordConnection?: boolean | undefined;
     hasEmailAccount: boolean;
     hasAgentProgram: boolean;
     isLoginOrSetupInProgress: boolean;
@@ -39,6 +40,10 @@ function computeActivity(sources: ActivitySources): InstanceActivity {
 
     if (sources.hasTelegramConnection) {
         reasons.push('Telegram connected');
+    }
+
+    if (sources.hasDiscordConnection === true) {
+        reasons.push('Discord connected');
     }
 
     if (sources.hasEmailAccount) {
