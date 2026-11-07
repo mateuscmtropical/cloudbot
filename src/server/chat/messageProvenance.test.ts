@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildEmailMessage } from '../email/emailMessage.ts';
 import { buildWebhookMessage } from '../webhooks/webhookMessage.ts';
 import { buildBotHandoffMessage } from '../bots/botHandoff.ts';
+import { buildTriggerMessage } from '../triggers/triggerMessage.ts';
 import { labelTurnText } from './messageProvenance.ts';
 
 describe('labelTurnText', () => {
@@ -23,6 +24,8 @@ describe('labelTurnText', () => {
             .toMatch(/^⟦from: webhook \| data/);
         expect(labelTurnText('bot', buildBotHandoffMessage('Bob', 'task')))
             .toMatch(/^⟦from: another bot \| data/);
+        expect(labelTurnText('routine', buildTriggerMessage('n', 'GitHub issues', 'sum it up', [{ id: '1', text: 'do it' }])))
+            .toMatch(/^⟦from: app event \| data/);
     });
 
     it('removes label marks from the text and the author name, so nothing can forge a label', () => {

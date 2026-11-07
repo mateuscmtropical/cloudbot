@@ -76,6 +76,9 @@ import type { WebhookCreation } from '../webhooks/createWebhookTools.ts';
 import type { DeliveryMemory, WebhookRefusalLog } from '../webhooks/webhookMemory.ts';
 import { WATCH_TOOL_FULL_NAMES, createWatchTools } from '../watches/createWatchTools.ts';
 import type { WatchStore } from '../store/WatchStore.ts';
+import type { AppTriggerStore } from '../store/AppTriggerStore.ts';
+import { TRIGGER_TOOL_FULL_NAMES, createTriggerTools } from '../triggers/createTriggerTools.ts';
+import type { SourceDeps } from '../triggers/triggerSources.ts';
 import { NOTIFICATION_TEXT_TOOL_FULL_NAME, NOTIFICATIONS_DISABLE_TOOL_FULL_NAME, NOTIFICATIONS_ENABLE_TOOL_FULL_NAME, createNotificationTextTool, createNotificationsDisableTool, createNotificationsEnableTool } from '../push/createNotificationTools.ts';
 import { firstReplyLine } from '../push/noticeLine.ts';
 import { MEETING_TOOL_FULL_NAMES, createMeetingTools } from '../meetings/createMeetingTools.ts';
@@ -284,6 +287,9 @@ interface ChatServiceOptions {
     limitStore?: LimitStore | undefined;
     // Page watches the bot can create, list and delete. Without it the bot has no watch tools.
     watchStore?: WatchStore | undefined;
+    // App triggers the bot can create, list and delete, and how they read the apps. Without both the bot has no trigger tools.
+    triggerStore?: AppTriggerStore | undefined;
+    triggerDeps?: SourceDeps | undefined;
     // Remote MCP servers the owner connected by URL. Without it the bot has no app tools and no outside servers.
     connectedApps?: ConnectedApps | undefined;
     // The long-term memory server of the bots. Without it, or while it does not answer, turns have no memory tools.
@@ -830,6 +836,8 @@ class ChatService {
     private readonly modelStore: ModelStore | undefined;
     private readonly limitStore: LimitStore | undefined;
     private readonly watchStore: WatchStore | undefined;
+    private readonly triggerStore: AppTriggerStore | undefined;
+    private readonly triggerDeps: SourceDeps | undefined;
     private readonly connectedApps: ConnectedApps | undefined;
     private readonly aiMemory: Pick<AiMemoryService, 'serverConfig'> | undefined;
     private readonly browserAllowStore: BrowserAllowStore | undefined;
@@ -929,6 +937,8 @@ class ChatService {
         this.modelStore = options.modelStore;
         this.limitStore = options.limitStore;
         this.watchStore = options.watchStore;
+        this.triggerStore = options.triggerStore;
+        this.triggerDeps = options.triggerDeps;
         this.connectedApps = options.connectedApps;
         this.aiMemory = options.aiMemory;
         this.browserAllowStore = options.browserAllowStore;
@@ -4153,6 +4163,7 @@ class ChatService {
             const webhookTools = this.webhookTools(botId);
             const watchTools = this.watchStore === undefined ? [] : createWatchTools(this.watchStore, botId);
             const auditTools = this.actionLog === undefined ? [] : [createAuditLogTool(this.actionLog, botId)];
+            const triggerTools = this.triggerStore === undefined || this.triggerDeps === undefined ? [] : createTriggerTools(this.triggerStore, botId, this.triggerDeps);
             const browserAllowTools = this.browserAllowStore === undefined || this.browser === undefined ? [] : createBrowserAllowTools(this.browserAllowStore);
             const appTools = this.connectedApps === undefined ? [] : createAppTools(this.connectedApps, botId);
             // The tool asks the owner through the approval gate, so it is offered only when that gate exists.
@@ -4207,7 +4218,7 @@ class ChatService {
                 this.botStore,
                 botId,
                 requestedPath => this.shareFile(botId, requestedPath, turn.channel),
-                [...chatHistoryTools, ...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...workTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...auditTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...discordTools, ...whatsappTools, ...meetingTools],
+                [...chatHistoryTools, ...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...workTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...auditTools, ...triggerTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...discordTools, ...whatsappTools, ...meetingTools],
                 name => this.channelNameConflict(botId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
@@ -4295,6 +4306,7 @@ class ChatService {
                 hasModels: this.modelStore !== undefined,
                 hasWebhooks: this.webhookStore !== undefined,
                 hasWatches: this.watchStore !== undefined,
+                hasTriggers: this.triggerStore !== undefined && this.triggerDeps !== undefined,
                 hasProviders: this.providerTools !== undefined,
                 hasGithub: this.githubEnvironment !== undefined,
                 hasHandoffs: this.approvals !== undefined,
@@ -4786,6 +4798,7 @@ class ChatService {
         const webhookToolNames = this.webhookStore === undefined ? [] : WEBHOOK_TOOL_FULL_NAMES;
         const watchToolNames = this.watchStore === undefined ? [] : WATCH_TOOL_FULL_NAMES;
         const auditToolNames = this.actionLog === undefined ? [] : [AUDIT_LOG_TOOL_FULL_NAME];
+        const triggerToolNames = this.triggerStore === undefined || this.triggerDeps === undefined ? [] : TRIGGER_TOOL_FULL_NAMES;
         const appToolNames = this.connectedApps === undefined ? [] : APP_TOOL_FULL_NAMES;
         // bot_create is offered only with the approval gate, the same condition as the tool itself.
         const botCreateToolNames = [BOT_CREATE_TOOL_FULL_NAME];
@@ -4807,7 +4820,7 @@ class ChatService {
         const whatsappToolNames = this.whatsapp === undefined ? [] : WHATSAPP_TOOL_FULL_NAMES;
         const meetingToolNames = this.meetingRecorder === undefined || this.browser === undefined ? [] : MEETING_TOOL_FULL_NAMES;
 
-        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...CHAT_HISTORY_TOOL_FULL_NAMES, ...meetingToolNames, ...browserToolNames, ...desktopToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...auditToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...discordToolNames, ...whatsappToolNames];
+        return [UPDATE_PROFILE_TOOL_FULL_NAME, SET_MASCOT_TOOL_FULL_NAME, SHARE_FILE_TOOL_FULL_NAME, ...CHAT_HISTORY_TOOL_FULL_NAMES, ...meetingToolNames, ...browserToolNames, ...desktopToolNames, ...browserAllowToolNames, ...secretToolNames, ...screenToolNames, ...emailToolNames, ...routineToolNames, ...taskToolNames, ...modelToolNames, ...providerToolNames, ...limitToolNames, ...webhookToolNames, ...watchToolNames, ...auditToolNames, ...triggerToolNames, ...appToolNames, ...integrationToolNames, ...botCreateToolNames, ...channelToolNames, ...templateToolNames, ...this.galleryToolNames(), ...ruleToolNames, ...this.skillToolNamesAllowed(), ...botDeleteToolNames, ...botSendToolNames, ...notificationToolNames, ...passkeyToolNames, ...peopleToolNames, ...telegramToolNames, ...discordToolNames, ...whatsappToolNames];
     }
 
     // The notification tools need the push sender. They do not need the approval gate.

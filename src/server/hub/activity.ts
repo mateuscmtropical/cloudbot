@@ -13,6 +13,8 @@ interface ActivitySources {
     isLoginOrSetupInProgress: boolean;
     // The owner went to the sign-in page of an app and has not come back yet.
     hasAppSignIn?: boolean | undefined;
+    // The bot has an app trigger, which polls an app on a schedule.
+    hasAppTrigger?: boolean | undefined;
 }
 
 function computeActivity(sources: ActivitySources): InstanceActivity {
@@ -28,6 +30,10 @@ function computeActivity(sources: ActivitySources): InstanceActivity {
 
     if (sources.hasEnabledWatch) {
         reasons.push('page watch enabled');
+    }
+
+    if (sources.hasAppTrigger === true) {
+        reasons.push('app trigger configured');
     }
 
     if (sources.hasWebhook) {

@@ -73,6 +73,9 @@ import { ModelStore } from './store/ModelStore.ts';
 import { WebhookStore } from './store/WebhookStore.ts';
 import { DeliveryMemory, WebhookRefusalLog } from './webhooks/webhookMemory.ts';
 import { WatchStore } from './store/WatchStore.ts';
+import { AppTriggerStore } from './store/AppTriggerStore.ts';
+import { AppTriggerScheduler } from './triggers/AppTriggerScheduler.ts';
+import { createSourceDeps } from './triggers/createSourceDeps.ts';
 import { WhatsAppSetup } from './whatsapp/WhatsAppSetup.ts';
 import { WhatsAppStore } from './store/WhatsAppStore.ts';
 import { WatchScheduler } from './watches/WatchScheduler.ts';
@@ -260,6 +263,7 @@ const webhookRefusals = new WebhookRefusalLog();
 // The delivery ids, shared by the call route and the owner routes, so a deleted webhook drops its ids.
 const webhookDeliveries = new DeliveryMemory();
 const watchStore = new WatchStore(opened.db);
+const triggerStore = new AppTriggerStore(opened.db);
 const browserAllowStore = new BrowserAllowStore(opened.db);
 const connectedAppStore = new ConnectedAppStore(opened.db);
 
@@ -593,6 +597,8 @@ const chatService: ChatService = new ChatService({
     providerModelCatalogs,
     workSettings,
     watchStore,
+    triggerStore,
+    triggerDeps: createSourceDeps(botSecrets, connectedApps),
     connectedApps,
     aiMemory,
     integrationService,
@@ -707,6 +713,14 @@ const watchScheduler = new WatchScheduler({
     isReady: () => setup.isDone(),
 });
 
+// App triggers wake the bot the same way, through routine turns.
+const appTriggerScheduler = new AppTriggerScheduler({
+    triggerStore,
+    deps: createSourceDeps(botSecrets, connectedApps),
+    sendMessage: (botId, text) => chatService.sendMessage(botId, text, 'routine'),
+    isReady: () => setup.isDone(),
+});
+
 const emailPoller = new EmailPoller({
     accountStore: emailAccountStore,
     passwordStore: emailPasswordStore,
@@ -720,6 +734,7 @@ const emailPoller = new EmailPoller({
 await chatService.resumeQueue();
 routineScheduler.start();
 watchScheduler.start();
+appTriggerScheduler.start();
 emailPoller.start();
 
 function cleanUploads(): void {
@@ -743,7 +758,7 @@ await rm(voiceWorkDir, { recursive: true, force: true });
 
 const voicePrograms = config.voicePrograms;
 const transcribeVoice = createVoiceTranscriber({ workDir: voiceWorkDir, programs: voicePrograms });
-const app = createApp({ actionLog, appUpdater: peopleAdmin, transcribeVoice, push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: config.publicUrl, publicBaseUrl: config.publicBaseUrl, hubConfig, agentUser, maxUploadBytes: config.maxUploadBytes, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, groupsAdmin: peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, workSettings, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, connectedApps, appOAuth, bitwardenVault, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
+const app = createApp({ actionLog, appUpdater: peopleAdmin, transcribeVoice, push: { store: pushSubscriptionStore, publicKey: pushNotifier.publicKey }, version, publicUrl: config.publicUrl, publicBaseUrl: config.publicBaseUrl, hubConfig, agentUser, maxUploadBytes: config.maxUploadBytes, access, passkeys, hubSecret: hubConfig?.secret, hubRole: hubConfig?.role, personName: hubConfig?.personName, peopleAdmin, groupsAdmin: peopleAdmin, chatService, channelStore, botStore, ruleStore, routineStore, modelStore, providerModelCatalogs, workSettings, providers: providerTools, setupBotId: firstBot.id, limitStore, webhookStore, webhookRefusals, webhookDeliveries, watchStore, triggerStore, connectedApps, appOAuth, bitwardenVault, whatsappStore, whatsappSecrets: botSecrets, isReady: () => setup.isDone(), screen, screenView: desktop === undefined ? 'screencast' : 'vnc' });
 
 // With no session yet there is no owner, so a new setup link is printed on every start.
 // Only the hash of the code is stored, so a link lost in an earlier run is replaced, not reprinted.
@@ -786,6 +801,7 @@ function shutdown(): void {
     clearInterval(cleanupTimer);
     routineScheduler.stop();
     watchScheduler.stop();
+    appTriggerScheduler.stop();
     emailPoller.stop();
     desktop?.stop();
     aiMemory?.stop();

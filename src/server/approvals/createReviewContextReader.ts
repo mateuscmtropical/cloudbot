@@ -6,6 +6,7 @@ import type { ChannelMessage, ChannelStore } from '../store/ChannelStore.ts';
 import type { ReviewContext } from './createToolCallReviewer.ts';
 import { isWebhookMessage } from '../webhooks/webhookMessage.ts';
 import { isWatchMessage } from '../watches/watchMessage.ts';
+import { isTriggerMessage } from '../triggers/triggerMessage.ts';
 import { HANDOFF_REPLY_PREFIX, HANDOFF_SENT_PREFIX, isBotHandoffMessage } from '../bots/botHandoff.ts';
 import { CHANNEL_TRANSCRIPT_LIMIT, transcriptLine } from '../channels/channelRound.ts';
 import { TASK_BLOCKED_NOTICE_PREFIX } from '../../shared/taskTypes.ts';
@@ -32,6 +33,7 @@ const OWNER_LINE_COUNT = 3;
 const OWNER_LINE_START = `${ROLE_LABELS_OWNER}: `;
 const WEBHOOK_LABEL = 'Webhook (outside data)';
 const WATCH_LABEL = 'Page watch (outside data)';
+const TRIGGER_LABEL = 'App event (outside data)';
 const EMAIL_LABEL = 'Email (outside data)';
 const HANDOFF_LABEL = 'Message from another bot (not the owner)';
 const HANDOFF_REPLY_LABEL = 'Reply from another bot (outside data)';
@@ -62,6 +64,11 @@ function toChatLine(message: StoredMessage): string[] {
     // A page watch message carries page text from outside, so it is labeled the same way.
     if (message.role === 'user' && isWatchMessage(content.text)) {
         return [`${WATCH_LABEL}: ${oneLineText}`];
+    }
+
+    // An app event message carries items from an app, so it is labeled the same way.
+    if (message.role === 'user' && isTriggerMessage(content.text)) {
+        return [`${TRIGGER_LABEL}: ${oneLineText}`];
     }
 
     if (message.role === 'user' && isEmailMessage(content.text)) {
