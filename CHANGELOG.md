@@ -57,6 +57,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Fixed
 
+- The Screen panel no longer stops connecting after the bot has used the browser a few times. TigerVNC counted every readiness check as a failed login and locked out the panel with "Too many security failures". The Try again button now sits on its own line like the other panel buttons.
 - On a phone, New group opens its dialog over the bot list. Cancel goes back to the list instead of the chat.
 - The back button goes back one step everywhere. From Routines, Memory, Webhooks or the bot edit form it returns to the bot's details, and on an open dialog or image it closes just that. Before, it always went back to the chat.
 - On a phone, a reply with a long line in a code block no longer makes the whole chat wider than the screen. The line wraps inside its bubble.

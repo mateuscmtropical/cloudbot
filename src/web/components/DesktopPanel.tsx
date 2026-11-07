@@ -395,19 +395,20 @@ function DesktopPanel({ onClose, isBotDone = false }: DesktopPanelProps): ReactE
                 {connectionState === 'connecting' ? <p className="desktop-status">Connecting to the screen...</p> : null}
                 {connectionState === 'disconnected'
                     ? (
-                            <p className="desktop-status" role="alert">
-                                The screen is not available. The desktop may be starting.
-                                {' '}
-                                <Button
-                                    onClick={() => {
-                                        autoRetriesRef.current = 0;
-                                        setConnectionState('connecting');
-                                        setConnectAttempt(attempt => attempt + 1);
-                                    }}
-                                >
-                                    Try again
-                                </Button>
-                            </p>
+                            <>
+                                <p className="desktop-status" role="alert">The screen is not available. The desktop may be starting.</p>
+                                <div className="desktop-actions">
+                                    <Button
+                                        onClick={() => {
+                                            autoRetriesRef.current = 0;
+                                            setConnectionState('connecting');
+                                            setConnectAttempt(attempt => attempt + 1);
+                                        }}
+                                    >
+                                        Try again
+                                    </Button>
+                                </div>
+                            </>
                         )
                     : null}
             </div>

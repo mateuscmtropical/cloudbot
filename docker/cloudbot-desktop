@@ -65,7 +65,10 @@ pkill -u "$(id -u)" -f -- "--user-data-dir=$PROFILE_DIR" || true
 rm -f "$X_LOCK" "$X_SOCKET"
 rm -f "$PROFILE_DIR/SingletonLock" "$PROFILE_DIR/SingletonSocket" "$PROFILE_DIR/SingletonCookie"
 
+# The readiness check and the server's proxy both connect from localhost without finishing a VNC handshake.
+# The blacklist would count each one as a failed login and soon lock the Screen panel out for good.
 Xtigervnc ":$DISPLAY_NUMBER" \
+    -UseBlacklist=0 \
     -geometry "${SCREEN_WIDTH}x${SCREEN_HEIGHT}" \
     -depth "$SCREEN_DEPTH" \
     -localhost \

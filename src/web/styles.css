@@ -2611,8 +2611,7 @@ a.file-chip:hover {
 }
 
 /* The panel buttons look like the buttons in a chat card. The browser default is a light gray box. */
-.desktop-actions .choice-button,
-.desktop-status .choice-button {
+.desktop-actions .choice-button {
     padding: var(--space-2) var(--space-4);
 }
 
