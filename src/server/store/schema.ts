@@ -52,6 +52,10 @@ const bots = sqliteTable('bots', {
     mascotBolt: text('mascot_bolt', { enum: MASCOT_BOLTS })
         .notNull()
         .default('down'),
+    // Whether a substantial successful turn may end with a proposal for a new skill. The owner turns it off in chat.
+    isSkillReviewOn: integer('is_skill_review_on', { mode: 'boolean' })
+        .notNull()
+        .default(true),
 });
 
 // `sequence` is the insertion order and the paging cursor. AUTOINCREMENT keeps

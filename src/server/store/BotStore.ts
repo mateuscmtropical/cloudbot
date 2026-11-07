@@ -142,6 +142,14 @@ class BotStore {
             .where(botCondition);
     }
 
+    async setSkillReview(botId: string, isSkillReviewOn: boolean): Promise<void> {
+        const botCondition = eq(bots.id, botId);
+
+        await this.database.update(bots)
+            .set({ isSkillReviewOn })
+            .where(botCondition);
+    }
+
     async setSessionId(botId: string, sessionId: string | null): Promise<Bot | undefined> {
         const botCondition = eq(bots.id, botId);
 

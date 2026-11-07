@@ -98,6 +98,7 @@ describe('BotStore', () => {
                 mascotWeather: 'auto',
                 mascotBolt: 'down',
                 permissionMode: 'auto',
+                isSkillReviewOn: true,
             });
     });
 
