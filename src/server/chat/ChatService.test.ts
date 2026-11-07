@@ -159,6 +159,11 @@ const REPLY_SCRIPT: AgentEvent[] = [{ type: 'text', text: 'Done' }, { type: 'tur
 const ONE_MINUTE_MS = 60_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// The label line the agent reads in front of an owner message.
+function owner(text: string): string {
+    return `⟦from: the owner | instruction⟧\n${text}`;
+}
+
 // A rejected limit is followed by the error that ends the turn. The reset time is optional.
 function usageLimitScript(resetsAt: number | undefined): AgentEvent[] {
     const resetsAtOption = resetsAt === undefined ? {} : { resetsAt };
@@ -261,7 +266,7 @@ describe('ChatService usage limit and queue', () => {
         await retryFinished;
 
         expect(runner.receivedRequests.map(request => request.prompt))
-            .toEqual(['Hi', 'Hi']);
+            .toEqual([owner('Hi'), owner('Hi')]);
 
         service.dispose();
     });
@@ -283,7 +288,7 @@ describe('ChatService usage limit and queue', () => {
         await retryFinished;
 
         expect(runner.receivedRequests.map(request => request.prompt))
-            .toEqual(['Hi', 'Continue.']);
+            .toEqual([owner('Hi'), 'Continue.']);
         expect(runner.receivedRequests[1]?.sessionId)
             .toBe('session-1');
 
@@ -343,7 +348,7 @@ describe('ChatService usage limit and queue', () => {
         await allFinished;
 
         expect(runner.receivedRequests.map(request => request.prompt))
-            .toEqual(['Hi', 'Hi', 'second']);
+            .toEqual([owner('Hi'), owner('Hi'), owner('second')]);
 
         service.dispose();
     });
@@ -368,7 +373,7 @@ describe('ChatService usage limit and queue', () => {
         await vi.advanceTimersByTimeAsync(ONE_MINUTE_MS * 10);
 
         expect(runner.receivedRequests.map(request => request.prompt))
-            .toEqual(['Hi']);
+            .toEqual([owner('Hi')]);
 
         const storedMessages = (await service.listMessages(bot.id)) ?? [];
         const queuedStored = storedMessages.find(message => message.body.kind === 'text' && message.body.text === 'second');
@@ -408,7 +413,7 @@ describe('ChatService usage limit and queue', () => {
         expect(firstRunner.receivedRequests)
             .toHaveLength(1);
         expect(restartedRunner.receivedRequests.map(request => request.prompt))
-            .toEqual(['Hi', 'second']);
+            .toEqual([owner('Hi'), owner('second')]);
 
         restartedService.dispose();
     });
@@ -499,7 +504,7 @@ describe('ChatService usage limit and queue', () => {
         await finished;
 
         expect(prompts)
-            .toEqual(['first', 'second']);
+            .toEqual([owner('first'), owner('second')]);
         expect(busyStates.slice(0, -1))
             .not.toContain(false);
         expect(busyStates[busyStates.length - 1])
@@ -524,7 +529,7 @@ describe('ChatService usage limit and queue', () => {
         await retryFinished;
 
         expect(runner.receivedRequests.map(request => request.prompt))
-            .toEqual(['Hi', 'Hi']);
+            .toEqual([owner('Hi'), owner('Hi')]);
 
         service.dispose();
     });
@@ -681,7 +686,7 @@ describe('ChatService usage limit and queue', () => {
         await thirdFinished;
 
         expect(prompts)
-            .toEqual(['first', 'third']);
+            .toEqual([owner('first'), owner('third')]);
     });
 
     it('puts the files of a dropped retry back for the next message when a stop cancels the wait', async () => {
@@ -1059,7 +1064,7 @@ describe('ChatService', () => {
         await finished;
 
         expect(runner.receivedRequests.map(request => request.prompt))
-            .toEqual(['first', 'second']);
+            .toEqual([owner('first'), owner('second')]);
 
         const storedMessages = await service.listMessages(bot.id);
         const secondStored = storedMessages?.find(message => message.body.kind === 'text' && message.body.text === 'second');
@@ -1088,9 +1093,9 @@ describe('ChatService', () => {
         await finished;
 
         expect(runner.receivedRequests.map(request => request.prompt))
-            .toEqual(['first']);
+            .toEqual([owner('first')]);
         expect(runner.deliveredTexts)
-            .toEqual(['second']);
+            .toEqual([owner('second')]);
     });
 
     it('queues a routine message even when the running turn can take messages', async () => {
@@ -1108,7 +1113,7 @@ describe('ChatService', () => {
         await finished;
 
         expect(runner.receivedRequests.map(request => request.prompt))
-            .toEqual(['first', 'daily summary']);
+            .toEqual([owner('first'), '⟦from: routine or check-in the owner set up | instruction⟧\ndaily summary']);
         expect(runner.deliveredTexts)
             .toEqual([]);
     });
@@ -1135,7 +1140,7 @@ describe('ChatService', () => {
         await finished;
 
         expect(runner.receivedRequests.map(request => request.prompt))
-            .toEqual(['first', 'second']);
+            .toEqual([owner('first'), owner('second')]);
     });
 
     it('stops a running turn and keeps only the messages stored before the stop', async () => {
@@ -1982,7 +1987,7 @@ describe('ChatService', () => {
         expect(runner.receivedRequests[0]?.prompt)
             .toContain(join(dataDir, 'uploads', bot.id));
         expect(runner.receivedRequests[1]?.prompt)
-            .toBe('second');
+            .toBe(owner('second'));
     });
 
     it('returns undefined for uploads to an unknown bot', async () => {
