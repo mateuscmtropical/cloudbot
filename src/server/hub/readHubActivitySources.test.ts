@@ -57,6 +57,15 @@ describe('readHubActivitySources', () => {
             .toBe(true);
     });
 
+    it('counts an app trigger only while it is enabled', async () => {
+        const withTriggers = (triggers: { isEnabled: boolean }[]): HubActivitySourceOptions => ({ triggerStore: { list: () => Promise.resolve(triggers) }, botStore: { list: () => Promise.resolve([{ id: 'one' }]) }, isReady: () => true });
+
+        expect((await readHubActivitySources(withTriggers([{ isEnabled: false }]))).hasAppTrigger)
+            .toBe(false);
+        expect((await readHubActivitySources(withTriggers([{ isEnabled: false }, { isEnabled: true }]))).hasAppTrigger)
+            .toBe(true);
+    });
+
     it('counts setup as activity and handles absent optional stores', async () => {
         const options: HubActivitySourceOptions = { isReady: () => false };
 

@@ -131,6 +131,48 @@ describe('AppTriggerScheduler', () => {
             .toHaveLength(1);
     });
 
+    it('skips a paused trigger, and records a new baseline when it is resumed', async () => {
+        await addTrigger();
+        const scheduler = createScheduler();
+        const [trigger] = await store.list(botId);
+
+        await scheduler.checkDueTriggers();
+        await store.setEnabled(botId, trigger?.id ?? '', false);
+        clock += 15 * MINUTE_MS;
+        issues = [{ number: 2, title: 'Second' }, { number: 1, title: 'First' }];
+        await scheduler.checkDueTriggers();
+
+        expect(requests)
+            .toBe(1);
+
+        const resumed = await store.setEnabled(botId, trigger?.id ?? '', true);
+
+        expect(resumed?.seen)
+            .toBeNull();
+        await scheduler.checkDueTriggers();
+        expect(requests)
+            .toBe(2);
+        expect(sent)
+            .toEqual([]);
+
+        clock += 15 * MINUTE_MS;
+        issues = [{ number: 3, title: 'Third' }, ...issues];
+        await scheduler.checkDueTriggers();
+        expect(sent)
+            .toHaveLength(1);
+    });
+
+    it('does not pause a trigger of another bot', async () => {
+        await addTrigger();
+
+        const [trigger] = await store.list(botId);
+
+        expect(await store.setEnabled('other-bot', trigger?.id ?? '', false))
+            .toBeUndefined();
+        expect((await store.list(botId))[0]?.isEnabled)
+            .toBe(true);
+    });
+
     it('limits the triggers of a bot and removes only its own', async () => {
         await addTrigger();
         const second = await store.addWithLimit(botId, { name: 'b', source: 'gmail', target: '', prompt: 'p', intervalMinutes: 15 }, 1);

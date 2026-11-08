@@ -377,6 +377,10 @@ const appTriggers = sqliteTable('app_triggers', {
         .notNull(),
     intervalMinutes: integer('interval_minutes')
         .notNull(),
+    // A paused trigger is not checked. Resuming records a new baseline, so nothing from the pause is sent.
+    isEnabled: integer('is_enabled', { mode: 'boolean' })
+        .notNull()
+        .default(true),
     seen: text('seen', { mode: 'json' })
         .$type<string[]>(),
     nextCheckAt: integer('next_check_at')

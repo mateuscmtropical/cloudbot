@@ -205,6 +205,14 @@ function WebhookIcon(): ReactElement {
     );
 }
 
+function TriggerIcon(): ReactElement {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M13 3 5 13h6l-1 8 8-10h-6z" />
+        </svg>
+    );
+}
+
 function FilterIcon(): ReactElement {
     return (
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -257,6 +265,7 @@ export {
     LibraryIcon,
     MicIcon,
     MonitorIcon,
+    TriggerIcon,
     WebhookIcon,
     MoreIcon,
     PeopleIcon,

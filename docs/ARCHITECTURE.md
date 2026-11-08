@@ -1349,7 +1349,7 @@ with the `GITHUB_TOKEN` secret when the bot has one) and `gmail` (target is a
 Gmail search, the Gmail REST API with the access token of the connected
 `google-gmail` app, read through `ConnectedApps.googleAccessToken`). The
 addresses are fixed in the source, so a token only goes to `api.github.com` or
-Google. To add an app, add one entry there.
+Google. `calendar_new_event` (target is a calendar address, empty for the main one) lists events changed in the last 26 hours and reports those whose `created` time is in that window. `calendar_starting` (target `<minutes>` or `<minutes> <calendar address>`) lists the events that start in the next minutes and skips events that began or were cancelled or declined. Its target is refused when the interval is longer than the minutes, since a check could then miss an event. Both use the access token of the connected `google-calendar` app. To add an app, add one entry there.
 
 `AppTriggerScheduler` runs every 30 seconds. A due trigger first moves its next
 check, then polls. The `app_triggers` table keeps the last 100 seen ids, and
@@ -1359,13 +1359,19 @@ and limits apply, and the ids are saved after the message is queued. A check
 with nothing new makes one or two API requests and no model call. The message
 starts with `App event "<name>"` and the owner's instruction, then the outside
 data line, then the items on one line each. The review context labels it
-`App event (outside data)`. A trigger keeps the instance awake in the hub idle
-check.
+`App event (outside data)`. An enabled trigger keeps the instance awake in the
+hub idle check.
+
+The owner panel (Profile, App triggers) uses `GET /api/bots/:id/triggers`,
+`PUT /api/bots/:id/triggers/:triggerId/enabled` with `{ isEnabled }` and
+`DELETE /api/bots/:id/triggers/:triggerId`. It lists and pauses and deletes.
+The bot still makes triggers in the chat. `app_triggers.is_enabled` is the
+pause flag. `listDue` skips a paused trigger, and resuming clears `seen` and
+sets the next check to now, so the next check is a new baseline.
 
 Limits of this version. Checks are polling, so the delay is up to the
-interval. There is no owner panel for triggers yet, only the bot tools. A
-failing check is logged and tried again at the next interval, and the owner is
-not told.
+interval. A failing check is logged and tried again at the next interval, and
+the owner is not told.
 ## Once routines
 
 A routine with the schedule `{kind: "once", at}` runs one time. The tool takes

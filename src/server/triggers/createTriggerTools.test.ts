@@ -80,4 +80,30 @@ describe('createTriggerTools', () => {
         expect(await store.list(botId))
             .toHaveLength(0);
     });
+
+    it('makes a calendar trigger only when the checks are as often as the lead time', async () => {
+        const args = { name: 'Meetings', source: 'calendar_starting', prompt: 'Remind me' };
+        const tooSlow = await findHandler('trigger_create')({ ...args, target: '15', intervalMinutes: 30 }, {});
+        const fine = await findHandler('trigger_create')({ ...args, target: '15' }, {});
+
+        expect(tooSlow.isError)
+            .toBe(true);
+        expect(fine.isError)
+            .toBeUndefined();
+        expect(await store.list(botId))
+            .toHaveLength(1);
+    });
+
+    it('tells the bot when the owner paused a trigger', async () => {
+        await findHandler('trigger_create')(issueArgs, {});
+
+        const [record] = await store.list(botId);
+
+        await store.setEnabled(botId, record?.id ?? '', false);
+
+        const listed = await findHandler('trigger_list')({}, {});
+
+        expect(listed.content[0]?.text)
+            .toContain('(paused by the owner)');
+    });
 });

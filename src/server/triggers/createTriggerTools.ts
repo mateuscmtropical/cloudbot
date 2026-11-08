@@ -89,7 +89,7 @@ function createTriggerTools(store: AppTriggerStore, botId: string, deps: SourceD
                 return textResult(`The interval is ${String(MIN_INTERVAL_MINUTES)} to ${String(MAX_INTERVAL_MINUTES)} minutes.`, true);
             }
 
-            const problem = source.checkTarget(args.target) ?? await source.checkReady(botId, deps);
+            const problem = source.checkTarget(args.target, intervalMinutes) ?? await source.checkReady(botId, deps);
 
             if (problem !== undefined) {
                 return textResult(problem, true);
@@ -115,7 +115,7 @@ function createTriggerTools(store: AppTriggerStore, botId: string, deps: SourceD
                 return textResult('You have no app triggers.');
             }
 
-            const lines = triggers.map(trigger => `- ${trigger.id}: "${trigger.name}" ${trigger.source} ${trigger.target}, every ${String(trigger.intervalMinutes)} minutes`);
+            const lines = triggers.map(trigger => `- ${trigger.id}: "${trigger.name}" ${trigger.source} ${trigger.target}, every ${String(trigger.intervalMinutes)} minutes${trigger.isEnabled ? '' : ' (paused by the owner)'}`);
 
             const listText = lines.join('\n');
 

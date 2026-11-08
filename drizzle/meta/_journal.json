@@ -260,6 +260,13 @@
       "when": 1794098759573,
       "tag": "0036_parallel_threads",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1794100845135,
+      "tag": "0037_trigger_enabled",
+      "breakpoints": true
     }
   ]
 }

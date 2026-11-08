@@ -13,7 +13,7 @@ interface ActivityWatch {
 }
 
 interface ActivityTrigger {
-    id: string;
+    isEnabled: boolean;
 }
 
 interface ActivityWebhook {
@@ -100,7 +100,7 @@ async function readHubActivitySources(options: HubActivitySourceOptions): Promis
         hasActiveTurn: bots.some(bot => chatService?.isBotBusy(bot.id) ?? false),
         hasEnabledRoutine: routineLists.some(routines => routines.some(routine => routine.isEnabled)),
         hasEnabledWatch: watchLists.some(watches => watches.length > 0),
-        hasAppTrigger: triggerLists.some(triggers => triggers.length > 0),
+        hasAppTrigger: triggerLists.some(triggers => triggers.some(trigger => trigger.isEnabled)),
         hasWebhook: webhookLists.some(webhooks => webhooks.length > 0),
         hasWhatsAppConnection: whatsappConnections.length > 0,
         hasTelegramConnection: telegramConnections.some(isConnected => isConnected),
