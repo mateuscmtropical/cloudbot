@@ -480,6 +480,8 @@ describe('ConnectAppsPanel', () => {
         render(<ConnectAppsPanel selectedBotId="bot-1" onClose={() => {}} />);
         fireEvent.click(await screen.findByRole('button', { name: 'Connect Notion' }));
         await screen.findByText('Finish signing in to Notion in the other window.');
+        // The text can show before React runs the effect that starts listening. A message sent in between is lost.
+        await act(async () => {});
 
         const channel = new BroadcastChannel(APP_SIGN_IN_CHANNEL);
 
