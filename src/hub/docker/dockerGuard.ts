@@ -133,6 +133,14 @@ function checkVolumeCreate(request: DockerGuardRequest): boolean {
     return hasOnlyKeys(body, ['Name']) && typeof body.Name === 'string' && VOLUME_PATTERN.test(body.Name);
 }
 
+// One sample, never a stream. A stream would hold the connection open for as long as the container runs.
+function checkStatsOnce(request: DockerGuardRequest): boolean {
+    const queryKeys = request.query.keys();
+    const keys = Array.from(queryKeys);
+
+    return keys.length === 1 && request.query.get('stream') === 'false';
+}
+
 function allowed(): boolean {
     return true;
 }
@@ -141,6 +149,8 @@ function allowed(): boolean {
 const ROUTES: GuardRoute[] = [
     { method: 'POST', pattern: /^\/containers\/create$/, check: checkContainerCreate },
     { method: 'GET', pattern: new RegExp(`^/containers/cloudbot-i-${NAME}/json$`), check: allowed },
+    // The numbers of the usage screen. Read only, one sample, for the container of one person or group.
+    { method: 'GET', pattern: new RegExp(`^/containers/cloudbot-i-${NAME}/stats$`), check: checkStatsOnce },
     { method: 'POST', pattern: new RegExp(`^/containers/cloudbot-i-${NAME}/(?:start|stop)$`), check: allowed },
     { method: 'DELETE', pattern: new RegExp(`^/containers/cloudbot-i-${NAME}$`), check: allowed },
     // The health check of the guard. Docker answers OK and nothing else.

@@ -97,6 +97,15 @@ never talk to the hub admin API. A new person gets a generated password. It is
 returned once, shown once, and never goes to the model, the messages, the logs
 or the database of any instance.
 
+## Resource usage
+
+Account, Resource usage shows numbers and small bars. They refresh every few seconds while the screen is open. Nothing is stored.
+
+- The owner sees the machine (load, memory and disk) and, for every person and shared group, the CPU and memory of the container against its limit. A hibernated instance shows as hibernated.
+- Everyone else sees only their own instance. A CloudBot that runs on its own has no such screen.
+
+The hub answers on `/internal/usage` (owner only) and `/internal/my-usage` (the caller's own instance, picked by the secret and never by a name in the request). The machine numbers are read by the hub from inside its own container. Memory, CPU count and load are the machine's, and the screen says so. The disk is the one that holds the hub and the Docker data. The container numbers come from Docker through the guard, which allows one more call: `GET /containers/cloudbot-i-<name>/stats?stream=false`. It is read only, for one sample, and any other query is refused.
+
 ## Shared groups
 
 A shared group is a record in the people table with the role `group` and no

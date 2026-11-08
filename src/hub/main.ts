@@ -18,6 +18,7 @@ import { attachUpgradeProxy } from './proxy/attachUpgradeProxy.ts';
 import { createHubPasskeyTables, SqliteHubPasskeyStore } from './passkeys/HubPasskeyStore.ts';
 import { HubPasskeyService } from './passkeys/HubPasskeyService.ts';
 import { generatePassword, hashPassword } from './passwords.ts';
+import { UsageReader } from './usage/UsageReader.ts';
 import { openHubDatabase } from './store/openHubDatabase.ts';
 import { SqlitePeopleStore } from './store/SqlitePeopleStore.ts';
 import { createGroupMemberTables, SqliteGroupMembers } from './store/SqliteGroupMembers.ts';
@@ -180,6 +181,7 @@ async function main(): Promise<void> {
         activity,
         hubPort: settings.port,
         updates: new AppUpdateRequests(settings.dataDir),
+        usage: new UsageReader({ instances, docker, instanceCpus: settings.instanceCpus }),
         members,
         entryTickets: new GroupEntryTickets(),
     };

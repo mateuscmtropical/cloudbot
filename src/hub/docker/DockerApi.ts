@@ -60,6 +60,13 @@ interface DockerContainerInspection {
     healthStatus: string | undefined;
 }
 
+// One sample of a running container. Docker counts a full core as 100 percent.
+interface DockerContainerStats {
+    cpuPercent: number;
+    memoryBytes: number;
+    memoryLimitBytes: number;
+}
+
 interface DockerApiClient {
     createNetwork: (name: string) => Promise<void>;
     removeNetwork: (name: string) => Promise<void>;
@@ -69,6 +76,7 @@ interface DockerApiClient {
     removeVolume: (name: string) => Promise<void>;
     createContainer: (name: string, options: DockerContainerOptions) => Promise<void>;
     inspectContainer: (name: string) => Promise<DockerContainerInspection | undefined>;
+    containerStats: (name: string) => Promise<DockerContainerStats | undefined>;
     startContainer: (name: string) => Promise<void>;
     stopContainer: (name: string) => Promise<void>;
     removeContainer: (name: string) => Promise<void>;
@@ -230,6 +238,25 @@ class DockerApi implements DockerApiClient {
         return { isRunning, state: stateName, healthStatus };
     }
 
+    // stream=false makes Docker answer once, with a second sample about a second after the first. The guard allows
+    // nothing else, since a stream would never end.
+    async containerStats(name: string): Promise<DockerContainerStats | undefined> {
+        const requestOptions: DockerRequestOptions = {
+            method: 'GET',
+            path: `/containers/${encodeURIComponent(name)}/stats?stream=false`,
+            ignoreNotFound: true,
+        };
+        const response = await this.request(requestOptions);
+
+        if (response === undefined) {
+            return undefined;
+        }
+
+        const responseBody: unknown = await response.json();
+
+        return this.readStats(responseBody);
+    }
+
     async startContainer(name: string): Promise<void> {
         const requestOptions: DockerRequestOptions = {
             method: 'POST',
@@ -285,6 +312,38 @@ class DockerApi implements DockerApiClient {
         return response;
     }
 
+    // The same math as `docker stats`. The page cache is `inactive_file` on cgroup v2 and `total_inactive_file` on v1.
+    private readStats(value: unknown): DockerContainerStats {
+        const record = this.readObject(value);
+        const cpu = this.readOptionalObject(record.cpu_stats);
+        const previousCpu = this.readOptionalObject(record.precpu_stats);
+        const memory = this.readOptionalObject(record.memory_stats);
+        const memoryDetails = this.readOptionalObject(memory.stats);
+        const cpuDelta = this.readTotalUsage(cpu) - this.readTotalUsage(previousCpu);
+        const systemDelta = this.readNumber(cpu.system_cpu_usage) - this.readNumber(previousCpu.system_cpu_usage);
+        const cpuCount = this.readNumber(cpu.online_cpus) || 1;
+        const cpuPercent = cpuDelta > 0 && systemDelta > 0 ? (cpuDelta / systemDelta) * cpuCount * 100 : 0;
+        const cache = this.readNumber(memoryDetails.inactive_file) || this.readNumber(memoryDetails.total_inactive_file);
+        const memoryBytes = Math.max(0, this.readNumber(memory.usage) - cache);
+
+        return { cpuPercent, memoryBytes, memoryLimitBytes: this.readNumber(memory.limit) };
+    }
+
+    private readTotalUsage(cpu: DockerUnknownRecord): number {
+        const usage = this.readOptionalObject(cpu.cpu_usage);
+
+        return this.readNumber(usage.total_usage);
+    }
+
+    // A field Docker left out counts as zero.
+    private readNumber(value: unknown): number {
+        return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+    }
+
+    private readOptionalObject(value: unknown): DockerUnknownRecord {
+        return value === undefined ? {} : this.readObject(value);
+    }
+
     private readObject(value: unknown): DockerUnknownRecord {
         const isObject = typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -297,4 +356,4 @@ class DockerApi implements DockerApiClient {
 }
 
 export { DockerApi, DockerApiError };
-export type { DockerApiClient, DockerContainerInspection, DockerContainerOptions, DockerVolumeMount };
+export type { DockerApiClient, DockerContainerInspection, DockerContainerStats, DockerContainerOptions, DockerVolumeMount };

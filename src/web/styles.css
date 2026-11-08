@@ -2837,6 +2837,20 @@ a.file-chip:hover {
     margin: 0 auto;
 }
 
+.usage-gauge {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.usage-gauge + .usage-gauge {
+    margin-top: var(--space-2);
+}
+
+.usage-meter {
+    width: 100%;
+}
+
 .account-person-row {
     display: flex;
     align-items: center;

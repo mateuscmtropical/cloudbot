@@ -58,6 +58,7 @@ describe('isAllowedDockerRequest', () => {
         await docker.createVolume('cbi-maria-data');
         await docker.createContainer('cloudbot-i-maria', { image: 'cloudbot:local', environment: ['A=1'], memoryBytes: 1024, nanoCpus: 1000, mounts, networkName: 'cloudbot-net-maria', containerAlias: 'cloudbot-i-maria' });
         await docker.inspectContainer('cloudbot-i-maria');
+        await docker.containerStats('cloudbot-i-maria');
         await docker.startContainer('cloudbot-i-maria');
         await docker.stopContainer('cloudbot-i-maria');
         await docker.removeContainer('cloudbot-i-maria');
@@ -70,9 +71,29 @@ describe('isAllowedDockerRequest', () => {
         const results = seen.map(request => isAllowedDockerRequest(request, RULES));
 
         expect(results)
-            .toHaveLength(12);
+            .toHaveLength(13);
         expect(results.every(Boolean))
             .toBe(true);
+    });
+
+    it('lets through one stats sample of a person container and nothing else about stats', () => {
+        const allowed = guardRequest('GET', '/containers/cloudbot-i-maria/stats?stream=false');
+        const refused = [
+            guardRequest('GET', '/containers/cloudbot-i-maria/stats'),
+            guardRequest('GET', '/containers/cloudbot-i-maria/stats?stream=true'),
+            guardRequest('GET', '/containers/cloudbot-i-maria/stats?stream=false&one-shot=true'),
+            guardRequest('GET', '/containers/cloudbot-i-maria/stats?one-shot=true'),
+            guardRequest('POST', '/containers/cloudbot-i-maria/stats?stream=false'),
+            guardRequest('GET', '/containers/cloudbot-hub-1/stats?stream=false'),
+            guardRequest('GET', '/containers/cloudbot-caddy-1/stats?stream=false'),
+            guardRequest('GET', '/containers/cloudbot-i-maria/top?stream=false'),
+        ];
+
+        expect(isAllowedDockerRequest(allowed, RULES))
+            .toBe(true);
+        expect(refused.map(request => isAllowedDockerRequest(request, RULES))
+            .some(Boolean))
+            .toBe(false);
     });
 
     it('refuses any other endpoint or name', () => {
