@@ -18,8 +18,11 @@ class FakeSocket implements DiscordSocket {
         this.sent.push(JSON.parse(data) as Record<string, unknown>);
     }
 
-    close(): void {
+    closeCode: number | undefined;
+
+    close(code?: number): void {
         this.isClosed = true;
+        this.closeCode = code;
     }
 
     receive(payload: Record<string, unknown>): void {
@@ -136,6 +139,139 @@ describe('createDiscordApi listen', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+});
+
+describe('createDiscordApi resume', () => {
+    const RESUME_URL = 'wss://gateway-us-east1-b.discord.gg/?v=10&encoding=json';
+
+    // One api, a new fake socket for each listen call.
+    function setup(): { sockets: FakeSocket[]; urls: string[]; messages: DiscordMessage[]; connect: () => { socket: FakeSocket; ended: Promise<unknown> } } {
+        const sockets: FakeSocket[] = [];
+        const urls: string[] = [];
+        const messages: DiscordMessage[] = [];
+        const api = createDiscordApi(TOKEN, vi.fn(), (url) => {
+            const socket = new FakeSocket();
+
+            urls.push(url);
+            sockets.push(socket);
+
+            return socket;
+        });
+        const connect = (): { socket: FakeSocket; ended: Promise<unknown> } => {
+            const ended = api.listen((message) => {
+                messages.push(message);
+
+                return Promise.resolve();
+            }, new AbortController().signal)
+                .catch((caught: unknown) => caught);
+            const socket = sockets.at(-1) as FakeSocket;
+
+            socket.receive({ op: 10, d: { heartbeat_interval: 60_000 } });
+
+            return { socket, ended };
+        };
+
+        return { sockets, urls, messages, connect };
+    }
+
+    function ready(socket: FakeSocket, resumeUrl = 'wss://gateway-us-east1-b.discord.gg'): void {
+        socket.receive({ op: 0, t: 'READY', s: 1, d: { session_id: 'abc', resume_gateway_url: resumeUrl } });
+    }
+
+    it('resumes the session on the resume address after a lost connection', async () => {
+        const { urls, connect } = setup();
+        const first = connect();
+
+        ready(first.socket);
+        first.socket.receive(directMessage({ id: 'm1' }));
+        first.socket.closeWith(1006);
+        await first.ended;
+        expect(first.socket.closeCode)
+            .toBe(4000);
+
+        const second = connect();
+
+        expect(urls)
+            .toEqual(['wss://gateway.discord.gg/?v=10&encoding=json', RESUME_URL]);
+        expect(second.socket.sent[0])
+            .toEqual({ op: 6, d: { token: TOKEN, session_id: 'abc', seq: 3 } });
+    });
+
+    it('resumes after Discord asks to reconnect', async () => {
+        const { connect } = setup();
+        const first = connect();
+
+        ready(first.socket);
+        first.socket.receive({ op: 7, d: null });
+        await first.ended;
+
+        expect(connect().socket.sent[0])
+            .toMatchObject({ op: 6 });
+    });
+
+    it('never hands over a message twice when Discord replays it', async () => {
+        const { messages, connect } = setup();
+        const first = connect();
+
+        ready(first.socket);
+        first.socket.receive(directMessage({ id: 'm1' }));
+        first.socket.closeWith(1006);
+        await first.ended;
+
+        const second = connect();
+
+        second.socket.receive(directMessage({ id: 'm1' }));
+        second.socket.receive(directMessage({ id: 'm2' }));
+        expect(messages.length)
+            .toBe(2);
+    });
+
+    it('resumes after a resumable invalid session and identifies after a lost one', async () => {
+        const { urls, connect } = setup();
+        const first = connect();
+
+        ready(first.socket);
+        first.socket.receive({ op: 9, d: true });
+        await first.ended;
+
+        const second = connect();
+
+        expect(second.socket.sent[0])
+            .toMatchObject({ op: 6 });
+        second.socket.receive({ op: 9, d: false });
+        await second.ended;
+
+        const third = connect();
+
+        expect(urls[2])
+            .toBe('wss://gateway.discord.gg/?v=10&encoding=json');
+        expect(third.socket.sent[0])
+            .toMatchObject({ op: 2 });
+    });
+
+    it('identifies again after the session timed out', async () => {
+        const { connect } = setup();
+        const first = connect();
+
+        ready(first.socket);
+        first.socket.closeWith(4009);
+        await first.ended;
+
+        expect(connect().socket.sent[0])
+            .toMatchObject({ op: 2 });
+    });
+
+    it('does not send the token to a resume address outside Discord', async () => {
+        const { connect } = setup();
+        const first = connect();
+
+        ready(first.socket, 'wss://evil.example.com');
+        first.socket.closeWith(1006);
+        await first.ended;
+
+        expect(connect().socket.sent[0])
+            .toMatchObject({ op: 2 });
     });
 });
 
