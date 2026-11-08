@@ -22,6 +22,11 @@ interface Listener {
     done: Promise<void>;
 }
 
+interface GatewayApi {
+    api?: DiscordApi;
+    token?: string;
+}
+
 const LINK_KEY_PREFIX = 'discord.link.';
 const DEFAULT_RETRY_DELAY_MS = 5000;
 const DEFAULT_WANTED_CHECK_MS = 30_000;
@@ -122,9 +127,12 @@ class DiscordBridge extends MessengerBridge<DiscordLink> {
 
             finish();
         };
+        // The Gateway session lives in the api, so every round of this listener shares one api per token. That lets a
+        // round resume the session of the one before it.
+        const gateway: GatewayApi = {};
         // Each round starts the next one without waiting on it, so a bot that stays online for weeks keeps no chain of promises.
         const step = (): void => {
-            this.connectRound(botId, controller)
+            this.connectRound(botId, controller, gateway)
                 .then((isContinuing) => {
                     if (isContinuing) {
                         step();
@@ -143,7 +151,7 @@ class DiscordBridge extends MessengerBridge<DiscordLink> {
     }
 
     // One connection to the Gateway until it ends. Returns false when the bot should stop listening.
-    private async connectRound(botId: string, controller: AbortController): Promise<boolean> {
+    private async connectRound(botId: string, controller: AbortController, gateway: GatewayApi): Promise<boolean> {
         const { signal } = controller;
         const token = this.readToken(botId);
 
@@ -151,7 +159,13 @@ class DiscordBridge extends MessengerBridge<DiscordLink> {
             return false;
         }
 
-        const api = this.createApi(token);
+        // A new token is a new bot, so it starts a new session.
+        if (gateway.api === undefined || gateway.token !== token) {
+            gateway.api = this.createApi(token);
+            gateway.token = token;
+        }
+
+        const { api } = gateway;
         // Messages are handled one after the other, so the bot gets them in the order they were sent.
         let queue = Promise.resolve();
         const onMessage = (message: DiscordMessage): Promise<void> => {

@@ -5,7 +5,15 @@
 
 const DISCORD_API_ORIGIN = 'https://discord.com';
 const DISCORD_REST_URL = `${DISCORD_API_ORIGIN}/api/v10`;
-const GATEWAY_URL = 'wss://gateway.discord.gg/?v=10&encoding=json';
+const GATEWAY_QUERY = '/?v=10&encoding=json';
+const GATEWAY_URL = `wss://gateway.discord.gg${GATEWAY_QUERY}`;
+// Closing with a code other than 1000 or 1001 keeps the session, so the next connection can resume it.
+const CLOSE_CODE_KEEP_SESSION = 4000;
+const CLOSE_CODE_NORMAL = 1000;
+// Close codes after which the session is gone: the sequence was invalid or the session timed out.
+const SESSION_LOST_CLOSE_CODES = [4007, 4009];
+// How many message ids are remembered to drop a message that arrives twice.
+const SEEN_MESSAGE_LIMIT = 100;
 // The REST limit for the content of one message.
 const MAX_MESSAGE_CHARACTERS = 2000;
 // Direct messages only. This intent is not privileged, and DMs carry their text without the message content intent.
@@ -15,6 +23,7 @@ const FATAL_CLOSE_CODES = [4004, 4010, 4011, 4012, 4013, 4014];
 const OPCODE_DISPATCH = 0;
 const OPCODE_HEARTBEAT = 1;
 const OPCODE_IDENTIFY = 2;
+const OPCODE_RESUME = 6;
 const OPCODE_RECONNECT = 7;
 const OPCODE_INVALID_SESSION = 9;
 const OPCODE_HELLO = 10;
@@ -29,7 +38,8 @@ interface DiscordMessage {
 
 interface DiscordApi {
     // Opens the Gateway and calls onMessage for each direct message. Ends when the signal aborts. Throws when the
-    // connection fails or closes, so the caller can connect again, unless the error is fatal.
+    // connection fails or closes, so the caller can connect again, unless the error is fatal. The session lives in
+    // this object, so calling listen again on it resumes the session and Discord replays what was missed.
     listen: (onMessage: (message: DiscordMessage) => Promise<void>, signal: AbortSignal) => Promise<void>;
     sendMessage: (channelId: string, text: string) => Promise<void>;
 }
@@ -38,7 +48,15 @@ interface DiscordSocket {
     addEventListener(type: 'open' | 'error' | 'message', listener: (event: { data?: unknown }) => void, options?: { once?: boolean }): void;
     addEventListener(type: 'close', listener: (event: { code?: number }) => void, options?: { once?: boolean }): void;
     send(data: string): void;
-    close(): void;
+    close(code?: number): void;
+}
+
+// What a later connection needs to resume. Kept in memory, since Discord drops a session after a few minutes anyway.
+interface GatewaySession {
+    id?: string | undefined;
+    resumeUrl?: string | undefined;
+    sequence: number | null;
+    seenMessageIds: string[];
 }
 
 type DiscordSocketFactory = (url: string) => DiscordSocket;
@@ -86,6 +104,25 @@ function readDirectMessage(data: unknown): DiscordMessage | undefined {
     return { authorId: author.id, channelId: record.channel_id, text: typeof record.content === 'string' ? record.content : '' };
 }
 
+// The Gateway address Discord gave for resuming. The bot token goes to it, so only Discord hosts over TLS are accepted.
+function readResumeUrl(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+
+    try {
+        const url = new URL(value);
+
+        if (url.protocol === 'wss:' && (url.hostname === 'discord.gg' || url.hostname.endsWith('.discord.gg'))) {
+            return `wss://${url.host}${GATEWAY_QUERY}`;
+        }
+    } catch {
+        return undefined;
+    }
+
+    return undefined;
+}
+
 function createWebSocket(url: string): DiscordSocket {
     return new WebSocket(url);
 }
@@ -114,11 +151,35 @@ function createDiscordApi(token: string, fetchFunction: FetchFunction = fetch, c
         }
     }
 
+    const session: GatewaySession = { sequence: null, seenMessageIds: [] };
+    const resetSession = (): void => {
+        session.id = undefined;
+        session.resumeUrl = undefined;
+        session.sequence = null;
+    };
+    // True the first time a message id shows up. A resumed session can replay a message that was already handled.
+    const isNewMessage = (id: unknown): boolean => {
+        if (typeof id !== 'string') {
+            return true;
+        }
+
+        if (session.seenMessageIds.includes(id)) {
+            return false;
+        }
+
+        session.seenMessageIds.push(id);
+
+        if (session.seenMessageIds.length > SEEN_MESSAGE_LIMIT) {
+            session.seenMessageIds.shift();
+        }
+
+        return true;
+    };
+
     function listen(onMessage: (message: DiscordMessage) => Promise<void>, signal: AbortSignal): Promise<void> {
         return new Promise<void>((resolve, reject) => {
-            const socket = createSocket(GATEWAY_URL);
+            const socket = createSocket(session.id === undefined ? GATEWAY_URL : session.resumeUrl ?? GATEWAY_URL);
             let heartbeatTimer: NodeJS.Timeout | undefined;
-            let lastSequence: number | null = null;
             let isAcknowledged = true;
             let isDone = false;
             const finish = (error?: Error): void => {
@@ -132,7 +193,8 @@ function createDiscordApi(token: string, fetchFunction: FetchFunction = fetch, c
                     clearInterval(heartbeatTimer);
                 }
 
-                socket.close();
+                // Only a deliberate stop ends the session. After a failure the next connection resumes it.
+                socket.close(error === undefined ? CLOSE_CODE_NORMAL : CLOSE_CODE_KEEP_SESSION);
 
                 if (error === undefined) {
                     resolve();
@@ -141,7 +203,7 @@ function createDiscordApi(token: string, fetchFunction: FetchFunction = fetch, c
                 }
             };
             const heartbeat = (): void => {
-                const beat = JSON.stringify({ op: OPCODE_HEARTBEAT, d: lastSequence });
+                const beat = JSON.stringify({ op: OPCODE_HEARTBEAT, d: session.sequence });
 
                 socket.send(beat);
             };
@@ -149,7 +211,7 @@ function createDiscordApi(token: string, fetchFunction: FetchFunction = fetch, c
                 const { op, t, s } = payload;
 
                 if (typeof s === 'number') {
-                    lastSequence = s;
+                    session.sequence = s;
                 }
 
                 if (op === OPCODE_HELLO) {
@@ -172,23 +234,40 @@ function createDiscordApi(token: string, fetchFunction: FetchFunction = fetch, c
                         isAcknowledged = false;
                         heartbeat();
                     }, interval);
-                    const identify = JSON.stringify({
+                    // With a session this connection picks it up, and Discord replays the events after the sequence.
+                    const identify = {
                         op: OPCODE_IDENTIFY,
                         d: { token, intents: DIRECT_MESSAGES_INTENT, properties: { os: 'linux', browser: 'cloudbot', device: 'cloudbot' } },
-                    });
+                    };
+                    const resume = { op: OPCODE_RESUME, d: { token, session_id: session.id, seq: session.sequence } };
+                    const greeting = JSON.stringify(session.id === undefined || session.sequence === null ? identify : resume);
 
-                    socket.send(identify);
+                    socket.send(greeting);
                 } else if (op === OPCODE_HEARTBEAT) {
                     heartbeat();
                 } else if (op === OPCODE_HEARTBEAT_ACK) {
                     isAcknowledged = true;
                 } else if (op === OPCODE_RECONNECT || op === OPCODE_INVALID_SESSION) {
-                    // A new connection identifies again. Messages sent while it was down are not replayed.
+                    // Invalid session with d false, or without it, means the session cannot be resumed, so the next
+                    // connection identifies again. Reconnect, or invalid session with d true, keeps the session.
+                    if (op === OPCODE_INVALID_SESSION && payload.d !== true) {
+                        resetSession();
+                    }
+
                     finish(new DiscordApiError('Discord asked to connect again.'));
+                } else if (op === OPCODE_DISPATCH && t === 'READY') {
+                    const ready = readRecord(payload.d);
+                    const resumeUrl = readResumeUrl(ready?.resume_gateway_url);
+
+                    // Without a usable address the next connection identifies again.
+                    if (typeof ready?.session_id === 'string' && resumeUrl !== undefined) {
+                        session.id = ready.session_id;
+                        session.resumeUrl = resumeUrl;
+                    }
                 } else if (op === OPCODE_DISPATCH && t === 'MESSAGE_CREATE') {
                     const message = readDirectMessage(payload.d);
 
-                    if (message !== undefined) {
+                    if (message !== undefined && isNewMessage(readRecord(payload.d)?.id)) {
                         // One message that fails never closes the connection.
                         onMessage(message)
                             .catch(() => {
@@ -216,8 +295,11 @@ function createDiscordApi(token: string, fetchFunction: FetchFunction = fetch, c
             });
             socket.addEventListener('close', (event) => {
                 const code = event.code ?? 0;
-
                 const isFatal = FATAL_CLOSE_CODES.includes(code);
+
+                if (!isDone && SESSION_LOST_CLOSE_CODES.includes(code)) {
+                    resetSession();
+                }
 
                 finish(new DiscordApiError(`The Discord connection closed with code ${String(code)}.`, isFatal));
             });

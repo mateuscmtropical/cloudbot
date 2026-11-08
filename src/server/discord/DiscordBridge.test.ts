@@ -15,6 +15,7 @@ const OWNER_CHANNEL = '9001';
 class FakeDiscord {
     readonly sent: { channelId: string; text: string }[] = [];
     listenCount = 0;
+    createCount = 0;
     failures: Error[] = [];
     private handler: ((message: DiscordMessage) => Promise<void>) | undefined;
 
@@ -105,7 +106,11 @@ function makeBridge(options: { token?: string | undefined; now?: () => number; s
         },
         settings,
         readToken: () => token,
-        createApi: () => discord.api,
+        createApi: () => {
+            discord.createCount += 1;
+
+            return discord.api;
+        },
         retryDelayMs: 1,
         wantedCheckMs: 5,
         ...(options.now === undefined ? {} : { now: options.now }),
@@ -288,6 +293,9 @@ describe('DiscordBridge', () => {
             expect(setup.discord.listenCount)
                 .toBe(2);
         });
+        // One api for both connections, so the second one can resume the Gateway session of the first.
+        expect(setup.discord.createCount)
+            .toBe(1);
     });
 
     it('does not connect again after Discord rejected the token', async () => {
