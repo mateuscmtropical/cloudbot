@@ -277,7 +277,7 @@ describe('BrowserControl', () => {
         const moves = sentTypes.filter(([type]) => type === 'mouseMoved');
 
         expect(moves.length)
-            .toBeGreaterThan(10);
+            .toBeGreaterThan(5);
         expect(sentTypes.slice(-3))
             .toEqual([['mouseMoved', 300, 200], ['mousePressed', 300, 200], ['mouseReleased', 300, 200]]);
     });

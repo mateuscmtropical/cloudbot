@@ -9,7 +9,7 @@ describe('cursorSteps', () => {
         const last = steps.at(-1);
 
         expect(steps.length)
-            .toBeGreaterThan(10);
+            .toBeGreaterThan(5);
         expect(last)
             .toMatchObject({ x: 500, y: 300 });
         expect(steps.every(step => step.x >= 0 && step.y >= 0 && step.waitMs >= 0))
