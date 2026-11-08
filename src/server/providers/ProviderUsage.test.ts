@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ProviderUsage, describeProviderUsage, parseClaudeUsage, parseCodexRateLimits } from './ProviderUsage.ts';
+import { ProviderUsage, describeProviderUsage, parseClaudeUsage, parseCodexRateLimits, parseCopilotUsage, parseKimiUsage } from './ProviderUsage.ts';
 
 // Taken from `claude -p "/usage"` (claude 2.1.319), cut down to the lines around the limits.
 const CLAUDE_USAGE_TEXT = [
@@ -76,6 +76,95 @@ describe('parseCodexRateLimits', () => {
         expect(parseCodexRateLimits(undefined))
             .toEqual([]);
         expect(parseCodexRateLimits({ rateLimits: { primary: { usedPercent: 'many' }, secondary: null } }))
+            .toEqual([]);
+    });
+});
+
+// The shape of `GET /copilot_internal/user` in the zod schema of @github/copilot 1.0.12. The numbers are made up.
+const COPILOT_BODY = {
+    login: 'octocat',
+    copilot_plan: 'individual_pro',
+    quota_reset_date: '2026-12-01',
+    quota_reset_date_utc: '2026-12-01T00:00:00.000Z',
+    quota_snapshots: {
+        chat: { entitlement: 0, remaining: 0, percent_remaining: 100, unlimited: true, overage_permitted: false, overage_count: 0, quota_id: 'chat' },
+        completions: { entitlement: 0, remaining: 0, percent_remaining: 100, unlimited: true, overage_permitted: false, overage_count: 0, quota_id: 'completions' },
+        premium_interactions: { entitlement: 300, remaining: 240, percent_remaining: 80, unlimited: false, overage_permitted: true, overage_count: 0, quota_id: 'premium_interactions' },
+    },
+};
+
+describe('parseCopilotUsage', () => {
+    it('shows the premium requests and skips the unlimited snapshots', () => {
+        expect(parseCopilotUsage(COPILOT_BODY))
+            .toEqual([{ label: 'Premium requests', usedPercent: 20, resetsAt: Date.UTC(2026, 11, 1), resetsText: null }]);
+    });
+
+    it('shows the chat and completions of a limited plan, with the reset date alone', () => {
+        const free = {
+            ...COPILOT_BODY,
+            quota_reset_date_utc: undefined,
+            quota_snapshots: {
+                chat: { entitlement: 50, remaining: 12, percent_remaining: 24, unlimited: false },
+                completions: { entitlement: 2000, remaining: 1999, percent_remaining: 99.9, unlimited: false },
+            },
+        };
+
+        expect(parseCopilotUsage(free))
+            .toEqual([
+                { label: 'Chat', usedPercent: 76, resetsAt: Date.UTC(2026, 11, 1), resetsText: null },
+                { label: 'Completions', usedPercent: 0.1, resetsAt: Date.UTC(2026, 11, 1), resetsText: null },
+            ]);
+    });
+
+    it('skips an entitlement of -1 and clamps a strange percent', () => {
+        const body = { quota_snapshots: { chat: { entitlement: -1, percent_remaining: 40 }, premium_interactions: { entitlement: 10, percent_remaining: -5 } } };
+
+        expect(parseCopilotUsage(body))
+            .toEqual([{ label: 'Premium requests', usedPercent: 100, resetsAt: null, resetsText: null }]);
+    });
+
+    it('finds nothing in a strange answer', () => {
+        expect(parseCopilotUsage(undefined))
+            .toEqual([]);
+        expect(parseCopilotUsage({ copilot_plan: 'free' }))
+            .toEqual([]);
+        expect(parseCopilotUsage({ quota_snapshots: { premium_interactions: { percent_remaining: 'most' } } }))
+            .toEqual([]);
+    });
+});
+
+// The shape of `GET /coding/v1/usages` read by parseManagedUsagePayload in Kimi Code 2.5.2. The numbers are made up.
+const KIMI_BODY = {
+    usages: {
+        limit_5h: { used_ratio: 0.25, reset_time: '2026-11-07T23:00:00Z' },
+        limit_7d: { used_ratio: '0.4', reset_time: '2026-11-12T04:00:00Z' },
+        limit_month_total: { used_ratio: 0.1234 },
+        limit_month_code: { used_ratio: 0.05 },
+    },
+    boosterWallet: null,
+};
+
+describe('parseKimiUsage', () => {
+    it('turns the 5 hour, weekly and monthly ratios into limits', () => {
+        expect(parseKimiUsage(KIMI_BODY))
+            .toEqual([
+                { label: '5 hour limit', usedPercent: 25, resetsAt: Date.UTC(2026, 10, 7, 23), resetsText: null },
+                { label: 'Weekly limit', usedPercent: 40, resetsAt: Date.UTC(2026, 10, 12, 4), resetsText: null },
+                { label: 'Monthly limit', usedPercent: 12.3, resetsAt: null, resetsText: null },
+            ]);
+    });
+
+    it('skips a limit with no ratio', () => {
+        expect(parseKimiUsage({ usages: { limit_5h: { reset_time: '2026-11-07T23:00:00Z' }, limit_7d: { used_ratio: 0 } } }))
+            .toEqual([{ label: 'Weekly limit', usedPercent: 0, resetsAt: null, resetsText: null }]);
+    });
+
+    it('finds nothing in a strange answer', () => {
+        expect(parseKimiUsage(null))
+            .toEqual([]);
+        expect(parseKimiUsage({ usages: [] }))
+            .toEqual([]);
+        expect(parseKimiUsage({ usages: { limit_5h: { used_ratio: 'lots' } } }))
             .toEqual([]);
     });
 });

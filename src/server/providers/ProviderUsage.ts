@@ -93,6 +93,61 @@ function parseCodexRateLimits(result: unknown): ProviderUsageWindow[] {
     });
 }
 
+function readNumber(value: unknown): number | undefined {
+    const number = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+
+    return typeof number === 'number' && Number.isFinite(number) ? number : undefined;
+}
+
+function readTime(value: unknown): number | null {
+    const time = typeof value === 'string' ? Date.parse(value) : Number.NaN;
+
+    return Number.isFinite(time) ? time : null;
+}
+
+function toUsedPercent(percent: number): number {
+    const atLeastZero = Math.max(0, percent);
+    const kept = Math.min(100, atLeastZero);
+
+    return Math.round(kept * 10) / 10;
+}
+
+const COPILOT_SNAPSHOTS = [['premium_interactions', 'Premium requests'], ['chat', 'Chat'], ['completions', 'Completions']] as const;
+
+// Reads the body of `GET https://api.github.com/copilot_internal/user`, the call the Copilot CLI makes (@github/copilot
+// 1.0.12, checked in its app.js). A snapshot that is unlimited has nothing to show. All snapshots reset on the same day.
+function parseCopilotUsage(body: unknown): ProviderUsageWindow[] {
+    const answer = readRecord(body);
+    const snapshots = readRecord(answer.quota_snapshots);
+    const resetsAt = readTime(answer.quota_reset_date_utc) ?? readTime(answer.quota_reset_date);
+
+    return COPILOT_SNAPSHOTS.flatMap(([key, label]) => {
+        const snapshot = readRecord(snapshots[key]);
+        const remaining = readNumber(snapshot.percent_remaining);
+
+        if (snapshot.unlimited === true || snapshot.entitlement === -1 || remaining === undefined) {
+            return [];
+        }
+
+        return [{ label, usedPercent: toUsedPercent(100 - remaining), resetsAt, resetsText: null }];
+    });
+}
+
+const KIMI_LIMITS = [['limit_5h', '5 hour limit'], ['limit_7d', 'Weekly limit'], ['limit_month_total', 'Monthly limit']] as const;
+
+// Reads the body of `GET https://api.kimi.com/coding/v1/usages`, the call behind `/usage` in Kimi Code 2.5.2. The ratio
+// is a share from 0 to 1, as a number or a numeric string.
+function parseKimiUsage(body: unknown): ProviderUsageWindow[] {
+    const usages = readRecord(readRecord(body).usages);
+
+    return KIMI_LIMITS.flatMap(([key, label]) => {
+        const entry = readRecord(usages[key]);
+        const ratio = readNumber(entry.used_ratio);
+
+        return ratio === undefined ? [] : [{ label, usedPercent: toUsedPercent(ratio * 100), resetsAt: readTime(entry.reset_time), resetsText: null }];
+    });
+}
+
 // Keeps the last usage of each provider for a short time. A provider with no source, or a source that fails,
 // shows as not available. A failure is not kept, so the next ask tries again.
 class ProviderUsage {
@@ -161,5 +216,5 @@ function describeProviderUsage(summaries: ProviderUsageSummary[]): string {
     return lines.join('\n');
 }
 
-export { ProviderUsage, describeProviderUsage, parseClaudeUsage, parseCodexRateLimits };
+export { ProviderUsage, describeProviderUsage, parseClaudeUsage, parseCodexRateLimits, parseCopilotUsage, parseKimiUsage };
 export type { UsageSource };

@@ -7,8 +7,8 @@ set -eu
 provider="${1:-}"
 action="${2:-}"
 
-if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "acp-key-zen" ] && [ "$action" != "acp-key-go" ] && [ "$action" != "login" ] && [ "$action" != "status" ] && [ "$action" != "agy" ] && [ "$action" != "agy-review" ]; }; then
-    echo "cloudbot-provider takes a provider and acp, an API-key action, agy, agy-review, login or status." >&2
+if [ "$#" -ne 2 ] || { [ "$action" != "acp" ] && [ "$action" != "acp-key-zen" ] && [ "$action" != "acp-key-go" ] && [ "$action" != "login" ] && [ "$action" != "status" ] && [ "$action" != "usage" ] && [ "$action" != "agy" ] && [ "$action" != "agy-review" ]; }; then
+    echo "cloudbot-provider takes a provider and acp, an API-key action, agy, agy-review, login, status or usage." >&2
     exit 2
 fi
 
@@ -167,6 +167,8 @@ case "$provider:$action" in
         esac
         exec /usr/local/bin/opencode acp
         ;;
+    # The plan usage, read with the call the CLI makes itself and the sign-in it saved. It prints only the answer body.
+    copilot:usage|kimi:usage) exec /usr/local/bin/node /usr/local/lib/cloudbot/provider-usage.js "$provider" ;;
     *)
         echo "cloudbot-provider does not know $provider $action." >&2
         exit 2
