@@ -4,6 +4,7 @@ import type { MessageSearchHit } from '../shared/searchTypes.ts';
 import type { BitwardenStatus, BitwardenTestResult } from '../shared/bitwarden.ts';
 import type { AppSignInStart, ConnectedAppSummary } from '../shared/connectedApps.ts';
 import type { BotRoutine } from '../shared/routineTypes.ts';
+import type { BotTrigger } from '../shared/triggerTypes.ts';
 import type { BotWatch } from '../shared/watchTypes.ts';
 import type { BotWebhook, CreatedBotWebhook } from '../shared/webhookTypes.ts';
 import type { TurnLimits } from '../shared/limitTypes.ts';
@@ -373,6 +374,31 @@ function createWebhook(botId: string, name: string): Promise<CreatedBotWebhook> 
     const path = botPath(botId, '/webhooks');
 
     return postJson<CreatedBotWebhook>(path, { name });
+}
+
+function listTriggers(botId: string): Promise<BotTrigger[]> {
+    const path = botPath(botId, '/triggers');
+
+    return requestJson<BotTrigger[]>(path, {});
+}
+
+// Pauses or resumes one app trigger. Resuming records a new baseline.
+function setTriggerEnabled(botId: string, triggerId: string, isEnabled: boolean): Promise<BotTrigger> {
+    const path = botPath(botId, `/triggers/${encodeURIComponent(triggerId)}/enabled`);
+    const init: RequestInit = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isEnabled }) };
+
+    return requestJson<BotTrigger>(path, init);
+}
+
+async function removeTrigger(botId: string, triggerId: string): Promise<void> {
+    const path = botPath(botId, `/triggers/${encodeURIComponent(triggerId)}`);
+    const response = await fetch(path, { method: 'DELETE' });
+
+    if (!response.ok) {
+        const serverMessage = await readServerMessage(response);
+
+        throw new RequestFailedError(path, response.status, serverMessage);
+    }
 }
 
 function listWatches(botId: string): Promise<BotWatch[]> {
@@ -800,6 +826,9 @@ export {
     removeWebhook,
     setWebhookRule,
     setWebhookSecret,
+    listTriggers,
+    setTriggerEnabled,
+    removeTrigger,
     listWatches,
     removeWatch,
     getBotProvider,

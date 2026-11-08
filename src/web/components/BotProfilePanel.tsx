@@ -10,11 +10,12 @@ import { Button } from './Button.tsx';
 import { CloudMascot } from './CloudMascot.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { Field } from './Field.tsx';
-import { AppsGridIcon, BackIcon, ClockIcon, LibraryIcon, MoreIcon, MonitorIcon, TrashIcon, WebhookIcon } from './icons.tsx';
+import { AppsGridIcon, BackIcon, ClockIcon, LibraryIcon, MoreIcon, MonitorIcon, TrashIcon, TriggerIcon, WebhookIcon } from './icons.tsx';
 import { ListGroup } from './ListGroup.tsx';
 import { ListRow } from './ListRow.tsx';
 import { MemoryPanel } from './MemoryPanel.tsx';
 import { RoutinesPanel } from './RoutinesPanel.tsx';
+import { TriggersPanel } from './TriggersPanel.tsx';
 import { WebhooksPanel } from './WebhooksPanel.tsx';
 import { PanelHeader } from './PanelHeader.tsx';
 import { PopoverMenu, PopoverMenuItem } from './PopoverMenu.tsx';
@@ -239,6 +240,7 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
     const [isMemoryOpen, setIsMemoryOpen] = useState(false);
     const [isWebhooksOpen, setIsWebhooksOpen] = useState(false);
     const [isRoutinesOpen, setIsRoutinesOpen] = useState(false);
+    const [isTriggersOpen, setIsTriggersOpen] = useState(false);
     // While editing, the mascot shows the look that Save would keep.
     const shownColor = draft?.color ?? bot.mascotColor;
     const shownShape = draft?.shape ?? bot.mascotShape;
@@ -255,6 +257,9 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
     });
     useBackButton(isRoutinesOpen, () => {
         setIsRoutinesOpen(false);
+    });
+    useBackButton(isTriggersOpen, () => {
+        setIsTriggersOpen(false);
     });
     useBackButton(isWebhooksOpen, () => {
         setIsWebhooksOpen(false);
@@ -277,6 +282,17 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
                 bot={bot}
                 onClose={() => {
                     setIsRoutinesOpen(false);
+                }}
+            />
+        );
+    }
+
+    if (isTriggersOpen) {
+        return (
+            <TriggersPanel
+                bot={bot}
+                onClose={() => {
+                    setIsTriggersOpen(false);
                 }}
             />
         );
@@ -376,6 +392,14 @@ function BotProfilePanel({ bot, onClose, onRenameBot, onChangeMascot, onDeleteBo
                         leadingIcon={<ClockIcon />}
                         onClick={() => {
                             setIsRoutinesOpen(true);
+                        }}
+                        chevron
+                    />
+                    <ListRow
+                        title="App triggers"
+                        leadingIcon={<TriggerIcon />}
+                        onClick={() => {
+                            setIsTriggersOpen(true);
                         }}
                         chevron
                     />

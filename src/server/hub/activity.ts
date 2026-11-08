@@ -33,7 +33,7 @@ function computeActivity(sources: ActivitySources): InstanceActivity {
     }
 
     if (sources.hasAppTrigger === true) {
-        reasons.push('app trigger configured');
+        reasons.push('app trigger enabled');
     }
 
     if (sources.hasWebhook) {

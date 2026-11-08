@@ -67,9 +67,26 @@ class AppTriggerStore {
         return removedRows.length > 0;
     }
 
-    // Triggers whose check time has come, oldest first.
+    // Pauses or resumes a trigger. Resuming drops the seen ids and checks soon, so the next check records a new
+    // baseline and the owner is not woken for what happened during the pause. Returns undefined for an unknown id.
+    async setEnabled(botId: string, triggerId: string, isEnabled: boolean): Promise<AppTriggerRecord | undefined> {
+        const botCondition = eq(appTriggers.botId, botId);
+        const idCondition = eq(appTriggers.id, triggerId);
+        const matchCondition = and(botCondition, idCondition);
+        const change = isEnabled ? { isEnabled, seen: null, nextCheckAt: this.now() } : { isEnabled };
+        const updatedRows = await this.database.update(appTriggers)
+            .set(change)
+            .where(matchCondition)
+            .returning();
+
+        return updatedRows[0];
+    }
+
+    // Triggers whose check time has come, oldest first. A paused trigger is left out.
     async listDue(nowMs: number): Promise<AppTriggerRecord[]> {
-        const dueCondition = lte(appTriggers.nextCheckAt, nowMs);
+        const timeCondition = lte(appTriggers.nextCheckAt, nowMs);
+        const enabledCondition = eq(appTriggers.isEnabled, true);
+        const dueCondition = and(timeCondition, enabledCondition);
         const dueOrder = asc(appTriggers.nextCheckAt);
 
         return this.database.select()

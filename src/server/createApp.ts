@@ -65,6 +65,7 @@ import type { RuleStore } from './store/RuleStore.ts';
 import type { WebhookStore } from './store/WebhookStore.ts';
 import type { WatchStore } from './store/WatchStore.ts';
 import type { AppTriggerStore } from './store/AppTriggerStore.ts';
+import { createTriggerRoutes } from './triggers/createTriggerRoutes.ts';
 import { createWatchRoutes } from './watches/createWatchRoutes.ts';
 import { createWebhookHookRoutes } from './webhooks/createWebhookHookRoutes.ts';
 import { createWebhookRoutes } from './webhooks/createWebhookRoutes.ts';
@@ -411,6 +412,13 @@ function createApp(options: AppOptions): Hono {
         const watchRoutes = createWatchRoutes({ watchStore: options.watchStore, hasBot: botId => chatService.hasBot(botId) });
 
         app.route('/', watchRoutes);
+    }
+
+    if (options.chatService !== undefined && options.triggerStore !== undefined) {
+        const chatService = options.chatService;
+        const triggerRoutes = createTriggerRoutes({ triggerStore: options.triggerStore, hasBot: botId => chatService.hasBot(botId) });
+
+        app.route('/', triggerRoutes);
     }
 
     if (options.chatService !== undefined && options.modelStore !== undefined) {
