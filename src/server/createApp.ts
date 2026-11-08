@@ -24,6 +24,9 @@ import { createPeopleRoutes } from './people/createPeopleRoutes.ts';
 import { createGroupRoutes } from './people/createGroupRoutes.ts';
 import type { GroupsAdmin } from './people/createGroupRoutes.ts';
 import { createMyGroupsRoute, fetchMyGroups } from './people/createMyGroupsRoute.ts';
+import { createUsageRoutes, fetchHubUsage } from './usage/createUsageRoutes.ts';
+import { HUB_MY_USAGE_PATH, HUB_USAGE_PATH } from '../shared/hubProtocol.ts';
+import type { InstanceUsage, ServerUsage } from '../shared/usageTypes.ts';
 import type { PersonRole } from '../shared/peopleTypes.ts';
 import type { HubConfig } from './people/hubConfig.ts';
 
@@ -313,6 +316,13 @@ function createApp(options: AppOptions): Hono {
         const myGroupsRoute = createMyGroupsRoute(() => fetchMyGroups(personHub));
 
         app.route('/', myGroupsRoute);
+
+        const usageRoutes = createUsageRoutes({
+            readOwn: () => fetchHubUsage<InstanceUsage>(personHub, HUB_MY_USAGE_PATH),
+            ...(personHub.role === 'owner' ? { readServer: () => fetchHubUsage<ServerUsage>(personHub, HUB_USAGE_PATH) } : {}),
+        });
+
+        app.route('/', usageRoutes);
     }
 
     if (options.actionLog !== undefined) {

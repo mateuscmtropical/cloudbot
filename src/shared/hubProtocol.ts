@@ -45,6 +45,12 @@ const ACTING_ROLE_HEADER = 'x-cloudbot-group-role';
 //   POST /internal/update   answers AppUpdateStatus, 409 while an update runs
 const HUB_UPDATE_PATH = '/internal/update';
 
+// The resources in use. Both answer 4xx on a wrong secret, and neither takes a name: the caller is who the secret says.
+//   GET /internal/usage     answers ServerUsage: the machine and every instance. Only the owner's instance may call it.
+//   GET /internal/my-usage  answers InstanceUsage of the calling person's own instance. Any person's instance may call it.
+const HUB_USAGE_PATH = '/internal/usage';
+const HUB_MY_USAGE_PATH = '/internal/my-usage';
+
 // What an instance reports to the hub when asked. The hub calls it before it stops the instance.
 //   GET /api/hub/activity   answers InstanceActivity
 const HUB_ACTIVITY_PATH = '/api/hub/activity';
@@ -58,5 +64,5 @@ interface InstanceActivity {
     reasons: string[];
 }
 
-export { ACTING_PERSON_HEADER, ACTING_ROLE_HEADER, HUB_ACTIVITY_PATH, HUB_BOT_TEMPLATE_PATH, HUB_GROUPS_PATH, HUB_MY_GROUPS_PATH, HUB_PEOPLE_PATH, HUB_UPDATE_PATH, HUB_TRUST_HEADER, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER, WHATSAPP_CALLBACK_PATH };
+export { ACTING_PERSON_HEADER, ACTING_ROLE_HEADER, HUB_ACTIVITY_PATH, HUB_BOT_TEMPLATE_PATH, HUB_GROUPS_PATH, HUB_MY_GROUPS_PATH, HUB_MY_USAGE_PATH, HUB_PEOPLE_PATH, HUB_UPDATE_PATH, HUB_USAGE_PATH, HUB_TRUST_HEADER, INSTANCE_NAME_HEADER, INSTANCE_SECRET_HEADER, WHATSAPP_CALLBACK_PATH };
 export type { InstanceActivity };

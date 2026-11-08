@@ -351,5 +351,5 @@ class DockerInstanceManager implements InstanceManager {
     }
 }
 
-export { DockerInstanceManager };
+export { containerName, DockerInstanceManager };
 export type { DockerInstanceManagerOptions };

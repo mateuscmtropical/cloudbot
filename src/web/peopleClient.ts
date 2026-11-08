@@ -1,4 +1,5 @@
 import type { AppUpdateStatus, GroupMember, GroupRole, MyGroup, Person, PersonWithPassword, ResetPasswordResult, SentBotResult, SharedGroup } from '../shared/peopleTypes.ts';
+import type { InstanceUsage, ServerUsage } from '../shared/usageTypes.ts';
 import { RequestFailedError } from './apiClient.ts';
 
 interface ErrorResponseBody {
@@ -197,5 +198,15 @@ function listMyGroups(): Promise<MyGroup[]> {
     return requestPeopleJson<MyGroup[]>('/api/my-groups', { method: 'GET' }, 200);
 }
 
-export { getAppUpdate, startAppUpdate, addGroup, addPerson, changeGroupMember, deactivatePerson, deleteGroup, deletePerson, getGroupMembers, getHubContext, getHubRole, listGroups, listMyGroups, listPeople, reactivatePerson, resetPersonPassword, sendBotToGroup, setGroupMemberRole };
+// The resources this person's own instance uses.
+function getOwnUsage(): Promise<InstanceUsage> {
+    return requestPeopleJson<InstanceUsage>('/api/usage/me', { method: 'GET' }, 200);
+}
+
+// The machine and every instance. Only the owner's CloudBot serves it.
+function getServerUsage(): Promise<ServerUsage> {
+    return requestPeopleJson<ServerUsage>('/api/usage', { method: 'GET' }, 200);
+}
+
+export { getAppUpdate, getOwnUsage, getServerUsage, startAppUpdate, addGroup, addPerson, changeGroupMember, deactivatePerson, deleteGroup, deletePerson, getGroupMembers, getHubContext, getHubRole, listGroups, listMyGroups, listPeople, reactivatePerson, resetPersonPassword, sendBotToGroup, setGroupMemberRole };
 export type { ChangeGroupMemberPayload, GroupMembersView, HubContext, HubRole };

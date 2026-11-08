@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { PeopleStore, PersonRecord, PersonUpdate } from '../contract.ts';
 import type { HubSettings } from '../config.ts';
-import type { DockerApiClient, DockerContainerInspection, DockerContainerOptions } from '../docker/DockerApi.ts';
+import type { DockerApiClient, DockerContainerInspection, DockerContainerOptions, DockerContainerStats } from '../docker/DockerApi.ts';
 import { DockerInstanceManager } from './DockerInstanceManager.ts';
 
 class FakePeopleStore implements PeopleStore {
@@ -96,6 +96,10 @@ class FakeDockerApi implements DockerApiClient {
         this.calls.push(`inspect:${name}`);
 
         return Promise.resolve(this.inspections.get(name));
+    }
+
+    containerStats(): Promise<DockerContainerStats | undefined> {
+        return Promise.resolve(undefined);
     }
 
     startContainer(name: string): Promise<void> {

@@ -15,6 +15,8 @@ import { createHubPasskeyRoutes } from './passkeys/createHubPasskeyRoutes.ts';
 import type { HubPasskeyService } from './passkeys/HubPasskeyService.ts';
 import type { HubPasskeyStore } from './passkeys/HubPasskeyStore.ts';
 import { renderPage } from './pages/renderPage.ts';
+import { createUsageRoutes } from './usage/createUsageRoutes.ts';
+import type { UsageReader } from './usage/UsageReader.ts';
 
 interface CreateHubAppOptions {
     people: PeopleStore;
@@ -29,6 +31,8 @@ interface CreateHubAppOptions {
     activity: ActivityTracker;
     hubPort?: number;
     updates?: AppUpdateRequests;
+    // Without it the usage routes are not served.
+    usage?: UsageReader;
     now?: () => number;
     upstreamFor?: (name: string) => { hostname: string; port: number };
     // Shared groups. Without them a group's address is not available.
@@ -201,6 +205,12 @@ function createHubApp(options: CreateHubAppOptions): Hono {
         return context.json(body, 404);
     });
     app.route('/', adminRoutes);
+    if (options.usage !== undefined) {
+        const usageRoutes = createUsageRoutes({ people: options.people, usage: options.usage });
+
+        app.route('/', usageRoutes);
+    }
+
     app.route('/', passkeyRoutes);
     app.route('/', frontDoor);
     app.notFound((context) => {

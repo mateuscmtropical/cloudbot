@@ -139,6 +139,34 @@ describe('DockerApi', () => {
             .toBeUndefined();
     });
 
+    it('reads one stats sample the way docker stats does', async () => {
+        const sample = {
+            cpu_stats: { cpu_usage: { total_usage: 600 }, system_cpu_usage: 10000, online_cpus: 4 },
+            precpu_stats: { cpu_usage: { total_usage: 500 }, system_cpu_usage: 9000 },
+            memory_stats: { usage: 1000, limit: 4000, stats: { inactive_file: 200 } },
+        };
+        const { fetchFunction, requests } = createFetch(() => Response.json(sample));
+        const docker = new DockerApi('http://docker-proxy:2375', fetchFunction);
+
+        const stats = await docker.containerStats('cloudbot-i-maria');
+
+        expect(stats)
+            .toEqual({ cpuPercent: 40, memoryBytes: 800, memoryLimitBytes: 4000 });
+        expect(requests.map(request => [request.init.method, request.url]))
+            .toEqual([['GET', 'http://docker-proxy:2375/containers/cloudbot-i-maria/stats?stream=false']]);
+    });
+
+    it('counts cgroup v1 cache, a missing field as zero and Docker 404 as no stats', async () => {
+        const v1Sample = { cpu_stats: {}, memory_stats: { usage: 500, limit: 900, stats: { total_inactive_file: 100 } } };
+        const v1 = new DockerApi('http://docker-proxy:2375', createFetch(() => Response.json(v1Sample)).fetchFunction);
+        const gone = new DockerApi('http://docker-proxy:2375', createFetch(() => new Response(null, { status: 404 })).fetchFunction);
+
+        await expect(v1.containerStats('cloudbot-i-maria'))
+            .resolves.toEqual({ cpuPercent: 0, memoryBytes: 400, memoryLimitBytes: 900 });
+        await expect(gone.containerStats('cloudbot-i-maria'))
+            .resolves.toBeUndefined();
+    });
+
     it('accepts a connection to a network the container is already on', async () => {
         const { fetchFunction } = createFetch(() => new Response(null, { status: 403 }));
         const docker = new DockerApi('http://docker-proxy:2375', fetchFunction);

@@ -138,6 +138,26 @@ describe('createApp', () => {
             .toEqual([]);
     });
 
+    it('serves the machine usage on the instance of the owner only, and the own usage inside a hub', async () => {
+        // Port 1 refuses at once, so a mounted route answers 502 and a route that is not mounted answers 404.
+        const hubUrl = 'http://127.0.0.1:1';
+        const standaloneApp = createApp({ version: '1.2.3', access });
+        const memberApp = createApp({ version: '1.2.3', access, hubRole: 'member', hubConfig: { hubUrl, secret: 's', personName: 'maria', role: 'member' } });
+        const ownerApp = createApp({ version: '1.2.3', access, hubRole: 'owner', hubConfig: { hubUrl, secret: 's', personName: 'owner', role: 'owner' } });
+        const groupApp = createApp({ version: '1.2.3', access, hubRole: 'group', hubConfig: { hubUrl, secret: 's', personName: 'team', role: 'group' } });
+        const token = await signIn(standaloneApp, access);
+        const requests = [standaloneApp, memberApp, ownerApp, groupApp].flatMap(app => ['/api/usage/me', '/api/usage']
+            .map(async (path) => {
+                const response = await requestWithSession(app, path, token);
+
+                return response.status;
+            }));
+        const statuses = await Promise.all(requests);
+
+        expect(statuses)
+            .toEqual([404, 404, 502, 404, 502, 502, 404, 404]);
+    });
+
     it('tells a CloudBot that runs on its own from one inside a hub', async () => {
         const standaloneApp = createApp({ version: '1.2.3', access });
         const memberApp = createApp({ version: '1.2.3', access, hubRole: 'member', personName: 'Maria Regina' });

@@ -24,6 +24,8 @@ interface AccountPanelProps {
     onActionLog?: (() => void) | undefined;
     // Only for the owner inside a hub.
     onAppUpdate?: (() => void) | undefined;
+    // For the owner and for people inside a hub. A shared group and a CloudBot on its own have none.
+    onUsage?: (() => void) | undefined;
     personName?: string | undefined;
     personRole?: string | undefined;
     // Inside the hub the hub keeps the password, the passkeys and the sign-in. A CloudBot on its own has none of them.
@@ -121,7 +123,7 @@ function NotificationsSection({ pushControls = BROWSER_PUSH_CONTROLS, groupLabel
 }
 
 // The hub keeps the password, the passkeys and the sign-in of each person, so those parts only lead to its pages.
-function AccountPanel({ onClose, onPeople, peopleTitle = 'People', onActionLog, onAppUpdate, personName, personRole = 'Owner', isHub = true, pushControls = BROWSER_PUSH_CONTROLS }: AccountPanelProps): ReactElement {
+function AccountPanel({ onClose, onPeople, peopleTitle = 'People', onActionLog, onAppUpdate, onUsage, personName, personRole = 'Owner', isHub = true, pushControls = BROWSER_PUSH_CONTROLS }: AccountPanelProps): ReactElement {
     const displayName = personName ?? 'Owner';
     const trimmedName = displayName.trim();
     const nameParts = trimmedName.split(/\s+/);
@@ -169,6 +171,9 @@ function AccountPanel({ onClose, onPeople, peopleTitle = 'People', onActionLog, 
                                     />
                                     {onPeople !== undefined
                                         ? <ListRow title={peopleTitle} leadingIcon={<PeopleIcon />} onClick={onPeople} chevron />
+                                        : null}
+                                    {onUsage !== undefined
+                                        ? <ListRow title="Resource usage" description="See how much of the server your CloudBot uses." onClick={onUsage} chevron />
                                         : null}
                                     {onAppUpdate !== undefined
                                         ? <ListRow title="Update CloudBot" description="See the version and install the newest one." onClick={onAppUpdate} chevron />
