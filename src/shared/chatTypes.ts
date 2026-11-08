@@ -144,6 +144,8 @@ interface BotSummary {
     hasUnread: boolean;
     // The sequence of the latest message the owner can read, not counting the owner's own and tool lines. Zero when there is none.
     lastMessageSequence: number;
+    // The same sequence for each thread of the bot, so a reply in a thread can mark the bot as unread.
+    threads?: { id: string; lastMessageSequence: number }[];
 }
 
 // One chat of a bot. The default thread is the bot's own chat and carries the bot's name. The others are side chats.

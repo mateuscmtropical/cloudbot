@@ -553,7 +553,7 @@ never stored. When the block ends, its whole text goes out once as a `message`
 event, which replaces the draft. The web app shows the draft as an assistant
 bubble, so the text is never shown twice.
 
-`GET /api/events` is one stream with the `message` and `botDeleted` events of every bot. The bot list uses it to reload the previews and to mark a closed chat as unread. Each bot summary has `lastMessageSequence`, the sequence of the newest message from the bot. The browser keeps the newest sequence it has seen for each bot, and the row is unread when the bot has a newer one and its chat is not open.
+`GET /api/events` is one stream with the `message` and `botDeleted` events of every bot. The bot list uses it to reload the previews and to mark a closed chat as unread. Each bot summary has `lastMessageSequence`, the sequence of the newest message from the bot. The browser keeps the newest sequence it has seen for each bot, and the row is unread when the bot has a newer one and its chat is not open. The summary also lists `threads` with the same sequence for each thread. The browser tracks a thread like a bot, by its id. A thread chip is unread when its sequence is newer than the seen one and it is not open, and the bot row is unread when its own chat or any thread is, unless the bot is the open one.
 
 ## Attachments
 

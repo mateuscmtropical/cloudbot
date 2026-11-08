@@ -3943,8 +3943,9 @@ class ChatService {
         const lastMessagePreview = latestMessage === undefined
             ? ''
             : previewOf(latestMessage.content as MessageBody);
-        const recentMessages = await this.messageStore.listByBot(bot.id, { limit: UNREAD_SCAN_LIMIT });
-        const lastReadableMessage = recentMessages.find(message => isReadableForOwner(message.role, message.content as MessageBody));
+        const threadSequencePromises = this.threadIdsOf(bot.id)
+            .map(async id => ({ id, lastMessageSequence: await this.lastReadableSequence(id) }));
+        const threads = await Promise.all(threadSequencePromises);
 
         return {
             id: bot.id,
@@ -3958,8 +3959,16 @@ class ChatService {
             lastMessagePreview,
             ...(latestMessage === undefined ? {} : { lastActivityAt: latestMessage.createdAt }),
             hasUnread: false,
-            lastMessageSequence: lastReadableMessage?.sequence ?? 0,
+            lastMessageSequence: await this.lastReadableSequence(bot.id),
+            threads,
         };
+    }
+
+    private async lastReadableSequence(chatId: string): Promise<number> {
+        const recentMessages = await this.messageStore.listByBot(chatId, { limit: UNREAD_SCAN_LIMIT });
+        const lastReadableMessage = recentMessages.find(message => isReadableForOwner(message.role, message.content as MessageBody));
+
+        return lastReadableMessage?.sequence ?? 0;
     }
 
     private publish(botId: string, event: ChatEvent): void {

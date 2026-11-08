@@ -24,7 +24,7 @@ import { PullIndicator } from './components/PullIndicator.tsx';
 import { UpdateBanner } from './components/UpdateBanner.tsx';
 import { changeBotMascot, createBot, createChannel, deleteBot, deleteChannel, getChannel, updateChannel, getScreenHolder, listBots, listChannels, listMessages, postChannelMessage, RequestFailedError, stopChannel, sendMessage, stopTurn, submitChoice, submitCode, submitSecret, subscribeToAllBotEvents, subscribeToEvents, uploadAttachments, listUploads, removeUpload, renameBot } from './apiClient.ts';
 import { mergeLoadedUploads } from './attachmentChips.ts';
-import { loadSeen, markUnread, saveSeen, updateSeen } from './unreadMarks.ts';
+import { loadSeen, markUnread, saveSeen, unreadChatIds, updateSeen } from './unreadMarks.ts';
 import { applyTabIcon } from './tabIcon.ts';
 import { MESSAGE_PAGE_SIZE, mergeMessages, removeMessages, upsertLiveMessage, upsertMessage } from './messageList.ts';
 import { withoutToolRows } from './thinkingBubble.ts';
@@ -147,13 +147,14 @@ function App(): ReactElement {
     const [threadRefreshKey, setThreadRefreshKey] = useState(0);
     // The newest message of each bot that the owner has seen. A closed chat with a newer one shows as unread.
     const [seenSequences, setSeenSequences] = useState(loadSeen);
-    const nextSeenSequences = updateSeen(seenSequences, bots, selectedBotId);
+    const nextSeenSequences = updateSeen(seenSequences, bots, chatId);
 
     if (nextSeenSequences !== seenSequences) {
         setSeenSequences(nextSeenSequences);
     }
 
-    const botsWithUnread = useMemo(() => markUnread(bots, nextSeenSequences, selectedBotId), [bots, nextSeenSequences, selectedBotId]);
+    const unreadIds = useMemo(() => unreadChatIds(bots, nextSeenSequences, chatId), [bots, nextSeenSequences, chatId]);
+    const botsWithUnread = useMemo(() => markUnread(bots, unreadIds, selectedBotId), [bots, unreadIds, selectedBotId]);
     // A channel replaces the bot's conversation while it is selected. Only one of the two is shown.
     const [selectedChannelId, setSelectedChannelId] = useState<string | undefined>(undefined);
     const [channels, setChannels] = useState<ChannelSummary[]>([]);
@@ -1668,6 +1669,7 @@ function App(): ReactElement {
                                                     botId={selectedBotId}
                                                     activeId={chatId ?? selectedBotId}
                                                     refreshKey={threadRefreshKey}
+                                                    unreadIds={unreadIds}
                                                     onSelect={handleSelectChat}
                                                 />
                                             )}
