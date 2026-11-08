@@ -1548,6 +1548,35 @@ button.list-row {
     white-space: nowrap;
 }
 
+.usage-provider {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    font-size: 0.875rem;
+}
+
+.usage-provider-name {
+    font-weight: 600;
+}
+
+.usage-window {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.usage-note {
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+}
+
+.usage-bar {
+    width: 100%;
+    height: var(--space-2);
+    accent-color: var(--color-accent);
+}
+
 .work-row-summary {
     display: flex;
     flex-wrap: wrap;

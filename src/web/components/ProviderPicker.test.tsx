@@ -3,12 +3,13 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BotProviderSummary, ProviderChoiceSummary } from '../../shared/providerTypes.ts';
-import { getBotProvider, getWorkSettings, listProviders, savePermissionMode, saveProviderModel, startProviderConnect, switchBotProvider } from '../apiClient.ts';
+import { getBotProvider, getProviderUsage, getWorkSettings, listProviders, savePermissionMode, saveProviderModel, startProviderConnect, switchBotProvider } from '../apiClient.ts';
 import { ProviderPicker } from './ProviderPicker.tsx';
 
 vi.mock('../apiClient.ts', () => ({
     getBotProvider: vi.fn(),
     getWorkSettings: vi.fn(),
+    getProviderUsage: vi.fn(),
     listProviders: vi.fn(),
     startProviderConnect: vi.fn(),
     switchBotProvider: vi.fn(),
@@ -46,6 +47,8 @@ describe('ProviderPicker', () => {
         vi.mocked(listProviders)
             .mockResolvedValue(PROVIDERS);
         vi.mocked(getWorkSettings)
+            .mockResolvedValue([]);
+        vi.mocked(getProviderUsage)
             .mockResolvedValue([]);
     });
 

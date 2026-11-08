@@ -33,6 +33,10 @@ import { createClaudeReviewModel } from './approvals/createClaudeReviewModel.ts'
 import { createReviewChain } from './approvals/createReviewChain.ts';
 import { WorkSettings } from './providers/WorkSettings.ts';
 import { ConnectedProviders } from './providers/ConnectedProviders.ts';
+import { ProviderUsage, parseClaudeUsage, parseCodexRateLimits } from './providers/ProviderUsage.ts';
+import type { ProviderUsageWindow } from '../shared/providerTypes.ts';
+import { getClaudeUsageText } from './claudeAuth/getClaudeUsage.ts';
+import { getCodexUsage } from './codexAuth/getCodexUsage.ts';
 import { PROVIDER_AGENT_WRAPPER, codexAgentLaunch, wrapperAgentLaunch } from './agent/codexAgentLaunch.ts';
 import { createReviewContextReader } from './approvals/createReviewContextReader.ts';
 import { createToolCallReviewer } from './approvals/createToolCallReviewer.ts';
@@ -208,6 +212,21 @@ const codexPath = config.codexPath;
 const codexHome = join(dataDir, 'codex', 'home');
 const codexAuthOptions = codexPath === undefined ? undefined : { codexPath, codexHome, ...(agentUser ? { agentUser } : {}) };
 const chatgptSignIn = codexAuthOptions === undefined ? undefined : createChatgptSignIn(codexAuthOptions);
+// Only Claude and ChatGPT have a usage source in their CLIs. Any other provider shows as not available.
+const readClaudeWindows = async (): Promise<ProviderUsageWindow[]> => {
+    const text = await getClaudeUsageText(authOptions);
+
+    return parseClaudeUsage(text);
+};
+const readChatgptWindows = async (options: NonNullable<typeof codexAuthOptions>): Promise<ProviderUsageWindow[]> => {
+    const limits = await getCodexUsage(options);
+
+    return parseCodexRateLimits(limits);
+};
+const providerUsage = new ProviderUsage({
+    claude: readClaudeWindows,
+    ...(codexAuthOptions === undefined ? {} : { chatgpt: () => readChatgptWindows(codexAuthOptions) }),
+});
 const providerChoices = new ProviderChoices(settings);
 // The image sets CLOUDBOT_DESKTOP_COMMAND, and its desktop starts Chromium. Without it, local runs start an installed
 // Chrome, Chromium or Edge with its own profile, and the browser tools stay off when none is found.
@@ -542,6 +561,11 @@ const providerTools: ProviderToolDependencies = {
     setProvider: (botId, provider) => providerChoices.setForBot(botId, provider),
     offerProviders: provider => setup.offerProviders(provider),
     connectionVersion: () => setup.connectionVersion(),
+    usage: async () => {
+        const connected = await connectedProviders.read();
+
+        return providerUsage.read(connected);
+    },
 };
 const actionLogPath = join(dataDir, 'actions.log');
 const actionLog = new ActionLog(actionLogPath);

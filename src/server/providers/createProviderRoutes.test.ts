@@ -73,6 +73,32 @@ function putJson(body: unknown): RequestInit {
 }
 
 describe('provider routes', () => {
+    it('serves the plan usage and an empty list without a usage source', async () => {
+        const { request, dependencies } = createTestApp(['claude']);
+        const empty = await request('/api/providers/usage');
+
+        expect(await empty.json())
+            .toEqual([]);
+
+        const summaries = [{ provider: 'claude', label: 'Claude', windows: [] }];
+
+        dependencies.usage = () => Promise.resolve(summaries);
+        const served = await request('/api/providers/usage');
+
+        expect(await served.json())
+            .toEqual(summaries);
+    });
+
+    it('answers 500 when the usage cannot be read', async () => {
+        const { request, dependencies } = createTestApp(['claude']);
+
+        dependencies.usage = () => Promise.reject(new Error('boom'));
+        const failed = await request('/api/providers/usage');
+
+        expect(failed.status)
+            .toBe(500);
+    });
+
     it('saves the permission mode of a bot and answers with it', async () => {
         const { request } = createTestApp(['claude']);
 
