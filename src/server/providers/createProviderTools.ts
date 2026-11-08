@@ -3,6 +3,8 @@ import { z } from 'zod/v4';
 import { tool } from '../agent/cloudbotTool.ts';
 import type { CloudbotTool } from '../agent/createProfileToolServer.ts';
 import { PROFILE_SERVER_NAME } from '../agent/createProfileToolServer.ts';
+import type { ProviderUsageSummary } from '../../shared/providerTypes.ts';
+import { describeProviderUsage } from './ProviderUsage.ts';
 import { PROVIDER_IDS, PROVIDER_LABELS } from './providerIds.ts';
 import type { ProviderId } from './providerIds.ts';
 
@@ -24,12 +26,15 @@ interface ProviderToolDependencies {
     offerProviders: (provider?: ProviderId) => Promise<void>;
     // Goes up when a sign-in may have changed, so a kept answer about the connected providers is read again.
     connectionVersion?: (() => number) | undefined;
+    // The plan usage of each connected provider, read through its own CLI. Without it the usage is not offered.
+    usage?: (() => Promise<ProviderUsageSummary[]>) | undefined;
 }
 
 const PROVIDER_LIST_TOOL_NAME = 'provider_list';
 const PROVIDER_USE_TOOL_NAME = 'provider_use';
 const PROVIDER_CONNECT_TOOL_NAME = 'provider_connect';
-const PROVIDER_TOOL_FULL_NAMES = [PROVIDER_LIST_TOOL_NAME, PROVIDER_USE_TOOL_NAME, PROVIDER_CONNECT_TOOL_NAME].map(name => `mcp__${PROFILE_SERVER_NAME}__${name}`);
+const PROVIDER_USAGE_TOOL_NAME = 'provider_usage';
+const PROVIDER_TOOL_FULL_NAMES = [PROVIDER_LIST_TOOL_NAME, PROVIDER_USE_TOOL_NAME, PROVIDER_CONNECT_TOOL_NAME, PROVIDER_USAGE_TOOL_NAME].map(name => `mcp__${PROFILE_SERVER_NAME}__${name}`);
 
 function textResult(text: string, isError = false): ProviderToolResult {
     const content = { type: 'text' as const, text };
@@ -89,7 +94,27 @@ function createProviderTools(dependencies: ProviderToolDependencies, botId: stri
         },
     );
 
-    return [listTool, useTool, connectTool] as CloudbotTool[];
+    const usageTool = tool(
+        PROVIDER_USAGE_TOOL_NAME,
+        'Show how much of the plan limits the owner used at each connected provider, such as the session and weekly limits, and when they reset. Use it when the owner asks how much of a plan is left. It only reads. A provider without a usage source says so.',
+        {},
+        async (): Promise<ProviderToolResult> => {
+            if (dependencies.usage === undefined) {
+                return textResult('Plan usage is not available on this server.', true);
+            }
+
+            try {
+                const summaries = await dependencies.usage();
+                const text = describeProviderUsage(summaries);
+
+                return textResult(text);
+            } catch {
+                return textResult('Could not read the plan usage. Try again in a moment.', true);
+            }
+        },
+    );
+
+    return [listTool, useTool, connectTool, usageTool] as CloudbotTool[];
 }
 
 export { PROVIDER_TOOL_FULL_NAMES, createProviderTools };

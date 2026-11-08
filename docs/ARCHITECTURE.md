@@ -1932,6 +1932,13 @@ with a notice and never falls back to another one. The bot changes its own
 provider with `provider_use`, lists them with `provider_list` and posts the
 setup list again with `provider_connect`.
 
+`provider_usage` and the provider menu show the plan usage of the connected
+providers through `ProviderUsage`, which keeps each answer for a minute. Claude
+is read with `claude -p "/usage"`, a local command that sends no prompt to a
+model. Its text lines are parsed by `parseClaudeUsage`. ChatGPT is read with
+`account/rateLimits/read` of the Codex app server. A provider without a source,
+or one that fails, shows as not available. The usage is never guessed.
+
 Claude runs on the Claude Code engine and ChatGPT on the Codex engine. Every
 other provider runs on `AcpEngine`, which speaks the Agent Client Protocol
 (JSON-RPC over stdio) with the provider's own CLI:

@@ -54,9 +54,26 @@ interface WorkKindSummary {
     providerModels: Record<string, ProviderModelOptionSummary[]>;
 }
 
+// How much of one plan limit is used, such as the 5 hour or the weekly limit.
+interface ProviderUsageWindow {
+    label: string;
+    usedPercent: number;
+    // Epoch milliseconds when the CLI gives one, otherwise null.
+    resetsAt: number | null;
+    // The reset time as the CLI wrote it, for a CLI that gives no epoch time.
+    resetsText: string | null;
+}
+
+// The plan usage of one connected provider. No windows means the provider has no usage source.
+interface ProviderUsageSummary {
+    provider: string;
+    label: string;
+    windows: ProviderUsageWindow[];
+}
+
 // The bot where the owner connects a provider. Its chat shows the sign-in.
 interface ProviderConnectResponse {
     botId: string;
 }
 
-export type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse, ProviderModelOptionSummary, WorkKindSummary };
+export type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse, ProviderModelOptionSummary, ProviderUsageSummary, ProviderUsageWindow, WorkKindSummary };

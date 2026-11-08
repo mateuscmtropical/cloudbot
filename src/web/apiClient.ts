@@ -9,7 +9,7 @@ import type { BotWebhook, CreatedBotWebhook } from '../shared/webhookTypes.ts';
 import type { TurnLimits } from '../shared/limitTypes.ts';
 import type { ChannelDetail, ChannelPostView, ChannelSettings, ChannelSummary } from '../shared/channelTypes.ts';
 import type { PermissionMode } from '../shared/permissionModes.ts';
-import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse, WorkKindSummary } from '../shared/providerTypes.ts';
+import type { BotProviderSummary, ProviderChoiceSummary, ProviderConnectResponse, ProviderUsageSummary, WorkKindSummary } from '../shared/providerTypes.ts';
 
 // A null provider follows the chat. A null model or effort uses the provider default.
 interface WorkChoiceInput {
@@ -541,6 +541,11 @@ function listProviders(): Promise<ProviderChoiceSummary[]> {
     return requestJson<ProviderChoiceSummary[]>(`${API_ROOT}/providers`, {});
 }
 
+// The plan usage of the connected providers. The server asks each CLI, so this call can take several seconds.
+function getProviderUsage(): Promise<ProviderUsageSummary[]> {
+    return requestJson<ProviderUsageSummary[]>(`${API_ROOT}/providers/usage`, {});
+}
+
 // Starts connecting a provider in the setup chat. The answer names the bot whose chat holds the sign-in.
 function startProviderConnect(provider: string): Promise<ProviderConnectResponse> {
     return postJson<ProviderConnectResponse>(`${API_ROOT}/providers/connect`, { provider });
@@ -804,6 +809,7 @@ export {
     removeWatch,
     getBotProvider,
     getModelSettings,
+    getProviderUsage,
     listProviders,
     startProviderConnect,
     switchBotProvider,

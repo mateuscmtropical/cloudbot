@@ -149,6 +149,21 @@ function createProviderRoutes(options: ProviderRoutesOptions): Hono {
         return context.json(providers);
     });
 
+    // The plan usage of the connected providers, read through their CLIs. It can take several seconds.
+    routes.get('/api/providers/usage', async (context) => {
+        if (options.providers.usage === undefined) {
+            return context.json([]);
+        }
+
+        try {
+            const usage = await options.providers.usage();
+
+            return context.json(usage);
+        } catch {
+            return context.json({ error: 'The plan usage could not be read.' }, 500);
+        }
+    });
+
     routes.get('/api/bots/:id/provider', async (context) => {
         const botId = context.req.param('id');
         const isKnownBot = await options.hasBot(botId);

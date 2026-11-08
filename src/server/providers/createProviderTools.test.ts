@@ -73,4 +73,29 @@ describe('provider tools', () => {
         expect(dependencies.offerProviders)
             .toHaveBeenCalledOnce();
     });
+
+    it('reports the plan usage of the connected providers and says when one has none', async () => {
+        const { dependencies } = makeTools(['claude', 'chatgpt']);
+        const usage = vi.fn(() => Promise.resolve([
+            { provider: 'claude', label: 'Claude', windows: [{ label: 'Session', usedPercent: 25, resetsAt: null, resetsText: 'Nov 7, 11pm' }] },
+            { provider: 'chatgpt', label: 'ChatGPT', windows: [] },
+        ]));
+        const tools = createProviderTools({ ...dependencies, usage }, 'bot-1') as unknown as CallableTool[];
+
+        const result = await call(tools, 'provider_usage');
+
+        expect(result)
+            .toEqual({ text: 'Claude: Session 25% used, resets Nov 7, 11pm.\nChatGPT: not available for this provider.', isError: false });
+    });
+
+    it('answers with an error when the usage cannot be read', async () => {
+        const { dependencies } = makeTools(['claude']);
+        const withoutUsage = createProviderTools(dependencies, 'bot-1') as unknown as CallableTool[];
+        const failing = createProviderTools({ ...dependencies, usage: () => Promise.reject(new Error('boom')) }, 'bot-1') as unknown as CallableTool[];
+
+        expect((await call(withoutUsage, 'provider_usage')).isError)
+            .toBe(true);
+        expect(await call(failing, 'provider_usage'))
+            .toEqual({ text: 'Could not read the plan usage. Try again in a moment.', isError: true });
+    });
 });

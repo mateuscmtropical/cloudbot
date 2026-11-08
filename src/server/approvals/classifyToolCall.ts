@@ -71,8 +71,9 @@ const SKIP_TOOL_NAMES = new Set([
     'mcp__cloudbot__passkey_add',
     'mcp__cloudbot__passkey_list',
     'mcp__cloudbot__passkey_remove',
-    // Listing reads the provider status. Connecting only posts the provider list, and the owner signs in on the provider's page.
+    // Listing and the usage read the provider status. Connecting only posts the provider list, and the owner signs in on the provider's page.
     'mcp__cloudbot__provider_list',
+    'mcp__cloudbot__provider_usage',
     'mcp__cloudbot__provider_connect',
     // The owner asks for a model in the chat. The tool accepts only a model the provider lists, so it never needs a review.
     'mcp__cloudbot__models_set',

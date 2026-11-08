@@ -7,6 +7,7 @@ import type { PermissionMode } from '../../shared/permissionModes.ts';
 import { getBotProvider, listProviders, savePermissionMode, saveProviderModel, startProviderConnect, switchBotProvider } from '../apiClient.ts';
 import { Field } from './Field.tsx';
 import { PopoverMenuSection } from './PopoverMenu.tsx';
+import { ProviderUsagePanel } from './ProviderUsagePanel.tsx';
 import { Select } from './Select.tsx';
 import { WorkPicker } from './WorkPicker.tsx';
 
@@ -234,6 +235,7 @@ function ProviderPicker({ botId, isOpen, changeCount = 0, onOpenSetupChat, onClo
                                     )}
                         </PopoverMenuSection>
                     )}
+            <ProviderUsagePanel isOpen={isOpen} />
             <WorkPicker botId={botId} providers={providers} refreshKey={[current.provider, changeCount, isOpen].join(':')} />
             <PopoverMenuSection title="Permissions">
                 <Field label="Mode" isInline>

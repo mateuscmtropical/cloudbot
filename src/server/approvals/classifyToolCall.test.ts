@@ -303,6 +303,8 @@ describe('provider tools', () => {
     it('skips the provider list and the setup-chat prompt', () => {
         expect(classify('mcp__cloudbot__provider_list'))
             .toBe('skip');
+        expect(classify('mcp__cloudbot__provider_usage'))
+            .toBe('skip');
         expect(classify('mcp__cloudbot__provider_connect'))
             .toBe('skip');
     });

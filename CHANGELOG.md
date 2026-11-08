@@ -21,6 +21,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- The provider menu shows the plan usage of each connected provider, like the usage screen of its own CLI: the session and weekly limits, how much is used and when they reset. The bot answers "how much of my plan is left?" with the new read only `provider_usage` tool. Claude (the `/usage` command of the Claude CLI) and ChatGPT (the rate limits of the Codex app server) give real numbers. Any other provider says "Not available for this provider", since its CLI has no usage source.
 - The action log is now an audit log. Each decision on a tool call records who decided (owner, group member, review agent or block list), the card line and the reason. Account, Action log filters by bot and outcome. A bot can read its own entries with the new `audit_log` tool.
 - After a long chat task that went well, a bot may propose a skill from it on the usual approval card. Nothing is saved until the owner approves. Ask the bot in chat to turn the suggestions off or on.
 - Talk to a bot from Discord. The owner saves a Discord bot token through the secure form and sends `pair` with a one-time code to the Discord bot in a direct message. Only that Discord account can then talk to the bot, and the replies come back there. Text only for now, and approvals stay in the web app. Setup is in `docs/DISCORD.md`.
