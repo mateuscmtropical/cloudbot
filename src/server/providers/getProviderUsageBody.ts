@@ -4,8 +4,9 @@ import type { SpawnFunction } from '../agent/ClaudeCliEngine.ts';
 import { PROVIDER_AGENT_WRAPPER, wrapperAgentLaunch } from '../agent/codexAgentLaunch.ts';
 import { childPath } from '../childEnvironment.ts';
 
-// The providers whose own CLI calls a usage endpoint with its saved sign-in, see docker/provider-usage.js.
-type UsageBodyProvider = 'copilot' | 'kimi';
+// The providers whose own CLI calls a usage endpoint with its saved sign-in, see docker/provider-usage.js. Gemini runs
+// agy's own `/usage` command, which prints JSON.
+type UsageBodyProvider = 'copilot' | 'gemini' | 'kimi';
 
 interface ProviderUsageBodyOptions {
     // Runs the wrapper as this user, who holds the sign-in. The server never reads that sign-in.

@@ -33,7 +33,7 @@ import { createClaudeReviewModel } from './approvals/createClaudeReviewModel.ts'
 import { createReviewChain } from './approvals/createReviewChain.ts';
 import { WorkSettings } from './providers/WorkSettings.ts';
 import { ConnectedProviders } from './providers/ConnectedProviders.ts';
-import { ProviderUsage, parseClaudeUsage, parseCodexRateLimits, parseCopilotUsage, parseKimiUsage } from './providers/ProviderUsage.ts';
+import { ProviderUsage, parseAgyUsage, parseClaudeUsage, parseCodexRateLimits, parseCopilotUsage, parseKimiUsage } from './providers/ProviderUsage.ts';
 import { getProviderUsageBody } from './providers/getProviderUsageBody.ts';
 import type { ProviderUsageWindow } from '../shared/providerTypes.ts';
 import { getClaudeUsageText } from './claudeAuth/getClaudeUsage.ts';
@@ -213,8 +213,8 @@ const codexPath = config.codexPath;
 const codexHome = join(dataDir, 'codex', 'home');
 const codexAuthOptions = codexPath === undefined ? undefined : { codexPath, codexHome, ...(agentUser ? { agentUser } : {}) };
 const chatgptSignIn = codexAuthOptions === undefined ? undefined : createChatgptSignIn(codexAuthOptions);
-// Claude and ChatGPT are read through their CLIs. Copilot and Kimi are read with the call their own CLI makes, which needs
-// the Docker wrapper that holds the sign-in. Any other provider shows as not available.
+// Claude, ChatGPT and Gemini (agy) are read through their CLIs. Copilot and Kimi are read with the call their own CLI
+// makes. All but Claude and ChatGPT need the Docker wrapper that holds the sign-in. Any other provider shows as not available.
 const readClaudeWindows = async (): Promise<ProviderUsageWindow[]> => {
     const text = await getClaudeUsageText(authOptions);
 
@@ -232,6 +232,7 @@ const providerUsage = new ProviderUsage({
         ? {}
         : {
                 copilot: async () => parseCopilotUsage(await getProviderUsageBody('copilot', { agentUser })),
+                gemini: async () => parseAgyUsage(await getProviderUsageBody('gemini', { agentUser })),
                 kimi: async () => parseKimiUsage(await getProviderUsageBody('kimi', { agentUser })),
             }),
 });

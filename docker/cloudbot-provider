@@ -169,6 +169,8 @@ case "$provider:$action" in
         ;;
     # The plan usage, read with the call the CLI makes itself and the sign-in it saved. It prints only the answer body.
     copilot:usage|kimi:usage) exec /usr/local/bin/node /usr/local/lib/cloudbot/provider-usage.js "$provider" ;;
+    # agy answers its read-only /usage command in print mode without a model turn, as JSON.
+    gemini:usage) exec /usr/local/bin/agy -p /usage --output-format json --print-timeout 30s ;;
     *)
         echo "cloudbot-provider does not know $provider $action." >&2
         exit 2
