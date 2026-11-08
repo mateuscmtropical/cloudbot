@@ -148,6 +148,30 @@ function parseKimiUsage(body: unknown): ProviderUsageWindow[] {
     });
 }
 
+const AGY_WINDOW_LABELS: Record<string, string> = { 'weekly': 'Weekly limit', '5h': '5 hour limit' };
+
+// Reads the JSON of `agy -p "/usage" --output-format json` (agy 1.5.3). It is a read-only command of print mode, so it
+// spends no tokens. Each group of models shares its limits, so the group is named in front of each limit.
+function parseAgyUsage(body: unknown): ProviderUsageWindow[] {
+    const data = readRecord(readRecord(readRecord(body).command).data);
+    const groups: unknown[] = Array.isArray(data.groups) ? data.groups : [];
+
+    return groups.flatMap((group) => {
+        const groupRecord = readRecord(group);
+        const buckets: unknown[] = Array.isArray(groupRecord.buckets) ? groupRecord.buckets : [];
+        const prefix = typeof groupRecord.name === 'string' ? `${groupRecord.name}: ` : '';
+
+        return buckets.flatMap((bucket) => {
+            const record = readRecord(bucket);
+            const remaining = readNumber(record.remaining_fraction);
+            const window = typeof record.window === 'string' ? AGY_WINDOW_LABELS[record.window] : undefined;
+            const name = window ?? (typeof record.name === 'string' ? record.name : 'Limit');
+
+            return remaining === undefined ? [] : [{ label: `${prefix}${name}`, usedPercent: toUsedPercent((1 - remaining) * 100), resetsAt: readTime(record.reset_time), resetsText: null }];
+        });
+    });
+}
+
 // Keeps the last usage of each provider for a short time. A provider with no source, or a source that fails,
 // shows as not available. A failure is not kept, so the next ask tries again.
 class ProviderUsage {
@@ -216,5 +240,5 @@ function describeProviderUsage(summaries: ProviderUsageSummary[]): string {
     return lines.join('\n');
 }
 
-export { ProviderUsage, describeProviderUsage, parseClaudeUsage, parseCodexRateLimits, parseCopilotUsage, parseKimiUsage };
+export { ProviderUsage, describeProviderUsage, parseAgyUsage, parseClaudeUsage, parseCodexRateLimits, parseCopilotUsage, parseKimiUsage };
 export type { UsageSource };

@@ -1956,10 +1956,13 @@ expired token shows as not available until the next Kimi turn. These are
 internal endpoints of the CLIs, checked in the installed Copilot CLI and in
 Kimi Code 2.5.2, and they may change. Local mode has no wrapper, so these two
 stay not available there. Any other provider, or one that fails, shows as not
-available. The usage is never guessed. Gemini (it runs on the Antigravity CLI,
-which keeps its sign-in apart and uses another quota call), Grok, Mistral,
-Qwen, OpenCode and Cursor have no usage call in their CLIs that CloudBot can
-use.
+available. The usage is never guessed. A Gemini subscription runs on the
+Antigravity CLI, and `cloudbot-provider gemini usage` runs
+`agy -p /usage --output-format json`. That is a read-only command of print
+mode, with no model turn and no tokens. `parseAgyUsage` reads the
+`remaining_fraction` and `reset_time` of each bucket in `command.data.groups`
+(agy 1.5.3). Grok, Mistral, Qwen, OpenCode and Cursor have no usage call in
+their CLIs that CloudBot can use.
 
 Claude runs on the Claude Code engine and ChatGPT on the Codex engine. Every
 other provider runs on `AcpEngine`, which speaks the Agent Client Protocol

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ProviderUsage, describeProviderUsage, parseClaudeUsage, parseCodexRateLimits, parseCopilotUsage, parseKimiUsage } from './ProviderUsage.ts';
+import { ProviderUsage, describeProviderUsage, parseAgyUsage, parseClaudeUsage, parseCodexRateLimits, parseCopilotUsage, parseKimiUsage } from './ProviderUsage.ts';
 
 // Taken from `claude -p "/usage"` (claude 2.1.319), cut down to the lines around the limits.
 const CLAUDE_USAGE_TEXT = [
@@ -234,5 +234,43 @@ describe('describeProviderUsage', () => {
     it('says so when no provider is connected', () => {
         expect(describeProviderUsage([]))
             .toBe('No provider is connected.');
+    });
+});
+
+// The answer of `agy -p "/usage" --output-format json` in agy 1.5.3, cut to what the parser reads.
+const AGY_BODY = {
+    status: 'SUCCESS',
+    command: {
+        name: 'usage',
+        data: {
+            groups: [
+                {
+                    name: 'Gemini Models',
+                    buckets: [
+                        { id: 'gemini-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remaining_fraction: 0.97, reset_time: '2026-11-14T10:45:09Z' },
+                        { id: 'gemini-5h', name: 'Five Hour Limit Remaining', window: '5h', remaining_fraction: 0.944, reset_time: '2026-11-08T03:00:10Z' },
+                    ],
+                },
+                { name: 'Claude and GPT models', buckets: [{ id: '3p-5h', name: 'Five Hour Limit Remaining', window: '5h', remaining_fraction: 1, reset_time: 'soon' }] },
+            ],
+        },
+    },
+};
+
+describe('parseAgyUsage', () => {
+    it('turns each remaining share into a used percent, named by its group of models', () => {
+        expect(parseAgyUsage(AGY_BODY))
+            .toEqual([
+                { label: 'Gemini Models: Weekly limit', usedPercent: 3, resetsAt: Date.UTC(2026, 10, 14, 10, 45, 9), resetsText: null },
+                { label: 'Gemini Models: 5 hour limit', usedPercent: 5.6, resetsAt: Date.UTC(2026, 10, 8, 3, 0, 10), resetsText: null },
+                { label: 'Claude and GPT models: 5 hour limit', usedPercent: 0, resetsAt: null, resetsText: null },
+            ]);
+    });
+
+    it('finds nothing in a strange answer', () => {
+        expect(parseAgyUsage(null))
+            .toEqual([]);
+        expect(parseAgyUsage({ command: { data: { groups: [{ buckets: [{ window: '5h' }] }] } } }))
+            .toEqual([]);
     });
 });
