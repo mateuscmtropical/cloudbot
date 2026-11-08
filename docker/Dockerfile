@@ -190,7 +190,7 @@ COPY --chmod=0755 docker/cloudbot-provider /usr/local/bin/cloudbot-provider
 COPY --chmod=0755 docker/cloudbot-print-url /usr/local/bin/cloudbot-print-url
 # COPY --chmod would give a folder it makes the file mode too, which nobody could enter.
 RUN install -d -m 0755 /usr/local/lib/cloudbot
-COPY --chmod=0644 docker/acp-login.js docker/agy-login.js docker/agy-hook.js /usr/local/lib/cloudbot/
+COPY --chmod=0644 docker/acp-login.js docker/agy-login.js docker/agy-hook.js docker/provider-usage.js /usr/local/lib/cloudbot/
 
 # Whisper and its models, read-only for everyone. Only the server user runs it, on audio in its private data folder.
 COPY --from=whisper /whisper /usr/local/lib/cloudbot/whisper

@@ -1942,8 +1942,24 @@ setup list again with `provider_connect`.
 providers through `ProviderUsage`, which keeps each answer for a minute. Claude
 is read with `claude -p "/usage"`, a local command that sends no prompt to a
 model. Its text lines are parsed by `parseClaudeUsage`. ChatGPT is read with
-`account/rateLimits/read` of the Codex app server. A provider without a source,
-or one that fails, shows as not available. The usage is never guessed.
+`account/rateLimits/read` of the Codex app server. GitHub Copilot and Kimi are
+read in Docker with `getProviderUsageBody`, which runs `cloudbot-provider <provider> usage`
+as the bot user. That runs `docker/provider-usage.js`, which makes the call the
+official CLI makes with the sign-in the CLI saved in the bot home, and prints
+only the answer body. The server never reads the sign-in. Copilot calls
+`GET https://api.github.com/copilot_internal/user` with the token in
+`~/.copilot/config.json` (`parseCopilotUsage` reads `quota_snapshots`). Kimi
+calls `GET https://api.kimi.com/coding/v1/usages` with the token in
+`~/.kimi-code/credentials/kimi-code.json` (`parseKimiUsage` reads `usages`).
+Only Kimi Code refreshes its token, because the refresh rotates it, so an
+expired token shows as not available until the next Kimi turn. These are
+internal endpoints of the CLIs, checked in the installed Copilot CLI and in
+Kimi Code 2.5.2, and they may change. Local mode has no wrapper, so these two
+stay not available there. Any other provider, or one that fails, shows as not
+available. The usage is never guessed. Gemini (it runs on the Antigravity CLI,
+which keeps its sign-in apart and uses another quota call), Grok, Mistral,
+Qwen, OpenCode and Cursor have no usage call in their CLIs that CloudBot can
+use.
 
 Claude runs on the Claude Code engine and ChatGPT on the Codex engine. Every
 other provider runs on `AcpEngine`, which speaks the Agent Client Protocol
