@@ -32,7 +32,7 @@ describe('ThreadBar', () => {
     it('shows the own chat as Main and the other chats by name, and opens one on tap', async () => {
         const onSelect = vi.fn();
 
-        render(<ThreadBar botId="bot-1" activeId="bot-1" refreshKey={0} onSelect={onSelect} />);
+        render(<ThreadBar botId="bot-1" activeId="bot-1" refreshKey={0} unreadIds={new Set()} onSelect={onSelect} />);
 
         const sideChip = await screen.findByRole('tab', { name: 'Trip plan' });
 
@@ -53,7 +53,7 @@ describe('ThreadBar', () => {
 
         vi.mocked(createThread)
             .mockResolvedValue({ id: 'thread-2', name: 'New chat', isDefault: false, isRunning: false });
-        render(<ThreadBar botId="bot-1" activeId="bot-1" refreshKey={0} onSelect={onSelect} />);
+        render(<ThreadBar botId="bot-1" activeId="bot-1" refreshKey={0} unreadIds={new Set()} onSelect={onSelect} />);
         await screen.findByRole('tab', { name: 'Trip plan' });
         fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
 
@@ -68,7 +68,7 @@ describe('ThreadBar', () => {
 
         vi.mocked(deleteThread)
             .mockResolvedValue(undefined);
-        render(<ThreadBar botId="bot-1" activeId="thread-1" refreshKey={0} onSelect={onSelect} />);
+        render(<ThreadBar botId="bot-1" activeId="thread-1" refreshKey={0} unreadIds={new Set()} onSelect={onSelect} />);
         await screen.findByRole('tab', { name: 'Trip plan' });
         fireEvent.click(screen.getByRole('button', { name: 'Delete this chat' }));
         fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
@@ -81,8 +81,20 @@ describe('ThreadBar', () => {
         });
     });
 
+    it('marks only the chats with an unread reply', async () => {
+        render(<ThreadBar botId="bot-1" activeId="bot-1" refreshKey={0} unreadIds={new Set(['thread-1'])} onSelect={vi.fn()} />);
+
+        const sideChip = await screen.findByRole('tab', { name: 'Trip plan' });
+
+        expect(sideChip.getAttribute('data-unread'))
+            .toBe('true');
+        expect(screen.getByRole('tab', { name: 'Main' })
+            .getAttribute('data-unread'))
+            .toBeNull();
+    });
+
     it('offers no delete button on the own chat', async () => {
-        render(<ThreadBar botId="bot-1" activeId="bot-1" refreshKey={0} onSelect={vi.fn()} />);
+        render(<ThreadBar botId="bot-1" activeId="bot-1" refreshKey={0} unreadIds={new Set()} onSelect={vi.fn()} />);
         await screen.findByRole('tab', { name: 'Trip plan' });
 
         expect(screen.queryByRole('button', { name: 'Delete this chat' }))

@@ -78,6 +78,38 @@ describe('ChatService threads', () => {
             .toBeUndefined();
     });
 
+    it('reports the newest readable message of each thread, so a reply can mark the bot as unread', async () => {
+        const toolOnly = new FakeAgentRunner([
+            { event: { type: 'tool_started', toolUseId: 'tool-1', toolName: 'Bash', input: { command: 'ls' } } },
+            { event: { type: 'tool_finished', toolUseId: 'tool-1', isError: false, output: 'a.txt' } },
+        ]);
+        const toolService = new ChatService({ botStore, messageStore, runner: toolOnly, dataDir });
+        const bot = await botStore.create({ name: 'Ana', title: 'Assistant', description: '' });
+        const thread = await createThreadOrFail(toolService, bot.id);
+
+        await toolService.sendMessage(thread.id, 'list files');
+        await waitUntilIdle(toolService, thread.id);
+
+        const [afterTools] = await toolService.listBots();
+
+        expect(afterTools?.threads)
+            .toEqual([{ id: thread.id, lastMessageSequence: 0 }]);
+
+        const textService = new ChatService({ botStore, messageStore, runner: new FakeAgentRunner([{ event: { type: 'text', text: 'Done.' } }]), dataDir });
+
+        await textService.resumeQueue();
+        await textService.sendMessage(thread.id, 'and now');
+        await waitUntilIdle(textService, thread.id);
+
+        const [afterReply] = await textService.listBots();
+        const reply = (await textService.listMessages(thread.id))?.find(message => message.role === 'assistant' && message.body.kind === 'text');
+
+        expect(afterReply?.threads)
+            .toEqual([{ id: thread.id, lastMessageSequence: reply?.sequence }]);
+        expect(afterReply?.lastMessageSequence)
+            .toBe(0);
+    });
+
     it('gives a thread its own history and session and names it after its first message', async () => {
         const runner = new FakeAgentRunner([{ event: { type: 'session', sessionId: 'session-x' } }, { event: { type: 'text', text: 'Done.' } }]);
         const service = new ChatService({ botStore, messageStore, runner, dataDir });

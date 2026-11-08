@@ -1716,6 +1716,17 @@ button.list-row {
     border-radius: 50%;
 }
 
+/* A chat with a reply the owner has not seen shows the accent dot, like the bot list. */
+.thread-chip[data-unread='true']::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: var(--space-2);
+    background: var(--color-accent);
+    border-radius: 50%;
+}
+
 .thread-action {
     display: inline-flex;
     flex: none;

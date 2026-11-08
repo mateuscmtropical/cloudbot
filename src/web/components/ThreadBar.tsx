@@ -13,6 +13,8 @@ interface ThreadBarProps {
     activeId: string;
     // Goes up when something may have changed a thread, such as a new message or a turn that ended.
     refreshKey: number;
+    // The chats with a reply the owner has not seen.
+    unreadIds: Set<string>;
     onSelect: (chatId: string) => void;
 }
 
@@ -20,7 +22,7 @@ const OWN_CHAT_LABEL = 'Main';
 
 // The chats of a bot as a row of chips, with a button for a new one. Each chat has its own history and works on its own,
 // while the bot keeps one memory, one set of rules and one set of secrets for all of them.
-function ThreadBar({ botId, activeId, refreshKey, onSelect }: ThreadBarProps): ReactElement {
+function ThreadBar({ botId, activeId, refreshKey, unreadIds, onSelect }: ThreadBarProps): ReactElement {
     const [loaded, setLoaded] = useState<{ botId: string; threads: ThreadSummary[] } | undefined>(undefined);
     const [problem, setProblem] = useState<string | undefined>(undefined);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -85,6 +87,7 @@ function ThreadBar({ botId, activeId, refreshKey, onSelect }: ThreadBarProps): R
                         aria-selected={thread.id === activeId}
                         className="thread-chip"
                         data-running={thread.isRunning ? 'true' : undefined}
+                        data-unread={unreadIds.has(thread.id) ? 'true' : undefined}
                         onClick={() => {
                             onSelect(thread.id);
                         }}
