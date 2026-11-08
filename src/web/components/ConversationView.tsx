@@ -1,5 +1,5 @@
 import { Suspense, createElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
 import type { BotSummary, ChatMessage, ChatPersonCredentialsEvent, ChatWebhookUrlEvent } from '../../shared/chatTypes.ts';
 import { nextTap } from '../doubleTap.ts';
@@ -43,6 +43,10 @@ const lazyDesktopPanel = lazyPanel(async () => {
 
 interface ConversationViewProps {
     bot: BotSummary | undefined;
+    // The chat on screen when it is a thread of the bot. The view then scrolls to the bottom when the owner switches thread.
+    chatId?: string | undefined;
+    // The chat switcher, shown under the header.
+    threadBar?: ReactNode;
     // All the bots, to show the mascot of the bot that sent a hand-off.
     bots?: BotSummary[] | undefined;
     // The face of the bot's mascot while it is the live bot. Idle when not given.
@@ -118,6 +122,8 @@ function topVisibleAnchor(messageListElement: HTMLElement): OlderAnchor | undefi
 
 function ConversationView({
     bot,
+    chatId,
+    threadBar,
     bots,
     mascotState = 'idle',
     messages,
@@ -201,7 +207,7 @@ function ConversationView({
         setIsDesktopOpen(true);
         setIsScreenWatched(true);
     }
-    const botId = bot?.id;
+    const botId = chatId ?? bot?.id;
 
     // Older messages are added above the ones on screen. The anchor message is kept at the same
     // place on screen, so growth below it in the same render cannot move the view. Without an anchor,
@@ -492,6 +498,7 @@ function ConversationView({
             </header>
             {/* Notices and the Screen panel sit below the pill, so their title and Close stay clear of it. Empty when none show. */}
             <div className="conversation-top">
+                {threadBar}
                 {onHideWebhookUrl === undefined
                     ? null
                     : webhookUrls.map(notice => (

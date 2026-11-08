@@ -32,6 +32,8 @@ const DELETE_REFUSED: Record<Exclude<DeleteBotOutcome, 'deleted' | 'missing'>, C
     stopping: { error: 'The bot is still stopping. Try again in a moment.' },
     manager: { error: 'This bot manages a channel. Make another member the manager of that channel first.' },
 };
+const THREAD_LIMIT: ChatErrorResponse = { error: 'This bot has the most chats it can have. Delete one first.' };
+const THREAD_NOT_FOUND: ChatErrorResponse = { error: 'No chat of this bot has this id.' };
 const EMPTY_TEXT: ChatErrorResponse = { error: 'Send a non-empty "text" string.' };
 const INVALID_BEFORE: ChatErrorResponse = { error: '"before" must be a message sequence number, 1 or more.' };
 const INVALID_LIMIT: ChatErrorResponse = { error: '"limit" must be a whole number, 1 or more.' };
@@ -190,6 +192,41 @@ function createChatRoutes(chatService: ChatService, options: ChatRoutesOptions =
         const bot = await chatService.createOwnerBot();
 
         return context.json(bot, 201);
+    });
+
+    // The chats of a bot: its own first, then its side chats.
+    routes.get('/api/bots/:id/threads', async (context) => {
+        const botId = context.req.param('id');
+        const threads = await chatService.listThreads(botId);
+
+        return threads === undefined ? context.json(BOT_NOT_FOUND, 404) : context.json(threads);
+    });
+
+    routes.post('/api/bots/:id/threads', async (context) => {
+        try {
+            const botId = context.req.param('id');
+            const thread = await chatService.createThread(botId);
+
+            if (thread === undefined) {
+                return context.json(BOT_NOT_FOUND, 404);
+            }
+
+            return thread === 'full' ? context.json(THREAD_LIMIT, 409) : context.json(thread, 201);
+        } catch (error: unknown) {
+            if (error instanceof BotDeletingError) {
+                return context.json(BOT_DELETING, 409);
+            }
+
+            throw error;
+        }
+    });
+
+    routes.delete('/api/bots/:id/threads/:threadId', async (context) => {
+        const botId = context.req.param('id');
+        const threadId = context.req.param('threadId');
+        const isRemoved = await chatService.removeThread(botId, threadId);
+
+        return isRemoved ? context.body(null, 204) : context.json(THREAD_NOT_FOUND, 404);
     });
 
     routes.delete('/api/bots/:id', async (context) => {

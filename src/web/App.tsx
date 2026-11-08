@@ -8,6 +8,7 @@ import type { MessageSearchHit } from '../shared/searchTypes.ts';
 import { BotList } from './components/BotList.tsx';
 import { ChannelView } from './components/ChannelView.tsx';
 import { GroupDialog } from './components/GroupDialog.tsx';
+import { ThreadBar } from './components/ThreadBar.tsx';
 import type { MessageActions } from './components/MessageItem.tsx';
 import { deriveMascotState } from './mascotState.ts';
 import { useBackButton } from './useBackButton.ts';
@@ -138,6 +139,12 @@ function App(): ReactElement {
     const [bots, setBots] = useState<BotSummary[]>([]);
     const [selectedBotId, setSelectedBotId] = useState<string | undefined>(undefined);
     const [highlightedBotId, highlightBot] = useOptimistic(selectedBotId);
+    // The thread each bot has open. A bot with none open shows its own chat. Everything about the chat itself (messages,
+    // sending, files, the live stream) follows chatId, and everything about the bot (profile, list, memory) follows selectedBotId.
+    const [threadByBot, setThreadByBot] = useState<Record<string, string>>({});
+    const chatId = selectedBotId === undefined ? undefined : (threadByBot[selectedBotId] ?? selectedBotId);
+    // Goes up when a thread may have changed, so the thread bar loads its chats again.
+    const [threadRefreshKey, setThreadRefreshKey] = useState(0);
     // The newest message of each bot that the owner has seen. A closed chat with a newer one shows as unread.
     const [seenSequences, setSeenSequences] = useState(loadSeen);
     const nextSeenSequences = updateSeen(seenSequences, bots, selectedBotId);
@@ -202,6 +209,12 @@ function App(): ReactElement {
     // arrow in the header, and back from the list leaves the app.
     useBackButton(isNarrowScreen && !isBotListOpen, () => {
         setIsBotListOpen(true);
+    });
+    // On a thread, back returns to the bot's own chat before it opens the bot list.
+    useBackButton(selectedBotId !== undefined && chatId !== selectedBotId, () => {
+        if (selectedBotId !== undefined) {
+            setThreadByBot(previous => ({ ...previous, [selectedBotId]: selectedBotId }));
+        }
     });
     useBackButton(isBotListOpen, () => {
         setIsBotListOpen(false);
@@ -285,6 +298,7 @@ function App(): ReactElement {
 
     const messagesRef = useRef<ChatMessage[]>([]);
     const selectedBotIdRef = useRef<string | undefined>(undefined);
+    const chatIdRef = useRef<string | undefined>(undefined);
     const refreshBotsAfterDeletion = useCallback((): Promise<void> => {
         return listBots()
             .then((loadedBots) => {
@@ -376,6 +390,10 @@ function App(): ReactElement {
     }, [selectedBotId]);
 
     useEffect(() => {
+        chatIdRef.current = chatId;
+    }, [chatId]);
+
+    useEffect(() => {
         selectedChannelIdRef.current = selectedChannelId;
     }, [selectedChannelId]);
 
@@ -403,6 +421,7 @@ function App(): ReactElement {
         const unsubscribe = subscribeToAllBotEvents((event: ChatEvent) => {
             if (event.type === 'message' || event.type === 'botDeleted') {
                 refreshBots();
+                setThreadRefreshKey(current => current + 1);
             }
 
             if (isChannelToolRow(event)) {
@@ -512,7 +531,7 @@ function App(): ReactElement {
     }, [selectedBotId, selectedChannelId]);
 
     useEffect(() => {
-        if (selectedBotId === undefined) {
+        if (chatId === undefined) {
             return;
         }
 
@@ -560,7 +579,7 @@ function App(): ReactElement {
         };
 
         // Files waiting for the next message come back on connect and after every change to them.
-        loadPendingUploads(selectedBotId);
+        loadPendingUploads(chatId);
 
         // Runs on every stream connect, so messages missed during a dropout come back.
         const reloadMessages = (): void => {
@@ -578,12 +597,12 @@ function App(): ReactElement {
                 })
                 .catch(() => undefined);
 
-            const generation = nextGeneration(generationsRef.current, selectedBotId);
+            const generation = nextGeneration(generationsRef.current, chatId);
 
-            listMessages(selectedBotId, { limit: MESSAGE_PAGE_SIZE })
+            listMessages(chatId, { limit: MESSAGE_PAGE_SIZE })
                 .then((loadedMessages) => {
                     // A newer reload started after this one, so this answer may be older than the list.
-                    const isOutOfDate = currentGeneration(generationsRef.current, selectedBotId) !== generation;
+                    const isOutOfDate = currentGeneration(generationsRef.current, chatId) !== generation;
 
                     if (!isCurrent || isOutOfDate) {
                         return;
@@ -598,7 +617,7 @@ function App(): ReactElement {
                     const shownDraft = draftStore.get();
                     const hasNewerReply = replies.some(reply => reply.sequence > shownDraft.afterSequence);
 
-                    if (shownDraft.botId === selectedBotId && hasNewerReply) {
+                    if (shownDraft.botId === chatId && hasNewerReply) {
                         draftStore.set(EMPTY_DRAFT);
                     }
 
@@ -618,15 +637,15 @@ function App(): ReactElement {
                                 const isNewer = message.sequence > newestLoadedSequence;
                                 const isLocalInRange = !loadedIds.has(message.id) && message.sequence >= oldestLoadedSequence;
 
-                                return message.botId !== selectedBotId || isNewer || isLocalInRange;
+                                return message.botId !== chatId || isNewer || isLocalInRange;
                             });
-                        const previousPaging = previousState.olderPaging[selectedBotId];
+                        const previousPaging = previousState.olderPaging[chatId];
 
                         return {
                             messages: mergeMessages(keptMessages, loadedMessages),
                             olderPaging: {
                                 ...previousState.olderPaging,
-                                [selectedBotId]: {
+                                [chatId]: {
                                     hasMore: loadedMessages.length === MESSAGE_PAGE_SIZE,
                                     isLoading: previousPaging?.isLoading === true,
                                 },
@@ -639,7 +658,7 @@ function App(): ReactElement {
                 });
         };
 
-        const unsubscribe = subscribeToEvents(selectedBotId, (event: ChatEvent) => {
+        const unsubscribe = subscribeToEvents(chatId, (event: ChatEvent) => {
             if (event.type === 'textDelta') {
                 if (pendingDraftText !== '' && pendingDraftBotId !== event.botId) {
                     flushPendingDraft();
@@ -749,7 +768,8 @@ function App(): ReactElement {
 
             // A finished turn may have put files back in the queue, and may have renamed the bot.
             if (!event.isRunning) {
-                loadPendingUploads(selectedBotId);
+                loadPendingUploads(chatId);
+                setThreadRefreshKey(current => current + 1);
                 setChannelListVersion(current => current + 1);
 
                 listBots()
@@ -775,7 +795,7 @@ function App(): ReactElement {
             flushPendingDraft();
             unsubscribe();
         };
-    }, [selectedBotId, loadPendingUploads, refreshBotsAfterDeletion, draftStore]);
+    }, [chatId, loadPendingUploads, refreshBotsAfterDeletion, draftStore]);
 
     const showMessageResult = useCallback((resultPromise: Promise<ChatMessage>): void => {
         resultPromise
@@ -839,12 +859,12 @@ function App(): ReactElement {
     // so a page that overlaps the current list adds nothing twice.
     // Each bot keeps its own paging state. A failed load keeps hasMore, so the next scroll to the top retries it.
     function handleLoadOlder(): void {
-        if (selectedBotId === undefined || olderLoadsInFlightRef.current.has(selectedBotId)) {
+        if (chatId === undefined || olderLoadsInFlightRef.current.has(chatId)) {
             return;
         }
 
         const botSequences = messagesRef.current
-            .filter(message => message.botId === selectedBotId)
+            .filter(message => message.botId === chatId)
             .map(message => message.sequence);
 
         if (botSequences.length === 0) {
@@ -852,7 +872,7 @@ function App(): ReactElement {
         }
 
         const oldestSequence = Math.min(...botSequences);
-        const loadingBotId = selectedBotId;
+        const loadingBotId = chatId;
         const generation = currentGeneration(generationsRef.current, loadingBotId);
 
         olderLoadsInFlightRef.current.add(loadingBotId);
@@ -871,7 +891,7 @@ function App(): ReactElement {
 
                 setChatState((previousState) => {
                     const isListMoved = lowestSequenceOf(previousState.messages, loadingBotId) !== oldestSequence;
-                    const isDropped = isOutOfDate || isListMoved || selectedBotIdRef.current !== loadingBotId;
+                    const isDropped = isOutOfDate || isListMoved || chatIdRef.current !== loadingBotId;
 
                     if (isDropped) {
                         return {
@@ -894,10 +914,19 @@ function App(): ReactElement {
                 olderLoadsInFlightRef.current.delete(loadingBotId);
                 updateOlderPaging(loadingBotId, { isLoading: false });
 
-                if (selectedBotIdRef.current === loadingBotId) {
+                if (chatIdRef.current === loadingBotId) {
                     setErrorText(OLDER_ERROR_TEXT);
                 }
             });
+    }
+
+    // Opens one of the chats of the open bot. Its own chat is stored as no thread.
+    function handleSelectChat(selectedChatId: string): void {
+        if (selectedBotId === undefined) {
+            return;
+        }
+
+        setThreadByBot(previous => ({ ...previous, [selectedBotId]: selectedChatId }));
     }
 
     function handleSelectBot(
@@ -1096,11 +1125,11 @@ function App(): ReactElement {
     }
 
     function handleSend(text: string): void {
-        if (selectedBotId === undefined) {
+        if (chatId === undefined) {
             return;
         }
 
-        const sentBotId = selectedBotId;
+        const sentBotId = chatId;
         const wasRunning = runningBotId === sentBotId;
 
         setRunningBotId(sentBotId);
@@ -1120,7 +1149,7 @@ function App(): ReactElement {
         const resultPromise = sendPromise.then((message) => {
             if (message.role === 'assistant') {
                 const localMessage: ChatMessage = {
-                    id: crypto.randomUUID(), botId: selectedBotId, role: 'user',
+                    id: crypto.randomUUID(), botId: chatId, role: 'user',
                     createdAt: Date.now(), sequence: message.sequence - 0.5,
                     body: { kind: 'text', text },
                 };
@@ -1144,13 +1173,13 @@ function App(): ReactElement {
         showMessageResult(resultPromise);
     }
     function handleStop(): void {
-        if (selectedBotId === undefined) {
+        if (chatId === undefined) {
             return;
         }
 
-        stoppedBotIdRef.current = selectedBotId;
+        stoppedBotIdRef.current = chatId;
 
-        const stopPromise = stopTurn(selectedBotId);
+        const stopPromise = stopTurn(chatId);
 
         stopPromise.catch(() => {
             stoppedBotIdRef.current = undefined;
@@ -1159,11 +1188,11 @@ function App(): ReactElement {
     }
 
     function handleAttach(files: File[]): void {
-        if (selectedBotId === undefined || files.length === 0) {
+        if (chatId === undefined || files.length === 0) {
             return;
         }
 
-        const botId = selectedBotId;
+        const botId = chatId;
         const newChips = files.map((file) => {
             nextAttachmentNumber.current += 1;
 
@@ -1191,11 +1220,11 @@ function App(): ReactElement {
     }
 
     function handleRemoveAttachment(attachmentId: string): void {
-        if (selectedBotId === undefined) {
+        if (chatId === undefined) {
             return;
         }
 
-        const botId = selectedBotId;
+        const botId = chatId;
         const removePromise = removeUpload(botId, attachmentId);
 
         removePromise.then(() => {
@@ -1209,7 +1238,7 @@ function App(): ReactElement {
     // One object per bot, so the memoized messages do not render again on every streamed delta.
     const messageActions = useMemo((): MessageActions => ({
         onChoose: (messageId, choiceId) => {
-            if (selectedBotId === undefined) {
+            if (chatId === undefined) {
                 return Promise.resolve();
             }
 
@@ -1220,7 +1249,7 @@ function App(): ReactElement {
 
             if (isNotificationOffTap) {
                 // This browser forgets its subscription first. The card closes only when that worked.
-                const botId = selectedBotId;
+                const botId = chatId;
                 const disablePromise = disablePushNotifications();
 
                 return disablePromise
@@ -1241,7 +1270,7 @@ function App(): ReactElement {
 
             if (isNotificationTap) {
                 // The browser asks for permission only inside the tap, so this starts now. The card closes only when it worked.
-                const botId = selectedBotId;
+                const botId = chatId;
                 const enablePromise = enablePushNotifications();
 
                 return enablePromise
@@ -1273,7 +1302,7 @@ function App(): ReactElement {
 
             if (isPasskeyAddTap || removedPasskeyId !== undefined) {
                 // The browser makes or removes the passkey inside the tap. The card closes only when that worked.
-                const botId = selectedBotId;
+                const botId = chatId;
                 const actionPromise = removedPasskeyId === undefined
                     ? addPasskey()
                     : removePasskey(removedPasskeyId)
@@ -1311,28 +1340,28 @@ function App(): ReactElement {
                 }, SIGN_IN_TAB_WAIT_MS);
             }
 
-            const choicePromise = submitChoice(selectedBotId, messageId, choiceId);
+            const choicePromise = submitChoice(chatId, messageId, choiceId);
 
             showMessageResult(choicePromise);
 
             return choicePromise.then(() => undefined, () => undefined);
         },
         onSubmitCode: (messageId, code) => {
-            if (selectedBotId === undefined) {
+            if (chatId === undefined) {
                 return;
             }
 
-            const codePromise = submitCode(selectedBotId, messageId, code);
+            const codePromise = submitCode(chatId, messageId, code);
 
             showMessageResult(codePromise);
         },
         // Settles when the server answered, so the form can show that the key is being checked.
         onSubmitSecret: (messageId, value) => {
-            if (selectedBotId === undefined) {
+            if (chatId === undefined) {
                 return Promise.resolve();
             }
 
-            const secretPromise = submitSecret(selectedBotId, messageId, value);
+            const secretPromise = submitSecret(chatId, messageId, value);
 
             showMessageResult(secretPromise);
 
@@ -1341,7 +1370,7 @@ function App(): ReactElement {
         onOpenScreen: () => {
             setScreenRequestId(current => current + 1);
         },
-    }), [selectedBotId, showMessageResult]);
+    }), [chatId, showMessageResult]);
 
     const selectedBot = bots.find(bot => bot.id === selectedBotId);
 
@@ -1366,19 +1395,19 @@ function App(): ReactElement {
     });
 
     const visibleMessages = useMemo(() => {
-        const selectedMessages = messages.filter(message => message.botId === selectedBotId);
+        const selectedMessages = messages.filter(message => message.botId === chatId);
 
         return withoutToolRows(selectedMessages);
-    }, [messages, selectedBotId]);
-    const activeToolName = activeTool?.botId === selectedBotId ? activeTool?.toolName : undefined;
-    const isRunning = selectedBotId !== undefined && runningBotId === selectedBotId;
-    const isJustFinished = selectedBotId !== undefined && finishedTurn?.botId === selectedBotId;
+    }, [messages, chatId]);
+    const activeToolName = activeTool?.botId === chatId ? activeTool?.toolName : undefined;
+    const isRunning = chatId !== undefined && runningBotId === chatId;
+    const isJustFinished = chatId !== undefined && finishedTurn?.botId === chatId;
     const liveMascotState = deriveMascotState({ isRunning, isOwnerTyping, isJustFinished, messages: visibleMessages });
-    const selectedPaging = selectedBotId === undefined ? undefined : olderPaging[selectedBotId];
+    const selectedPaging = chatId === undefined ? undefined : olderPaging[chatId];
     const hasOlderMessages = selectedPaging?.hasMore === true;
     const isLoadingOlder = selectedPaging?.isLoading === true;
 
-    const botAttachments = selectedBotId === undefined ? [] : (attachmentsByBot[selectedBotId] ?? []);
+    const botAttachments = chatId === undefined ? [] : (attachmentsByBot[chatId] ?? []);
     const isUploading = botAttachments.some(attachment => attachment.status === 'uploading');
     const uploadsByBot = Object.values(attachmentsByBot);
     const isAnyUploadInProgress = uploadsByBot
@@ -1631,6 +1660,17 @@ function App(): ReactElement {
                             <div className="conversation-host" hidden={isBotProfileOpen || isConnectAppsOpen}>
                                 <ConversationView
                                     bot={selectedBot}
+                                    chatId={chatId}
+                                    threadBar={selectedBotId === undefined
+                                        ? null
+                                        : (
+                                                <ThreadBar
+                                                    botId={selectedBotId}
+                                                    activeId={chatId ?? selectedBotId}
+                                                    refreshKey={threadRefreshKey}
+                                                    onSelect={handleSelectChat}
+                                                />
+                                            )}
                                     bots={bots}
                                     mentionNames={mentionNames}
                                     mascotState={liveMascotState}

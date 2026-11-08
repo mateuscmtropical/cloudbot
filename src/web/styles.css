@@ -1639,6 +1639,79 @@ button.list-row {
     overflow-y: auto;
 }
 
+/* The chats of a bot: chips that scroll sideways, then the delete and new chat buttons. */
+.thread-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-4) var(--space-2);
+}
+
+.thread-chips {
+    display: flex;
+    flex: 1;
+    gap: var(--space-2);
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.thread-chip {
+    flex: none;
+    max-width: 200px;
+    min-height: 36px;
+    padding: 0 var(--space-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text-muted);
+    background: var(--color-surface-control);
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+}
+
+.thread-chip[aria-selected='true'] {
+    color: var(--color-text);
+    border-color: var(--color-accent);
+}
+
+/* A chat that works shows a small dot. */
+.thread-chip[data-running='true']::after {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-left: var(--space-2);
+    background: var(--color-success);
+    border-radius: 50%;
+}
+
+.thread-action {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    color: var(--color-text);
+    background: var(--color-surface-control);
+    border: 0;
+    border-radius: 50%;
+}
+
+.thread-action svg {
+    width: 18px;
+    height: 18px;
+}
+
+.thread-problem {
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--color-danger);
+}
+
 /* The top padding starts the messages under the pill. They scroll beneath it, with no strip reserved. */
 .message-list {
     position: relative;

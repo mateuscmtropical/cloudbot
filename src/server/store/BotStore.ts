@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, isNotNull, isNull } from 'drizzle-orm';
 
 import { randomMascot, readMascotBolt, readMascotColor, readMascotEyes, readMascotShape, readMascotWeather } from '../../shared/mascot.ts';
 import type { PermissionMode } from '../../shared/permissionModes.ts';
@@ -90,12 +90,64 @@ class BotStore {
         return readBotRow(bot);
     }
 
+    // The bots only. The threads of a bot are listed apart, since they are not bots of their own.
     async list(): Promise<Bot[]> {
+        const oldestFirst = asc(bots.createdAt);
+        const byIdAscending = asc(bots.id);
+        const isBot = isNull(bots.parentBotId);
+        const rows = await this.database.select()
+            .from(bots)
+            .where(isBot)
+            .orderBy(oldestFirst, byIdAscending);
+
+        return rows.map(row => readBotRow(row));
+    }
+
+    // A thread is a row of its own, with the look of its bot, so the chat code that reads a bot by id works on it.
+    // Its name is the title shown in the thread bar.
+    async createThread(parent: Bot, name: string): Promise<Bot> {
+        const insertedRows = await this.database.insert(bots)
+            .values({
+                id: randomUUID(),
+                name,
+                title: parent.title,
+                description: parent.description,
+                parentBotId: parent.id,
+                sessionId: null,
+                createdAt: this.now(),
+                mascotColor: parent.mascotColor,
+                mascotShape: parent.mascotShape,
+                mascotEyes: parent.mascotEyes,
+            })
+            .returning();
+        const insertedThread = insertedRows[0];
+
+        if (insertedThread === undefined) {
+            throw new Error('Inserting a thread returned no row');
+        }
+
+        return readBotRow(insertedThread);
+    }
+
+    // The side chats of one bot, oldest first.
+    async listThreads(parentBotId: string): Promise<Bot[]> {
+        const isThreadOfBot = eq(bots.parentBotId, parentBotId);
         const oldestFirst = asc(bots.createdAt);
         const byIdAscending = asc(bots.id);
         const rows = await this.database.select()
             .from(bots)
+            .where(isThreadOfBot)
             .orderBy(oldestFirst, byIdAscending);
+
+        return rows.map(row => readBotRow(row));
+    }
+
+    // Every thread of every bot. The chat service reads it once at start.
+    async listAllThreads(): Promise<Bot[]> {
+        const isThread = isNotNull(bots.parentBotId);
+        const rows = await this.database.select()
+            .from(bots)
+            .where(isThread);
 
         return rows.map(row => readBotRow(row));
     }

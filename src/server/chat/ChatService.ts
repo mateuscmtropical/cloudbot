@@ -177,6 +177,7 @@ import type {
     AttachmentSummary,
     BotMemory,
     BotSummary,
+    ThreadSummary,
     ChatEvent,
     ChatMessage,
     ChatPersonCredentialsEvent,
@@ -479,6 +480,12 @@ const USAGE_LIMIT_FALLBACK_WAIT_MS = 5 * 60 * 1000;
 const USAGE_LIMIT_MIN_WAIT_MS = 60 * 1000;
 const USAGE_LIMIT_MAX_WAIT_MS = 8 * 24 * 60 * 60 * 1000;
 const CONTINUE_PROMPT = 'Continue.';
+// Side chats of one bot. Each running thread is its own CLI process, and a VPS has little memory, so few run at once.
+// The others wait in their queue and start when a running one ends.
+const MAX_THREADS_PER_BOT = 8;
+const MAX_PARALLEL_TURNS_PER_BOT = 3;
+const NEW_THREAD_NAME = 'New chat';
+const THREAD_NAME_LENGTH = 40;
 // A main session still this big after its turn is compacted, once the bot has been idle for the delay below.
 const IDLE_COMPACT_MIN_CONTEXT_TOKENS = 40_000;
 // The hub hibernates a bot after 5 minutes of inactivity by default. This compacts first, while the 1 hour prompt cache of the CLI is still warm.
@@ -864,6 +871,8 @@ class ChatService {
     private readonly allBotsListeners = new Set<ChatEventListener>();
     private readonly pendingPeopleCredentialsByBot = new Map<string, ChatPersonCredentialsEvent[]>();
     private readonly runningTurns = new Map<string, AbortController>();
+    // The bot of each thread, by thread id. A bot's own chat is its default thread and is not in this map.
+    private readonly threadParents = new Map<string, string>();
     // The line the bot set with notification_text for the notification at the end of its running turn.
     private readonly turnNoticeLines = new Map<string, string>();
     // The inbox of each running turn that can take a new owner message. The engine fills in its deliver while its input is open.
@@ -985,18 +994,22 @@ class ChatService {
 
     // Uploads live outside the agent's writable workspace. The agent reads them and cannot change them.
     uploadDirFor(botId: string): string {
+        const sharedId = this.sharedIdOf(botId);
+
         if (this.agentUser) {
-            return agentWorkspacePath(botId, AGENT_UPLOAD_ROOT);
+            return agentWorkspacePath(sharedId, AGENT_UPLOAD_ROOT);
         }
 
-        return join(this.dataDir, 'uploads', botId);
+        return join(this.dataDir, 'uploads', sharedId);
     }
 
     // Copies of the files the bot shared. They stay in the server's private data, out of the bot's reach.
     shareDirFor(botId: string): string {
         const shareRoot = this.shareRoot();
 
-        return join(shareRoot, botId);
+        const sharedId = this.sharedIdOf(botId);
+
+        return join(shareRoot, sharedId);
     }
 
     private shareRoot(): string {
@@ -1579,12 +1592,45 @@ class ChatService {
     }
 
     // Every path the bot uses starts here, so turns and uploads share one folder.
+    // The threads of a bot work in the folder of the bot, so they share its files and its memory.
     workspaceFor(botId: string): string {
+        const sharedId = this.sharedIdOf(botId);
+
         if (this.agentUser) {
-            return agentWorkspacePath(botId, AGENT_WORKSPACE_ROOT);
+            return agentWorkspacePath(sharedId, AGENT_WORKSPACE_ROOT);
         }
 
-        return join(this.dataDir, 'workspaces', botId);
+        return join(this.dataDir, 'workspaces', sharedId);
+    }
+
+    // The bot that owns a chat: the bot itself for its own chat, the parent for a thread.
+    private sharedIdOf(botId: string): string {
+        return this.threadParents.get(botId) ?? botId;
+    }
+
+    private threadIdsOf(botId: string): string[] {
+        return [...this.threadParents.entries()]
+            .filter(([, parentId]) => parentId === botId)
+            .map(([threadId]) => threadId);
+    }
+
+    // True when the bot's own chat or any of its threads is busy. The hub keeps such a bot awake.
+    isBotBusy(botId: string): boolean {
+        return this.isBusy(botId) || this.threadIdsOf(botId)
+            .some(threadId => this.isBusy(threadId));
+    }
+
+    // True when the bot already runs as many turns as it may at once, over its own chat and its threads.
+    private isAtParallelLimit(botId: string): boolean {
+        const sharedId = this.sharedIdOf(botId);
+        const runningLanes = this.runningLanesOf(sharedId);
+
+        return runningLanes.length >= MAX_PARALLEL_TURNS_PER_BOT;
+    }
+
+    // The chats of a bot that run a turn now, the bot's own chat first.
+    private runningLanesOf(botId: string): string[] {
+        return [botId, ...this.threadIdsOf(botId)].filter(laneId => this.runningTurns.has(laneId));
     }
 
     // A bot is busy while a turn runs, while messages wait for their turn, or during a usage limit wait.
@@ -1724,7 +1770,7 @@ class ChatService {
         await removeFiles(expiredUploads);
 
         // A bot with a running, queued or waiting turn keeps every file. A pending file is not old by now.
-        const isProtected = (botId: string, path: string): boolean => this.isBusy(botId)
+        const isProtected = (botId: string, path: string): boolean => this.isBotBusy(botId)
             || (this.pendingUploads.get(botId) ?? []).some(upload => upload.absolutePath === path);
         const removedOldPaths = await removeOldUploads({
             uploadRoot: this.uploadRoot(), isProtected, maxAgeMs: this.uploadRetentionMs, nowMs,
@@ -1749,6 +1795,14 @@ class ChatService {
     // Rebuilds the queues and the usage limit waits from the database. Call once, after the store is open.
     async resumeQueue(): Promise<void> {
         await this.closeStaleApprovals();
+
+        const storedThreads = await this.botStore.listAllThreads();
+
+        storedThreads.forEach((thread) => {
+            if (thread.parentBotId !== null) {
+                this.threadParents.set(thread.id, thread.parentBotId);
+            }
+        });
 
         const storedTurns = await this.botStore.listQueuedTurns();
         const usageWaits = await this.botStore.listUsageWaits();
@@ -1898,6 +1952,12 @@ class ChatService {
     // are refused from now on. The mark is removed when the delete ends, whatever its outcome.
     // A second delete of a bot already being deleted is refused at once, and it leaves the first delete's mark alone.
     async deleteBot(botId: string): Promise<DeleteBotOutcome> {
+        if (this.threadParents.has(botId)) {
+            const isThreadDeleted = await this.deleteThread(botId);
+
+            return isThreadDeleted ? 'deleted' : 'missing';
+        }
+
         if (this.deletingBots.has(botId)) {
             return 'deleting';
         }
@@ -1971,14 +2031,33 @@ class ChatService {
             return refusal;
         }
 
-        this.abortRunningTurn(botId);
+        const threadIds = this.threadIdsOf(botId);
+        const laneIds = [botId, ...threadIds];
 
-        const isStopped = await waitUntil(() => !this.runningTurns.has(botId), STOP_WAIT_MS);
+        threadIds.forEach((threadId) => {
+            this.deletingBots.add(threadId);
+        });
 
-        if (!isStopped) {
-            return 'stopping';
+        try {
+            laneIds.forEach((laneId) => {
+                this.abortRunningTurn(laneId);
+            });
+
+            const isStopped = await waitUntil(() => laneIds.every(laneId => !this.runningTurns.has(laneId)), STOP_WAIT_MS);
+
+            if (!isStopped) {
+                return 'stopping';
+            }
+
+            return await this.finishRemovingBot(botId, threadIds);
+        } finally {
+            threadIds.forEach((threadId) => {
+                this.deletingBots.delete(threadId);
+            });
         }
+    }
 
+    private async finishRemovingBot(botId: string, threadIds: string[]): Promise<DeleteBotOutcome> {
         const webhooks = this.webhookStore === undefined ? [] : await this.webhookStore.list(botId);
 
         // The queue, the usage wait and the listeners are dropped only now, after the steps that can fail.
@@ -1995,9 +2074,85 @@ class ChatService {
         // The web app learns the bot is gone while the listeners still exist. Then they are dropped.
         this.publish(botId, { type: 'botDeleted', botId });
         this.forgetBotState(botId);
+        threadIds.forEach((threadId) => {
+            this.forgetBotState(threadId);
+            this.threadParents.delete(threadId);
+        });
         await this.forgetGithub?.(botId);
 
         return 'deleted';
+    }
+
+    // The chats of a bot: its own chat first, then its threads, oldest first. Undefined for an unknown bot or a thread id.
+    async listThreads(botId: string): Promise<ThreadSummary[] | undefined> {
+        const bot = await this.botStore.getById(botId);
+
+        if (bot === undefined || bot.parentBotId !== null) {
+            return undefined;
+        }
+
+        const threads = await this.botStore.listThreads(botId);
+        const ownChat: ThreadSummary = { id: botId, name: bot.name, isDefault: true, isRunning: this.isWorking(botId) };
+        const sideChats = threads.map((thread): ThreadSummary => ({ id: thread.id, name: thread.name, isDefault: false, isRunning: this.isWorking(thread.id) }));
+
+        return [ownChat, ...sideChats];
+    }
+
+    // Starts a side chat with its own history and session. It shares the memory, rules, skills and secrets of the bot.
+    // Returns 'full' at the thread limit and undefined for an unknown bot or a thread id.
+    async createThread(botId: string): Promise<ThreadSummary | 'full' | undefined> {
+        if (this.deletingBots.has(botId)) {
+            throw new BotDeletingError();
+        }
+
+        const bot = await this.botStore.getById(botId);
+
+        if (bot === undefined || bot.parentBotId !== null) {
+            return undefined;
+        }
+
+        if (this.threadIdsOf(botId).length >= MAX_THREADS_PER_BOT) {
+            return 'full';
+        }
+
+        const thread = await this.botStore.createThread(bot, NEW_THREAD_NAME);
+
+        this.threadParents.set(thread.id, botId);
+
+        return { id: thread.id, name: thread.name, isDefault: false, isRunning: false };
+    }
+
+    // Removes a thread with its messages. The bot's own chat is not a thread and cannot be removed here.
+    private async deleteThread(threadId: string): Promise<boolean> {
+        if (!this.threadParents.has(threadId) || this.deletingBots.has(threadId)) {
+            return false;
+        }
+
+        this.deletingBots.add(threadId);
+
+        try {
+            this.abortRunningTurn(threadId);
+            await waitUntil(() => !this.runningTurns.has(threadId), STOP_WAIT_MS);
+
+            const waitingUploads = this.pendingUploads.get(threadId) ?? [];
+
+            await removeFiles(waitingUploads);
+            await this.botStore.delete(threadId);
+            this.forgetBotState(threadId);
+            this.threadParents.delete(threadId);
+        } finally {
+            this.deletingBots.delete(threadId);
+        }
+
+        return true;
+    }
+
+    async removeThread(botId: string, threadId: string): Promise<boolean> {
+        if (this.threadParents.get(threadId) !== botId) {
+            return false;
+        }
+
+        return this.deleteThread(threadId);
     }
 
     // The reasons a delete is refused before it starts. The approval card and the delete itself use the same checks.
@@ -2103,9 +2258,11 @@ class ChatService {
         return Promise.all(summaryPromises);
     }
 
-    // Search across the chats of all bots, newest match first.
-    searchMessages(text: string): Promise<MessageSearchHit[]> {
-        return this.messageStore.search(text, SEARCH_RESULT_LIMIT);
+    // Search across the chats of all bots, newest match first. The web app opens a hit through its bot, so threads are left out.
+    async searchMessages(text: string): Promise<MessageSearchHit[]> {
+        const hits = await this.messageStore.search(text, SEARCH_RESULT_LIMIT);
+
+        return hits.filter(hit => !this.threadParents.has(hit.botId));
     }
 
     private memoryAccessFor(botId: string): AgentMemoryAccess | undefined {
@@ -2430,13 +2587,16 @@ class ChatService {
             return;
         }
 
-        this.botStore.getById(botId)
+        // A thread notifies as its bot, so the app that shows the bot's chat stays quiet and the owner reads one name.
+        const sharedId = this.sharedIdOf(botId);
+
+        this.botStore.getById(sharedId)
             .then((bot) => {
                 if (bot === undefined) {
                     return undefined;
                 }
 
-                return notifyOwner({ kind, botId, botName: bot.name, messageId, ...(body === undefined ? {} : { body }) });
+                return notifyOwner({ kind, botId: sharedId, botName: bot.name, messageId, ...(body === undefined ? {} : { body }) });
             })
             .catch(() => {
                 console.error('Could not send a notification.');
@@ -2650,7 +2810,9 @@ class ChatService {
             throw new SetupAnswerError('Secrets cannot be saved here.');
         }
 
-        this.botSecrets.save(botId, form.secretName, form.site, value);
+        const sharedId = this.sharedIdOf(botId);
+
+        this.botSecrets.save(sharedId, form.secretName, form.site, value);
 
         const closedForm: SecureFormBody = { ...form, submitted: true };
         const message = await this.updateSetupMessage(messageId, closedForm);
@@ -2677,7 +2839,9 @@ class ChatService {
             throw new SetupAnswerError('Email passwords cannot be saved here.');
         }
 
-        this.emailPasswordStore.savePassword(botId, value);
+        const sharedId = this.sharedIdOf(botId);
+
+        this.emailPasswordStore.savePassword(sharedId, value);
 
         const closedForm: SecureFormBody = { ...form, submitted: true };
         const message = await this.updateSetupMessage(messageId, closedForm);
@@ -2819,7 +2983,8 @@ class ChatService {
         }
 
         // A queued message waits for the work ahead of it. Its files are taken now, as for any message.
-        const isQueued = this.isBusy(botId);
+        // A chat that would pass the parallel limit waits in its queue until a running chat of the bot ends.
+        const isQueued = this.isBusy(botId) || this.isAtParallelLimit(botId);
 
         // The running flag is set before the first await, so two sends cannot both start a turn.
         const abortController = new AbortController();
@@ -2866,6 +3031,16 @@ class ChatService {
             }
 
             throw error;
+        }
+
+        if (bot.parentBotId !== null && bot.name === NEW_THREAD_NAME && source === 'chat') {
+            const threadName = text.replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, THREAD_NAME_LENGTH);
+
+            if (threadName !== '') {
+                await this.botStore.updateProfile(botId, { name: threadName });
+            }
         }
 
         if (isForRunningTurn) {
@@ -3821,6 +3996,15 @@ class ChatService {
         this.publishTurnState(botId);
         this.startNextQueuedTurn(botId)
             .catch(reportBackgroundError);
+
+        // The slot this turn held may let a waiting chat of the same bot start.
+        const sharedId = this.sharedIdOf(botId);
+        const siblingIds = [sharedId, ...this.threadIdsOf(sharedId)].filter(laneId => laneId !== botId);
+
+        siblingIds.forEach((siblingId) => {
+            this.startNextQueuedTurn(siblingId)
+                .catch(reportBackgroundError);
+        });
     }
 
     // Adds a turn to the queue. A retry goes in front, so the message it answers runs first.
@@ -3879,7 +4063,7 @@ class ChatService {
     // Starts the first queued turn, unless the bot runs a turn or waits for a usage limit, or it is being deleted.
     // A deleted bot has an empty queue, so the check of the queue ends the call as well.
     private async startNextQueuedTurn(botId: string): Promise<void> {
-        if (this.runningTurns.has(botId) || this.usageWaitTimers.has(botId) || this.deletingBots.has(botId)) {
+        if (this.runningTurns.has(botId) || this.usageWaitTimers.has(botId) || this.deletingBots.has(botId) || this.isAtParallelLimit(botId)) {
             return;
         }
 
@@ -4074,7 +4258,15 @@ class ChatService {
         this.turnNoticeLines.delete(botId);
 
         try {
-            const bot = await this.botStore.getById(botId);
+            const thread = await this.botStore.getById(botId);
+
+            if (thread === undefined) {
+                return;
+            }
+
+            // A thread shares everything but its messages and session with its bot, so the bot's row and id serve the turn.
+            const sharedId = thread.parentBotId ?? botId;
+            const bot = sharedId === botId ? thread : await this.botStore.getById(sharedId);
 
             if (bot === undefined) {
                 return;
@@ -4092,7 +4284,7 @@ class ChatService {
             }
 
             // The limits are read for each turn, so a change in the web app applies to the next message.
-            const limits = this.limitStore === undefined ? undefined : await this.limitStore.get(botId);
+            const limits = this.limitStore === undefined ? undefined : await this.limitStore.get(sharedId);
             const settingsKind = settingsSource(turn.source);
             const turnLimit = limits === undefined ? NO_LIMIT : chooseTurnLimit(limits, settingsKind);
 
@@ -4127,10 +4319,10 @@ class ChatService {
             const secretTools = this.createSecretTools(botId);
             const emailTools = this.emailAccountService === undefined || this.emailSender === undefined
                 ? []
-                : createEmailTools(botId, {
+                : createEmailTools(sharedId, {
                         accountService: this.emailAccountService,
                         sender: this.emailSender,
-                        postPasswordForm: targetBotId => this.postEmailPasswordForm(targetBotId),
+                        postPasswordForm: () => this.postEmailPasswordForm(botId),
                     });
             const offeredEmailTools = this.approvals === undefined
                 ? emailTools.filter(emailTool => emailTool.name === EMAIL_STATUS_TOOL_NAME)
@@ -4140,15 +4332,15 @@ class ChatService {
             const checkRoutineWork: WorkSettings['checkChoice'] = (routineBotId, change) => workSettingsForRoutines === undefined
                 ? Promise.resolve('Choosing a provider for a routine is not available here.')
                 : workSettingsForRoutines.checkChoice(routineBotId, change);
-            const routineTools = this.routineStore === undefined ? [] : createRoutineTools(this.routineStore, botId, checkRoutineWork);
-            const taskTools = this.taskStore === undefined ? [] : createTaskTools(this.taskStore, botId, { onBlocked: task => this.noticeBlockedTask(botId, task), onBoard: (cards, hiddenCount) => this.postTaskBoard(botId, cards, hiddenCount) });
-            const integrationTools = this.integrationService === undefined ? [] : createIntegrationTools(this.integrationService, botId);
-            const providerTools = this.providerTools === undefined ? [] : createProviderTools(this.providerTools, botId);
+            const routineTools = this.routineStore === undefined ? [] : createRoutineTools(this.routineStore, sharedId, checkRoutineWork);
+            const taskTools = this.taskStore === undefined ? [] : createTaskTools(this.taskStore, sharedId, { onBlocked: task => this.noticeBlockedTask(botId, task), onBoard: (cards, hiddenCount) => this.postTaskBoard(botId, cards, hiddenCount) });
+            const integrationTools = this.integrationService === undefined ? [] : createIntegrationTools(this.integrationService, sharedId);
+            const providerTools = this.providerTools === undefined ? [] : createProviderTools(this.providerTools, sharedId);
             const providerDependencies = this.providerTools;
             const modelTools = this.modelStore === undefined
                 ? []
-                : createModelTools(this.modelStore, botId, {
-                        providerFor: providerDependencies === undefined ? undefined : () => providerDependencies.providerFor(botId),
+                : createModelTools(this.modelStore, sharedId, {
+                        providerFor: providerDependencies === undefined ? undefined : () => providerDependencies.providerFor(sharedId),
                         modelCatalogs: this.providerModelCatalogs,
                     });
             const workSettingsForTools = this.workSettings;
@@ -4157,32 +4349,32 @@ class ChatService {
                 : createWorkSettingsTools({
                         workSettings: workSettingsForTools,
                         connected: () => providerDependencies.connected(),
-                        describeChat: () => this.describeChatWork(botId),
-                    }, botId);
-            const limitTools = this.limitStore === undefined ? [] : createLimitTools(this.limitStore, botId);
-            const webhookTools = this.webhookTools(botId);
-            const watchTools = this.watchStore === undefined ? [] : createWatchTools(this.watchStore, botId);
+                        describeChat: () => this.describeChatWork(sharedId),
+                    }, sharedId);
+            const limitTools = this.limitStore === undefined ? [] : createLimitTools(this.limitStore, sharedId);
+            const webhookTools = this.webhookTools(sharedId);
+            const watchTools = this.watchStore === undefined ? [] : createWatchTools(this.watchStore, sharedId);
             const auditTools = this.actionLog === undefined ? [] : [createAuditLogTool(this.actionLog, botId)];
-            const triggerTools = this.triggerStore === undefined || this.triggerDeps === undefined ? [] : createTriggerTools(this.triggerStore, botId, this.triggerDeps);
+            const triggerTools = this.triggerStore === undefined || this.triggerDeps === undefined ? [] : createTriggerTools(this.triggerStore, sharedId, this.triggerDeps);
             const browserAllowTools = this.browserAllowStore === undefined || this.browser === undefined ? [] : createBrowserAllowTools(this.browserAllowStore);
-            const appTools = this.connectedApps === undefined ? [] : createAppTools(this.connectedApps, botId);
+            const appTools = this.connectedApps === undefined ? [] : createAppTools(this.connectedApps, sharedId);
             // The tool asks the owner through the approval gate, so it is offered only when that gate exists.
             // The hand-off depth is the chain's count so far, so a turn that a hand-off started sends one level deeper.
             const handoffDepth = turn.handoff?.depth ?? 0;
             const botTools = this.approvals === undefined
                 ? []
                 : [
-                        createBotCreateTool(input => this.createBotFromTool(botId, input)),
-                        createBotSendTool(input => this.handoffFromTool(botId, handoffDepth, input, turn.channel)),
-                        ...this.channelTools(botId),
+                        createBotCreateTool(input => this.createBotFromTool(sharedId, input)),
+                        createBotSendTool(input => this.handoffFromTool(sharedId, handoffDepth, input, turn.channel)),
+                        ...this.channelTools(sharedId),
                     ];
             // Export is always offered. Import makes a bot, so it is offered only with the approval gate, like bot_create.
-            const templateTools = [createBotExportTool(() => this.exportBotFromTool(botId)), ...(this.approvals === undefined ? [] : [createBotImportTool(filePath => this.importBotFromTool(botId, filePath)), createBotImportTextTool(draft => this.createBotFromImportTool(draft))]), ...this.galleryTools(botId)];
+            const templateTools = [createBotExportTool(() => this.exportBotFromTool(sharedId)), ...(this.approvals === undefined ? [] : [createBotImportTool(filePath => this.importBotFromTool(sharedId, filePath)), createBotImportTextTool(draft => this.createBotFromImportTool(draft))]), ...this.galleryTools(sharedId)];
             // The rule list is always offered. A rule change and a bot delete are offered only with the approval gate, since each waits for the owner.
-            const ruleTools = this.ruleStore === undefined ? [] : createRuleTools(this.ruleStore, botId, this.approvals !== undefined);
+            const ruleTools = this.ruleStore === undefined ? [] : createRuleTools(this.ruleStore, sharedId, this.approvals !== undefined);
             // Reading skills is always offered. A change waits for the owner, so it is offered only with the approval gate.
-            const skillTools = this.skillStore === undefined ? [] : [...createSkillTools(this.skillStore, botId, this.approvals !== undefined), createSkillReviewTool(this.botStore, botId)];
-            const botDeleteTools = this.approvals === undefined ? [] : [createBotDeleteTool(() => this.deleteBotFromTool(botId))];
+            const skillTools = this.skillStore === undefined ? [] : [...createSkillTools(this.skillStore, sharedId, this.approvals !== undefined), createSkillReviewTool(this.botStore, sharedId)];
+            const botDeleteTools = this.approvals === undefined ? [] : [createBotDeleteTool(() => this.deleteBotFromTool(sharedId))];
             const notificationTools = this.notifyOwner === undefined
                 ? []
                 : [
@@ -4209,17 +4401,17 @@ class ChatService {
                         approve: (summary, detail) => this.requestOwnerApproval(botId, summary, detail),
                         announce: (event) => { this.announcePeopleCredentials(event); },
                     });
-            const telegramTools = this.telegram === undefined ? [] : createTelegramTools(this.telegram, botId);
-            const discordTools = this.discord === undefined ? [] : createDiscordTools(this.discord, botId);
-            const meetingTools = this.meetingRecorder === undefined || this.browser === undefined ? [] : createMeetingTools(this.meetingRecorder, botId, this.browser);
-            const whatsappTools = this.whatsapp === undefined ? [] : createWhatsAppTools(this.whatsapp, botId);
+            const telegramTools = this.telegram === undefined ? [] : createTelegramTools(this.telegram, sharedId);
+            const discordTools = this.discord === undefined ? [] : createDiscordTools(this.discord, sharedId);
+            const meetingTools = this.meetingRecorder === undefined || this.browser === undefined ? [] : createMeetingTools(this.meetingRecorder, sharedId, this.browser);
+            const whatsappTools = this.whatsapp === undefined ? [] : createWhatsAppTools(this.whatsapp, sharedId);
             const chatHistoryTools = createChatHistoryTools(this.messageStore, botId);
             const profileTools = createProfileTools(
                 this.botStore,
-                botId,
+                sharedId,
                 requestedPath => this.shareFile(botId, requestedPath, turn.channel),
                 [...chatHistoryTools, ...browserTools, ...desktopTools, ...browserAllowTools, ...secretTools, ...screenTools, ...offeredEmailTools, ...routineTools, ...taskTools, ...modelTools, ...workTools, ...providerTools, ...limitTools, ...webhookTools, ...watchTools, ...auditTools, ...triggerTools, ...appTools, ...integrationTools, ...botTools, ...templateTools, ...ruleTools, ...skillTools, ...botDeleteTools, ...notificationTools, ...passkeyTools, ...peopleTools, ...telegramTools, ...discordTools, ...whatsappTools, ...meetingTools],
-                name => this.channelNameConflict(botId, name),
+                name => this.channelNameConflict(sharedId, name),
             );
             // The servers the owner connected are read for each turn, so a change applies to the next message.
             const connectedServers = this.connectedApps === undefined ? {} : await this.connectedApps.serverConfigs();
@@ -4232,25 +4424,25 @@ class ChatService {
             // The upload folder is passed on every turn, so earlier uploads stay readable by path.
             const additionalDirectories = [this.uploadDirFor(botId)];
             // Rules are read for each turn, so a change in the web app applies to the next message.
-            const ownerRules = this.ruleStore === undefined ? [] : await this.ruleStore.list(botId);
+            const ownerRules = this.ruleStore === undefined ? [] : await this.ruleStore.list(sharedId);
             // Skills are read for each turn, so an approved skill is known from the next message on.
-            const skills = this.skillStore === undefined ? undefined : await this.skillStore.list(botId);
+            const skills = this.skillStore === undefined ? undefined : await this.skillStore.list(sharedId);
             const blockedToolNames = ownerRules.flatMap(rule => rule.blockedTools);
             const disallowedTools = [...new Set(blockedToolNames)];
             const permissionMode = readPermissionMode(bot.permissionMode);
             const reviewToolCall = this.createToolCallReview(botId, permissionMode, turn.channel?.channelId);
             // The model and effort choices are read for each turn, so a change in the web app applies to the next message.
-            const modelChoices = this.modelStore === undefined ? undefined : await this.modelStore.get(botId);
-            const efforts = this.modelStore === undefined ? undefined : await this.modelStore.getEfforts(botId);
+            const modelChoices = this.modelStore === undefined ? undefined : await this.modelStore.get(sharedId);
+            const efforts = this.modelStore === undefined ? undefined : await this.modelStore.getEfforts(sharedId);
             const chosenModel = modelChoices === undefined ? undefined : chooseTurnModel(modelChoices, settingsKind);
             const chosenEffort = efforts === undefined ? undefined : chooseTurnEffort(efforts, settingsKind);
             const workSettings = this.workSettings;
-            const chatProvider = workSettings === undefined ? undefined : await this.providerTools?.providerFor(botId);
+            const chatProvider = workSettings === undefined ? undefined : await this.providerTools?.providerFor(sharedId);
             // The work kind of a check-in, a webhook or a routine. A routine with its own provider runs on that provider instead.
             const workKind = WORK_KIND_BY_SOURCE[settingsKind];
-            const kindWork = workSettings === undefined || workKind === undefined ? undefined : await workSettings.read(botId, workKind);
+            const kindWork = workSettings === undefined || workKind === undefined ? undefined : await workSettings.read(sharedId, workKind);
             const kindOwnWork = kindWork === undefined || kindWork.followsChat ? undefined : kindWork;
-            const routineWork = await this.routineWorkChoice(botId, turn.routineId);
+            const routineWork = await this.routineWorkChoice(sharedId, turn.routineId);
             const ownWork = routineWork ?? kindOwnWork;
             // Work with its own provider brings its own model and effort. A check-in with no choice keeps its small default on Claude.
             const fallbackModel = ownWork?.provider === 'claude' ? chosenModel : undefined;
@@ -4262,9 +4454,9 @@ class ChatService {
             const providerOption = ownWork === undefined ? {} : { provider: ownWork.provider };
             const isSideSession = ownWork !== undefined && ownWork.provider !== chatProvider;
             const mainProvider = ownWork?.provider ?? chatProvider ?? 'claude';
-            const searchWork = await workSettings?.read(botId, 'search');
-            const browsingWork = await workSettings?.read(botId, 'browsing');
-            const documentsWork = await workSettings?.read(botId, 'documents');
+            const searchWork = await workSettings?.read(sharedId, 'search');
+            const browsingWork = await workSettings?.read(sharedId, 'browsing');
+            const documentsWork = await workSettings?.read(sharedId, 'documents');
             const searchHelperRoute = searchWork === undefined ? 'none' : helperRoute(searchWork, mainProvider);
             // The main turn loses WebSearch and WebFetch, and the CLI would take them from its subagents too.
             // So a search helper always runs as its own turn, even on Claude.
@@ -4293,9 +4485,9 @@ class ChatService {
             // A search helper does the web search, so the main turn must hand it over. The owner's blocked tools apply to both.
             const hasSearchHelper = helperKinds.includes('search') || turnHelperKinds.includes('search');
             const mainDisallowedTools = hasSearchHelper ? [...disallowedTools, ...SEARCH_TOOL_NAMES] : disallowedTools;
-            const reachable = await this.reachableBotsOf(botId);
+            const reachable = await this.reachableBotsOf(sharedId);
             const otherBotNames = reachable.map(otherBot => otherBot.name);
-            const memoryAccess = this.agentUser === undefined ? undefined : { agentUser: this.agentUser, botId };
+            const memoryAccess = this.agentUser === undefined ? undefined : { agentUser: this.agentUser, botId: sharedId };
             // The framed memory goes in the system prompt for every engine, since no provider CLI loads MEMORY.md itself.
             const memoryBlock = await readWorkspaceMemoryBlock(workspaceDir, memoryAccess);
             const profilePrompt = buildSystemPrompt(bot, {
@@ -4319,7 +4511,7 @@ class ChatService {
                 hasUpdateGuide: this.agentUser !== undefined,
                 hasEmail: this.emailAccountService !== undefined && this.emailSender !== undefined,
                 hasWhatsApp: this.whatsapp !== undefined,
-                aiMemoryProject: memoryServer === undefined ? undefined : botId,
+                aiMemoryProject: memoryServer === undefined ? undefined : sharedId,
                 ownerRules,
                 skills,
                 canChangeSkills: this.approvals !== undefined,
@@ -4337,7 +4529,7 @@ class ChatService {
                 return {
                     kind,
                     request: {
-                        botId,
+                        botId: sharedId,
                         provider: work.provider,
                         workspaceDir,
                         systemPrompt: parts.prompt,
@@ -4389,7 +4581,7 @@ class ChatService {
                 inbox,
             };
             // The chat's session belongs to its provider, so work on another provider neither resumes nor replaces it.
-            const firstAttempt = await this.runAttempt(turnContext, isSideSession ? null : bot.sessionId, turnState);
+            const firstAttempt = await this.runAttempt(turnContext, isSideSession ? null : thread.sessionId, turnState);
 
             // A resumed session that fails before it starts is usually gone, for example
             // after a container rebuild. Start a fresh session once instead of failing every turn.
@@ -4534,7 +4726,8 @@ class ChatService {
 
     // Arms the idle compaction of a bot after a main turn. The next turn or message cancels it, and a provider without a compact command never arms it.
     private async armIdleCompaction(botId: string, contextTokens: number): Promise<void> {
-        const provider: ProviderId = (await this.providerTools?.providerFor(botId)) ?? 'claude';
+        const sharedId = this.sharedIdOf(botId);
+        const provider: ProviderId = (await this.providerTools?.providerFor(sharedId)) ?? 'claude';
 
         this.cancelIdleCompaction(botId);
 
@@ -4570,7 +4763,7 @@ class ChatService {
         }
 
         // Work that came in meanwhile has its own turn, and that turn arms the compaction again when it ends.
-        if (this.isBusy(botId) || this.deletingBots.has(botId)) {
+        if (this.isBusy(botId) || this.isAtParallelLimit(botId) || this.deletingBots.has(botId)) {
             return;
         }
 
@@ -4666,22 +4859,25 @@ class ChatService {
     // Asks the owner in the chat about an action the proxy holds, such as a push. Only a running turn can be asked, so without one the action is refused.
     async requestOwnerApproval(botId: string, summary: string, detail: string | undefined): Promise<boolean> {
         const approvals = this.approvals;
-        const runningTurn = this.runningTurns.get(botId);
+        const laneId = this.runningTurns.has(botId) ? botId : this.runningLanesOf(botId)[0];
+        const runningTurn = laneId === undefined ? undefined : this.runningTurns.get(laneId);
 
-        if (approvals === undefined || runningTurn === undefined) {
+        if (approvals === undefined || laneId === undefined || runningTurn === undefined) {
             return false;
         }
 
-        return approvals.ask(botId, summary, detail, runningTurn.signal);
+        return approvals.ask(laneId, summary, detail, runningTurn.signal);
     }
 
     // A write the GitHub proxy holds, such as a push. It takes the same review as a tool call, so a push the owner asked for
     // runs without a card. Only a running turn can be asked, so without one the write is refused.
     async reviewGithubWrite(botId: string, summary: string, detail: string | undefined): Promise<boolean> {
         const approvals = this.approvals;
-        const runningTurn = this.runningTurns.get(botId);
+        // The proxy knows the bot, not the thread. With several threads running, the card goes to the first one.
+        const laneId = this.runningLanesOf(botId)[0];
+        const runningTurn = laneId === undefined ? undefined : this.runningTurns.get(laneId);
 
-        if (approvals === undefined || runningTurn === undefined) {
+        if (approvals === undefined || laneId === undefined || runningTurn === undefined) {
             return false;
         }
 
@@ -4691,7 +4887,7 @@ class ChatService {
             return true;
         }
 
-        const decision = await approvals.review(botId, { toolName: GITHUB_WRITE_TOOL_NAME, input: { summary, detail } }, runningTurn.signal);
+        const decision = await approvals.review(laneId, { toolName: GITHUB_WRITE_TOOL_NAME, input: { summary, detail } }, runningTurn.signal);
 
         return decision.isAllowed;
     }
@@ -4705,9 +4901,10 @@ class ChatService {
         }
 
         const requestTool = createRequestSecretTool((name, purpose, site) => this.requestSecret(botId, name, purpose, site));
+        const sharedId = this.sharedIdOf(botId);
         const typeTools = this.browser === undefined
             ? []
-            : [createTypeSecretTool(this.browser, name => (isServerOnlySecretName(name) ? undefined : botSecrets.read(botId, name)), this.screen)];
+            : [createTypeSecretTool(this.browser, name => (isServerOnlySecretName(name) ? undefined : botSecrets.read(sharedId, name)), this.screen)];
 
         return [requestTool, ...typeTools, ...this.createFillLoginTools(botId)];
     }
@@ -4720,7 +4917,7 @@ class ChatService {
 
         const askOwner = (summary: string, detail: string | undefined): Promise<boolean> => this.requestOwnerApproval(botId, summary, detail);
 
-        return [createFillLoginTool({ botId, browser: this.browser, vault: this.bitwarden, askOwner, screen: this.screen })];
+        return [createFillLoginTool({ botId: this.sharedIdOf(botId), browser: this.browser, vault: this.bitwarden, askOwner, screen: this.screen })];
     }
 
     // request_screen needs the browser and the screen state.
@@ -4907,10 +5104,12 @@ class ChatService {
         // Every remote server of the owner gets a pattern, such as mcp__linear__*.
         const remoteServerNames = Object.keys(turnContext.mcpServers);
         const remoteToolPatterns = remoteServerNames.map(name => `mcp__${name}__*`);
-        const githubEnvironment = this.githubEnvironment === undefined ? undefined : await this.githubEnvironment(botId);
+        // The provider sign-in and the GitHub listener belong to the bot, so a thread asks for them by its bot's id.
+        const sharedId = this.sharedIdOf(botId);
+        const githubEnvironment = this.githubEnvironment === undefined ? undefined : await this.githubEnvironment(sharedId);
 
         return {
-            botId,
+            botId: sharedId,
             ...(turnContext.provider === undefined ? {} : { provider: turnContext.provider }),
             workspaceDir: turnContext.workspaceDir,
             prompt: turnContext.prompt,

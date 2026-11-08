@@ -1,0 +1,1 @@
+ALTER TABLE `bots` ADD `parent_bot_id` text REFERENCES bots(id) ON DELETE cascade;

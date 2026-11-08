@@ -16,6 +16,9 @@ vi.mock('./apiClient.ts', () => ({
         serverMessage: string | undefined;
     },
     listBots: vi.fn(),
+    listThreads: vi.fn(() => Promise.resolve([])),
+    createThread: vi.fn(),
+    deleteThread: vi.fn(),
     listChannels: vi.fn(() => Promise.resolve([])),
     getChannel: vi.fn(),
     postChannelMessage: vi.fn(),
