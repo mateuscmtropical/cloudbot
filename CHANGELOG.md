@@ -21,6 +21,7 @@ All notable changes to this project are listed here. The format follows
 
 ### Added
 
+- A file dragged over the page now shows a drop target. A dashed border and "Drop to attach" say the drop will be accepted. A red border says why it will be ignored, while a reply is running or when attaching is off.
 - The provider menu shows the plan usage of each connected provider, like the usage screen of its own CLI: the session and weekly limits, how much is used and when they reset. The bot answers "how much of my plan is left?" with the new read only `provider_usage` tool. Claude (the `/usage` command of the Claude CLI) and ChatGPT (the rate limits of the Codex app server) give real numbers. Any other provider says "Not available for this provider", since its CLI has no usage source.
 - Plan usage now covers GitHub Copilot (premium requests) and Kimi (5 hour, weekly and monthly limits) in the Docker image. CloudBot makes the same call the official CLI makes, with the sign-in that CLI saved for the bot, through a new `usage` action of `cloudbot-provider` that runs as the bot user, so the server never reads the sign-in. These are internal endpoints of the CLIs and may change. When a call fails, the sign-in is missing or the Kimi token has expired, the provider still shows as not available.
 - Plan usage now covers a Gemini subscription too: the weekly and 5 hour limits of each group of models, read with the `/usage` command of the Antigravity CLI. It answers without a model turn, so it spends no tokens.
