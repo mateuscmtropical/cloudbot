@@ -68,6 +68,84 @@ describe('Composer', () => {
         expect(onAttach).not.toHaveBeenCalled();
     });
 
+    it('shows a drop target while files are dragged over the page, and hides it when the drag ends', () => {
+        const props = { botName: 'CloudBot', isUploading: false, attachments: [], onSend: vi.fn(), onStop: vi.fn(), onAttach: vi.fn(), onRemoveAttachment: vi.fn() };
+        const dragFiles = (type: 'dragenter' | 'dragleave' | 'drop'): void => {
+            const event = new Event(type, { bubbles: true, cancelable: true });
+
+            Object.defineProperty(event, 'dataTransfer', { value: { files: [], types: ['Files'] } });
+            act(() => {
+                window.dispatchEvent(event);
+            });
+        };
+
+        render(<Composer {...props} isRunning={false} />);
+
+        expect(screen.queryByText('Drop to attach'))
+            .toBeNull();
+
+        dragFiles('dragenter');
+        dragFiles('dragenter');
+        expect(screen.getByText('Drop to attach'))
+            .toBeTruthy();
+
+        // Moving from one element to another leaves one and enters another, so one leave keeps the target.
+        dragFiles('dragleave');
+        expect(screen.getByText('Drop to attach'))
+            .toBeTruthy();
+
+        dragFiles('dragleave');
+        expect(screen.queryByText('Drop to attach'))
+            .toBeNull();
+
+        dragFiles('dragenter');
+        dragFiles('drop');
+        expect(screen.queryByText('Drop to attach'))
+            .toBeNull();
+    });
+
+    it('keeps the drop target when the page renders again in the middle of a drag', () => {
+        const props = { botName: 'CloudBot', isRunning: false, isUploading: false, attachments: [], onSend: vi.fn(), onStop: vi.fn(), onRemoveAttachment: vi.fn() };
+        const dragFiles = (type: 'dragenter' | 'dragleave'): void => {
+            const event = new Event(type, { bubbles: true, cancelable: true });
+
+            Object.defineProperty(event, 'dataTransfer', { value: { files: [], types: ['Files'] } });
+            act(() => {
+                window.dispatchEvent(event);
+            });
+        };
+        const { rerender } = render(<Composer {...props} onAttach={vi.fn()} />);
+
+        dragFiles('dragenter');
+        dragFiles('dragenter');
+        // A new onAttach sets the listeners up again, like a render of the app does.
+        rerender(<Composer {...props} onAttach={vi.fn()} />);
+        dragFiles('dragleave');
+
+        expect(screen.getByText('Drop to attach'))
+            .toBeTruthy();
+
+        act(() => {
+            window.dispatchEvent(new Event('blur'));
+        });
+        expect(screen.queryByText('Drop to attach'))
+            .toBeNull();
+    });
+
+    it('says the drop is refused while a turn runs', () => {
+        const props = { botName: 'CloudBot', isUploading: false, attachments: [], onSend: vi.fn(), onStop: vi.fn(), onAttach: vi.fn(), onRemoveAttachment: vi.fn() };
+        const event = new Event('dragenter', { bubbles: true, cancelable: true });
+
+        Object.defineProperty(event, 'dataTransfer', { value: { files: [], types: ['Files'] } });
+        render(<Composer {...props} isRunning />);
+        act(() => {
+            window.dispatchEvent(event);
+        });
+
+        expect(screen.getByText('Wait for the reply to finish').parentElement?.className)
+            .toContain('is-refused');
+    });
+
     it('sends the draft when Enter is pressed', () => {
         const onSend = vi.fn();
         const textarea = renderComposer({ onSend });

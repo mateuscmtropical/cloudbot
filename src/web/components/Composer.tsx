@@ -103,8 +103,35 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
     // A file dropped anywhere on the page goes to this chat, like the attach button. The page always takes the drop, so the
     // browser never opens the file in place of the app. While attaching is off, the drop does nothing.
     const canDrop = canAttach && !isRunning;
+    // True while files are dragged over the page, so the drop target shows. It says whether the drop will be accepted.
+    const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+    // Moving between elements fires leave and enter, so the drag counts how many it has entered. A ref keeps the count when
+    // the page renders again and the listeners below are set up anew.
+    const enteredCountRef = useRef(0);
 
     useEffect(() => {
+        const hasFiles = (event: DragEvent): boolean => event.dataTransfer?.types.includes('Files') === true;
+        const takeEnter = (event: DragEvent): void => {
+            if (hasFiles(event)) {
+                enteredCountRef.current += 1;
+                setIsDraggingFiles(true);
+            }
+        };
+        const takeLeave = (event: DragEvent): void => {
+            if (hasFiles(event)) {
+                enteredCountRef.current = Math.max(0, enteredCountRef.current - 1);
+                setIsDraggingFiles(enteredCountRef.current > 0);
+            }
+        };
+        // The browser sends no pointer move during a drag, so a move or a blur means the drag is over, even when no leave came.
+        const endDrag = (): void => {
+            if (enteredCountRef.current === 0) {
+                return;
+            }
+
+            enteredCountRef.current = 0;
+            setIsDraggingFiles(false);
+        };
         const takeDrag = (event: DragEvent): void => {
             if (event.dataTransfer?.types.includes('Files') === true) {
                 event.preventDefault();
@@ -112,6 +139,8 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
             }
         };
         const takeDrop = (event: DragEvent): void => {
+            endDrag();
+
             const droppedFiles = Array.from(event.dataTransfer?.files ?? []);
 
             if (droppedFiles.length === 0) {
@@ -125,14 +154,24 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
             }
         };
 
+        window.addEventListener('dragenter', takeEnter);
+        window.addEventListener('dragleave', takeLeave);
         window.addEventListener('dragover', takeDrag);
         window.addEventListener('drop', takeDrop);
+        window.addEventListener('pointermove', endDrag);
+        window.addEventListener('blur', endDrag);
 
         return () => {
+            window.removeEventListener('dragenter', takeEnter);
+            window.removeEventListener('dragleave', takeLeave);
             window.removeEventListener('dragover', takeDrag);
             window.removeEventListener('drop', takeDrop);
+            window.removeEventListener('pointermove', endDrag);
+            window.removeEventListener('blur', endDrag);
         };
     }, [canDrop, onAttach]);
+
+    const dropRefusal = isRunning ? 'Wait for the reply to finish' : 'Attaching files is off here';
 
     const trimmedDraft = draft.trim();
     // Send waits for uploads in flight, so their files reach this message and not the next one.
@@ -320,6 +359,13 @@ function Composer({ botName, isRunning, attachments, isUploading, onSend, onStop
 
     return (
         <>
+            {isDraggingFiles
+                ? (
+                        <div className={canDrop ? 'drop-target' : 'drop-target is-refused'} role="status">
+                            <p className="drop-target-text">{canDrop ? 'Drop to attach' : dropRefusal}</p>
+                        </div>
+                    )
+                : null}
             <AttachmentTray attachments={attachments} onRemove={onRemoveAttachment} />
             {mentionMatches.length === 0
                 ? null
