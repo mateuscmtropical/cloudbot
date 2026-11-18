@@ -98,10 +98,14 @@ const OPENCODE_FOLDERS = ['.opencode', 'opencode.json', 'opencode.jsonc', '.conf
 const BEARER: KeyHeader = { name: 'authorization', prefix: 'Bearer ' };
 // How long a sign-in check is trusted, so a turn does not start the CLI twice.
 const STATUS_CACHE_MS = 5 * 60 * 1000;
-// agy reports no model list to the server, so the Gemini subscription offers its one model by name.
+// agy reports no model list to the server, so the Gemini subscription offers its models by name (`agy models` lists them).
 // The effort picks the level agy runs, see toAgyModel. ponytail: fixed list, update when agy adds a Gemini model.
 const AGY_MODEL_CATALOG: ProviderModelCatalog = {
-    models: [{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', efforts: ['low', 'medium', 'high'] }],
+    models: [
+        { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', efforts: ['low', 'medium', 'high'] },
+        { id: 'gemini-4-argon', label: 'Gemini 4 Argon', efforts: ['low', 'medium', 'high'] },
+        { id: 'gemini-4-hydrogen', label: 'Gemini 4 Hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'] },
+    ],
     defaultModel: null,
     defaultEffort: null,
 };

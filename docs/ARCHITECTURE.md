@@ -2072,7 +2072,9 @@ ACP:
   subagents, and refuses calls that name `.gemini` or `.agents`.
 - `agy` sees no argument names for MCP tools, so the prompt lists the bot
   tools with theirs. A Gemini model id without a level takes it from the
-  effort, so `gemini-3.8-flash` at low runs `gemini-3.8-flash-low`.
+  effort, so `gemini-3.8-flash` at low runs `gemini-3.8-flash-low`. The offered
+  models are Gemini 3.8 Flash, Gemini 4 Argon and Gemini 4 Hydrogen (`agy models`
+  lists them). Only Hydrogen has an xhigh level, other models run high for it.
 - The conversation id comes from the `init` line and resumes with
   `--conversation`.
 

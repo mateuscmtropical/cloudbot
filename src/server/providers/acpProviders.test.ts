@@ -44,7 +44,11 @@ describe('Gemini subscription models', () => {
         offerAgyModels(catalogs, 'gemini', 'signIn');
 
         expect(catalogs.get('gemini')?.models)
-            .toEqual([{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', efforts: ['low', 'medium', 'high'] }]);
+            .toEqual([
+                { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', efforts: ['low', 'medium', 'high'] },
+                { id: 'gemini-4-argon', label: 'Gemini 4 Argon', efforts: ['low', 'medium', 'high'] },
+                { id: 'gemini-4-hydrogen', label: 'Gemini 4 Hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'] },
+            ]);
     });
 
     it('leaves a Gemini key and a reported list alone', () => {
