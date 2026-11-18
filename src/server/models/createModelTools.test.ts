@@ -157,6 +157,48 @@ describe('createModelTools', () => {
             .toBeUndefined();
     });
 
+    it('takes a label or an ID with a level, and lists the offered models when refusing', async () => {
+        const catalogs = new ProviderModelCatalogs();
+
+        catalogs.set('gemini', {
+            models: [
+                { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', efforts: ['low', 'medium', 'high'] },
+                { id: 'gemini-4-hydrogen', label: 'Gemini 4 Hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'] },
+            ],
+            defaultModel: null,
+            defaultEffort: null,
+        });
+        let savedChoice: ProviderModelChoice | undefined;
+        const store = {
+            ...createFakeStore(STORED),
+            getProviderChoice: () => Promise.resolve(savedChoice),
+            setProviderChoice: (_botId: string, _provider: 'gemini', choice: ProviderModelChoice) => {
+                savedChoice = choice;
+
+                return Promise.resolve();
+            },
+        };
+        const setModels = findHandler(createModelTools(store, 'bot-1', {
+            providerFor: () => Promise.resolve('gemini'),
+            modelCatalogs: catalogs,
+        }));
+
+        await setModels({ chat: 'gemini-4-hydrogen-xhigh' }, {});
+        expect(savedChoice)
+            .toMatchObject({ model: 'gemini-4-hydrogen', effort: 'xhigh' });
+
+        await setModels({ chat: 'Gemini 4 Hydrogen', chatEffort: 'medium' }, {});
+        expect(savedChoice)
+            .toMatchObject({ model: 'gemini-4-hydrogen', effort: 'medium' });
+
+        const refused = await setModels({ chat: 'gemini-9' }, {});
+
+        expect(refused.isError)
+            .toBe(true);
+        expect(refused.content[0]?.text)
+            .toContain('gemini-4-hydrogen (low/medium/high/xhigh)');
+    });
+
     it('refuses a model that the current provider does not advertise', async () => {
         const catalogs = new ProviderModelCatalogs();
 

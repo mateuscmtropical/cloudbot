@@ -121,6 +121,25 @@ function describeProviderModel(modelId: string | null, catalog: ProviderModelCat
     return catalog.models.find(model => model.id === modelId)?.label ?? modelId;
 }
 
+// The owner and the bot name a model in many ways: its ID, its label, or the ID with a level at the end such as
+// gemini-4-hydrogen-xhigh. The level, when the model offers it, is the effort.
+function matchProviderModel(catalog: ProviderModelCatalog, text: string): { model: ProviderModelCatalog['models'][number]; effort?: string } | undefined {
+    const wanted = text.trim()
+        .toLowerCase();
+    const matches = catalog.models.flatMap(model => [
+        ...model.id.toLowerCase() === wanted || model.label.toLowerCase() === wanted ? [{ model }] : [],
+        ...model.efforts.filter(effort => `${model.id.toLowerCase()}-${effort}` === wanted)
+            .map(effort => ({ model, effort })),
+    ]);
+
+    return matches[0];
+}
+
+function describeOffered(catalog: ProviderModelCatalog): string {
+    return catalog.models.map(model => `${model.id} (${model.efforts.join('/')})`)
+        .join(', ');
+}
+
 async function setProviderModelChoice(store: ModelToolStore, botId: string, provider: ProviderId, catalog: ProviderModelCatalog | undefined, changes: ModelChangeArguments): Promise<ModelToolResult> {
     if (catalog === undefined || catalog.models.length === 0) {
         return textResult(`${provider} does not advertise selectable models, so its default stays in use.`, true);
@@ -135,8 +154,9 @@ async function setProviderModelChoice(store: ModelToolStore, botId: string, prov
     }
 
     const stored = await store.getProviderChoice(botId, provider);
-    const modelId = changes.chat === undefined ? stored?.model ?? null : changes.chat;
-    const requestedEffort = changes.chatEffort === undefined ? stored?.effort ?? null : changes.chatEffort;
+    const matched = typeof changes.chat === 'string' ? matchProviderModel(catalog, changes.chat) : undefined;
+    const modelId = matched?.model.id ?? (changes.chat === undefined ? stored?.model ?? null : changes.chat);
+    const requestedEffort = changes.chatEffort === undefined ? matched?.effort ?? stored?.effort ?? null : changes.chatEffort;
     const storedDefaultIsOffered = stored?.defaultModel !== null && stored?.defaultModel !== undefined
         && catalog.models.some(option => option.id === stored.defaultModel);
     const defaultModel = storedDefaultIsOffered ? stored.defaultModel : catalog.defaultModel;
@@ -144,7 +164,7 @@ async function setProviderModelChoice(store: ModelToolStore, botId: string, prov
     const model = catalog.models.find(option => option.id === selectedModelId);
 
     if (modelId !== null && model === undefined) {
-        return textResult(`The ${provider} model must match an ID in its advertised model list.`, true);
+        return textResult(`The ${provider} model must match an ID in its advertised model list: ${describeOffered(catalog)}.`, true);
     }
 
     const effort = requestedEffort !== null && model?.efforts.includes(requestedEffort) !== true
@@ -152,7 +172,7 @@ async function setProviderModelChoice(store: ModelToolStore, botId: string, prov
         : requestedEffort;
 
     if (effort !== null && model?.efforts.includes(effort) !== true) {
-        return textResult(`The ${provider} effort must match an effort advertised for the selected model.`, true);
+        return textResult(`The ${provider} effort must match an effort advertised for the selected model: ${model?.efforts.join(', ') ?? 'none'}.`, true);
     }
 
     const defaultEffort = [model?.defaultEffort, stored?.defaultEffort, catalog.defaultEffort]
