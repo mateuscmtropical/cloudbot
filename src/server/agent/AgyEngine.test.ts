@@ -71,6 +71,12 @@ describe('toAgyModel', () => {
             .toBe('gemini-3.8-flash-high');
         expect(toAgyModel('gemini-3.8-flash-medium', 'low'))
             .toBe('gemini-3.8-flash-medium');
+        expect(toAgyModel('gemini-4-hydrogen', 'xhigh'))
+            .toBe('gemini-4-hydrogen-xhigh');
+        expect(toAgyModel('gemini-4-argon', 'xhigh'))
+            .toBe('gemini-4-argon-high');
+        expect(toAgyModel('gemini-4-hydrogen-xhigh', 'low'))
+            .toBe('gemini-4-hydrogen-xhigh');
         expect(toAgyModel('gemini-3.8-flash', undefined))
             .toBe('gemini-3.8-flash');
     });

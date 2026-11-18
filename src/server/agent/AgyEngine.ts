@@ -92,7 +92,7 @@ const NOT_SIGNED_IN = /authentication required|not signed in|log in/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // A saved Gemini model choice is a slug, which agy accepts directly.
 const MODEL_SLUG = /^gemini-[a-z0-9.-]{1,58}$/;
-const MODEL_LEVEL = /-(low|medium|high)$/;
+const MODEL_LEVEL = /-(low|medium|high|xhigh)$/;
 const AGY_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 
 function readRecord(value: unknown): Record<string, unknown> {
@@ -166,7 +166,10 @@ function toAgyModel(model: string | undefined, effort: string | undefined): stri
         return model;
     }
 
-    return `${model}-${effort === 'low' || effort === 'medium' ? effort : 'high'}`;
+    // Only Gemini 4 Hydrogen has an xhigh level. Any other model runs high for it, and max has no level at all.
+    const level = effort === 'xhigh' && model.includes('hydrogen') ? 'xhigh' : effort === 'low' || effort === 'medium' ? effort : 'high';
+
+    return `${model}-${level}`;
 }
 
 // A short type text from a JSON schema, such as {kind: "interval"|"daily", everyMinutes?: number}.

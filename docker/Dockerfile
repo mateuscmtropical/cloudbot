@@ -112,7 +112,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # temporary home, and the copy and the removal happen in the same step, so no layer keeps a second copy.
 # The build fails if any file named claude is left under the bot home.
 # The date only forces a new download of the latest CLI. Change it to update Claude. The CLIs installed by a script below update with any change to that step.
-RUN : cli-refresh-2026-11-04 \
+RUN : cli-refresh-2026-11-18 \
     && install -d -o bot -g bot -m 0700 /tmp/claude-install \
     && runuser -u bot -- env HOME=/tmp/claude-install bash -o pipefail -c 'curl -fsSL https://claude.ai/install.sh | bash' \
     && cp -L /tmp/claude-install/.local/bin/claude /usr/local/bin/claude \
@@ -124,14 +124,14 @@ RUN : cli-refresh-2026-11-04 \
 
 # The Codex CLI for bots that run on a ChatGPT subscription. The version must match CODEX_PROTOCOL_VERSION in
 # src/server/agent/codexProtocol.ts. npm installs it as root, so the bot user cannot replace it.
-RUN npm install --global @openai/codex@0.166.0 \
+RUN npm install --global @openai/codex@0.170.0 \
     && npm cache clean --force \
     && /usr/local/bin/codex --version
 
 # The Bitwarden CLI for browser_fill_login. Only the server process runs it, with its state in a folder under
 # /var/lib/cloudbot that the bot cannot open. The version is more than two weeks old and is pinned exactly.
 # npm installs it as root, so the bot user cannot replace it.
-RUN npm install --global @bitwarden/cli@2026.9.1 \
+RUN npm install --global @bitwarden/cli@2026.10.1 \
     && npm cache clean --force \
     && /usr/local/bin/bw --version
 
@@ -140,12 +140,12 @@ RUN npm install --global @bitwarden/cli@2026.9.1 \
 # file is checked as well. Only the binary is installed, owned by root, so the bot user cannot replace it. The build fails
 # if the binary does not report the pinned version.
 RUN case "$(dpkg --print-architecture)" in \
-        amd64) memory_archive=ai-memory-linux-x86_64.tar.gz; memory_sha256=15a4f4a346a27e6fd63a36d1b3de23c5cbe142b80b3bce561e21b1f225a1e645 ;; \
-        arm64) memory_archive=ai-memory-linux-aarch64.tar.gz; memory_sha256=164f7c38bb9bafca218dd958c3c60febcd5d2f5200ad138c6f128576cedebfb6 ;; \
+        amd64) memory_archive=ai-memory-linux-x86_64.tar.gz; memory_sha256=cb3586a98915d84042bd518e519104e6f613cb719c7184b533410d38e741d2df ;; \
+        arm64) memory_archive=ai-memory-linux-aarch64.tar.gz; memory_sha256=a4f16314fa1423b0620818ce18effb6a6466a8218dbad4943ecf5f0c8b2b9acf ;; \
         *) echo "No ai-memory build for this architecture." >&2; exit 1 ;; \
     esac \
     && install -d -m 0700 /tmp/ai-memory-install \
-    && release_url=https://github.com/akitaonrails/ai-memory/releases/download/v3.4.2 \
+    && release_url=https://github.com/akitaonrails/ai-memory/releases/download/v3.5.0 \
     && curl -fsSL -o "/tmp/ai-memory-install/$memory_archive" "$release_url/$memory_archive" \
     && curl -fsSL -o "/tmp/ai-memory-install/$memory_archive.sha256" "$release_url/$memory_archive.sha256" \
     && (cd /tmp/ai-memory-install && sha256sum -c "$memory_archive.sha256") \
@@ -153,7 +153,7 @@ RUN case "$(dpkg --print-architecture)" in \
     && tar -xzf "/tmp/ai-memory-install/$memory_archive" -C /tmp/ai-memory-install ./ai-memory \
     && install -o root -g root -m 0755 /tmp/ai-memory-install/ai-memory /usr/local/bin/ai-memory \
     && rm -rf /tmp/ai-memory-install \
-    && test "$(/usr/local/bin/ai-memory --version)" = "ai-memory 3.4.2"
+    && test "$(/usr/local/bin/ai-memory --version)" = "ai-memory 3.5.0"
 
 # The agent CLIs of the other providers, which CloudBot runs over the Agent Client Protocol, see
 # src/server/providers/acpProviders.ts. They are root-owned, so the bot user cannot replace them. The ones without an
@@ -166,7 +166,7 @@ RUN case "$(dpkg --print-architecture)" in \
         arm64) opencode_package=@opencode/cli-linux-arm64 ;; \
         *) echo "No OpenCode build for this architecture." >&2; exit 1 ;; \
     esac \
-    && npm install --global @google/gemini-cli@0.66.0 @github/copilot@1.0.105 @qwen-code/qwen-code@0.26.7 "$opencode_package@2.2.5" \
+    && npm install --global @google/gemini-cli@0.68.0 @github/copilot@1.0.114 @qwen-code/qwen-code@0.28.0 "$opencode_package@2.3.2" \
     && ln -sf "/usr/local/lib/node_modules/$opencode_package/bin/opencode" /usr/local/bin/opencode \
     && install -d -m 0755 /opt/cloudbot-agents \
     && export HOME=/opt/cloudbot-agents \
@@ -176,7 +176,7 @@ RUN case "$(dpkg --print-architecture)" in \
     && curl -LsSf https://astral.sh/uv/install.sh | sh \
     && curl -fsSL https://antigravity.google/cli/install.sh | bash \
     && UV_TOOL_DIR=/opt/cloudbot-agents/uv-tools UV_TOOL_BIN_DIR=/opt/cloudbot-agents/uv-bin UV_PYTHON_INSTALL_DIR=/opt/cloudbot-agents/python \
-        /opt/cloudbot-agents/.local/bin/uv tool install --python 3.12 mistral-vibe==3.1.0 \
+        /opt/cloudbot-agents/.local/bin/uv tool install --python 3.12 mistral-vibe==3.1.3 \
     && ln -sf /opt/cloudbot-agents/.local/bin/cursor-agent /usr/local/bin/cursor-agent \
     && ln -sf /opt/cloudbot-agents/.grok/bin/grok /usr/local/bin/grok \
     && ln -sf /opt/cloudbot-agents/.kimi-code/bin/kimi /usr/local/bin/kimi \
